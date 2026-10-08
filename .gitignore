@@ -1,0 +1,43 @@
+# Credentials and local machine state
+.env
+.env.*
+*.env
+!.env.example
+*.pem
+*.key
+credentials*.json
+*.p12
+*.pfx
+.ssh/
+.aws/
+.git-credentials
+# Dependencies, caches, and build output
+.venv/
+venv/
+node_modules/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.blender-previs-cache/
+.master-storyboarding/
+.tmp_*/
+# Raw / generated media and project-private state
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.wav
+*.mp3
+*.blend
+*.glb
+*.gltf
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+assets/product-references/
+inputs/
+history/
+evidence_sources/
+*transcript*
