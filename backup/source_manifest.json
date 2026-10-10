@@ -35,11 +35,11 @@
     },
     {
       "path": "README.md",
-      "sha256": "1d5cb6aa187091d2973b97121dfd37d379d6e65b73ec4b1cbc630e92e15853a9",
-      "bytes": 3850,
-      "source": "backup scope explanation generated 2026-10-10; historical provenance retained",
+      "sha256": "fdaa7de54504bc2cb83e8343993bea59037c7477ceeca9c9189bfa43009a35e4",
+      "bytes": 3950,
+      "source": "backup-authored scope documentation 2026-10-10",
       "source_member": "README.md",
-      "reason": "explicit scope and unresolved gap disclosure",
+      "reason": "backup scope documentation corrected for literal # transcript references",
       "previous_sha256": "48f7d18f4acc2414fa96f21f435bc26ad6c1e681db80e8bb76267af882aa7cb6"
     },
     {
@@ -3170,6 +3170,22 @@
       "source": "libfile_571c8b8874208191af637d15c93fe4fd@0",
       "source_member": "work/vault/wiki/sources/即梦-cli-指南.md",
       "reason": "explicit dependency of selected project knowledge"
+    },
+    {
+      "path": "knowledge_snapshot/vault/raw/videos/2026-08-27/电影拍摄语言-六条抖音/01-电影感构图/从十一个方面入手，拍出电影感构图 #电影感 #电影构图 分别是-校对转写/文案稿.txt",
+      "sha256": "ba62b95e798f0f90aaebbeda3a9bb1bc0abaf3ff0361f9b5a9ed6902c84b4f75",
+      "bytes": 3168,
+      "source": "libfile_571c8b8874208191af637d15c93fe4fd@0",
+      "source_member": "work/vault/raw/videos/2026-08-27/电影拍摄语言-六条抖音/01-电影感构图/从十一个方面入手，拍出电影感构图 #电影感 #电影构图 分别是-校对转写/文案稿.txt",
+      "reason": "exact original transcript; literal # filename was previously misread as anchor"
+    },
+    {
+      "path": "knowledge_snapshot/vault/raw/videos/2026-08-27/电影拍摄语言-六条抖音/02-九种景别/拍出电影感画面，从这九个景别入手 #电影感 #景别 分别是大远景-校对转写/文案稿.txt",
+      "sha256": "4530c454ea455f22fc6fb9a5ed2c8adc157318ed4c569268beba90bfe9acd96d",
+      "bytes": 2737,
+      "source": "libfile_571c8b8874208191af637d15c93fe4fd@0",
+      "source_member": "work/vault/raw/videos/2026-08-27/电影拍摄语言-六条抖音/02-九种景别/拍出电影感画面，从这九个景别入手 #电影感 #景别 分别是大远景-校对转写/文案稿.txt",
+      "reason": "exact original transcript; literal # filename was previously misread as anchor"
     }
   ]
 }

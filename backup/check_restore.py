@@ -8,6 +8,16 @@ VAULT = ROOT / 'knowledge_snapshot' / 'vault'
 os.environ['MSB_VAULT_ROOT'] = str(VAULT)
 sys.path[:0] = [str(ROOT), str(ROOT / 'scripts')]
 
+def resolve_snapshot_reference(target):
+    """Prefer exact filenames (including literal #); only then treat # as anchor."""
+    exact = VAULT / target
+    if exact.exists(): return exact
+    parts = target.split('#')
+    for stop in range(len(parts)-1, 0, -1):
+        candidate = VAULT / '#'.join(parts[:stop])
+        if candidate.exists(): return candidate
+    return VAULT / parts[0]
+
 def verify():
     manifest = json.loads((ROOT / 'backup/source_manifest.json').read_text())
     errors = []
@@ -45,6 +55,19 @@ def verify():
     for template in sorted(set(templates)):
         if not (VAULT / 'wiki/reference/提示词模板' / template).is_file():
             errors.append('missing runtime asset template: ' + template)
+    refs = json.loads((ROOT / 'backup/knowledge_references.json').read_text())
+    for ref in refs:
+        if ref['status'].startswith('included'):
+            target = ref['resolved']
+            if not resolve_snapshot_reference(target).exists():
+                errors.append('missing included reference: ' + target)
+    literal = [x['target'] for x in refs if 'literal filename #' in x['status']]
+    for target in literal:
+        if resolve_snapshot_reference(target) != VAULT / target:
+            errors.append('literal # filename regression: ' + target)
+        if resolve_snapshot_reference(target + '#test-heading') != VAULT / target:
+            # A fragment on a filename containing # requires longest existing prefix.
+            errors.append('literal filename plus anchor regression: ' + target)
     audit = runpy.run_path(str(ROOT / 'scripts/audit-knowledge-entrypoints.py'))['audit'](ROOT, VAULT)
     errors.extend(audit.get('errors', []))
     result = {'ok': not errors, 'scope': 'historical source + pinned project knowledge, not latest production',

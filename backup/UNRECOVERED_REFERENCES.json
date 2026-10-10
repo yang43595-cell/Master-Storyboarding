@@ -14,12 +14,6 @@
     },
     {
       "source": "wiki/sources/AI视频导演级打光方法-刺猬星球AI.md",
-      "target": "raw/videos/2026-08-27/AI视频光线质感-刺猬星球AI",
-      "resolved": "raw/videos/2026-08-27/AI视频光线质感-刺猬星球AI",
-      "status": "unavailable or illustrative reference"
-    },
-    {
-      "source": "wiki/sources/AI视频导演级打光方法-刺猬星球AI.md",
       "target": "raw/videos/2026-08-27/AI视频光线质感-刺猬星球AI/小白必看！如何用光线提升AI视频质感？ 很多人做AI视频只知道写人物和场景却忽略了真正决定画面质.mp4",
       "resolved": "raw/videos/2026-08-27/AI视频光线质感-刺猬星球AI/小白必看！如何用光线提升AI视频质感？ 很多人做AI视频只知道写人物和场景却忽略了真正决定画面质.mp4",
       "status": "unavailable or illustrative reference"
@@ -34,12 +28,6 @@
       "source": "wiki/sources/AI视频导演级打光方法-刺猬星球AI.md",
       "target": "raw/videos/2026-08-27/AI视频光线质感-刺猬星球AI/补充资料_光线成就电影感.txt",
       "resolved": "raw/videos/2026-08-27/AI视频光线质感-刺猬星球AI/补充资料_光线成就电影感.txt",
-      "status": "unavailable or illustrative reference"
-    },
-    {
-      "source": "wiki/sources/AI视频八种电影级打光-一帆.md",
-      "target": "raw/videos/2026-08-27/AI视频光影技巧-一帆老师",
-      "resolved": "raw/videos/2026-08-27/AI视频光影技巧-一帆老师",
       "status": "unavailable or illustrative reference"
     },
     {
@@ -61,12 +49,6 @@
       "status": "unavailable or illustrative reference"
     },
     {
-      "source": "wiki/sources/电影感构图-十一个维度.md",
-      "target": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/01-电影感构图/从十一个方面入手，拍出电影感构图 #电影感 #电影构图 分别是-校对转写/文案稿.txt",
-      "resolved": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/01-电影感构图/从十一个方面入手，拍出电影感构图",
-      "status": "unavailable or illustrative reference"
-    },
-    {
       "source": "wiki/sources/电影镜头角度-角度全解析.md",
       "target": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/05-镜头角度/电影角度的终极指南，镜头角度全解析包括仰拍、俯拍、垂直仰拍.mp4",
       "resolved": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/05-镜头角度/电影角度的终极指南，镜头角度全解析包括仰拍、俯拍、垂直仰拍.mp4",
@@ -75,12 +57,6 @@
     {
       "source": "wiki/sources/电影感景别-九种景别.md",
       "target": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/02-九种景别/拍出电影感画面，从这九个景别入手 #电影感 #景别 分别是大远景.mp4",
-      "resolved": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/02-九种景别/拍出电影感画面，从这九个景别入手",
-      "status": "unavailable or illustrative reference"
-    },
-    {
-      "source": "wiki/sources/电影感景别-九种景别.md",
-      "target": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/02-九种景别/拍出电影感画面，从这九个景别入手 #电影感 #景别 分别是大远景-校对转写/文案稿.txt",
       "resolved": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/02-九种景别/拍出电影感画面，从这九个景别入手",
       "status": "unavailable or illustrative reference"
     },
@@ -94,5 +70,20 @@
   "production_evidence_gaps": [
     "L3 scale-continuity original R03/R01 production source and approval/cancellation records are not fully available in the restored package; similarly named newer project files are not substitutes"
   ],
-  "original_production_git": "6120d39965f530da489e1756c2e6dc9cd6392c57 and dirty tree not recovered"
+  "original_production_git": "6120d39965f530da489e1756c2e6dc9cd6392c57 and dirty tree not recovered",
+  "corrected_reference_classification": {
+    "restored_exact_transcripts": [
+      "raw/videos/2026-08-27/电影拍摄语言-六条抖音/01-电影感构图/从十一个方面入手，拍出电影感构图 #电影感 #电影构图 分别是-校对转写/文案稿.txt",
+      "raw/videos/2026-08-27/电影拍摄语言-六条抖音/02-九种景别/拍出电影感画面，从这九个景别入手 #电影感 #景别 分别是大远景-校对转写/文案稿.txt"
+    ],
+    "directory_navigation_not_missing_files": [
+      "raw/videos/2026-08-27/AI视频光线质感-刺猬星球AI",
+      "raw/videos/2026-08-27/AI视频光影技巧-一帆老师"
+    ],
+    "remaining_missing_files": 10,
+    "remaining_types": {
+      "original_tutorial_videos": 8,
+      "supplementary_documents": 2
+    }
+  }
 }
