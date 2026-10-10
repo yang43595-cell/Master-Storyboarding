@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "skill": "storyboard-director",
+  "topics": [
+    "ai-storyboard",
+    "visual-anchor",
+    "image-continuity",
+    "character-realism",
+    "pov"
+  ],
+  "professional_methods": [
+    {
+      "id": "VISUAL-SUPPLEMENT-METHOD",
+      "path": "projects/Master-Storyboarding/应用知识/图片资产/视觉补充方法.md",
+      "binding_status": "user_confirmed",
+      "applies_when": "本 Skill 判断静态视觉缺口、参考覆盖与状态继承时",
+      "requires": {
+        "skill": "storyboard-director"
+      }
+    },
+    {
+      "id": "IMAGE-CONTINUITY-METHOD",
+      "path": "projects/Master-Storyboarding/应用知识/图片资产/图片连续性方法.md",
+      "binding_status": "user_confirmed",
+      "applies_when": "本 Skill 处理资产或视觉补充参考的连续性时",
+      "requires": {
+        "skill": "storyboard-director"
+      }
+    }
+  ]
+}

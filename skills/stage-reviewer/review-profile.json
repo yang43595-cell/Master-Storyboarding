@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "skill": "stage-reviewer",
+  "skill_contract_checks": [
+    {"id": "CONTRACT-TRIGGER", "text": "仅在用户明确要求独立审核时启动；普通检查由当前对话自查并修改，不自动派空白审核者；已授权独立审核的复审回原审核者，不用自查冒充独立结论"},
+    {"id": "CONTRACT-BOUNDARY", "text": "职责、输入、输出及只读硬禁区明确且不包含路由、批准或候选修改"},
+    {"id": "CONTRACT-REFERENCES", "text": "SKILL.md 引用的本地规则、模块和清单均真实存在且可达"},
+    {"id": "CONTRACT-LAYERS", "text": "Skill 合同审查与生产候选产物审查被明确分开"}
+  ],
+  "production_artifact_checks": [
+    {"id": "REVIEW-EVIDENCE", "text": "轻审每项发现使用 check_id、target、evidence、impact，复审核对未决项与声明改动；仅正式留档使用稳定 B-ID、基线实算 diff 和逐 ID 回复。两种模式都核对直接证据换版事实，由原审核者判断实际影响，不带全部历史、不无证据新增标准"},
+    {"id": "REVIEW-CONCLUSION", "text": "结论仅为通过、有条件通过或不通过，且有条件通过列明需用户接受的问题"},
+    {"id": "REVIEW-READONLY", "text": "审核未修改候选、未路由下一阶段、未写批准事实"},
+    {"id": "REVIEW-VISUAL", "text": "图片仅做技术与引用检查，视觉质量明确留给用户终审"}
+  ]
+}

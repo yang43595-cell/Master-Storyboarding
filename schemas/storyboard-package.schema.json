@@ -1,0 +1,604 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://master-storyboarding.local/schemas/storyboard-package.schema.json",
+  "title": "storyboard-package 4.0",
+  "description": "通用紧凑导演合同：场景公共设定加逐镜决定，保留连续摄影状态与准确对白片段。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project_id",
+    "revision",
+    "status",
+    "human_readable_path",
+    "source_narrative",
+    "source_paragraph_ids",
+    "source_dialogue_ids",
+    "source_asset_requirement_ids",
+    "director_rules",
+    "scenes",
+    "asset_gaps",
+    "open_questions",
+    "timing_basis"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "4.0"
+    },
+    "project_id": {
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "revision": {
+      "type": "string",
+      "pattern": "^R[0-9]{2,}$"
+    },
+    "status": {
+      "enum": [
+        "candidate",
+        "blocked",
+        "confirmed",
+        "superseded",
+        "rejected"
+      ]
+    },
+    "human_readable_path": {
+      "$ref": "#/$defs/pathString"
+    },
+    "source_narrative": {
+      "$ref": "#/$defs/artifactRef"
+    },
+    "source_paragraph_ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/paragraphId"
+      }
+    },
+    "source_dialogue_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/dialogueId"
+      }
+    },
+    "source_asset_requirement_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/assetId"
+      }
+    },
+    "director_rules": {
+      "$ref": "#/$defs/directorRules"
+    },
+    "scenes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/scene"
+      }
+    },
+    "asset_gaps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/assetGap"
+      }
+    },
+    "open_questions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/nonEmptyString"
+      }
+    },
+    "timing_basis": {
+      "$ref": "#/$defs/timingBasis"
+    }
+  },
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "pathString": {
+      "type": "string",
+      "minLength": 3
+    },
+    "paragraphId": {
+      "type": "string",
+      "pattern": "^STP-[A-Z0-9-]+$"
+    },
+    "dialogueId": {
+      "type": "string",
+      "pattern": "^DLG-[A-Z0-9-]+$"
+    },
+    "assetId": {
+      "type": "string",
+      "pattern": "^AST-[A-Z0-9-]+$"
+    },
+    "shotId": {
+      "type": "string",
+      "pattern": "^S[0-9]{2,}[A-Z]?-[0-9]{3,}$"
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifact_id",
+        "logical_id",
+        "revision",
+        "path"
+      ],
+      "properties": {
+        "artifact_id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "logical_id": {
+          "const": "narrative.package"
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^R[0-9]{2,}$"
+        },
+        "path": {
+          "$ref": "#/$defs/pathString"
+        }
+      }
+    },
+    "directorRules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "aspect_and_exhibition",
+        "narrative_viewpoint",
+        "camera_principle",
+        "editing_rhythm",
+        "light_color_intent",
+        "sound_principle",
+        "technical_constraint_status"
+      ],
+      "properties": {
+        "aspect_and_exhibition": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "narrative_viewpoint": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "camera_principle": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "editing_rhythm": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "light_color_intent": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "sound_principle": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "technical_constraint_status": {
+          "enum": [
+            "unknown_director_intent_only",
+            "partial_constraints",
+            "shooting_constraints_confirmed"
+          ]
+        }
+      }
+    },
+    "scene": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scene_id",
+        "source_paragraph_ids",
+        "dramatic_goal",
+        "start_state",
+        "change",
+        "end_state",
+        "space_rules",
+        "shots",
+        "audiovisual_flow",
+        "defaults"
+      ],
+      "properties": {
+        "scene_id": {
+          "type": "string",
+          "pattern": "^S[0-9]{2,}[A-Z]?$"
+        },
+        "source_paragraph_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/paragraphId"
+          }
+        },
+        "dramatic_goal": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "start_state": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "change": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "end_state": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "space_rules": {
+          "$ref": "#/$defs/spaceRules"
+        },
+        "shots": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/shot"
+          }
+        },
+        "audiovisual_flow": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "defaults": {
+          "$ref": "#/$defs/sceneDefaults"
+        }
+      }
+    },
+    "spaceRules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "axis",
+        "screen_direction",
+        "subject_positions",
+        "key_objects",
+        "directional_anchors",
+        "light_source",
+        "sound_base"
+      ],
+      "properties": {
+        "axis": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "screen_direction": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "subject_positions": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "key_objects": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "directional_anchors": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "light_source": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "sound_base": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "shot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "shot_id",
+        "source_paragraph_ids",
+        "source_dialogue_ids",
+        "source_asset_requirement_ids",
+        "purpose",
+        "audio",
+        "cut",
+        "camera",
+        "take",
+        "rhythm"
+      ],
+      "properties": {
+        "shot_id": {
+          "$ref": "#/$defs/shotId"
+        },
+        "source_paragraph_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/paragraphId"
+          }
+        },
+        "source_dialogue_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/dialogueId"
+          }
+        },
+        "source_asset_requirement_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/assetId"
+          }
+        },
+        "purpose": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "audio": {
+          "$ref": "#/$defs/audio"
+        },
+        "cut": {
+          "$ref": "#/$defs/cut"
+        },
+        "camera": {
+          "$ref": "#/$defs/camera"
+        },
+        "take": {
+          "$ref": "#/$defs/take"
+        },
+        "rhythm": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "overrides": {
+          "$ref": "#/$defs/overrides"
+        }
+      }
+    },
+    "audio": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dialogue",
+        "sfx"
+      ],
+      "properties": {
+        "dialogue": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/dialoguePlacement"
+          }
+        },
+        "sfx": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        }
+      }
+    },
+    "dialoguePlacement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dialogue_id",
+        "speaker_id",
+        "text",
+        "presentation"
+      ],
+      "properties": {
+        "delivery": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "可选声音表演说明；保留本片段的语气及跨镜延续，不混入对白原文。"
+        },
+        "dialogue_id": {
+          "$ref": "#/$defs/dialogueId"
+        },
+        "presentation": {
+          "enum": [
+            "SYNC",
+            "OFFSCREEN",
+            "NARRATION",
+            "PLAYBACK"
+          ]
+        },
+        "timing_basis": {
+          "$ref": "#/$defs/timingBasis"
+        },
+        "text": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "speaker_id": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "timingBasis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "source_type",
+        "source_path",
+        "source_field"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "authoritative",
+            "not_evaluable"
+          ]
+        },
+        "source_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_field": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "cut": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entry",
+        "exit",
+        "trigger",
+        "information_handoff"
+      ],
+      "properties": {
+        "entry": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "exit": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "trigger": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "information_handoff": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "assetGap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gap_id",
+        "source_paragraph_ids",
+        "affected_shot_ids",
+        "related_asset_ids",
+        "missing_information",
+        "impact",
+        "return_required"
+      ],
+      "properties": {
+        "gap_id": {
+          "type": "string",
+          "pattern": "^GAP-ASSET-[A-Z0-9-]+$"
+        },
+        "source_paragraph_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/paragraphId"
+          }
+        },
+        "affected_shot_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/shotId"
+          }
+        },
+        "related_asset_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/assetId"
+          }
+        },
+        "missing_information": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "impact": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "return_required": {
+          "const": true
+        }
+      }
+    },
+    "sceneDefaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "light_color_intent",
+        "ambience",
+        "music"
+      ],
+      "properties": {
+        "light_color_intent": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "ambience": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "music": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        }
+      }
+    },
+    "overrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "light_color_intent": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "ambience": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "music": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        }
+      }
+    },
+    "camera": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "framing",
+        "movement",
+        "focus"
+      ],
+      "properties": {
+        "framing": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "movement": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "focus": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "take": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "process",
+        "end"
+      ],
+      "properties": {
+        "start": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "process": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "end": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    }
+  }
+}

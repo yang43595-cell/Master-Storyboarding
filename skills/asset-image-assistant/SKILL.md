@@ -1,0 +1,64 @@
+---
+name: asset-image-assistant
+description: 在叙事包确认后按已登记 AST 需求制作和核对角色、场景、道具、产品与风格图片资产，可与导演规划并行；未经授权的表外资产停止并报告，视觉质量由用户终审。
+---
+
+# 图片资产
+
+由当前执行者按 [PROJECT_RULES.md 的 Skill 执行分工](../../PROJECT_RULES.md#skill-执行分工) 执行本阶段；默认由主 agent 直接执行和自检，已明确委派时由受派执行者完成。
+
+## 入口模式
+
+- 短剧项目模式：执行下文叙事包、AST 白名单与项目资产清单流程。
+- 从资产网页接收项目需求表时，同时执行 [modules/project-web-mode.md](modules/project-web-mode.md)，仍属于项目模式；由已确认独立资产表驱动制作项，逐项确认后正式回填项目。
+- 用户明确要求跨项目独立资产库时：执行 [modules/library-mode.md](modules/library-mode.md)。这是本 Skill 的独立入口，不是另一个 Skill；资产库需求代替叙事包 AST 输入，不能伪造项目事实。按 Web 受限读取合同读取共享红线/分类指南及动态知识，并执行本 Skill 的语言审查和确认门禁。
+
+读取 `PROJECT_RULES.md`、`../_shared/knowledge-access.md`、当前 `stage_startup.md`、`../_shared/draft-lifecycle.md` 等六项共享红线（含 `../_shared/prompt-language.md`）、`modules/asset-method.md`、`references/00-asset-production-workflow.md`、`references/00a-asset-complexity-routing-guide.md`、`references/05-asset-manifest-handoff-guide.md` 与 `../../schemas/visual-asset-manifest.schema.json`。只有当前 AST 类别需要时才读取 `references/01-style-master-guide.md`（含**整片色彩统一色卡工作流**）、`references/02-character-master-guide.md`、`references/03-scene-master-guide.md` 或 `references/04-prop-product-master-guide.md` 的对应部分；**产出前必读** `../storyboard-director/references/image-continuity-hard-rules.md`（背景母版 + 多角度参考组，强制非"涉风险才读"）；涉及灯光风险时才读取 `../storyboard-planner/references/lighting-prompt-standard.md` 的对应小节；写本 Skill 提示词时必读 `../voiceover-to-video-script/references/prompt-language-hard-rules.md` 并以其为准；**产出前先 `ensure-prepared` 并命中 `modules/asset-method.md` 开头"本 Skill 产出须命中的规范"清单**。这些条件引用只提供资产实现约束，不扩大本 Skill 职责，也不加载其他阶段方法。
+
+## 专业方法适用条件
+
+人物面容替换或年龄版本复用时，执行[身份替换与年龄版本检查](modules/asset-method.md#身份替换与年龄版本)。它检查参考职责，不自行扩大图片需求。
+
+`IMAGE-CONTINUITY-METHOD` 为本 Skill 必读。分类方法按制作内容选择：风格/色卡=style，人物/服装/人物1×4=character，场景=scene，道具/产品=object。普通对话 prepare 请求中由执行者据当前 AST 设置 `asset_method_scopes` 对应键为 true，覆盖本轮全部实际类别；多类别同时设置，不凭任务关键词猜测。仅明确选定类别时排除未选分类指南，条件未知仍保守保留。新增适用本地合同在 prepare 请求的 `local_references` 列出仓库相对路径，只增加、不删除固有标准；重建 prepare 后再用 required-reference 核对，不现场补登记哈希。Web 由当前制作项与 AST 类别自动计算相同条件。逐项核对该类别方法已完整加载；未命中时不得只靠本地模板产出。
+
+## Web 与普通对话的资料入口
+
+网页两种模式均按 [Web 受限读取合同](modules/web-input-contract.md) 完整读取本轮输入，不执行上文的 stage prepare / ensure-prepared，也不要求在模型读取前登记阅读声明。上文引用的本地合同、动态知识、分类方法和模板仍全部按适用性纳入本次资料；这只替代资料准备方式，不替代输入事实、授权和确认门槛。普通对话入口仍先读取 stage_startup 与完整方法快照，按既有阅读声明和 ensure-prepared 执行。
+
+确认记录和文件存在只供机械筛选。普通对话可在同一有效上下文、同一用途复用已看过的对应输出；新的执行者或用途/版本变化必须实际查看该 AST/output。网页每次调用都是新的视觉上下文，按 Web 合同查看本次全部参考图，不能把旧调用或“已确认”当作已看图。
+
+## 输入与启动
+
+- 制作入口是已登记确认的独立资产表（`narrative.assets`）及同版 `narrative.package` 的结构化 AST 需求。当前有效状态统一由项目核心产物读取代码核验登记与采用凭据；候选文件正文可保留采用前原文，不以正文状态重复裁决。MD 与 JSON 的一致性在上游审查/采用时完成。网页读取表内必要背景和当前结构化条目，不重新从编导稿提取或解析另一份 AST。旧版未拆表项目兼容原已确认包；新版缺少登记表须返回上游。可与导演规划并行。
+- 按 PROJECT_RULES.md 的“用户调整资产图需求”，由已确认资产表及用户明确、已核对出现位置并登记的调整建立本轮有效 AST 白名单。未经授权或尚未登记的表外项停止并报告；不得自行创建、改名或扩写 AST，不把用户新增需求伪称为原叙事包事实。
+- 读取资产表的处理结论与判断依据：无需独立图和待定不进入制作；复用只选用现有素材；需要制作才准备新图。只检查判断是否缺失，不重新详细审查。历史无字段的确认包保留兼容，返修时由上游补齐。
+- 先盘点现有确认资产与真实参考，能覆盖需求时直接复用，不为走流程重复生成。
+- 用户提供视觉资产库选用包 `selection.json` 时，先读取其中图片、来源与库内确认记录，再按当前 AST 逐项核对适用范围。库内确认不等于当前项目确认；只把匹配项登记为当前项目参考或候选，正式确认仍走本 Skill 原有清单流程。资产库执行入口见 `../../scripts/visual_asset_ui/README.md`；独立收藏和照片转通用资产使用本 Skill 的独立资产库模式，不创建项目 AST，也不触发短剧生产阶段。
+- 广告产品及明确要求还原的实物必须读取实际参考 manifest/brief 并查看所需图片；参考不足时阻塞该 AST。普通剧情物品按共享 product-reference 的例外执行，无参考不单独构成阻塞，候选外观由用户确认。
+
+## 执行
+
+按“AST 白名单 → 参考盘点 → 充分覆盖与合理复杂度 → 母版/必要状态 → 技术核对 → 候选交付 → 用户确认登记”执行。普通一次配角可用单张综合参考；已判断无需独立图时只保留镜内描述，不为人物类别另建资产。环境一致性优先，默认四图是合理起点；已有覆盖充分时可少补，但须给相机变化和空间连续性留出余量，不追求临界最少。复杂度只决定如何完成已登记 AST，不产生新资产需求。
+
+每个 AST 在 `visual-asset-manifest.json` 中登记：类别、名称、状态、来源 revision、事件范围、可选镜头范围、交互、展示面、朝向、所需状态、必须继承、不可继承、真实参考、候选和确认资产。不可继承内容用于阻止身份资产继承剧情布光、表情、动作、临时污损或特定镜头构图等错误状态。
+
+生成或编辑图片前，工具和具体模型必须分别得到用户明确确认；付费或有额度成本的动作遵守项目授权门槛。默认非破坏性生成，不覆盖确认资产。
+
+## 候选与确认
+
+- 候选、待确认、确认、过期、拒绝和阻塞是不同状态。生成成功、技术检查通过或审核通过都不能把候选升级为确认。
+- Agent 检查真实路径、格式、尺寸、命名、AST 引用、参考来源和明显产品事实；不得把自身观感写成用户视觉确认。
+- 交用户审核时只提供候选文件夹绝对路径、准确文件名、对应 AST 和需要判断的视觉事项，不嵌入图片载荷。
+- 用户明确确认具体候选后，才登记 `confirmed_asset` 和确认引用；旧确认版本保留为过期或被替代，不覆盖历史文件。
+
+## 后续交接
+
+资产图确认并导出后，交接建议按项目规则指向 `storyboard-director`：先结合已确认导演稿检查复杂动作、精准表情和空间关系，按需补分镜图，之后再编写视频提示词。仅说明后续顺序，本 Skill 不自动进入或执行下一阶段。
+
+## 硬禁区
+
+- 不生产当前有效白名单之外的资产，不自行修改剧情、对白、事件、AST 需求或导演镜头；用户明确调整资产需求按项目授权分支登记，不改已确认编导正文。
+- 不把下载图、试验图、拼图、候选或技术检查通过的图片冒充确认母版。
+- 不决定下一阶段、不调用其他 Skill、不写视频模型、生成分段或视频提示词。
+
+用户明确新增、删除和恢复资产需求时，执行 PROJECT_RULES.md 的“用户调整资产图需求”。该授权分支允许按已核对出现位置加入需求表，不适用“表外一律停止”的自动推断限制；未授权的新物件仍须停止。下游读取 asset_requirement_decisions，取消项不是缺图，新增项须沿用其出现范围。

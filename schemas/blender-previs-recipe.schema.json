@@ -1,0 +1,295 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://master-storyboarding.local/schemas/blender-previs-recipe.schema.json",
+  "title": "Blender director previsualization recipe",
+  "type": "object",
+  "required": ["schema_version", "project", "environment", "actors", "camera", "outputs"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "project": {
+      "type": "object",
+      "required": ["name", "fps", "duration_seconds", "resolution"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "fps": {"type": "integer", "minimum": 1, "maximum": 120},
+        "duration_seconds": {"type": "number", "exclusiveMinimum": 0, "maximum": 300},
+        "resolution": {
+          "type": "array",
+          "prefixItems": [{"type": "integer", "minimum": 64}, {"type": "integer", "minimum": 64}],
+          "minItems": 2,
+          "maxItems": 2
+        }
+      },
+      "additionalProperties": false
+    },
+    "environment": {
+      "type": "object",
+      "required": ["preset"],
+      "properties": {
+        "preset": {"enum": ["studio", "closed_room", "bedroom", "image_relief", "structured_scene", "natural_proxy"]},
+        "reference_image": {"type": "string"},
+        "depth_map": {"type": "string"},
+        "relief_depth": {"type": "number", "minimum": 0, "maximum": 10},
+        "width": {"type": "number", "exclusiveMinimum": 0},
+        "depth": {"type": "number", "exclusiveMinimum": 0},
+        "height": {"type": "number", "exclusiveMinimum": 0},
+        "source_image": {"type": "string"},
+        "reconstruction_method": {"type": "string"},
+        "room": {
+          "type": "object",
+          "properties": {
+            "size": {"$ref": "#/$defs/vec3"},
+            "visible_evidence": {"type": "array", "items": {"type": "string"}},
+            "inferred_completion": {"type": "array", "items": {"type": "string"}},
+            "openings": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["side", "center_y", "width", "height"],
+                "properties": {
+                  "side": {"enum": ["left", "right"]},
+                  "center_y": {"type": "number"},
+                  "width": {"type": "number", "exclusiveMinimum": 0},
+                  "height": {"type": "number", "exclusiveMinimum": 0}
+                },
+                "additionalProperties": true
+              }
+            }
+          },
+          "additionalProperties": true
+        },
+        "objects": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "kind", "position", "size", "provenance"],
+            "properties": {
+              "id": {"type": "string", "minLength": 1},
+              "kind": {"enum": ["bed", "window", "curtain", "dresser", "vanity", "chair", "mirror", "portrait", "rug", "candle_cluster", "chandelier", "circular_console", "command_display", "console_bank", "arch_door", "corridor", "ceiling_panel", "wall_sconce", "planter", "floor_inlay", "proxy_box", "proxy_cylinder", "proxy_cone", "proxy_sphere", "proxy_rock", "armchair", "bench_seat", "glass_balustrade"]},
+              "position": {"$ref": "#/$defs/vec3"},
+              "size": {"$ref": "#/$defs/vec3"},
+              "rotation_degrees": {"type": "number"},
+              "count": {"type": "integer", "minimum": 1},
+              "provenance": {"enum": ["visible", "partially_visible", "inferred"]},
+              "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+              "color": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$", "description": "可选：单件覆盖色（如棕皮椅、蓝长椅、玻璃）"},
+              "emissive": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$", "description": "可选：自发光色，用于透光玻璃/屏幕/天窗等"},
+              "emissive_strength": {"type": "number", "minimum": 0, "maximum": 50}
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "actors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "role", "position"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "role": {"enum": ["generic", "princess", "maid", "butler"]},
+          "position": {"$ref": "#/$defs/vec3"},
+          "rotation_degrees": {"type": "number"},
+          "scale": {"type": "number", "exclusiveMinimum": 0},
+          "display_color": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+          "asset": {"type": "string"},
+          "human_template": {"enum": ["mpfb_neutral"]},
+          "decimate_to_faces": {"type": "integer", "minimum": 1, "description": "外来几何降面预算（面数）。导入的外部网格超过此值时降面，用于把高模撞进白盒轻量预算。"},
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["preset", "start", "duration"],
+              "allOf": [{"if": {"properties": {"preset": {"const": "look_at"}}, "required": ["preset"]}, "then": {"required": ["target"]}}],
+              "properties": {
+                "preset": {"enum": ["idle", "stand", "sit", "crouch", "bend_over", "stand_up", "walk", "run", "turn", "look_at", "hold_prop", "lie_back", "lie_side_left", "lie_side_right"]},
+                "start": {"type": "number", "minimum": 0},
+                "duration": {"type": "number", "exclusiveMinimum": 0},
+                "to": {"$ref": "#/$defs/vec3"},
+                "step_length": {"type": "number", "exclusiveMinimum": 0},
+                "motion_clip": {"type": "string", "minLength": 1},
+                "motion_steps_per_cycle": {"type": "number", "exclusiveMinimum": 0},
+                "degrees": {"type": "number"},
+                "target": {"type": "string", "minLength": 1, "pattern": "\\S"},
+                "surface_height": {"type": "number"}
+              },
+              "additionalProperties": true
+            }
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "camera": {
+      "type": "object",
+      "oneOf": [
+        {"required": ["keyframes"], "not": {"required": ["shots"]}},
+        {"required": ["shots"], "not": {"required": ["keyframes"]}}
+      ],
+      "properties": {
+        "lens_mm": {"type": "number", "minimum": 5, "maximum": 300},
+        "tracking_actor": {"type": "string", "minLength": 1},
+        "position_space": {"enum": ["world", "tracking_actor_relative"]},
+        "keyframes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["time", "position", "look_at"],
+            "properties": {
+              "time": {"type": "number", "minimum": 0},
+              "position": {"$ref": "#/$defs/vec3"},
+              "look_at": {"$ref": "#/$defs/vec3"},
+              "lens_mm": {"type": "number", "minimum": 5, "maximum": 300},
+              "cut": {"type": "boolean"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "shots": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "start", "end", "position_space", "keyframes"],
+            "properties": {
+              "id": {"type": "string", "minLength": 1},
+              "label": {"type": "string", "minLength": 1},
+              "purpose": {"type": "string", "minLength": 1},
+              "shot_size": {"type": "string", "minLength": 1},
+              "start": {"type": "number", "minimum": 0},
+              "end": {"type": "number", "exclusiveMinimum": 0},
+              "lens_mm": {"type": "number", "minimum": 5, "maximum": 300},
+              "tracking_actor": {"type": "string", "minLength": 1},
+              "position_space": {"enum": ["world", "tracking_actor_relative"]},
+              "must_include": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {"type": "string", "minLength": 1},
+                "description": "该镜画面内必须出现的对象/人物 id；verify 会按相机投影核对，用于约束景别与人物关系（白模当分镜参考时的硬约束）"
+              },
+              "subject_fill": {
+                "type": "object",
+                "required": ["min", "max"],
+                "oneOf": [{"required": ["target"], "not": {"required": ["targets"]}}, {"required": ["targets"], "not": {"required": ["target"]}}],
+                "description": "景别硬约束：单个主体或多个主体的投影并集占画幅的比例区间（横竖取较大者，0-1），verify 按本镜采样时刻核对",
+                "properties": {
+                  "target": {"type": "string", "minLength": 1},
+                  "targets": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+                  "min": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+                  "max": {"type": "number", "exclusiveMinimum": 0, "maximum": 1}
+                },
+                "additionalProperties": false
+              },
+              "keyframes": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": ["time", "position", "look_at"],
+                  "properties": {
+                    "time": {"type": "number", "minimum": 0},
+                    "position": {"$ref": "#/$defs/vec3"},
+                    "look_at": {"$ref": "#/$defs/vec3"},
+                    "lens_mm": {"type": "number", "minimum": 5, "maximum": 300}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "lighting": {"type": "object"},
+    "outputs": {
+      "type": "object",
+      "required": ["blend", "preview_video"],
+      "properties": {
+        "blend": {"type": "boolean"},
+        "preview_video": {"type": "boolean"},
+        "preview_video_shots": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1},
+          "description": "只渲染这些镜的预演视频（混合段：静态镜只出图、运镜镜才出视频）。缺省渲染整段。"
+        },
+        "preview_video_range": {
+          "type": "array",
+          "prefixItems": [{"type": "number", "minimum": 0}, {"type": "number", "exclusiveMinimum": 0}],
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "按秒限定预演视频范围（段内相对时间），用于只导运镜那几秒。"
+        },
+        "still_frames": {"type": "array", "items": {"type": "number", "minimum": 0}},
+        "reference_views": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "time", "mode", "purpose"],
+            "properties": {
+              "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+              "time": {"type": "number", "minimum": 0},
+              "mode": {"enum": ["timeline_camera", "coverage_camera"]},
+              "purpose": {"type": "string", "minLength": 1},
+              "shot_id": {"type": "string", "minLength": 1},
+              "subject_ids": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {"type": "string", "minLength": 1}
+              },
+              "orientation_actor": {"type": "string", "minLength": 1},
+              "shot_size": {
+                "enum": ["extreme_wide", "wide", "full", "medium", "medium_close", "close", "extreme_close", "insert"]
+              },
+              "view_direction": {
+                "enum": ["front", "front_left", "left", "back_left", "back", "back_right", "right", "front_right"]
+              },
+              "direction_space": {"enum": ["world", "subject"], "default": "world"},
+              "elevation": {"enum": ["low", "eye", "high", "overhead"], "default": "eye"},
+              "occlusion_policy": {"enum": ["preserve_environment", "film_set_hide_occluders"], "default": "preserve_environment"},
+              "lens_mm": {"type": "number", "minimum": 5, "maximum": 300}
+            },
+            "allOf": [
+              {
+                "if": {"properties": {"mode": {"const": "coverage_camera"}}},
+                "then": {"required": ["subject_ids", "shot_size", "view_direction"]}
+              }
+            ],
+            "additionalProperties": false
+          }
+        },
+        "actor_color_mode": {"enum": ["source", "auto"]},
+        "render_style": {"enum": ["clay", "role_colors", "textured"]},
+        "topdown": {
+          "type": "object",
+          "description": "俯视站位参考，默认只出静帧且不显示路径；视频和辅助路径需明确启用。",
+          "properties": {
+            "enabled": {"type": "boolean", "default": true},
+            "show_paths": {"type": "boolean", "default": false},
+            "video": {"type": "boolean", "default": false},
+            "still_times": {"type": "array", "items": {"type": "number", "minimum": 0}}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "vec3": {
+      "type": "array",
+      "prefixItems": [{"type": "number"}, {"type": "number"}, {"type": "number"}],
+      "minItems": 3,
+      "maxItems": 3
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "skill": "storyboard-director",
+  "skill_contract_checks": [
+    {"id": "CONTRACT-TRIGGER", "text": "导演稿与资产图确认后、视频提示词之前先检查复杂动作、精准表情和空间关系；实际补图须有具体镜头及素材缺口依据，检查不以生成失败为前提"},
+    {"id": "CONTRACT-BOUNDARY", "text": "职责、输入、输出与硬禁区明确，且不是固定分镜出图阶段"},
+    {"id": "CONTRACT-REQUEST", "text": "视觉补充请求合同锁定来源镜头、证据、唯一目标、出现/禁止/保留项与最大图片数"},
+    {"id": "CONTRACT-REUSE", "text": "先讨论跨段空间关系与参考覆盖，再讨论单镜缺口；足够时复用，建议和用户选图决定分开"},
+    {"id": "CONTRACT-RETURN", "text": "剧情、导演镜头、连续性或表外资产错误返回对应上游，不以补图掩盖"}
+  ],
+  "production_artifact_checks": [
+    {"id": "VISUAL-GAP", "text": "请求绑定确认导演包 revision 与来源镜头；补图说明缺口证据，复用说明参考覆盖，返回上游说明原因"},
+    {"id": "VISUAL-TARGET", "text": "唯一目标状态、必须出现、禁止出现、保留项与最大图片数明确；共用关系图标明适用镜头和位置变化边界，不将参考展示机位固定给全部镜头"},
+    {"id": "VISUAL-REUSE", "text": "确认资产、动作参考和产品实拍已盘点；足够时复用且没有生成新候选"},
+    {"id": "VISUAL-BOUNDARY", "text": "候选未重写剧情、导演镜头、连续性合同或 AST 需求"},
+    {"id": "VISUAL-QC", "text": "文件与引用完成技术核对，候选和确认分离，视觉质量由用户终审"},
+    {"id": "PROMPT-LANG", "text": "提示词语言合规：无 影视级/8K/4K/唯美/高级 等炫技含糊词；按本 Skill 提示词方法与知识库规范产出"},
+    {"id": "KB-COMPLIANCE", "text": "实际完整读取 VISUAL-SUPPLEMENT-METHOD、IMAGE-CONTINUITY-METHOD、当前适用动态知识、本地合同与模板，说明缺口、参考覆盖与状态继承判断的具体依据；按 prepare、实际阅读声明与 ensure-prepared 流程执行，资料齐全不代表理解，不能仅靠回链或旧提示词产出。"}
+  ]
+}

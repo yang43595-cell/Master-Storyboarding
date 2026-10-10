@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "skill": "creative-director",
+  "topics": ["narrative", "dialogue", "hook", "subtitle-rhythm", "catchphrase", "douyin-language", "pov", "character-performance", "continuity", "theme", "violence", "directing", "ending", "character-arc", "agency"],
+  "forbidden_knowledge_terms": ["景别", "机位", "构图", "运镜", "切点", "镜头表", "镜头轮", "镜头点", "剪辑点", "字幕节奏", "逐句时间窗", "口型动作", "提示词", "模型选择", "生成路径"],
+  "professional_methods": [
+    {
+      "id": "CREATIVE-DIRECTION-METHOD",
+      "path": "projects/Master-Storyboarding/应用知识/编导/编导方法.md",
+      "binding_status": "user_confirmed",
+      "applies_when": "根据需求、原始内容和用户约束形成或局部返修编导稿与叙事包时",
+      "requires": {"skill": "creative-director"}
+    }
+  ]
+}

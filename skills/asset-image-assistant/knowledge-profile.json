@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0",
+  "skill": "asset-image-assistant",
+  "topics": [
+    "character-consistency",
+    "image-continuity",
+    "spatial-continuity",
+    "product-reference",
+    "asset-driven-video",
+    "image-prompt",
+    "prompt-pollution"
+  ],
+  "professional_methods": [
+    {
+      "id": "IMAGE-CONTINUITY-METHOD",
+      "path": "projects/Master-Storyboarding/应用知识/图片资产/图片连续性方法.md",
+      "binding_status": "user_confirmed",
+      "applies_when": "本 Skill 处理资产或视觉补充参考的连续性时",
+      "requires": {
+        "skill": "asset-image-assistant"
+      }
+    },
+    {
+      "id": "ASSET-STYLE-METHOD",
+      "path": "projects/Master-Storyboarding/应用知识/图片资产/风格资产方法.md",
+      "binding_status": "user_confirmed",
+      "applies_when": "当前资产制作项需要风格资产方法时；只实现本次需求",
+      "requires": {
+        "skill": "asset-image-assistant",
+        "request.asset_method_scopes.style": true
+      }
+    },
+    {
+      "id": "ASSET-CHARACTER-METHOD",
+      "path": "projects/Master-Storyboarding/应用知识/图片资产/人物资产方法.md",
+      "binding_status": "user_confirmed",
+      "applies_when": "当前资产制作项需要人物资产方法时；只实现本次需求",
+      "requires": {
+        "skill": "asset-image-assistant",
+        "request.asset_method_scopes.character": true
+      }
+    },
+    {
+      "id": "ASSET-SCENE-METHOD",
+      "path": "projects/Master-Storyboarding/应用知识/图片资产/场景资产方法.md",
+      "binding_status": "user_confirmed",
+      "applies_when": "当前资产制作项需要场景资产方法时；只实现本次需求",
+      "requires": {
+        "skill": "asset-image-assistant",
+        "request.asset_method_scopes.scene": true
+      }
+    },
+    {
+      "id": "ASSET-OBJECT-METHOD",
+      "path": "projects/Master-Storyboarding/应用知识/图片资产/道具与产品资产方法.md",
+      "binding_status": "user_confirmed",
+      "applies_when": "当前资产制作项需要道具与产品资产方法时；只实现本次需求",
+      "requires": {
+        "skill": "asset-image-assistant",
+        "request.asset_method_scopes.object": true
+      }
+    }
+  ]
+}
