@@ -1,3 +1,9 @@
+# Provenance for expanded historical backup, 2026-10-10
+
+The sections below first describe the earlier source-only snapshot. They are historical, not the scope of this expanded branch. This branch adds explicitly required execution documents/examples/registries and a project-scoped knowledge snapshot, without changing application source or adopting a production baseline. The current scope, exact sources, exclusions and limitations are in README.md and backup/source_manifest.json. The formerly excluded product brief is now included; media remains external with hashes. Candidate methods and experiences were not promoted. No original Vault, production main, or prior backup branch was changed.
+
+## Earlier source-only provenance (preserved as history)
+
 # Recovery provenance
 
 This branch is a source-only backup candidate, not a restored production project.

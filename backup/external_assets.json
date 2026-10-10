@@ -1,0 +1,104 @@
+[
+  {
+    "vault_path": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/视频参考/开盒.mp4",
+    "library_file_id": "libfile_571c8b8874208191af637d15c93fe4fd",
+    "archive_member": "work/vault/projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/视频参考/开盒.mp4",
+    "sha256": "c7729f90334429b74d57a072dd2d5d1ced138edef26e5bd2651a14ff56a3158a",
+    "bytes": 4926816,
+    "status": "available in verified Library archive; intentionally outside Git"
+  },
+  {
+    "vault_path": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/视频参考/挤白管.mp4",
+    "library_file_id": "libfile_571c8b8874208191af637d15c93fe4fd",
+    "archive_member": "work/vault/projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/视频参考/挤白管.mp4",
+    "sha256": "4d96a7779f2308814105d7bafc4dd73f079f2ee18a4ebcc1fc720ab187113049",
+    "bytes": 4965704,
+    "status": "available in verified Library archive; intentionally outside Git"
+  },
+  {
+    "vault_path": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/视频参考/挤金管.mp4",
+    "library_file_id": "libfile_571c8b8874208191af637d15c93fe4fd",
+    "archive_member": "work/vault/projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/视频参考/挤金管.mp4",
+    "sha256": "8a5ed77ed37d2183021c77feac75a712ed027fcccba65f2da99725d63c5298d6",
+    "bytes": 4975065,
+    "status": "available in verified Library archive; intentionally outside Git"
+  },
+  {
+    "vault_path": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/视频参考/掰白管.mp4",
+    "library_file_id": "libfile_571c8b8874208191af637d15c93fe4fd",
+    "archive_member": "work/vault/projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/视频参考/掰白管.mp4",
+    "sha256": "4e830cb4ba2c9c8ada1e2fd180c3d9fa053a5f5afdb06efe12c7c847998d4372",
+    "bytes": 2372419,
+    "status": "available in verified Library archive; intentionally outside Git"
+  },
+  {
+    "vault_path": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/视频参考/掰金管.mp4",
+    "library_file_id": "libfile_571c8b8874208191af637d15c93fe4fd",
+    "archive_member": "work/vault/projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/视频参考/掰金管.mp4",
+    "sha256": "7bcf2b029b09155ab4834e1f5e8eeecbea36b110c14135034642915ca44d02a6",
+    "bytes": 2379523,
+    "status": "available in verified Library archive; intentionally outside Git"
+  },
+  {
+    "vault_path": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/视频参考/搅拌发泡.mp4",
+    "library_file_id": "libfile_571c8b8874208191af637d15c93fe4fd",
+    "archive_member": "work/vault/projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/视频参考/搅拌发泡.mp4",
+    "sha256": "93f4e4331332f8c0b88d117eed52ed425356246e2d742673782c3b2911efe996",
+    "bytes": 11903743,
+    "status": "available in verified Library archive; intentionally outside Git"
+  },
+  {
+    "repo_path": "assets/product-references/creator-polishing-mask-2/20260518-162859.png",
+    "library_file_id": "libfile_9a507399ab9481918eb5bc1366f0c000",
+    "library_version": 1,
+    "archive_member": "candidate/assets/product-references/creator-polishing-mask-2/20260518-162859.png",
+    "sha256": "5068c644d0e9adb0e67e689767988491276f4031602f23d561048202bc89713b",
+    "bytes": 139828,
+    "status": "available in verified Library archive; intentionally outside Git"
+  },
+  {
+    "repo_path": "assets/product-references/creator-polishing-mask-2/creator-silicone-mask-brush.png",
+    "library_file_id": "libfile_9a507399ab9481918eb5bc1366f0c000",
+    "library_version": 1,
+    "archive_member": "candidate/assets/product-references/creator-polishing-mask-2/creator-silicone-mask-brush.png",
+    "sha256": "b8c4a9b598129f2294866aa1acad079ba27eee461d5ac2a84694b8f0e0ef9b89",
+    "bytes": 1480965,
+    "status": "available in verified Library archive; intentionally outside Git"
+  },
+  {
+    "repo_path": "assets/product-references/creator-polishing-mask-2/3.3刘洋 N测小气泡抛光(1).png",
+    "library_file_id": "libfile_9a507399ab9481918eb5bc1366f0c000",
+    "library_version": 1,
+    "archive_member": "candidate/assets/product-references/creator-polishing-mask-2/3.3刘洋 N测小气泡抛光(1).png",
+    "sha256": "dfa6b422068eafa3eeb03baee9148282933574e1f1dadccf7e387417356621b6",
+    "bytes": 9953088,
+    "status": "available in verified Library archive; intentionally outside Git"
+  },
+  {
+    "repo_path": "assets/product-references/creator-polishing-mask-2/creator-glass-mask-bowl.png",
+    "library_file_id": "libfile_9a507399ab9481918eb5bc1366f0c000",
+    "library_version": 1,
+    "archive_member": "candidate/assets/product-references/creator-polishing-mask-2/creator-glass-mask-bowl.png",
+    "sha256": "6074e2f1ed5113cf8cbbb6755d545330fe9afa9ed4f5b3551dea1e000763b4ac",
+    "bytes": 422266,
+    "status": "available in verified Library archive; intentionally outside Git"
+  },
+  {
+    "repo_path": "assets/product-references/creator-polishing-mask-2/20260518-100605.png",
+    "library_file_id": "libfile_9a507399ab9481918eb5bc1366f0c000",
+    "library_version": 1,
+    "archive_member": "candidate/assets/product-references/creator-polishing-mask-2/20260518-100605.png",
+    "sha256": "cada2ea9093aff8ba3f884d9ba7c89c4f04f72b50aaccb346274846cf2ccb807",
+    "bytes": 1152238,
+    "status": "available in verified Library archive; intentionally outside Git"
+  },
+  {
+    "repo_path": "assets/product-references/creator-polishing-mask-2/20260518-163543.png",
+    "library_file_id": "libfile_9a507399ab9481918eb5bc1366f0c000",
+    "library_version": 1,
+    "archive_member": "candidate/assets/product-references/creator-polishing-mask-2/20260518-163543.png",
+    "sha256": "d5552a1acece53ec0fd86c4c1a8fa97f9379b14b5f46518a443a8249b92c217b",
+    "bytes": 376264,
+    "status": "available in verified Library archive; intentionally outside Git"
+  }
+]

@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "runtime_root": ".master-storyboarding/scene-topology",
+  "components": [
+    {
+      "id": "depth-anything-v2-small",
+      "purpose": "single_image_depth",
+      "model": "depth-anything/Depth-Anything-V2-Small-hf",
+      "source": "https://github.com/DepthAnything/Depth-Anything-V2",
+      "license": "Apache-2.0"
+    },
+    {
+      "id": "grounding-dino-tiny",
+      "purpose": "open_vocabulary_anchor_detection",
+      "model": "IDEA-Research/grounding-dino-tiny",
+      "source": "https://github.com/IDEA-Research/GroundingDINO",
+      "license": "Apache-2.0"
+    },
+    {
+      "id": "geocalib",
+      "purpose": "single_image_camera_calibration",
+      "model": "cvg/GeoCalib",
+      "source": "https://github.com/cvg/GeoCalib",
+      "weights_source": "https://github.com/cvg/GeoCalib/releases/download/v1.0/geocalib-pinhole.tar",
+      "weights_mirror": "https://huggingface.co/ysmao/pyscenekit/blob/main/geocalib/geocalib-pinhole.tar",
+      "weights_sha256": "86d6aeacd8bbd974c59ce39f61854e00d36911c732ad89be471476fd708722ac",
+      "code_license": "Apache-2.0",
+      "weights_license": "CC-BY-4.0"
+    }
+  ]
+}

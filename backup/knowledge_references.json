@@ -1,0 +1,3878 @@
+[
+  {
+    "source": "projects/Master-Storyboarding/应用知识/导演规划/导演规划方法.md",
+    "target": "wiki/concepts/03-AI生成与视频/ai人物活人感",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai人物活人感.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/导演规划/导演规划方法.md",
+    "target": "wiki/concepts/03-AI生成与视频/ai人物反向表演",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai人物反向表演.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/导演规划/导演规划方法.md",
+    "target": "wiki/sources/去除人物ai味-活人感",
+    "resolved": "wiki/sources/去除人物ai味-活人感.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/导演规划/导演规划方法.md",
+    "target": "wiki/sources/ai人物反向表演-刺猬星球ai",
+    "resolved": "wiki/sources/ai人物反向表演-刺猬星球ai.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/导演规划/导演规划方法.md",
+    "target": "wiki/concepts/02-镜头与剪辑/景别理论",
+    "resolved": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/导演规划/导演规划方法.md",
+    "target": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法",
+    "resolved": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/导演规划/导演规划方法.md",
+    "target": "wiki/sources/电影感镜头运动-运镜全解析",
+    "resolved": "wiki/sources/电影感镜头运动-运镜全解析.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/提示词基础方法.md",
+    "target": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法",
+    "resolved": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/提示词基础方法.md",
+    "target": "wiki/sources/ai提示词过期-刺猬星球ai",
+    "resolved": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/提示词基础方法.md",
+    "target": "wiki/sources/seedance模型选择-一帆老师",
+    "resolved": "wiki/sources/seedance模型选择-一帆老师.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/提示词基础方法.md",
+    "target": "wiki/concepts/03-AI生成与视频/视频提示词骨架与素材职责方法",
+    "resolved": "wiki/concepts/03-AI生成与视频/视频提示词骨架与素材职责方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/提示词基础方法.md",
+    "target": "C:/Users/LIUYANG/Documents/Master-Storyboarding/skills/voiceover-to-video-script/SKILL.md",
+    "resolved": "repo:skills/voiceover-to-video-script/SKILL.md",
+    "status": "repository reference"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/提示词基础方法.md",
+    "target": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "resolved": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/提示词基础方法.md",
+    "target": "wiki/sources/seedance模型选择-一帆老师.md",
+    "resolved": "wiki/sources/seedance模型选择-一帆老师.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法.md",
+    "target": "projects/Master-Storyboarding/应用知识/视频提示词/提示词基础方法",
+    "resolved": "projects/Master-Storyboarding/应用知识/视频提示词/提示词基础方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法.md",
+    "target": "wiki/sources/ai提示词过期-刺猬星球ai",
+    "resolved": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法.md",
+    "target": "wiki/sources/seedance模型选择-一帆老师",
+    "resolved": "wiki/sources/seedance模型选择-一帆老师.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法.md",
+    "target": "wiki/concepts/03-AI生成与视频/视频提示词骨架与素材职责方法",
+    "resolved": "wiki/concepts/03-AI生成与视频/视频提示词骨架与素材职责方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法.md",
+    "target": "C:/Users/LIUYANG/Documents/Master-Storyboarding/skills/voiceover-to-video-script/SKILL.md",
+    "resolved": "repo:skills/voiceover-to-video-script/SKILL.md",
+    "status": "repository reference"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法.md",
+    "target": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "resolved": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法.md",
+    "target": "wiki/sources/seedance模型选择-一帆老师.md",
+    "resolved": "wiki/sources/seedance模型选择-一帆老师.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/Seedance 2.5 受限表达与控制引用.md",
+    "target": "projects/Master-Storyboarding/应用知识/视频提示词/提示词基础方法",
+    "resolved": "projects/Master-Storyboarding/应用知识/视频提示词/提示词基础方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/Seedance 2.5 受限表达与控制引用.md",
+    "target": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法",
+    "resolved": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/Seedance 2.5 受限表达与控制引用.md",
+    "target": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法",
+    "resolved": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/Seedance 2.5 受限表达与控制引用.md",
+    "target": "wiki/concepts/03-AI生成与视频/ai视频生成方法论#VGEN-002 历史定位",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/Seedance 2.5 受限表达与控制引用.md",
+    "target": "wiki/sources/seedance模型选择-一帆老师",
+    "resolved": "wiki/sources/seedance模型选择-一帆老师.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/Seedance 2.5 受限表达与控制引用.md",
+    "target": "wiki/sources/seedance模型选择-一帆老师.md",
+    "resolved": "wiki/sources/seedance模型选择-一帆老师.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/方法.md",
+    "target": "视频参考/索引",
+    "resolved": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/视频参考/索引.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/方法.md",
+    "target": "wiki/sources/公主剧情面膜擦除提示词-用户提供",
+    "resolved": "wiki/sources/公主剧情面膜擦除提示词-用户提供.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/方法.md",
+    "target": "raw/videos/动作参考/来源记录.md",
+    "resolved": "raw/videos/动作参考/来源记录.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/方法.md",
+    "target": "wiki/sources/造物者抛光面膜-动作参考视频.md",
+    "resolved": "wiki/sources/造物者抛光面膜-动作参考视频.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/方法.md",
+    "target": "wiki/sources/公主剧情面膜擦除提示词-用户提供.md",
+    "resolved": "wiki/sources/公主剧情面膜擦除提示词-用户提供.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/图片资产/视觉补充方法.md",
+    "target": "projects/Master-Storyboarding/应用知识/图片资产/图片连续性方法",
+    "resolved": "projects/Master-Storyboarding/应用知识/图片资产/图片连续性方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/经验/经验索引.md",
+    "target": "projects/Master-Storyboarding/经验/跨片段尺度连续性/缩放角色的共享尺度参照缺口",
+    "resolved": "projects/Master-Storyboarding/经验/跨片段尺度连续性/缩放角色的共享尺度参照缺口.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/经验/经验索引.md",
+    "target": "projects/Master-Storyboarding/经验/2026-10-03-消失的公主-s03-030-白模与分镜图复盘",
+    "resolved": "projects/Master-Storyboarding/经验/2026-10-03-消失的公主-s03-030-白模与分镜图复盘.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/经验/经验索引.md",
+    "target": "projects/Master-Storyboarding/2026-09-15-第三层经验整理记录#二次复核：实际增量与清理|逐项清理依据",
+    "resolved": "projects/Master-Storyboarding/2026-09-15-第三层经验整理记录.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/经验/经验索引.md",
+    "target": "archive/项目经验原始复盘/Master-Storyboarding/索引|原始复盘归档",
+    "resolved": "archive/项目经验原始复盘/Master-Storyboarding/索引.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "projects/Master-Storyboarding/经验/经验索引.md",
+    "target": "projects/Master-Storyboarding/三层知识分流与写入规则|存放与采用边界",
+    "resolved": "projects/Master-Storyboarding/三层知识分流与写入规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/经验/跨片段尺度连续性/缩放角色的共享尺度参照缺口.md",
+    "target": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法",
+    "resolved": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/经验/跨片段尺度连续性/缩放角色的共享尺度参照缺口.md",
+    "target": "projects/Master-Storyboarding/应用知识/图片资产/视觉补充方法",
+    "resolved": "projects/Master-Storyboarding/应用知识/图片资产/视觉补充方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/经验/跨片段尺度连续性/缩放角色的共享尺度参照缺口.md",
+    "target": "projects/Master-Storyboarding/应用知识/图片资产/图片连续性方法",
+    "resolved": "projects/Master-Storyboarding/应用知识/图片资产/图片连续性方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/经验/跨片段尺度连续性/缩放角色的共享尺度参照缺口.md",
+    "target": "projects/Master-Storyboarding/三层知识分流与写入规则",
+    "resolved": "projects/Master-Storyboarding/三层知识分流与写入规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/经验/跨片段尺度连续性/缩放角色的共享尺度参照缺口.md",
+    "target": "projects/Master-Storyboarding/经验/经验索引",
+    "resolved": "projects/Master-Storyboarding/经验/经验索引.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/三层知识分流与写入规则.md",
+    "target": "projects/Master-Storyboarding/经验/经验索引",
+    "resolved": "projects/Master-Storyboarding/经验/经验索引.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/三层知识分流与写入规则.md",
+    "target": "wiki/reference/知识生命周期与冲突处理",
+    "resolved": "wiki/reference/知识生命周期与冲突处理.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/reference/提示词模板/1x4三视图模板提示词.md",
+    "target": "知识库目录职责与项目边界",
+    "resolved": "wiki/reference/知识库目录职责与项目边界.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/reference/提示词模板/1x4三视图模板提示词.md",
+    "target": "concepts/03-AI生成与视频/ai人物活人感|AI 人物活人感",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai人物活人感.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/reference/提示词模板/环境一致性模板提示词.md",
+    "target": "concepts/02-镜头与剪辑/图片连续性规则|图片连续性规则",
+    "resolved": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/reference/提示词模板/环境一致性模板提示词.md",
+    "target": "concepts/03-AI生成与视频/ai分镜设计|AI 分镜设计",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/reference/提示词模板/环境一致性模板提示词.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论|AI 生视频方法论",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/reference/提示词模板/环境一致性模板提示词.md",
+    "target": "wiki/concepts/02-镜头与剪辑/图片连续性规则",
+    "resolved": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/reference/提示词模板/环境一致性模板提示词.md",
+    "target": "wiki/concepts/03-AI生成与视频/ai分镜设计",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/视频参考/索引.md",
+    "target": "raw/videos/动作参考/来源记录",
+    "resolved": "raw/videos/动作参考/来源记录.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/短剧电影叙事法则.md",
+    "target": "concepts/01-叙事与对白/第一视角拟人叙事",
+    "resolved": "wiki/concepts/01-叙事与对白/第一视角拟人叙事.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/短剧电影叙事法则.md",
+    "target": "concepts/01-叙事与对白/短视频对白打磨",
+    "resolved": "wiki/concepts/01-叙事与对白/短视频对白打磨.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/短剧电影叙事法则.md",
+    "target": "sources/短剧-电影叙事规则",
+    "resolved": "wiki/sources/短剧-电影叙事规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/短剧电影叙事法则.md",
+    "target": "sources/LLM叙事规划能力研究",
+    "resolved": "wiki/sources/LLM叙事规划能力研究.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/短剧电影叙事法则.md",
+    "target": "sources/短剧-电影叙事规则",
+    "resolved": "wiki/sources/短剧-电影叙事规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/短剧电影叙事法则.md",
+    "target": "sources/LLM叙事规划能力研究",
+    "resolved": "wiki/sources/LLM叙事规划能力研究.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/短剧电影叙事法则.md",
+    "target": "sources/LLM长故事一致性研究",
+    "resolved": "wiki/sources/LLM长故事一致性研究.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/短剧电影叙事法则.md",
+    "target": "sources/Collective-Critics创意故事生成研究",
+    "resolved": "wiki/sources/Collective-Critics创意故事生成研究.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/短剧电影叙事法则.md",
+    "target": "sources/LitBench创意写作评估研究",
+    "resolved": "wiki/sources/LitBench创意写作评估研究.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/短剧电影叙事法则.md",
+    "target": "sources/短剧-导演审查方法论",
+    "resolved": "wiki/sources/短剧-导演审查方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/短剧电影叙事法则.md",
+    "target": "wiki/sources/短剧-电影叙事规则",
+    "resolved": "wiki/sources/短剧-电影叙事规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/短剧电影叙事法则.md",
+    "target": "sources/LLM叙事规划能力研究",
+    "resolved": "wiki/sources/LLM叙事规划能力研究.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/短剧电影叙事法则.md",
+    "target": "sources/Collective-Critics创意故事生成研究",
+    "resolved": "wiki/sources/Collective-Critics创意故事生成研究.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/短剧电影叙事法则.md",
+    "target": "sources/LitBench创意写作评估研究",
+    "resolved": "wiki/sources/LitBench创意写作评估研究.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/短剧电影叙事法则.md",
+    "target": "sources/LLM长故事一致性研究",
+    "resolved": "wiki/sources/LLM长故事一致性研究.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/短剧电影叙事法则.md",
+    "target": "sources/短剧-导演审查方法论",
+    "resolved": "wiki/sources/短剧-导演审查方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/短视频对白打磨.md",
+    "target": "concepts/01-叙事与对白/短剧电影叙事法则",
+    "resolved": "wiki/concepts/01-叙事与对白/短剧电影叙事法则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/短视频对白打磨.md",
+    "target": "concepts/01-叙事与对白/第一视角拟人叙事",
+    "resolved": "wiki/concepts/01-叙事与对白/第一视角拟人叙事.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/短视频对白打磨.md",
+    "target": "sources/短剧-对白打磨方法论",
+    "resolved": "wiki/sources/短剧-对白打磨方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/短视频对白打磨.md",
+    "target": "synthesis/抖音台词方法论",
+    "resolved": "wiki/synthesis/抖音台词方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/短视频对白打磨.md",
+    "target": "synthesis/产品视频创作策略",
+    "resolved": "wiki/synthesis/产品视频创作策略.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/短视频对白打磨.md",
+    "target": "sources/短剧-对白打磨方法论",
+    "resolved": "wiki/sources/短剧-对白打磨方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/短视频对白打磨.md",
+    "target": "sources/短剧-对白打磨方法论",
+    "resolved": "wiki/sources/短剧-对白打磨方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/短视频对白打磨.md",
+    "target": "sources/短剧-对白打磨方法论",
+    "resolved": "wiki/sources/短剧-对白打磨方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/短视频对白打磨.md",
+    "target": "sources/短剧-对白打磨方法论",
+    "resolved": "wiki/sources/短剧-对白打磨方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/短视频对白打磨.md",
+    "target": "wiki/sources/短剧-对白打磨方法论",
+    "resolved": "wiki/sources/短剧-对白打磨方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/第一视角拟人叙事.md",
+    "target": "concepts/01-叙事与对白/短剧电影叙事法则",
+    "resolved": "wiki/concepts/01-叙事与对白/短剧电影叙事法则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/第一视角拟人叙事.md",
+    "target": "sources/短剧-第一视角拟人模式",
+    "resolved": "wiki/sources/短剧-第一视角拟人模式.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/第一视角拟人叙事.md",
+    "target": "synthesis/产品视频创作策略",
+    "resolved": "wiki/synthesis/产品视频创作策略.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/第一视角拟人叙事.md",
+    "target": "sources/短剧-第一视角拟人模式",
+    "resolved": "wiki/sources/短剧-第一视角拟人模式.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/第一视角拟人叙事.md",
+    "target": "sources/短剧-第一视角拟人模式",
+    "resolved": "wiki/sources/短剧-第一视角拟人模式.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/第一视角拟人叙事.md",
+    "target": "wiki/sources/短剧-第一视角拟人模式",
+    "resolved": "wiki/sources/短剧-第一视角拟人模式.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/01-叙事与对白/第一视角拟人叙事.md",
+    "target": "sources/短剧-电影叙事规则",
+    "resolved": "wiki/sources/短剧-电影叙事规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "../../sources/AI导演Agent专业影视分镜调研包|AI导演Agent专业影视分镜调研包",
+    "resolved": "wiki/sources/AI导演Agent专业影视分镜调研包.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "wiki/concepts/03-AI生成与视频/ai视频生成方法论#^msb-kb-light-001|灯光物理与连续性合同",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "wiki/sources/AI视频导演级打光方法-刺猬星球AI",
+    "resolved": "wiki/sources/AI视频导演级打光方法-刺猬星球AI.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "wiki/sources/ARRI-Lighting-Handbook",
+    "resolved": "wiki/sources/ARRI-Lighting-Handbook.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "wiki/sources/Kodak-Essential-Reference-Guide-Lighting",
+    "resolved": "wiki/sources/Kodak-Essential-Reference-Guide-Lighting.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "wiki/sources/Adobe-Video-Lighting-Basics",
+    "resolved": "wiki/sources/Adobe-Video-Lighting-Basics.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "连续性剪辑",
+    "resolved": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "景别理论",
+    "resolved": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "图片连续性规则",
+    "resolved": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "../03-AI生成与视频/ai分镜设计|AI 分镜设计",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "../../sources/AI导演Agent专业影视分镜调研包|来源与转译记录",
+    "resolved": "wiki/sources/AI导演Agent专业影视分镜调研包.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/AI视频导演级打光方法-刺猬星球AI",
+    "resolved": "wiki/sources/AI视频导演级打光方法-刺猬星球AI.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/AI视频八种电影级打光-一帆",
+    "resolved": "wiki/sources/AI视频八种电影级打光-一帆.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/ARRI-Lighting-Handbook",
+    "resolved": "wiki/sources/ARRI-Lighting-Handbook.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/Adobe-Video-Lighting-Basics",
+    "resolved": "wiki/sources/Adobe-Video-Lighting-Basics.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/AI导演Agent专业影视分镜调研包",
+    "resolved": "wiki/sources/AI导演Agent专业影视分镜调研包.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/爱不是牺牲-导演分镜三方审查意见",
+    "resolved": "wiki/sources/爱不是牺牲-导演分镜三方审查意见.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/AI导演Agent专业影视分镜调研包",
+    "resolved": "wiki/sources/AI导演Agent专业影视分镜调研包.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/短剧-导演审查方法论",
+    "resolved": "wiki/sources/短剧-导演审查方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/Pitzer-电影语言关键术语",
+    "resolved": "wiki/sources/Pitzer-电影语言关键术语.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/Adobe-电影剪切类型",
+    "resolved": "wiki/sources/Adobe-电影剪切类型.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/电影分镜-分镜终极指南",
+    "resolved": "wiki/sources/电影分镜-分镜终极指南.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/AI导演Agent专业影视分镜调研包",
+    "resolved": "wiki/sources/AI导演Agent专业影视分镜调研包.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/短剧-导演审查方法论",
+    "resolved": "wiki/sources/短剧-导演审查方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/爱不是牺牲-导演分镜三方审查意见",
+    "resolved": "wiki/sources/爱不是牺牲-导演分镜三方审查意见.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/电影感构图-十一个维度",
+    "resolved": "wiki/sources/电影感构图-十一个维度.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/电影感镜头运动-运镜全解析",
+    "resolved": "wiki/sources/电影感镜头运动-运镜全解析.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/电影镜头角度-角度全解析",
+    "resolved": "wiki/sources/电影镜头角度-角度全解析.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/电影分镜-分镜终极指南",
+    "resolved": "wiki/sources/电影分镜-分镜终极指南.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/Bucknell-摄影机运动语言",
+    "resolved": "wiki/sources/Bucknell-摄影机运动语言.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/Nikon-视频Rack-Focus方法",
+    "resolved": "wiki/sources/Nikon-视频Rack-Focus方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/电影感镜头运动-运镜全解析",
+    "resolved": "wiki/sources/电影感镜头运动-运镜全解析.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/Adobe-Tracking-Shot方法",
+    "resolved": "wiki/sources/Adobe-Tracking-Shot方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/ARRI-Girls-Will-Be-Girls摄影运动案例",
+    "resolved": "wiki/sources/ARRI-Girls-Will-Be-Girls摄影运动案例.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/seedance-2.5官方发布",
+    "resolved": "wiki/sources/seedance-2.5官方发布.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/电影感镜头运动-运镜全解析",
+    "resolved": "wiki/sources/电影感镜头运动-运镜全解析.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/AI导演Agent专业影视分镜调研包",
+    "resolved": "wiki/sources/AI导演Agent专业影视分镜调研包.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/爱不是牺牲-导演分镜三方审查意见",
+    "resolved": "wiki/sources/爱不是牺牲-导演分镜三方审查意见.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/爱不是牺牲-导演分镜三方审查意见",
+    "resolved": "wiki/sources/爱不是牺牲-导演分镜三方审查意见.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/爱不是牺牲-导演分镜三方审查意见",
+    "resolved": "wiki/sources/爱不是牺牲-导演分镜三方审查意见.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/爱不是牺牲-导演分镜三方审查意见",
+    "resolved": "wiki/sources/爱不是牺牲-导演分镜三方审查意见.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/爱不是牺牲-导演分镜三方审查意见",
+    "resolved": "wiki/sources/爱不是牺牲-导演分镜三方审查意见.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/爱不是牺牲-导演分镜三方审查意见",
+    "resolved": "wiki/sources/爱不是牺牲-导演分镜三方审查意见.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/爱不是牺牲-导演分镜三方审查意见",
+    "resolved": "wiki/sources/爱不是牺牲-导演分镜三方审查意见.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "target": "sources/Master-Storyboarding旧分镜写作专业参考",
+    "resolved": "wiki/sources/Master-Storyboarding旧分镜写作专业参考.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "target": "sources/HELL-GRIND长片工作流拆解#画面内提示词（屏幕上未口播的文字）",
+    "resolved": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "target": "sources/小白AI短剧第12课-场景控制",
+    "resolved": "wiki/sources/小白AI短剧第12课-场景控制.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "target": "sources/HELL-GRIND长片工作流拆解",
+    "resolved": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "target": "sources/300万ai电影开源-higgsfield-4招",
+    "resolved": "wiki/sources/300万ai电影开源-higgsfield-4招.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "target": "sources/300万ai电影开源-higgsfield-4招",
+    "resolved": "wiki/sources/300万ai电影开源-higgsfield-4招.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "target": "sources/1300万ai电影长片工作流拆解",
+    "resolved": "wiki/sources/1300万ai电影长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "target": "sources/300万ai电影开源-higgsfield-4招",
+    "resolved": "wiki/sources/300万ai电影开源-higgsfield-4招.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "target": "sources/300万ai电影开源-higgsfield-4招",
+    "resolved": "wiki/sources/300万ai电影开源-higgsfield-4招.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "target": "concepts/02-镜头与剪辑/连续性剪辑",
+    "resolved": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "target": "concepts/03-AI生成与视频/ai分镜设计",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "target": "concepts/02-镜头与剪辑/景别理论",
+    "resolved": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "target": "sources/短剧-影视分镜规则",
+    "resolved": "wiki/sources/短剧-影视分镜规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "target": "sources/小白AI短剧第12课-场景控制",
+    "resolved": "wiki/sources/小白AI短剧第12课-场景控制.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "target": "sources/HELL-GRIND长片工作流拆解",
+    "resolved": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "target": "sources/1300万ai电影长片工作流拆解",
+    "resolved": "wiki/sources/1300万ai电影长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "target": "entities/higgsfield",
+    "resolved": "wiki/entities/higgsfield.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "target": "synthesis/ai-视频制作工作流",
+    "resolved": "wiki/synthesis/ai-视频制作工作流.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "target": "sources/短剧-影视分镜规则",
+    "resolved": "wiki/sources/短剧-影视分镜规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "target": "sources/短剧-影视分镜规则",
+    "resolved": "wiki/sources/短剧-影视分镜规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "target": "sources/小白AI短剧第12课-场景控制",
+    "resolved": "wiki/sources/小白AI短剧第12课-场景控制.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "target": "sources/HELL-GRIND长片工作流拆解",
+    "resolved": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "target": "wiki/sources/短剧-影视分镜规则",
+    "resolved": "wiki/sources/短剧-影视分镜规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "target": "sources/小白AI短剧第12课-场景控制",
+    "resolved": "wiki/sources/小白AI短剧第12课-场景控制.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "target": "sources/1300万ai电影长片工作流拆解",
+    "resolved": "wiki/sources/1300万ai电影长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "target": "sources/HELL-GRIND长片工作流拆解",
+    "resolved": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "target": "sources/300万ai电影开源-higgsfield-4招",
+    "resolved": "wiki/sources/300万ai电影开源-higgsfield-4招.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "sources/HELL-GRIND长片工作流拆解",
+    "resolved": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "sources/AI视频电影感-焦距光圈",
+    "resolved": "wiki/sources/AI视频电影感-焦距光圈.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "sources/dramaclaw-焦距景深机位运动",
+    "resolved": "wiki/sources/dramaclaw-焦距景深机位运动.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "sources/小白AI短剧第12课-场景控制",
+    "resolved": "wiki/sources/小白AI短剧第12课-场景控制.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "concepts/02-镜头与剪辑/图片连续性规则#多角度参考图组（四图场景锁定）",
+    "resolved": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "sources/seedance-提示词写法",
+    "resolved": "wiki/sources/seedance-提示词写法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "concepts/03-AI生成与视频/ai分镜设计",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "concepts/02-镜头与剪辑/连续性剪辑",
+    "resolved": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "concepts/02-镜头与剪辑/图片连续性规则",
+    "resolved": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "sources/景别参考",
+    "resolved": "wiki/sources/景别参考.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "sources/dramaclaw-焦距景深机位运动",
+    "resolved": "wiki/sources/dramaclaw-焦距景深机位运动.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "sources/AI视频电影感-焦距光圈",
+    "resolved": "wiki/sources/AI视频电影感-焦距光圈.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "sources/小白AI短剧第12课-场景控制",
+    "resolved": "wiki/sources/小白AI短剧第12课-场景控制.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "sources/HELL-GRIND长片工作流拆解",
+    "resolved": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "sources/seedance-提示词写法",
+    "resolved": "wiki/sources/seedance-提示词写法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "entities/higgsfield",
+    "resolved": "wiki/entities/higgsfield.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "entities/一帆老师",
+    "resolved": "wiki/entities/一帆老师.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "entities/刺猬星球ai",
+    "resolved": "wiki/entities/刺猬星球ai.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "sources/景别参考",
+    "resolved": "wiki/sources/景别参考.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "sources/电影感景别-九种景别",
+    "resolved": "wiki/sources/电影感景别-九种景别.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "sources/景别参考",
+    "resolved": "wiki/sources/景别参考.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "sources/景别参考",
+    "resolved": "wiki/sources/景别参考.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "sources/小白AI短剧第12课-场景控制",
+    "resolved": "wiki/sources/小白AI短剧第12课-场景控制.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "sources/电影镜头角度-角度全解析",
+    "resolved": "wiki/sources/电影镜头角度-角度全解析.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "wiki/sources/景别参考",
+    "resolved": "wiki/sources/景别参考.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "sources/ai-分镜规范",
+    "resolved": "wiki/sources/ai-分镜规范.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "sources/dramaclaw-焦距景深机位运动",
+    "resolved": "wiki/sources/dramaclaw-焦距景深机位运动.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "sources/AI视频电影感-焦距光圈",
+    "resolved": "wiki/sources/AI视频电影感-焦距光圈.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "sources/小白AI短剧第12课-场景控制",
+    "resolved": "wiki/sources/小白AI短剧第12课-场景控制.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "sources/HELL-GRIND长片工作流拆解",
+    "resolved": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "target": "sources/seedance-提示词写法",
+    "resolved": "wiki/sources/seedance-提示词写法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/超时连续事件的强制拆段衔接.md",
+    "target": "concepts/02-镜头与剪辑/连续性剪辑",
+    "resolved": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/超时连续事件的强制拆段衔接.md",
+    "target": "sources/seedance-提示词写法",
+    "resolved": "wiki/sources/seedance-提示词写法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "target": "concepts/02-镜头与剪辑/图片连续性规则#多角度参考图组（四图场景锁定）",
+    "resolved": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "target": "sources/小白AI短剧第12课-场景控制",
+    "resolved": "wiki/sources/小白AI短剧第12课-场景控制.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "target": "concepts/02-镜头与剪辑/景别理论|景别理论",
+    "resolved": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "target": "concepts/03-AI生成与视频/ai分镜设计|AI 分镜设计",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "target": "concepts/02-镜头与剪辑/图片连续性规则",
+    "resolved": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "target": "concepts/02-镜头与剪辑/段间重叠衔接",
+    "resolved": "wiki/concepts/02-镜头与剪辑/段间重叠衔接.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "target": "sources/景别参考",
+    "resolved": "wiki/sources/景别参考.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "target": "sources/短剧-影视分镜规则",
+    "resolved": "wiki/sources/短剧-影视分镜规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "target": "sources/短剧-导演审查方法论",
+    "resolved": "wiki/sources/短剧-导演审查方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "target": "sources/景别参考",
+    "resolved": "wiki/sources/景别参考.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "target": "sources/ai-分镜规范",
+    "resolved": "wiki/sources/ai-分镜规范.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "target": "sources/Pitzer-电影语言关键术语",
+    "resolved": "wiki/sources/Pitzer-电影语言关键术语.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "target": "sources/小白AI短剧第12课-场景控制",
+    "resolved": "wiki/sources/小白AI短剧第12课-场景控制.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "target": "sources/Vlog转场-十三种方法",
+    "resolved": "wiki/sources/Vlog转场-十三种方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "target": "wiki/sources/景别参考",
+    "resolved": "wiki/sources/景别参考.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "target": "sources/ai-分镜规范",
+    "resolved": "wiki/sources/ai-分镜规范.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "target": "sources/小白AI短剧第12课-场景控制",
+    "resolved": "wiki/sources/小白AI短剧第12课-场景控制.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "target": "sources/Pitzer-电影语言关键术语",
+    "resolved": "wiki/sources/Pitzer-电影语言关键术语.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai人物反向表演.md",
+    "target": "concepts/03-AI生成与视频/ai人物活人感",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai人物活人感.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai人物反向表演.md",
+    "target": "sources/ai人物反向表演-刺猬星球ai",
+    "resolved": "wiki/sources/ai人物反向表演-刺猬星球ai.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai人物反向表演.md",
+    "target": "concepts/03-AI生成与视频/ai人物活人感",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai人物活人感.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai人物反向表演.md",
+    "target": "concepts/03-AI生成与视频/提示词污染",
+    "resolved": "wiki/concepts/03-AI生成与视频/提示词污染.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai人物反向表演.md",
+    "target": "concepts/03-AI生成与视频/seedance提示词结构.evolving",
+    "resolved": "wiki/concepts/03-AI生成与视频/seedance提示词结构.evolving.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai人物反向表演.md",
+    "target": "concepts/02-镜头与剪辑/连续性剪辑",
+    "resolved": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai人物反向表演.md",
+    "target": "entities/seedance",
+    "resolved": "wiki/entities/seedance.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai人物反向表演.md",
+    "target": "sources/ai人物反向表演-刺猬星球ai",
+    "resolved": "wiki/sources/ai人物反向表演-刺猬星球ai.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai人物反向表演.md",
+    "target": "wiki/sources/ai人物反向表演-刺猬星球ai",
+    "resolved": "wiki/sources/ai人物反向表演-刺猬星球ai.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai人物活人感.md",
+    "target": "sources/去除人物ai味-活人感",
+    "resolved": "wiki/sources/去除人物ai味-活人感.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai人物活人感.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai人物活人感.md",
+    "target": "concepts/03-AI生成与视频/ai人物反向表演",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai人物反向表演.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai人物活人感.md",
+    "target": "sources/ai人物反向表演-刺猬星球ai",
+    "resolved": "wiki/sources/ai人物反向表演-刺猬星球ai.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai人物活人感.md",
+    "target": "synthesis/ai-视频制作工作流",
+    "resolved": "wiki/synthesis/ai-视频制作工作流.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai人物活人感.md",
+    "target": "sources/去除人物ai味-活人感",
+    "resolved": "wiki/sources/去除人物ai味-活人感.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai人物活人感.md",
+    "target": "sources/去除人物ai味-活人感",
+    "resolved": "wiki/sources/去除人物ai味-活人感.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "sources/dramaclaw-焦距景深机位运动",
+    "resolved": "wiki/sources/dramaclaw-焦距景深机位运动.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "sources/小白AI短剧第12课-场景控制",
+    "resolved": "wiki/sources/小白AI短剧第12课-场景控制.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "concepts/02-镜头与剪辑/图片连续性规则#多角度参考图组（四图场景锁定）",
+    "resolved": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "sources/HELL-GRIND长片工作流拆解",
+    "resolved": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "concepts/02-镜头与剪辑/图片连续性规则#角色与空间一致性（长片级）",
+    "resolved": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "sources/HELL-GRIND长片工作流拆解",
+    "resolved": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "sources/HELL-GRIND长片工作流拆解",
+    "resolved": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "sources/HELL-GRIND长片工作流拆解",
+    "resolved": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "concepts/02-镜头与剪辑/景别理论",
+    "resolved": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "concepts/02-镜头与剪辑/连续性剪辑",
+    "resolved": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "concepts/01-叙事与对白/短剧电影叙事法则",
+    "resolved": "wiki/concepts/01-叙事与对白/短剧电影叙事法则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "concepts/02-镜头与剪辑/图片连续性规则",
+    "resolved": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "concepts/02-镜头与剪辑/段间重叠衔接",
+    "resolved": "wiki/concepts/02-镜头与剪辑/段间重叠衔接.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "sources/ai-分镜规范",
+    "resolved": "wiki/sources/ai-分镜规范.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "sources/景别参考",
+    "resolved": "wiki/sources/景别参考.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "sources/短剧-影视分镜规则",
+    "resolved": "wiki/sources/短剧-影视分镜规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "sources/dramaclaw-焦距景深机位运动",
+    "resolved": "wiki/sources/dramaclaw-焦距景深机位运动.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "sources/HELL-GRIND长片工作流拆解",
+    "resolved": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "entities/higgsfield",
+    "resolved": "wiki/entities/higgsfield.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "synthesis/ai-视频制作工作流",
+    "resolved": "wiki/synthesis/ai-视频制作工作流.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "synthesis/产品视频创作策略",
+    "resolved": "wiki/synthesis/产品视频创作策略.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "sources/ai-分镜规范",
+    "resolved": "wiki/sources/ai-分镜规范.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "sources/HELL-GRIND长片工作流拆解",
+    "resolved": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "wiki/sources/ai-分镜规范",
+    "resolved": "wiki/sources/ai-分镜规范.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "sources/景别参考",
+    "resolved": "wiki/sources/景别参考.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "sources/ai-视频方法论",
+    "resolved": "wiki/sources/ai-视频方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "sources/dramaclaw-焦距景深机位运动",
+    "resolved": "wiki/sources/dramaclaw-焦距景深机位运动.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "sources/小白AI短剧第12课-场景控制",
+    "resolved": "wiki/sources/小白AI短剧第12课-场景控制.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "target": "sources/HELL-GRIND长片工作流拆解",
+    "resolved": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "projects/Master-Storyboarding/应用知识/视频提示词/索引|视频提示词专业方法入口",
+    "resolved": "projects/Master-Storyboarding/应用知识/视频提示词/索引.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "projects/Master-Storyboarding/应用知识/视频提示词/索引|视频提示词专业方法入口",
+    "resolved": "projects/Master-Storyboarding/应用知识/视频提示词/索引.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/seedance模型选择-一帆老师",
+    "resolved": "wiki/sources/seedance模型选择-一帆老师.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "projects/Master-Storyboarding/应用知识/视频提示词/Seedance 2.5 受限表达与控制引用",
+    "resolved": "projects/Master-Storyboarding/应用知识/视频提示词/Seedance 2.5 受限表达与控制引用.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/HELL-GRIND长片工作流拆解",
+    "resolved": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/ai电影大拆解-刺猬星球ai",
+    "resolved": "wiki/sources/ai电影大拆解-刺猬星球ai.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/300万ai电影开源-higgsfield-4招",
+    "resolved": "wiki/sources/300万ai电影开源-higgsfield-4招.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "concepts/03-AI生成与视频/ai模型选择分工.evolving",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai模型选择分工.evolving.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/1300万ai电影长片工作流拆解",
+    "resolved": "wiki/sources/1300万ai电影长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/300万ai电影开源-higgsfield-4招",
+    "resolved": "wiki/sources/300万ai电影开源-higgsfield-4招.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "entities/即梦",
+    "resolved": "wiki/entities/即梦.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "entities/seedance",
+    "resolved": "wiki/entities/seedance.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "entities/higgsfield",
+    "resolved": "wiki/entities/higgsfield.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "entities/minimax",
+    "resolved": "wiki/entities/minimax.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "concepts/03-AI生成与视频/ai分镜设计",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "entities/seedance|Seedance 2.0",
+    "resolved": "wiki/entities/seedance.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "concepts/02-镜头与剪辑/段间重叠衔接",
+    "resolved": "wiki/concepts/02-镜头与剪辑/段间重叠衔接.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "concepts/01-叙事与对白/短视频对白打磨",
+    "resolved": "wiki/concepts/01-叙事与对白/短视频对白打磨.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "concepts/03-AI生成与视频/ai人物活人感",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai人物活人感.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "concepts/03-AI生成与视频/提示词污染",
+    "resolved": "wiki/concepts/03-AI生成与视频/提示词污染.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "concepts/03-AI生成与视频/色卡统一风格",
+    "resolved": "wiki/concepts/03-AI生成与视频/色卡统一风格.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/ai-视频方法论",
+    "resolved": "wiki/sources/ai-视频方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/短剧-视频执行与质检",
+    "resolved": "wiki/sources/短剧-视频执行与质检.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/去除人物ai味-活人感",
+    "resolved": "wiki/sources/去除人物ai味-活人感.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/HELL-GRIND长片工作流拆解",
+    "resolved": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/1300万ai电影长片工作流拆解",
+    "resolved": "wiki/sources/1300万ai电影长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/告别AI画面翻车-3招写对提示词",
+    "resolved": "wiki/sources/告别AI画面翻车-3招写对提示词.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/seedance-提示词写法",
+    "resolved": "wiki/sources/seedance-提示词写法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/seedance-2.5官方发布",
+    "resolved": "wiki/sources/seedance-2.5官方发布.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/seedance模型选择-一帆老师",
+    "resolved": "wiki/sources/seedance模型选择-一帆老师.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/seedance-提示词写法",
+    "resolved": "wiki/sources/seedance-提示词写法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "concepts/03-AI生成与视频/seedance提示词结构.evolving",
+    "resolved": "wiki/concepts/03-AI生成与视频/seedance提示词结构.evolving.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/统一AI视频画面风格-色卡",
+    "resolved": "wiki/sources/统一AI视频画面风格-色卡.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/seedance模型选择-一帆老师",
+    "resolved": "wiki/sources/seedance模型选择-一帆老师.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "projects/Master-Storyboarding/应用知识/视频提示词/Seedance 2.5 受限表达与控制引用",
+    "resolved": "projects/Master-Storyboarding/应用知识/视频提示词/Seedance 2.5 受限表达与控制引用.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "concepts/03-AI生成与视频/ai视频模型选择.evolving",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频模型选择.evolving.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "synthesis/ai-视频制作工作流",
+    "resolved": "wiki/synthesis/ai-视频制作工作流.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "synthesis/产品视频创作策略",
+    "resolved": "wiki/synthesis/产品视频创作策略.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "concepts/04-口播与广告/口播对标素材库",
+    "resolved": "wiki/concepts/04-口播与广告/口播对标素材库.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "synthesis/变强起点/表达技法综合",
+    "resolved": "wiki/synthesis/变强起点/表达技法综合.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/AI视频光线提升质感-刺猬星球AI",
+    "resolved": "wiki/sources/AI视频光线提升质感-刺猬星球AI.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/AI视频八种光影技巧-一帆老师",
+    "resolved": "wiki/sources/AI视频八种光影技巧-一帆老师.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "wiki/sources/ai-视频方法论",
+    "resolved": "wiki/sources/ai-视频方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/seedance-官方手册",
+    "resolved": "wiki/sources/seedance-官方手册.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/去除人物ai味-活人感",
+    "resolved": "wiki/sources/去除人物ai味-活人感.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/小白AI短剧第12课-场景控制",
+    "resolved": "wiki/sources/小白AI短剧第12课-场景控制.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/HELL-GRIND长片工作流拆解",
+    "resolved": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/1300万ai电影长片工作流拆解",
+    "resolved": "wiki/sources/1300万ai电影长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/告别AI画面翻车-3招写对提示词",
+    "resolved": "wiki/sources/告别AI画面翻车-3招写对提示词.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/统一AI视频画面风格-色卡",
+    "resolved": "wiki/sources/统一AI视频画面风格-色卡.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/seedance-提示词写法",
+    "resolved": "wiki/sources/seedance-提示词写法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/seedance-2.5官方发布",
+    "resolved": "wiki/sources/seedance-2.5官方发布.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/300万ai电影开源-higgsfield-4招",
+    "resolved": "wiki/sources/300万ai电影开源-higgsfield-4招.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/seedance模型选择-一帆老师",
+    "resolved": "wiki/sources/seedance模型选择-一帆老师.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/ai提示词过期-刺猬星球ai",
+    "resolved": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "target": "sources/ai电影大拆解-刺猬星球ai",
+    "resolved": "wiki/sources/ai电影大拆解-刺猬星球ai.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词污染.md",
+    "target": "concepts/03-AI生成与视频/提示词过期",
+    "resolved": "wiki/concepts/03-AI生成与视频/提示词过期.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词污染.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词污染.md",
+    "target": "concepts/03-AI生成与视频/ai人物活人感",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai人物活人感.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词污染.md",
+    "target": "sources/去除人物ai味-活人感",
+    "resolved": "wiki/sources/去除人物ai味-活人感.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词污染.md",
+    "target": "entities/YIQI玩AI",
+    "resolved": "wiki/entities/YIQI玩AI.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词污染.md",
+    "target": "sources/小白AI短剧第12课-场景控制",
+    "resolved": "wiki/sources/小白AI短剧第12课-场景控制.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词污染.md",
+    "target": "concepts/03-AI生成与视频/ai分镜设计",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词污染.md",
+    "target": "sources/ai提示词过期-刺猬星球ai",
+    "resolved": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词污染.md",
+    "target": "concepts/03-AI生成与视频/提示词过期",
+    "resolved": "wiki/concepts/03-AI生成与视频/提示词过期.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词污染.md",
+    "target": "sources/告别AI画面翻车-3招写对提示词",
+    "resolved": "wiki/sources/告别AI画面翻车-3招写对提示词.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词污染.md",
+    "target": "sources/ai提示词过期-刺猬星球ai",
+    "resolved": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词污染.md",
+    "target": "sources/告别AI画面翻车-3招写对提示词",
+    "resolved": "wiki/sources/告别AI画面翻车-3招写对提示词.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词污染.md",
+    "target": "sources/Google-Imagen负面提示词官方说明",
+    "resolved": "wiki/sources/Google-Imagen负面提示词官方说明.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词污染.md",
+    "target": "sources/Dreamina-Seedance2.5负面提示词官方说明",
+    "resolved": "wiki/sources/Dreamina-Seedance2.5负面提示词官方说明.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词污染.md",
+    "target": "sources/ai提示词过期-刺猬星球ai",
+    "resolved": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词污染.md",
+    "target": "wiki/sources/告别AI画面翻车-3招写对提示词",
+    "resolved": "wiki/sources/告别AI画面翻车-3招写对提示词.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词污染.md",
+    "target": "sources/Google-Imagen负面提示词官方说明",
+    "resolved": "wiki/sources/Google-Imagen负面提示词官方说明.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词污染.md",
+    "target": "sources/Dreamina-Seedance2.5负面提示词官方说明",
+    "resolved": "wiki/sources/Dreamina-Seedance2.5负面提示词官方说明.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词污染.md",
+    "target": "sources/ai提示词过期-刺猬星球ai",
+    "resolved": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/06-系统与决策/未确认稿与废弃产物生命周期规则.md",
+    "target": "sources/用户确认-未确认稿生命周期规则-2026-08-26",
+    "resolved": "wiki/sources/用户确认-未确认稿生命周期规则-2026-08-26.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/06-系统与决策/未确认稿与废弃产物生命周期规则.md",
+    "target": "wiki/reference/Master-Storyboarding/知识接入与生产反馈规则",
+    "resolved": "wiki/reference/Master-Storyboarding/知识接入与生产反馈规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/06-系统与决策/未确认稿与废弃产物生命周期规则.md",
+    "target": "sources/用户确认-未确认稿生命周期规则-2026-08-26",
+    "resolved": "wiki/sources/用户确认-未确认稿生命周期规则-2026-08-26.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/06-系统与决策/未确认稿与废弃产物生命周期规则.md",
+    "target": "wiki/sources/用户确认-未确认稿生命周期规则-2026-08-26",
+    "resolved": "wiki/sources/用户确认-未确认稿生命周期规则-2026-08-26.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/动画科普分镜图最小状态帧组.md",
+    "target": "sources/Master-Storyboarding科普动画关键帧分层复盘",
+    "resolved": "wiki/sources/Master-Storyboarding科普动画关键帧分层复盘.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/动画科普分镜图最小状态帧组.md",
+    "target": "sources/Master-Storyboarding科普动画关键帧分层复盘",
+    "resolved": "wiki/sources/Master-Storyboarding科普动画关键帧分层复盘.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/synthesis/抖音台词方法论.md",
+    "target": "concepts/01-叙事与对白/短视频对白打磨",
+    "resolved": "wiki/concepts/01-叙事与对白/短视频对白打磨.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/synthesis/抖音台词方法论.md",
+    "target": "concepts/04-口播与广告/口播对标素材库",
+    "resolved": "wiki/concepts/04-口播与广告/口播对标素材库.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/synthesis/抖音台词方法论.md",
+    "target": "synthesis/变强起点/表达技法综合",
+    "resolved": "wiki/synthesis/变强起点/表达技法综合.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/synthesis/抖音台词方法论.md",
+    "target": "sources/短剧-导演审查方法论",
+    "resolved": "wiki/sources/短剧-导演审查方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/synthesis/抖音台词方法论.md",
+    "target": "sources/短剧-电影叙事规则",
+    "resolved": "wiki/sources/短剧-电影叙事规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/synthesis/抖音台词方法论.md",
+    "target": "sources/短剧-对白打磨方法论",
+    "resolved": "wiki/sources/短剧-对白打磨方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/synthesis/抖音台词方法论.md",
+    "target": "sources/短剧-导演审查方法论",
+    "resolved": "wiki/sources/短剧-导演审查方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/synthesis/抖音台词方法论.md",
+    "target": "sources/短剧-对白打磨方法论",
+    "resolved": "wiki/sources/短剧-对白打磨方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/synthesis/抖音台词方法论.md",
+    "target": "wiki/sources/短剧-对白打磨方法论",
+    "resolved": "wiki/sources/短剧-对白打磨方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/synthesis/抖音台词方法论.md",
+    "target": "sources/短剧-电影叙事规则",
+    "resolved": "wiki/sources/短剧-电影叙事规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/synthesis/抖音台词方法论.md",
+    "target": "sources/短剧-导演审查方法论",
+    "resolved": "wiki/sources/短剧-导演审查方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/synthesis/抖音台词方法论.md",
+    "target": "sources/短剧-影视分镜规则",
+    "resolved": "wiki/sources/短剧-影视分镜规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/synthesis/抖音热梗速记2026.md",
+    "target": "synthesis/产品视频创作策略",
+    "resolved": "wiki/synthesis/产品视频创作策略.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/synthesis/抖音热梗速记2026.md",
+    "target": "concepts/04-口播与广告/口播对标素材库",
+    "resolved": "wiki/concepts/04-口播与广告/口播对标素材库.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/去除人物ai味-活人感.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/去除人物ai味-活人感.md",
+    "target": "synthesis/ai-视频制作工作流",
+    "resolved": "wiki/synthesis/ai-视频制作工作流.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/去除人物ai味-活人感.md",
+    "target": "concepts/03-AI生成与视频/ai人物活人感",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai人物活人感.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ai人物反向表演-刺猬星球ai.md",
+    "target": "concepts/03-AI生成与视频/ai人物活人感",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai人物活人感.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ai人物反向表演-刺猬星球ai.md",
+    "target": "concepts/03-AI生成与视频/提示词污染",
+    "resolved": "wiki/concepts/03-AI生成与视频/提示词污染.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ai人物反向表演-刺猬星球ai.md",
+    "target": "concepts/03-AI生成与视频/seedance提示词结构.evolving",
+    "resolved": "wiki/concepts/03-AI生成与视频/seedance提示词结构.evolving.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/ai人物反向表演-刺猬星球ai.md",
+    "target": "entities/刺猬星球ai",
+    "resolved": "wiki/entities/刺猬星球ai.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/ai人物反向表演-刺猬星球ai.md",
+    "target": "concepts/02-镜头与剪辑/连续性剪辑",
+    "resolved": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ai人物反向表演-刺猬星球ai.md",
+    "target": "entities/seedance",
+    "resolved": "wiki/entities/seedance.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/ai人物反向表演-刺猬星球ai.md",
+    "target": "entities/即梦",
+    "resolved": "wiki/entities/即梦.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/电影感镜头运动-运镜全解析.md",
+    "target": "concepts/02-镜头与剪辑/专业影视分镜设计与执行方法",
+    "resolved": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/电影感镜头运动-运镜全解析.md",
+    "target": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/04-镜头运动/电影感运镜的终极指南，镜头运动全解析头运动包括推拉摇移跟升.mp4",
+    "resolved": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/04-镜头运动/电影感运镜的终极指南，镜头运动全解析头运动包括推拉摇移跟升.mp4",
+    "status": "unavailable or illustrative reference"
+  },
+  {
+    "source": "wiki/sources/电影感镜头运动-运镜全解析.md",
+    "target": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/04-镜头运动/电影感运镜的终极指南，镜头运动全解析头运动包括推拉摇移跟升-校对转写/文案稿.txt",
+    "resolved": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/04-镜头运动/电影感运镜的终极指南，镜头运动全解析头运动包括推拉摇移跟升-校对转写/文案稿.txt",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "target": "concepts/03-AI生成与视频/提示词污染",
+    "resolved": "wiki/concepts/03-AI生成与视频/提示词污染.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "target": "concepts/03-AI生成与视频/提示词过期",
+    "resolved": "wiki/concepts/03-AI生成与视频/提示词过期.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "target": "entities/刺猬星球ai",
+    "resolved": "wiki/entities/刺猬星球ai.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "target": "concepts/03-AI生成与视频/ai人物活人感",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai人物活人感.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "target": "sources/ai人物反向表演-刺猬星球ai",
+    "resolved": "wiki/sources/ai人物反向表演-刺猬星球ai.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "target": "entities/seedance",
+    "resolved": "wiki/entities/seedance.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "target": "entities/即梦",
+    "resolved": "wiki/entities/即梦.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "target": "sources/AI视频光线提升质感-刺猬星球AI",
+    "resolved": "wiki/sources/AI视频光线提升质感-刺猬星球AI.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论|AI 视频生成方法论",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "target": "sources/seedance-官方手册",
+    "resolved": "wiki/sources/seedance-官方手册.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "target": "sources/seedance-2.5官方发布",
+    "resolved": "wiki/sources/seedance-2.5官方发布.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论|AI 视频生成方法论",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/seedance模型选择-一帆老师.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/seedance模型选择-一帆老师.md",
+    "target": "sources/seedance-2.5官方发布",
+    "resolved": "wiki/sources/seedance-2.5官方发布.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/seedance模型选择-一帆老师.md",
+    "target": "concepts/03-AI生成与视频/ai模型选择分工.evolving",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai模型选择分工.evolving.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/seedance模型选择-一帆老师.md",
+    "target": "concepts/03-AI生成与视频/ai视频模型选择.evolving",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频模型选择.evolving.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/seedance模型选择-一帆老师.md",
+    "target": "entities/一帆老师",
+    "resolved": "wiki/entities/一帆老师.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/seedance模型选择-一帆老师.md",
+    "target": "sources/告别AI画面翻车-3招写对提示词",
+    "resolved": "wiki/sources/告别AI画面翻车-3招写对提示词.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/seedance模型选择-一帆老师.md",
+    "target": "sources/AI视频电影感-焦距光圈",
+    "resolved": "wiki/sources/AI视频电影感-焦距光圈.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/seedance模型选择-一帆老师.md",
+    "target": "sources/seedance-2.5官方发布",
+    "resolved": "wiki/sources/seedance-2.5官方发布.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/seedance模型选择-一帆老师.md",
+    "target": "entities/minimax",
+    "resolved": "wiki/entities/minimax.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/seedance模型选择-一帆老师.md",
+    "target": "entities/一帆老师",
+    "resolved": "wiki/entities/一帆老师.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/seedance模型选择-一帆老师.md",
+    "target": "entities/seedance",
+    "resolved": "wiki/entities/seedance.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/seedance模型选择-一帆老师.md",
+    "target": "entities/minimax",
+    "resolved": "wiki/entities/minimax.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/seedance模型选择-一帆老师.md",
+    "target": "entities/即梦",
+    "resolved": "wiki/entities/即梦.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/seedance模型选择-一帆老师.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/seedance模型选择-一帆老师.md",
+    "target": "concepts/03-AI生成与视频/ai视频模型选择.evolving",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频模型选择.evolving.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/seedance模型选择-一帆老师.md",
+    "target": "concepts/03-AI生成与视频/ai分镜设计",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/seedance模型选择-一帆老师.md",
+    "target": "sources/seedance-2.5官方发布",
+    "resolved": "wiki/sources/seedance-2.5官方发布.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/seedance模型选择-一帆老师.md",
+    "target": "sources/seedance-提示词写法",
+    "resolved": "wiki/sources/seedance-提示词写法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/seedance模型选择-一帆老师.md",
+    "target": "sources/AI视频八种光影技巧-一帆老师",
+    "resolved": "wiki/sources/AI视频八种光影技巧-一帆老师.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/视频提示词骨架与素材职责方法.md",
+    "target": "projects/Master-Storyboarding/应用知识/视频提示词/索引",
+    "resolved": "projects/Master-Storyboarding/应用知识/视频提示词/索引.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/视频提示词骨架与素材职责方法.md",
+    "target": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法#登记素材证据",
+    "resolved": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/视频提示词骨架与素材职责方法.md",
+    "target": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法#分配主职责",
+    "resolved": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/视频提示词骨架与素材职责方法.md",
+    "target": "projects/Master-Storyboarding/应用知识/视频提示词/提示词基础方法#组织整份提示词",
+    "resolved": "projects/Master-Storyboarding/应用知识/视频提示词/提示词基础方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/视频提示词骨架与素材职责方法.md",
+    "target": "projects/Master-Storyboarding/应用知识/视频提示词/提示词基础方法#写单段正文",
+    "resolved": "projects/Master-Storyboarding/应用知识/视频提示词/提示词基础方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/视频提示词骨架与素材职责方法.md",
+    "target": "projects/Master-Storyboarding/应用知识/视频提示词/提示词基础方法#检查与适用限制",
+    "resolved": "projects/Master-Storyboarding/应用知识/视频提示词/提示词基础方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/视频提示词骨架与素材职责方法.md",
+    "target": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法#核查引用与串用",
+    "resolved": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/视频提示词骨架与素材职责方法.md",
+    "target": "projects/Master-Storyboarding/应用知识/视频提示词/索引.md",
+    "resolved": "projects/Master-Storyboarding/应用知识/视频提示词/索引.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/视频提示词骨架与素材职责方法.md",
+    "target": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "resolved": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/视频提示词骨架与素材职责方法.md",
+    "target": "wiki/sources/seedance模型选择-一帆老师.md",
+    "resolved": "wiki/sources/seedance模型选择-一帆老师.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/公主剧情面膜擦除提示词-用户提供.md",
+    "target": "raw/notes/2026-09-30-princess-mask-removal-prompt",
+    "resolved": "raw/notes/2026-09-30-princess-mask-removal-prompt.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/公主剧情面膜擦除提示词-用户提供.md",
+    "target": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/方法",
+    "resolved": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/造物者抛光面膜-动作参考视频.md",
+    "target": "concepts/03-AI生成与视频/产品展示与使用过程边界",
+    "resolved": "wiki/concepts/03-AI生成与视频/产品展示与使用过程边界.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/造物者抛光面膜-动作参考视频.md",
+    "target": "entities/products/造物者温泉酸抛光面膜",
+    "resolved": "wiki/entities/products/造物者温泉酸抛光面膜.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "projects/Master-Storyboarding/2026-09-15-第三层经验整理记录.md",
+    "target": "archive/项目经验原始复盘/Master-Storyboarding/索引",
+    "resolved": "archive/项目经验原始复盘/Master-Storyboarding/索引.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "projects/Master-Storyboarding/2026-09-15-第三层经验整理记录.md",
+    "target": "projects/Master-Storyboarding/应用知识/导演规划/导演规划方法",
+    "resolved": "projects/Master-Storyboarding/应用知识/导演规划/导演规划方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/2026-09-15-第三层经验整理记录.md",
+    "target": "projects/Master-Storyboarding/应用知识/视频提示词/提示词基础方法",
+    "resolved": "projects/Master-Storyboarding/应用知识/视频提示词/提示词基础方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/2026-09-15-第三层经验整理记录.md",
+    "target": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法",
+    "resolved": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/2026-09-15-第三层经验整理记录.md",
+    "target": "projects/Master-Storyboarding/应用知识/图片资产/图片连续性方法",
+    "resolved": "projects/Master-Storyboarding/应用知识/图片资产/图片连续性方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/reference/知识生命周期与冲突处理.md",
+    "target": "agent-index",
+    "resolved": "agent-index",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/reference/知识生命周期与冲突处理.md",
+    "target": "AGENTS",
+    "resolved": "AGENTS.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/reference/知识生命周期与冲突处理.md",
+    "target": "wiki/reference/Master-Storyboarding/知识接入与生产反馈规则#生产反馈与无效规则处理",
+    "resolved": "wiki/reference/Master-Storyboarding/知识接入与生产反馈规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/reference/知识库目录职责与项目边界.md",
+    "target": "agent-index|启动索引",
+    "resolved": "agent-index",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/reference/知识库目录职责与项目边界.md",
+    "target": "wiki/reference/Master-Storyboarding/知识接入与生产反馈规则|项目接入规则",
+    "resolved": "wiki/reference/Master-Storyboarding/知识接入与生产反馈规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/reference/知识库目录职责与项目边界.md",
+    "target": "projects/index|项目注册表",
+    "resolved": "projects/index",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/短剧-电影叙事规则.md",
+    "target": "concepts/01-叙事与对白/短剧电影叙事法则",
+    "resolved": "wiki/concepts/01-叙事与对白/短剧电影叙事法则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/短剧-电影叙事规则.md",
+    "target": "concepts/03-AI生成与视频/ai分镜设计",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/短剧-电影叙事规则.md",
+    "target": "concepts/02-镜头与剪辑/景别理论",
+    "resolved": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/短剧-电影叙事规则.md",
+    "target": "concepts/07-产品与技术/碳酸注氧科技",
+    "resolved": "wiki/concepts/07-产品与技术/碳酸注氧科技.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/短剧-导演审查方法论.md",
+    "target": "concepts/01-叙事与对白/短剧电影叙事法则",
+    "resolved": "wiki/concepts/01-叙事与对白/短剧电影叙事法则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/短剧-导演审查方法论.md",
+    "target": "concepts/03-AI生成与视频/ai分镜设计",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/短剧-导演审查方法论.md",
+    "target": "concepts/02-镜头与剪辑/连续性剪辑",
+    "resolved": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/短剧-对白打磨方法论.md",
+    "target": "../concepts/01-叙事与对白/短视频对白打磨",
+    "resolved": "wiki/concepts/01-叙事与对白/短视频对白打磨.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/短剧-对白打磨方法论.md",
+    "target": "synthesis/抖音台词方法论",
+    "resolved": "wiki/synthesis/抖音台词方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/短剧-对白打磨方法论.md",
+    "target": "synthesis/抖音台词方法论",
+    "resolved": "wiki/synthesis/抖音台词方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/短剧-对白打磨方法论.md",
+    "target": "entities/造物者",
+    "resolved": "wiki/entities/造物者.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/短剧-第一视角拟人模式.md",
+    "target": "concepts/01-叙事与对白/第一视角拟人叙事",
+    "resolved": "wiki/concepts/01-叙事与对白/第一视角拟人叙事.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/短剧-第一视角拟人模式.md",
+    "target": "concepts/07-产品与技术/碳酸注氧科技",
+    "resolved": "wiki/concepts/07-产品与技术/碳酸注氧科技.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/短剧-第一视角拟人模式.md",
+    "target": "synthesis/产品视频创作策略",
+    "resolved": "wiki/synthesis/产品视频创作策略.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/AI导演Agent专业影视分镜调研包.md",
+    "target": "../concepts/02-镜头与剪辑/专业影视分镜设计与执行方法|专业影视分镜设计与执行方法",
+    "resolved": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/AI视频导演级打光方法-刺猬星球AI.md",
+    "target": "concepts/02-镜头与剪辑/专业影视分镜设计与执行方法",
+    "resolved": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/AI视频导演级打光方法-刺猬星球AI.md",
+    "target": "raw/videos/2026-08-27/AI视频光线质感-刺猬星球AI",
+    "resolved": "raw/videos/2026-08-27/AI视频光线质感-刺猬星球AI",
+    "status": "unavailable or illustrative reference"
+  },
+  {
+    "source": "wiki/sources/AI视频导演级打光方法-刺猬星球AI.md",
+    "target": "raw/videos/2026-08-27/AI视频光线质感-刺猬星球AI/小白必看！如何用光线提升AI视频质感？ 很多人做AI视频只知道写人物和场景却忽略了真正决定画面质.mp4",
+    "resolved": "raw/videos/2026-08-27/AI视频光线质感-刺猬星球AI/小白必看！如何用光线提升AI视频质感？ 很多人做AI视频只知道写人物和场景却忽略了真正决定画面质.mp4",
+    "status": "unavailable or illustrative reference"
+  },
+  {
+    "source": "wiki/sources/AI视频导演级打光方法-刺猬星球AI.md",
+    "target": "raw/videos/2026-08-27/AI视频光线质感-刺猬星球AI/小白必看！如何用光线提升AI视频质感？ 很多人做AI视频只知道写人物和场景却忽略了真正决定画面质-校对转写/文案稿.txt",
+    "resolved": "raw/videos/2026-08-27/AI视频光线质感-刺猬星球AI/小白必看！如何用光线提升AI视频质感？ 很多人做AI视频只知道写人物和场景却忽略了真正决定画面质-校对转写/文案稿.txt",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/AI视频导演级打光方法-刺猬星球AI.md",
+    "target": "raw/videos/2026-08-27/AI视频光线质感-刺猬星球AI/补充资料_20种光线提示词.doc",
+    "resolved": "raw/videos/2026-08-27/AI视频光线质感-刺猬星球AI/补充资料_20种光线提示词.doc",
+    "status": "unavailable or illustrative reference"
+  },
+  {
+    "source": "wiki/sources/AI视频导演级打光方法-刺猬星球AI.md",
+    "target": "raw/videos/2026-08-27/AI视频光线质感-刺猬星球AI/补充资料_光线成就电影感.txt",
+    "resolved": "raw/videos/2026-08-27/AI视频光线质感-刺猬星球AI/补充资料_光线成就电影感.txt",
+    "status": "unavailable or illustrative reference"
+  },
+  {
+    "source": "wiki/sources/AI视频八种电影级打光-一帆.md",
+    "target": "concepts/02-镜头与剪辑/专业影视分镜设计与执行方法",
+    "resolved": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/AI视频八种电影级打光-一帆.md",
+    "target": "sources/AI视频导演级打光方法-刺猬星球AI",
+    "resolved": "wiki/sources/AI视频导演级打光方法-刺猬星球AI.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/AI视频八种电影级打光-一帆.md",
+    "target": "raw/videos/2026-08-27/AI视频光影技巧-一帆老师",
+    "resolved": "raw/videos/2026-08-27/AI视频光影技巧-一帆老师",
+    "status": "unavailable or illustrative reference"
+  },
+  {
+    "source": "wiki/sources/AI视频八种电影级打光-一帆.md",
+    "target": "raw/videos/2026-08-27/AI视频光影技巧-一帆老师/8 个光影技巧，让你的 AI 视频告别“塑料感”，注入电影感 很多人做 AI 视频，总觉得画面“塑料感”满.mp4",
+    "resolved": "raw/videos/2026-08-27/AI视频光影技巧-一帆老师/8 个光影技巧，让你的 AI 视频告别“塑料感”，注入电影感 很多人做 AI 视频，总觉得画面“塑料感”满.mp4",
+    "status": "unavailable or illustrative reference"
+  },
+  {
+    "source": "wiki/sources/AI视频八种电影级打光-一帆.md",
+    "target": "raw/videos/2026-08-27/AI视频光影技巧-一帆老师/8 个光影技巧，让你的 AI 视频告别“塑料感”，注入电影感 很多人做 AI 视频，总觉得画面“塑料感”满-校对转写/文案稿.txt",
+    "resolved": "raw/videos/2026-08-27/AI视频光影技巧-一帆老师/8 个光影技巧，让你的 AI 视频告别“塑料感”，注入电影感 很多人做 AI 视频，总觉得画面“塑料感”满-校对转写/文案稿.txt",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/Pitzer-电影语言关键术语.md",
+    "target": "concepts/02-镜头与剪辑/连续性剪辑",
+    "resolved": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/Pitzer-电影语言关键术语.md",
+    "target": "concepts/02-镜头与剪辑/专业影视分镜设计与执行方法",
+    "resolved": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/Adobe-电影剪切类型.md",
+    "target": "concepts/02-镜头与剪辑/专业影视分镜设计与执行方法",
+    "resolved": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/电影分镜-分镜终极指南.md",
+    "target": "concepts/02-镜头与剪辑/专业影视分镜设计与执行方法",
+    "resolved": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/电影分镜-分镜终极指南.md",
+    "target": "concepts/02-镜头与剪辑/景别理论",
+    "resolved": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/电影分镜-分镜终极指南.md",
+    "target": "concepts/02-镜头与剪辑/连续性剪辑",
+    "resolved": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/电影分镜-分镜终极指南.md",
+    "target": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/06-电影分镜/像拍电影一样用分镜，电影分镜的终极指南 怎么切分镜，分镜本质.mp4",
+    "resolved": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/06-电影分镜/像拍电影一样用分镜，电影分镜的终极指南 怎么切分镜，分镜本质.mp4",
+    "status": "unavailable or illustrative reference"
+  },
+  {
+    "source": "wiki/sources/电影分镜-分镜终极指南.md",
+    "target": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/06-电影分镜/像拍电影一样用分镜，电影分镜的终极指南 怎么切分镜，分镜本质-校对转写/文案稿.txt",
+    "resolved": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/06-电影分镜/像拍电影一样用分镜，电影分镜的终极指南 怎么切分镜，分镜本质-校对转写/文案稿.txt",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/电影感构图-十一个维度.md",
+    "target": "concepts/02-镜头与剪辑/专业影视分镜设计与执行方法",
+    "resolved": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/电影感构图-十一个维度.md",
+    "target": "sources/AI视频电影感-焦距光圈",
+    "resolved": "wiki/sources/AI视频电影感-焦距光圈.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/电影感构图-十一个维度.md",
+    "target": "concepts/02-镜头与剪辑/景别理论",
+    "resolved": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/电影感构图-十一个维度.md",
+    "target": "concepts/03-AI生成与视频/ai分镜设计",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/电影感构图-十一个维度.md",
+    "target": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/01-电影感构图/从十一个方面入手，拍出电影感构图 #电影感 #电影构图 分别是.mp4",
+    "resolved": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/01-电影感构图/从十一个方面入手，拍出电影感构图",
+    "status": "unavailable or illustrative reference"
+  },
+  {
+    "source": "wiki/sources/电影感构图-十一个维度.md",
+    "target": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/01-电影感构图/从十一个方面入手，拍出电影感构图 #电影感 #电影构图 分别是-校对转写/文案稿.txt",
+    "resolved": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/01-电影感构图/从十一个方面入手，拍出电影感构图",
+    "status": "unavailable or illustrative reference"
+  },
+  {
+    "source": "wiki/sources/电影镜头角度-角度全解析.md",
+    "target": "concepts/02-镜头与剪辑/景别理论",
+    "resolved": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/电影镜头角度-角度全解析.md",
+    "target": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/05-镜头角度/电影角度的终极指南，镜头角度全解析包括仰拍、俯拍、垂直仰拍.mp4",
+    "resolved": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/05-镜头角度/电影角度的终极指南，镜头角度全解析包括仰拍、俯拍、垂直仰拍.mp4",
+    "status": "unavailable or illustrative reference"
+  },
+  {
+    "source": "wiki/sources/电影镜头角度-角度全解析.md",
+    "target": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/05-镜头角度/电影角度的终极指南，镜头角度全解析包括仰拍、俯拍、垂直仰拍-校对转写/文案稿.txt",
+    "resolved": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/05-镜头角度/电影角度的终极指南，镜头角度全解析包括仰拍、俯拍、垂直仰拍-校对转写/文案稿.txt",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/Bucknell-摄影机运动语言.md",
+    "target": "concepts/02-镜头与剪辑/专业影视分镜设计与执行方法",
+    "resolved": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/Nikon-视频Rack-Focus方法.md",
+    "target": "concepts/02-镜头与剪辑/专业影视分镜设计与执行方法",
+    "resolved": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/Adobe-Tracking-Shot方法.md",
+    "target": "concepts/02-镜头与剪辑/专业影视分镜设计与执行方法",
+    "resolved": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ARRI-Girls-Will-Be-Girls摄影运动案例.md",
+    "target": "concepts/02-镜头与剪辑/专业影视分镜设计与执行方法",
+    "resolved": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/seedance-2.5官方发布.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/seedance-2.5官方发布.md",
+    "target": "concepts/03-AI生成与视频/ai分镜设计",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/seedance-2.5官方发布.md",
+    "target": "concepts/02-镜头与剪辑/专业影视分镜设计与执行方法",
+    "resolved": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/Master-Storyboarding旧分镜写作专业参考.md",
+    "target": "concepts/02-镜头与剪辑/景别理论",
+    "resolved": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/Master-Storyboarding旧分镜写作专业参考.md",
+    "target": "concepts/02-镜头与剪辑/专业影视分镜设计与执行方法",
+    "resolved": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/Master-Storyboarding旧分镜写作专业参考.md",
+    "target": "concepts/02-镜头与剪辑/连续性剪辑",
+    "resolved": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "target": "concepts/02-镜头与剪辑/图片连续性规则#背景母版工作流",
+    "resolved": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论|AI 生视频方法论·声音资产",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "target": "concepts/02-镜头与剪辑/图片连续性规则#角色与空间一致性（长片级）",
+    "resolved": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "target": "concepts/02-镜头与剪辑/图片连续性规则",
+    "resolved": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "target": "concepts/03-AI生成与视频/ai分镜设计",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "target": "concepts/02-镜头与剪辑/景别理论",
+    "resolved": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "target": "concepts/01-叙事与对白/短剧电影叙事法则",
+    "resolved": "wiki/concepts/01-叙事与对白/短剧电影叙事法则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "target": "entities/higgsfield",
+    "resolved": "wiki/entities/higgsfield.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/小白AI短剧第12课-场景控制.md",
+    "target": "concepts/02-镜头与剪辑/图片连续性规则",
+    "resolved": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/小白AI短剧第12课-场景控制.md",
+    "target": "concepts/03-AI生成与视频/ai分镜设计",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/小白AI短剧第12课-场景控制.md",
+    "target": "concepts/02-镜头与剪辑/景别理论",
+    "resolved": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/小白AI短剧第12课-场景控制.md",
+    "target": "concepts/02-镜头与剪辑/连续性剪辑",
+    "resolved": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/小白AI短剧第12课-场景控制.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/小白AI短剧第12课-场景控制.md",
+    "target": "entities/YIQI玩AI",
+    "resolved": "wiki/entities/YIQI玩AI.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/300万ai电影开源-higgsfield-4招.md",
+    "target": "sources/HELL-GRIND长片工作流拆解",
+    "resolved": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/300万ai电影开源-higgsfield-4招.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/300万ai电影开源-higgsfield-4招.md",
+    "target": "concepts/03-AI生成与视频/ai模型选择分工.evolving",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai模型选择分工.evolving.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/300万ai电影开源-higgsfield-4招.md",
+    "target": "concepts/02-镜头与剪辑/图片连续性规则#1. 角色脸部分离（防变脸/防脸迁移明星）",
+    "resolved": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/300万ai电影开源-higgsfield-4招.md",
+    "target": "concepts/02-镜头与剪辑/图片连续性规则#2. 多状态角色资产 + PS 蒙版局部修复",
+    "resolved": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/300万ai电影开源-higgsfield-4招.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论#角色资产（脸部分离 + 多状态 + 局部修复）",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/300万ai电影开源-higgsfield-4招.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论#场景资产（三分之四侧面 + 参照物）",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/300万ai电影开源-higgsfield-4招.md",
+    "target": "concepts/02-镜头与剪辑/图片连续性规则",
+    "resolved": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/300万ai电影开源-higgsfield-4招.md",
+    "target": "concepts/02-镜头与剪辑/图片连续性规则#6. 角色卡像身份证 + 压力测试（《卡利山男孩》升级）",
+    "resolved": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/300万ai电影开源-higgsfield-4招.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论#长片级一致性的升级（Higgsfield《卡利山男孩》1300万）",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/300万ai电影开源-higgsfield-4招.md",
+    "target": "sources/HELL-GRIND长片工作流拆解",
+    "resolved": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/300万ai电影开源-higgsfield-4招.md",
+    "target": "sources/1300万ai电影长片工作流拆解",
+    "resolved": "wiki/sources/1300万ai电影长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/300万ai电影开源-higgsfield-4招.md",
+    "target": "entities/higgsfield",
+    "resolved": "wiki/entities/higgsfield.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/300万ai电影开源-higgsfield-4招.md",
+    "target": "sources/HELL-GRIND长片工作流拆解",
+    "resolved": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/300万ai电影开源-higgsfield-4招.md",
+    "target": "sources/HELL-GRIND长片工作流拆解",
+    "resolved": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/300万ai电影开源-higgsfield-4招.md",
+    "target": "sources/1300万ai电影长片工作流拆解",
+    "resolved": "wiki/sources/1300万ai电影长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/1300万ai电影长片工作流拆解.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/1300万ai电影长片工作流拆解.md",
+    "target": "concepts/02-镜头与剪辑/图片连续性规则",
+    "resolved": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/1300万ai电影长片工作流拆解.md",
+    "target": "sources/HELL-GRIND长片工作流拆解",
+    "resolved": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/1300万ai电影长片工作流拆解.md",
+    "target": "entities/higgsfield",
+    "resolved": "wiki/entities/higgsfield.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/1300万ai电影长片工作流拆解.md",
+    "target": "entities/seedance",
+    "resolved": "wiki/entities/seedance.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/1300万ai电影长片工作流拆解.md",
+    "target": "sources/HELL-GRIND长片工作流拆解",
+    "resolved": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/1300万ai电影长片工作流拆解.md",
+    "target": "sources/HELL-GRIND长片工作流拆解",
+    "resolved": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/短剧-影视分镜规则.md",
+    "target": "concepts/03-AI生成与视频/ai分镜设计",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/短剧-影视分镜规则.md",
+    "target": "concepts/03-AI生成与视频/ai分镜设计",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/短剧-影视分镜规则.md",
+    "target": "concepts/02-镜头与剪辑/景别理论",
+    "resolved": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/短剧-影视分镜规则.md",
+    "target": "concepts/02-镜头与剪辑/连续性剪辑",
+    "resolved": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/AI视频电影感-焦距光圈.md",
+    "target": "concepts/02-镜头与剪辑/景别理论",
+    "resolved": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/AI视频电影感-焦距光圈.md",
+    "target": "sources/dramaclaw-焦距景深机位运动",
+    "resolved": "wiki/sources/dramaclaw-焦距景深机位运动.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/AI视频电影感-焦距光圈.md",
+    "target": "sources/dramaclaw-焦距景深机位运动",
+    "resolved": "wiki/sources/dramaclaw-焦距景深机位运动.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/AI视频电影感-焦距光圈.md",
+    "target": "sources/告别AI画面翻车-3招写对提示词",
+    "resolved": "wiki/sources/告别AI画面翻车-3招写对提示词.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/AI视频电影感-焦距光圈.md",
+    "target": "concepts/03-AI生成与视频/ai分镜设计",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/AI视频电影感-焦距光圈.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/AI视频电影感-焦距光圈.md",
+    "target": "entities/higgsfield",
+    "resolved": "wiki/entities/higgsfield.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/AI视频电影感-焦距光圈.md",
+    "target": "entities/一帆老师",
+    "resolved": "wiki/entities/一帆老师.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/dramaclaw-焦距景深机位运动.md",
+    "target": "concepts/02-镜头与剪辑/景别理论",
+    "resolved": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/dramaclaw-焦距景深机位运动.md",
+    "target": "concepts/03-AI生成与视频/ai分镜设计",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/dramaclaw-焦距景深机位运动.md",
+    "target": "concepts/01-叙事与对白/短剧电影叙事法则",
+    "resolved": "wiki/concepts/01-叙事与对白/短剧电影叙事法则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/dramaclaw-焦距景深机位运动.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/dramaclaw-焦距景深机位运动.md",
+    "target": "entities/dramaclaw|DramaClaw（虾导）",
+    "resolved": "wiki/entities/dramaclaw.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/seedance-提示词写法.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/seedance-提示词写法.md",
+    "target": "concepts/03-AI生成与视频/提示词污染",
+    "resolved": "wiki/concepts/03-AI生成与视频/提示词污染.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/seedance-提示词写法.md",
+    "target": "concepts/02-镜头与剪辑/景别理论",
+    "resolved": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/seedance-提示词写法.md",
+    "target": "concepts/02-镜头与剪辑/超时连续事件的强制拆段衔接",
+    "resolved": "wiki/concepts/02-镜头与剪辑/超时连续事件的强制拆段衔接.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/seedance-提示词写法.md",
+    "target": "concepts/02-镜头与剪辑/连续性剪辑",
+    "resolved": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/seedance-提示词写法.md",
+    "target": "entities/刺猬星球ai",
+    "resolved": "wiki/entities/刺猬星球ai.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/seedance-提示词写法.md",
+    "target": "entities/一帆老师",
+    "resolved": "wiki/entities/一帆老师.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/seedance-提示词写法.md",
+    "target": "entities/YIQI玩AI",
+    "resolved": "wiki/entities/YIQI玩AI.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/seedance-提示词写法.md",
+    "target": "entities/seedance",
+    "resolved": "wiki/entities/seedance.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/seedance-提示词写法.md",
+    "target": "concepts/03-AI生成与视频/ai分镜设计",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/seedance-提示词写法.md",
+    "target": "sources/seedance-官方手册",
+    "resolved": "wiki/sources/seedance-官方手册.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/seedance-提示词写法.md",
+    "target": "concepts/03-AI生成与视频/seedance提示词结构.evolving",
+    "resolved": "wiki/concepts/03-AI生成与视频/seedance提示词结构.evolving.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/景别参考.md",
+    "target": "sources/ai-分镜规范",
+    "resolved": "wiki/sources/ai-分镜规范.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/景别参考.md",
+    "target": "concepts/03-AI生成与视频/ai分镜设计",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/景别参考.md",
+    "target": "concepts/02-镜头与剪辑/连续性剪辑",
+    "resolved": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/电影感景别-九种景别.md",
+    "target": "concepts/02-镜头与剪辑/景别理论",
+    "resolved": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/电影感景别-九种景别.md",
+    "target": "concepts/02-镜头与剪辑/专业影视分镜设计与执行方法",
+    "resolved": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/电影感景别-九种景别.md",
+    "target": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/02-九种景别/拍出电影感画面，从这九个景别入手 #电影感 #景别 分别是大远景.mp4",
+    "resolved": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/02-九种景别/拍出电影感画面，从这九个景别入手",
+    "status": "unavailable or illustrative reference"
+  },
+  {
+    "source": "wiki/sources/电影感景别-九种景别.md",
+    "target": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/02-九种景别/拍出电影感画面，从这九个景别入手 #电影感 #景别 分别是大远景-校对转写/文案稿.txt",
+    "resolved": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/02-九种景别/拍出电影感画面，从这九个景别入手",
+    "status": "unavailable or illustrative reference"
+  },
+  {
+    "source": "wiki/sources/ai-分镜规范.md",
+    "target": "sources/ai-视频方法论",
+    "resolved": "wiki/sources/ai-视频方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ai-分镜规范.md",
+    "target": "concepts/03-AI生成与视频/ai分镜设计",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ai-分镜规范.md",
+    "target": "synthesis/产品视频创作策略",
+    "resolved": "wiki/synthesis/产品视频创作策略.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/段间重叠衔接.md",
+    "target": "concepts/02-镜头与剪辑/超时连续事件的强制拆段衔接",
+    "resolved": "wiki/concepts/02-镜头与剪辑/超时连续事件的强制拆段衔接.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/段间重叠衔接.md",
+    "target": "concepts/02-镜头与剪辑/超时连续事件的强制拆段衔接",
+    "resolved": "wiki/concepts/02-镜头与剪辑/超时连续事件的强制拆段衔接.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/段间重叠衔接.md",
+    "target": "concepts/02-镜头与剪辑/连续性剪辑",
+    "resolved": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/段间重叠衔接.md",
+    "target": "concepts/02-镜头与剪辑/连续性剪辑",
+    "resolved": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/段间重叠衔接.md",
+    "target": "sources/短剧-段间衔接策略",
+    "resolved": "wiki/sources/短剧-段间衔接策略.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/段间重叠衔接.md",
+    "target": "sources/seedance-官方手册",
+    "resolved": "wiki/sources/seedance-官方手册.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/段间重叠衔接.md",
+    "target": "synthesis/ai-视频制作工作流",
+    "resolved": "wiki/synthesis/ai-视频制作工作流.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/段间重叠衔接.md",
+    "target": "wiki/sources/短剧-段间衔接策略",
+    "resolved": "wiki/sources/短剧-段间衔接策略.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/02-镜头与剪辑/段间重叠衔接.md",
+    "target": "sources/seedance-官方手册",
+    "resolved": "wiki/sources/seedance-官方手册.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/Vlog转场-十三种方法.md",
+    "target": "concepts/02-镜头与剪辑/连续性剪辑",
+    "resolved": "wiki/concepts/02-镜头与剪辑/连续性剪辑.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/Vlog转场-十三种方法.md",
+    "target": "concepts/02-镜头与剪辑/专业影视分镜设计与执行方法",
+    "resolved": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/Vlog转场-十三种方法.md",
+    "target": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/03-十三种转场/用这十三种转场，为vlog加入神来之笔 这十三种转场分别是相似.mp4",
+    "resolved": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/03-十三种转场/用这十三种转场，为vlog加入神来之笔 这十三种转场分别是相似.mp4",
+    "status": "unavailable or illustrative reference"
+  },
+  {
+    "source": "wiki/sources/Vlog转场-十三种方法.md",
+    "target": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/03-十三种转场/用这十三种转场，为vlog加入神来之笔 这十三种转场分别是相似-校对转写/文案稿.txt",
+    "resolved": "raw/videos/2026-08-27/电影拍摄语言-六条抖音/03-十三种转场/用这十三种转场，为vlog加入神来之笔 这十三种转场分别是相似-校对转写/文案稿.txt",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ai-视频方法论.md",
+    "target": "sources/seedance-官方手册",
+    "resolved": "wiki/sources/seedance-官方手册.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ai-视频方法论.md",
+    "target": "sources/ai-分镜规范",
+    "resolved": "wiki/sources/ai-分镜规范.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/索引.md",
+    "target": "projects/Master-Storyboarding/应用知识/视频提示词/提示词基础方法",
+    "resolved": "projects/Master-Storyboarding/应用知识/视频提示词/提示词基础方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/索引.md",
+    "target": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法",
+    "resolved": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/索引.md",
+    "target": "projects/Master-Storyboarding/应用知识/视频提示词/Seedance 2.5 受限表达与控制引用",
+    "resolved": "projects/Master-Storyboarding/应用知识/视频提示词/Seedance 2.5 受限表达与控制引用.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/索引.md",
+    "target": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/方法",
+    "resolved": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/索引.md",
+    "target": "projects/Master-Storyboarding/应用知识/视频提示词/知识更新建议/README|知识更新建议",
+    "resolved": "projects/Master-Storyboarding/应用知识/视频提示词/知识更新建议/README.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/索引.md",
+    "target": "wiki/concepts/03-AI生成与视频/视频提示词骨架与素材职责方法",
+    "resolved": "wiki/concepts/03-AI生成与视频/视频提示词骨架与素材职责方法.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/索引.md",
+    "target": "wiki/concepts/03-AI生成与视频/ai视频生成方法论#VGEN-002 历史定位",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "projects/Master-Storyboarding/应用知识/视频提示词/索引.md",
+    "target": "C:/Users/LIUYANG/Documents/Master-Storyboarding/skills/voiceover-to-video-script/SKILL.md",
+    "resolved": "repo:skills/voiceover-to-video-script/SKILL.md",
+    "status": "repository reference"
+  },
+  {
+    "source": "wiki/sources/ai电影大拆解-刺猬星球ai.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ai电影大拆解-刺猬星球ai.md",
+    "target": "sources/HELL-GRIND长片工作流拆解",
+    "resolved": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ai电影大拆解-刺猬星球ai.md",
+    "target": "sources/ai提示词过期-刺猬星球ai",
+    "resolved": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ai电影大拆解-刺猬星球ai.md",
+    "target": "concepts/03-AI生成与视频/提示词污染",
+    "resolved": "wiki/concepts/03-AI生成与视频/提示词污染.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ai电影大拆解-刺猬星球ai.md",
+    "target": "sources/ai提示词过期-刺猬星球ai",
+    "resolved": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ai电影大拆解-刺猬星球ai.md",
+    "target": "sources/AI视频光线提升质感-刺猬星球AI",
+    "resolved": "wiki/sources/AI视频光线提升质感-刺猬星球AI.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ai电影大拆解-刺猬星球ai.md",
+    "target": "entities/刺猬星球ai",
+    "resolved": "wiki/entities/刺猬星球ai.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/ai电影大拆解-刺猬星球ai.md",
+    "target": "entities/higgsfield",
+    "resolved": "wiki/entities/higgsfield.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/ai电影大拆解-刺猬星球ai.md",
+    "target": "sources/HELL-GRIND长片工作流拆解",
+    "resolved": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ai电影大拆解-刺猬星球ai.md",
+    "target": "sources/1300万ai电影长片工作流拆解",
+    "resolved": "wiki/sources/1300万ai电影长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ai电影大拆解-刺猬星球ai.md",
+    "target": "concepts/03-AI生成与视频/色卡统一风格",
+    "resolved": "wiki/concepts/03-AI生成与视频/色卡统一风格.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/ai电影大拆解-刺猬星球ai.md",
+    "target": "projects/index#Master-Storyboarding|ai短剧项目",
+    "resolved": "projects/index",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/ai电影大拆解-刺猬星球ai.md",
+    "target": "sources/HELL-GRIND长片工作流拆解",
+    "resolved": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ai电影大拆解-刺猬星球ai.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论|AI 视频生成方法论",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/ai电影大拆解-刺猬星球ai.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论|AI 视频生成方法论",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/色卡统一风格.md",
+    "target": "entities/seedance#Seedance 2.0 mini（低配档位）",
+    "resolved": "wiki/entities/seedance.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/色卡统一风格.md",
+    "target": "concepts/02-镜头与剪辑/图片连续性规则#背景母版工作流",
+    "resolved": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/色卡统一风格.md",
+    "target": "concepts/02-镜头与剪辑/图片连续性规则#多角度参考图组（四图场景锁定）",
+    "resolved": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/色卡统一风格.md",
+    "target": "sources/统一AI视频画面风格-色卡",
+    "resolved": "wiki/sources/统一AI视频画面风格-色卡.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/色卡统一风格.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/色卡统一风格.md",
+    "target": "concepts/02-镜头与剪辑/图片连续性规则",
+    "resolved": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/色卡统一风格.md",
+    "target": "concepts/03-AI生成与视频/ai分镜设计",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/色卡统一风格.md",
+    "target": "entities/seedance",
+    "resolved": "wiki/entities/seedance.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/色卡统一风格.md",
+    "target": "entities/即梦",
+    "resolved": "wiki/entities/即梦.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/色卡统一风格.md",
+    "target": "synthesis/ai-视频制作工作流",
+    "resolved": "wiki/synthesis/ai-视频制作工作流.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/色卡统一风格.md",
+    "target": "entities/seedance#Seedance 2.0 mini（低配档位）",
+    "resolved": "wiki/entities/seedance.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/色卡统一风格.md",
+    "target": "wiki/sources/统一AI视频画面风格-色卡",
+    "resolved": "wiki/sources/统一AI视频画面风格-色卡.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/短剧-视频执行与质检.md",
+    "target": "sources/seedance-官方手册",
+    "resolved": "wiki/sources/seedance-官方手册.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/短剧-视频执行与质检.md",
+    "target": "sources/ai-视频方法论",
+    "resolved": "wiki/sources/ai-视频方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/短剧-视频执行与质检.md",
+    "target": "sources/即梦-cli-指南",
+    "resolved": "wiki/sources/即梦-cli-指南.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/告别AI画面翻车-3招写对提示词.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/告别AI画面翻车-3招写对提示词.md",
+    "target": "sources/去除人物ai味-活人感",
+    "resolved": "wiki/sources/去除人物ai味-活人感.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/告别AI画面翻车-3招写对提示词.md",
+    "target": "entities/YIQI玩AI",
+    "resolved": "wiki/entities/YIQI玩AI.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/告别AI画面翻车-3招写对提示词.md",
+    "target": "concepts/03-AI生成与视频/ai分镜设计",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/告别AI画面翻车-3招写对提示词.md",
+    "target": "concepts/02-镜头与剪辑/图片连续性规则",
+    "resolved": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/告别AI画面翻车-3招写对提示词.md",
+    "target": "concepts/03-AI生成与视频/ai人物活人感",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai人物活人感.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/告别AI画面翻车-3招写对提示词.md",
+    "target": "entities/一帆老师",
+    "resolved": "wiki/entities/一帆老师.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/统一AI视频画面风格-色卡.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/统一AI视频画面风格-色卡.md",
+    "target": "concepts/02-镜头与剪辑/图片连续性规则",
+    "resolved": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/统一AI视频画面风格-色卡.md",
+    "target": "entities/seedance",
+    "resolved": "wiki/entities/seedance.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/统一AI视频画面风格-色卡.md",
+    "target": "concepts/03-AI生成与视频/色卡统一风格",
+    "resolved": "wiki/concepts/03-AI生成与视频/色卡统一风格.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/统一AI视频画面风格-色卡.md",
+    "target": "synthesis/ai-视频制作工作流",
+    "resolved": "wiki/synthesis/ai-视频制作工作流.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/统一AI视频画面风格-色卡.md",
+    "target": "concepts/02-镜头与剪辑/图片连续性规则#角色与空间一致性（长片级）",
+    "resolved": "wiki/concepts/02-镜头与剪辑/图片连续性规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/统一AI视频画面风格-色卡.md",
+    "target": "entities/seedance",
+    "resolved": "wiki/entities/seedance.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/AI视频光线提升质感-刺猬星球AI.md",
+    "target": "wiki/sources/AI视频导演级打光方法-刺猬星球AI.md",
+    "resolved": "wiki/sources/AI视频导演级打光方法-刺猬星球AI.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/AI视频光线提升质感-刺猬星球AI.md",
+    "target": "wiki/sources/AI视频导演级打光方法-刺猬星球AI.md",
+    "resolved": "wiki/sources/AI视频导演级打光方法-刺猬星球AI.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/AI视频八种光影技巧-一帆老师.md",
+    "target": "wiki/sources/AI视频八种电影级打光-一帆.md",
+    "resolved": "wiki/sources/AI视频八种电影级打光-一帆.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/AI视频八种光影技巧-一帆老师.md",
+    "target": "wiki/sources/AI视频八种电影级打光-一帆.md",
+    "resolved": "wiki/sources/AI视频八种电影级打光-一帆.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/seedance-官方手册.md",
+    "target": "sources/ai-视频方法论",
+    "resolved": "wiki/sources/ai-视频方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/seedance-官方手册.md",
+    "target": "sources/ai-分镜规范",
+    "resolved": "wiki/sources/ai-分镜规范.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词过期.md",
+    "target": "concepts/03-AI生成与视频/提示词污染",
+    "resolved": "wiki/concepts/03-AI生成与视频/提示词污染.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词过期.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词过期.md",
+    "target": "sources/ai人物反向表演-刺猬星球ai",
+    "resolved": "wiki/sources/ai人物反向表演-刺猬星球ai.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词过期.md",
+    "target": "concepts/03-AI生成与视频/ai人物活人感",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai人物活人感.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词过期.md",
+    "target": "entities/seedance",
+    "resolved": "wiki/entities/seedance.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词过期.md",
+    "target": "sources/ai提示词过期-刺猬星球ai",
+    "resolved": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词过期.md",
+    "target": "concepts/03-AI生成与视频/ai视频生成方法论.evolving",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai视频生成方法论.evolving.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词过期.md",
+    "target": "wiki/sources/ai提示词过期-刺猬星球ai",
+    "resolved": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词过期.md",
+    "target": "sources/告别AI画面翻车-3招写对提示词",
+    "resolved": "wiki/sources/告别AI画面翻车-3招写对提示词.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词过期.md",
+    "target": "sources/ai人物反向表演-刺猬星球ai",
+    "resolved": "wiki/sources/ai人物反向表演-刺猬星球ai.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词过期.md",
+    "target": "sources/ai-视频方法论",
+    "resolved": "wiki/sources/ai-视频方法论.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/concepts/03-AI生成与视频/提示词过期.md",
+    "target": "sources/seedance-官方手册",
+    "resolved": "wiki/sources/seedance-官方手册.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/用户确认-未确认稿生命周期规则-2026-08-26.md",
+    "target": "wiki/concepts/06-系统与决策/未确认稿与废弃产物生命周期规则",
+    "resolved": "wiki/concepts/06-系统与决策/未确认稿与废弃产物生命周期规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/reference/Master-Storyboarding/知识接入与生产反馈规则.md",
+    "target": "wiki/reference/知识库目录职责与项目边界",
+    "resolved": "wiki/reference/知识库目录职责与项目边界.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/reference/Master-Storyboarding/知识接入与生产反馈规则.md",
+    "target": "projects/Master-Storyboarding/三层知识分流与写入规则",
+    "resolved": "projects/Master-Storyboarding/三层知识分流与写入规则.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/reference/Master-Storyboarding/知识接入与生产反馈规则.md",
+    "target": "projects/Master-Storyboarding/应用知识/视频提示词/索引",
+    "resolved": "projects/Master-Storyboarding/应用知识/视频提示词/索引.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/Master-Storyboarding科普动画关键帧分层复盘.md",
+    "target": "concepts/03-AI生成与视频/高精度对标科普动画的状态锚点与提示词分层",
+    "resolved": "wiki/concepts/03-AI生成与视频/高精度对标科普动画的状态锚点与提示词分层.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/短剧-段间衔接策略.md",
+    "target": "concepts/02-镜头与剪辑/段间重叠衔接",
+    "resolved": "wiki/concepts/02-镜头与剪辑/段间重叠衔接.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/短剧-段间衔接策略.md",
+    "target": "sources/seedance-官方手册",
+    "resolved": "wiki/sources/seedance-官方手册.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/短剧-段间衔接策略.md",
+    "target": "synthesis/ai-视频制作工作流",
+    "resolved": "wiki/synthesis/ai-视频制作工作流.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/即梦-cli-指南.md",
+    "target": "sources/seedance-官方手册",
+    "resolved": "wiki/sources/seedance-官方手册.md",
+    "status": "included dependency"
+  },
+  {
+    "source": "wiki/sources/即梦-cli-指南.md",
+    "target": "entities/即梦",
+    "resolved": "wiki/entities/即梦.md",
+    "status": "historical/navigation/candidate reference; not required runtime knowledge"
+  },
+  {
+    "source": "wiki/sources/即梦-cli-指南.md",
+    "target": "concepts/03-AI生成与视频/ai分镜设计|AI 分镜设计",
+    "resolved": "wiki/concepts/03-AI生成与视频/ai分镜设计.md",
+    "status": "included dependency"
+  }
+]

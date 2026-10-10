@@ -1,50 +1,40 @@
-# 历史源码备份：2026-10-08 恢复候选
+# Master-Storyboarding 三层依赖恢复备份
 
-此分支于 2026-10-10 补齐并保全，**不是当前正式生产版本，也不是完整项目或原始 Git 历史的恢复**。
+备份日期：2026-10-10。**这是有来源记录的历史源码＋项目知识依赖快照，不是最新正式生产版本，也不恢复正式提交6120及其未提交改动。** main和先前历史源码备份分支均保持不变。
 
-- 实际来源：Library `libfile_9a507399ab9481918eb5bc1366f0c000`，版本 1，公主项目全链溯源_最小修复候选与证据_20261008.zip（2026-10-08 18:46 UTC）
-- 来源 ZIP SHA-256：`5eb6e2801e54a0c7c02da9500c3a46ed52237403558beb1359bf942448d21b10`
-- 原候选共 325 文件；本分支保存其中 266 份选定源码及 2 份备份说明/校验文件，共 268 文件。README 和 .gitignore 为备份范围增加了说明与排除项
-- 2026-10-10 补齐原缺失的 Three.js `three.core.js` 与 `three.module.js`，使用来源包原字节
-- 源码清单 `SOURCE_SHA256.json` 记录 266 份来源原字节；其中 README 和 .gitignore 的 hash 指修改前版本，不能直接用于验证这两个备份改写文件
-- 不包含：制作媒体、产品参考资产、完整知识库、最新制作状态、正式提交 `6120d39965f530da489e1756c2e6dc9cd6392c57` 及其未提交改动、原始 Git 提交链
-- 这是可检出的历史候选备份；来源及排除范围详见 `RECOVERY_PROVENANCE.md`。它未获生产采用，不应直接覆盖 main 或被当作最新全量版本
-- 恢复校验针对文件字节与 Git 可检出性，不等同依赖安装、端到端运行或生产效果验收
+## 已包含什么
 
----
+- 第一层：9个Skill的84份执行文件，脚本、测试、schemas、配置、必要模板/示例、被引用的可恢复文档和资产注册表
+- 第二层：13个已确认绑定对应12份不同的项目专业方法正文，保留原版本与enabled/current状态；不重新认定它们适合任何新任务
+- 第三层：经验索引及2篇已登记条件性案例。案例事实、推断、未验证修复方向分开，不能当作2条已验证解决方法
+- 外部知识：仅本项目依赖的112份文本/知识文件，包含上述L2/L3、2份运行模板、项目动态规则载体及来源正文；不是整个659文件知识库
+- 原知识审计可解析75个动态知识块、14项仓库权威规则和43份被规则引用的来源页。文件、知识块与来源页是不同计数单位，不能相加
+- 6张产品图、6段动作视频、3份L3图/QA包保留外部Library ID、归档成员和SHA256，不把大媒体塞进Git
 
-# Master-Storyboarding
+## 来源与版本
 
-一个**个人用的轻量短视频工具**：用 AI 把一个故事做成 分镜 / 资产 / 视频脚本 / 成片，共 7 步。你在当前任务中与主 agent 协作，每步由主 agent 执行并自检，你审核确认后再按指令接下一步；独立子任务的委派边界见项目规则。
+代码基底是2026-10-08历史修复候选，而非生产采用版：Library libfile_9a507399ab9481918eb5bc1366f0c000，v1；ZIP SHA256为5eb6e2801e54a0c7c02da9500c3a46ed52237403558beb1359bf942448d21b10。
 
-## 怎么用它做一部短剧
+知识主要来自2026-10-05 20:51 UTC已校验归档：Library libfile_571c8b8874208191af637d15c93fe4fd；归档SHA256为bc2910ea40737e255d8583fefe9c31ca1763ddc3f5502a03b99614f7e0463dd5。2026-10-08导演知识定向导出libfile_b1be794c054081919f588403a8078987补充来源核对，所用正文与上述历史字节一致。逐文件来源、原成员、hash见backup/source_manifest.json。
 
-见 **[docs/development/README.md](docs/development/README.md)** —— 建项目、7 步流程、每步怎么跑、审核什么、红线速览。这是你的操作手册。
+本次不接纳后续情绪拍法/云经验等candidate，不复活被清除的旧经验，不复制无关账号、本机配置、认证、代理、私密运行日志或整个Wiki。
 
-## 环境
+## 空目录恢复
 
-```powershell
-python -m pip install -r config/requirements-dev.txt
-python -m pytest -c config/pytest.ini
-```
+1. 检出这个备份分支到一个新目录，使用Python3.13和Node
+2. 按config/requirements-dev.txt在自己的隔离环境安装声明依赖
+3. 在仓库根运行：python backup/check_restore.py。它只使用仓库内knowledge_snapshot/vault，验证文件hash、方法绑定、运行模板及原知识审计
+4. 执行已有工具前，仅为当前shell设置MSB_VAULT_ROOT为本仓库knowledge_snapshot/vault的绝对路径。POSIX shell可从仓库根运行：. ./backup/use_snapshot.sh
+5. 若需运行依赖真实产品图的原测试，先按backup/external_assets.json从已验证Library归档取回6张产品图，检查hash后放入清单给出的repo_path。动作视频和L3证据按任务需要单独恢复
+6. 从仓库根执行原测试：python -m pytest -q -c config/pytest.ini scripts/tests；node --test scripts/tests/*.cjs
 
-（测试须用 Python313 解释器；项目运行只需要 `config/requirements.txt`。）
+这只是恢复配置，不改业务架构、不连接原Vault、不设置自动同步、不生成媒体或发布生产项目。
 
-迁移旧 Windows 项目时，可仅给当前进程设置 `MSB_PROJECT_PATH_MAP`：内容是“原项目、仓库或 Vault 绝对根目录 → 当前本地对应绝对根目录”的 JSON 对象。只登记已核对的来源根及其旧别名；公共产物、素材图、产品参考和确认记录读取会据此解析原路径，不改确认正文、校验码或素材字节。不按项目同名猜测映射，未登记或缺失的文件仍阻塞。知识正文、模板与资产服务的图库/备份统一用 `MSB_VAULT_ROOT` 指定实际 Vault。未设置时保留原默认位置；隔离测试可给 `Library(..., vault=...)` 指定自己的可写副本。
+## 明确未闭合项
 
+- docs/development/cloud-knowledge-manual.md：历史Skill有引用，但原字节未找到。历史原型包不能冒充该正式文档；云知识维护功能须先取得并核对该原件
+- 14条教程原始附件/目录引用在现有来源包不可恢复；相关知识与来源说明正文已保留，见backup/knowledge_references.json。外部教程链接或摘要不等于原媒体已备份
+- 部分L3原制作工程/确认记录不在本备份，备份条件性经验正文不能证明全部实证产物已恢复
+- 不包含最新完整制作状态、原生产Git历史、正式6120及dirty、模型权重和运行凭据。不能直接把本分支覆盖main或称为最新全量生产备份
 
-## 规则与蓝图
-
-- **[docs/PROJECT_BLUEPRINT.md](docs/PROJECT_BLUEPRINT.md)** —— 北星文档：项目「是什么 / 往哪走 / 什么不碰」，改动前先读。
-- **[docs/decisions.md](docs/decisions.md)** —— 技术决策记录：为什么这么定 + 否掉了什么，改动前和蓝图一起读，避免走回头路。
-- **[PROJECT_RULES.md](PROJECT_RULES.md)** —— 唯一规则正文（5 条红线 + 工作边界）；详细红线在每个 Skill 的 `skills/_shared/`。
-
-## 目录
-
-- `skills/`：7 个生产 Skill + `stage-reviewer`（阶段审核）+ `knowledge-maintainer`（知识维护）。
-- `scripts/`：确定性打包 / 校验 / 交接工具（入口 `stage_context_cli.py`、`init_desktop_project.py`）。
-- `schemas/`：Skill 之间传数据用的格式合同。
-- `references/`：知识接线与 `workflow/` 知识策略。
-- `assets/`：真实产品参考与生产资产。
-- `config/`：环境配置（requirements、pytest.ini）。
-- `docs/`：使用说明。
+最终实测结果与限制见backup/RESTORE_REPORT.md。

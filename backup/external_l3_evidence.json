@@ -1,0 +1,26 @@
+[
+  {
+    "library_file_id": "libfile_4232630813548191ba44dcac484dca9c",
+    "library_version": 0,
+    "name": "S03-030_END_日常长裙测试候选_R01.png",
+    "bytes": 2250524,
+    "sha256": "c4ab8b78ca533e7d42b3a900ec8f03baf1ccf1f94c03b5f582de902e5dbb73f8",
+    "status": "Library bytes materialized and hash verified; not placed in Git; original conditional adoption boundaries retained"
+  },
+  {
+    "library_file_id": "libfile_3df2cee1bfc08191b3d1f9f3c5e11422",
+    "library_version": 0,
+    "name": "S03-030_START_候选_R01.png",
+    "bytes": 2057559,
+    "sha256": "f7fabec9210184d95ae13df84665d9ef700b248a663a9de1d09188a532e851e2",
+    "status": "Library bytes materialized and hash verified; not placed in Git; original conditional adoption boundaries retained"
+  },
+  {
+    "library_file_id": "libfile_978182acd10481919ca0ece5a1bd6c0f",
+    "library_version": 0,
+    "name": "S03-030_END_日常长裙测试_原图提示词与QA.zip",
+    "bytes": 9637721,
+    "sha256": "e1801d9b640c833a53aff7811f927ed9f14ea92e0b0d84d87bc53ae205520601",
+    "status": "Library bytes materialized and hash verified; not placed in Git; original conditional adoption boundaries retained"
+  }
+]
