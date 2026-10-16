@@ -1,0 +1,581 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://master-storyboarding.local/schemas/production-plan-v3.2.schema.json",
+  "title": "Lightweight Video Production Plan v3.2",
+  "description": "【已退役：现行视频阶段不再生成 production plan，本 schema 只用于读取旧项目】引用已确认导演包并用 segment_assignment 分配来源镜头；不复制或重写导演镜头合同。对白逐字引用叙事包，只登记自然语速估时、音频策略与必要的语义时间关系。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project_id",
+    "revision",
+    "status",
+    "source_storyboard",
+    "source_narrative",
+    "source_assets",
+    "source_voice_manifest",
+    "source_visual_supplements",
+    "dialogue_register",
+    "segments",
+    "authorization",
+    "open_gaps"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "3.2"
+    },
+    "project_id": {
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "revision": {
+      "type": "string",
+      "pattern": "^R[0-9]{2,}$"
+    },
+    "status": {
+      "enum": [
+        "draft",
+        "blocked",
+        "candidate",
+        "confirmed",
+        "superseded"
+      ]
+    },
+    "source_storyboard": {
+      "$ref": "#/$defs/storyboardRef"
+    },
+    "source_narrative": {
+      "$ref": "#/$defs/narrativeRef"
+    },
+    "source_assets": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/assetRef"
+        }
+      ]
+    },
+    "source_voice_manifest": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/voiceRef"
+        }
+      ]
+    },
+    "source_visual_supplements": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/supplementRef"
+      }
+    },
+    "dialogue_register": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/dialogue"
+      }
+    },
+    "segments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/segment"
+      }
+    },
+    "authorization": {
+      "$ref": "#/$defs/authorization"
+    },
+    "open_gaps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/nonEmptyString"
+      }
+    }
+  },
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "pathString": {
+      "type": "string",
+      "minLength": 3
+    },
+    "shotId": {
+      "type": "string",
+      "pattern": "^S[0-9]{2,}[A-Z]?-[0-9]{3,}$"
+    },
+    "eventId": {
+      "type": "string",
+      "pattern": "^EVT-[A-Z0-9-]+$"
+    },
+    "dialogueId": {
+      "type": "string",
+      "pattern": "^DLG-[A-Z0-9-]+$"
+    },
+    "artifactBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifact_id",
+        "logical_id",
+        "revision",
+        "path",
+        "status"
+      ],
+      "properties": {
+        "artifact_id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "logical_id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^R[0-9]{2,}$"
+        },
+        "path": {
+          "$ref": "#/$defs/pathString"
+        },
+        "status": {
+          "const": "confirmed"
+        }
+      }
+    },
+    "storyboardRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactBase"
+        },
+        {
+          "properties": {
+            "logical_id": {
+              "const": "storyboard.package"
+            }
+          }
+        }
+      ]
+    },
+    "narrativeRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactBase"
+        },
+        {
+          "properties": {
+            "logical_id": {
+              "const": "narrative.package"
+            }
+          }
+        }
+      ]
+    },
+    "assetRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactBase"
+        },
+        {
+          "properties": {
+            "logical_id": {
+              "const": "visual-asset.manifest"
+            }
+          }
+        }
+      ]
+    },
+    "voiceRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactBase"
+        },
+        {
+          "properties": {
+            "logical_id": {
+              "const": "voice-reference.manifest"
+            }
+          }
+        }
+      ]
+    },
+    "supplementRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactBase"
+        },
+        {
+          "properties": {
+            "logical_id": {
+              "const": "visual-supplement.request"
+            }
+          }
+        }
+      ]
+    },
+    "dialogue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dialogue_id",
+        "speaker_id",
+        "text",
+        "natural_duration_seconds",
+        "duration_basis",
+        "audio_strategy"
+      ],
+      "properties": {
+        "dialogue_id": {
+          "$ref": "#/$defs/dialogueId"
+        },
+        "speaker_id": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9-]+$"
+        },
+        "text": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "natural_duration_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "duration_basis": {
+          "enum": [
+            "natural_read_estimate",
+            "confirmed_audio_measurement"
+          ]
+        },
+        "audio_strategy": {
+          "enum": [
+            "model_voice",
+            "voice_reference",
+            "post_dub",
+            "offscreen",
+            "narration"
+          ]
+        }
+      }
+    },
+    "segment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "segment_id",
+        "order",
+        "segment_assignment",
+        "source_event_ids",
+        "source_dialogue_ids",
+        "planned_generation_duration_seconds",
+        "target_edit_duration_seconds",
+        "start_state",
+        "end_state",
+        "reference_inputs",
+        "prompt_path",
+        "semantic_timing_relations",
+        "status"
+      ],
+      "properties": {
+        "segment_id": {
+          "type": "string",
+          "pattern": "^SEG-[0-9]{2,}$"
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "segment_assignment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "source_shot_ids",
+            "grouping_basis"
+          ],
+          "properties": {
+            "source_shot_ids": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/shotId"
+              }
+            },
+            "grouping_basis": {
+              "enum": [
+                "continuous_event",
+                "single_shot",
+                "model_limit_split"
+              ]
+            }
+          }
+        },
+        "source_event_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/eventId"
+          }
+        },
+        "source_dialogue_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/dialogueId"
+          }
+        },
+        "planned_generation_duration_seconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "target_edit_duration_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "start_state": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "end_state": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "reference_inputs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/pathString"
+          }
+        },
+        "prompt_path": {
+          "$ref": "#/$defs/pathString"
+        },
+        "semantic_timing_relations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/semanticTiming"
+          }
+        },
+        "duration_decomposition": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "dialogue_seconds",
+            "action_seconds",
+            "establishing_seconds",
+            "transition_seconds",
+            "rationale"
+          ],
+          "properties": {
+            "dialogue_seconds": {
+              "type": "number",
+              "minimum": 0
+            },
+            "action_seconds": {
+              "type": "number",
+              "minimum": 0
+            },
+            "dialogue_action_overlap_seconds": {
+              "type": "number",
+              "minimum": 0,
+              "description": "对白与动作实际同时发生的秒数，缺省为0；不得超过两者较短时长，rationale须说明对应动作和对白依据。"
+            },
+            "establishing_seconds": {
+              "type": "number",
+              "minimum": 0
+            },
+            "transition_seconds": {
+              "type": "number",
+              "minimum": 0
+            },
+            "rationale": {
+              "$ref": "#/$defs/nonEmptyString"
+            }
+          }
+        },
+        "status": {
+          "enum": [
+            "draft",
+            "blocked",
+            "ready"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "prompt_path": {
+                "const": "[AD-INSERT]"
+              }
+            }
+          },
+          "then": {
+            "if": {
+              "properties": {
+                "target_edit_duration_seconds": {
+                  "const": 0
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": "blocked"
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "planned_generation_duration_seconds": {
+                "minimum": 1
+              },
+              "target_edit_duration_seconds": {
+                "exclusiveMinimum": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "semanticTiming": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dialogue_id",
+        "action",
+        "relation",
+        "semantic_reason"
+      ],
+      "properties": {
+        "dialogue_id": {
+          "$ref": "#/$defs/dialogueId"
+        },
+        "action": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "relation": {
+          "enum": [
+            "before_dialogue",
+            "during_dialogue",
+            "after_dialogue",
+            "on_semantic_trigger"
+          ]
+        },
+        "semantic_reason": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "authorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model_selection_status",
+        "model_id",
+        "model_selection_approval_ref",
+        "paid_generation_authorized",
+        "paid_generation_approval_ref",
+        "submission_authorized",
+        "submission_approval_ref"
+      ],
+      "properties": {
+        "model_selection_status": {
+          "enum": [
+            "awaiting_user",
+            "confirmed_by_user"
+          ]
+        },
+        "model_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model_selection_approval_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "paid_generation_authorized": {
+          "type": "boolean"
+        },
+        "paid_generation_approval_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "submission_authorized": {
+          "type": "boolean"
+        },
+        "submission_approval_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "model_selection_status": {
+                "const": "confirmed_by_user"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "model_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "model_selection_approval_ref": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "paid_generation_authorized": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "paid_generation_approval_ref": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "submission_authorized": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "submission_approval_ref": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "skill": "storyboard-planner",
+  "topics": ["storyboard", "shot-scale", "staging", "continuity", "camera", "composition", "asset-planning", "director-previsualization", "theme", "violence", "directing", "ending", "character-arc", "agency", "sound", "editing", "sound-picture"],
+  "professional_methods": [
+    {
+      "id": "STORYBOARD-PLANNING-METHOD",
+      "path": "projects/Master-Storyboarding/应用知识/导演规划/导演规划方法.md",
+      "binding_status": "user_confirmed",
+      "applies_when": "已确认叙事包之后形成、返修或核对导演镜头方案时",
+      "requires": {"skill": "storyboard-planner"}
+    }
+  ]
+}

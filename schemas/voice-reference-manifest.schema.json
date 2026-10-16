@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://master-storyboarding.local/schemas/voice-reference-manifest.schema.json",
+  "title": "Project Voice Reference Manifest v2",
+  "type": "object",
+  "required": ["schema_version", "project_path", "assignments"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "project_path": {"type": "string", "minLength": 1},
+    "updated_at": {"type": "string"},
+    "assignments": {"type": "array", "items": {"$ref": "#/$defs/assignment"}}
+  },
+  "$defs": {
+    "nonEmptyString": {"type": "string", "minLength": 1},
+    "scope": {"type": "string", "pattern": "^(?:project|(?:scene|segment):[A-Za-z0-9._-]+)$"},
+    "assignment": {
+      "type": "object",
+      "required": [
+        "character_id", "character_name", "voice_id", "voice_name", "source", "authorization",
+        "dialogue_scope", "dialogue_ids", "applicable_scope", "excluded_scope", "snapshot_path",
+        "duration_seconds", "sha256", "snapshot_created_at", "status", "confirmed_by_user", "approval_ref"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "character_id": {"type": "string", "pattern": "^[A-Za-z0-9._-]+$"},
+        "character_name": {"$ref": "#/$defs/nonEmptyString"},
+        "voice_id": {"$ref": "#/$defs/nonEmptyString"},
+        "voice_name": {"$ref": "#/$defs/nonEmptyString"},
+        "source": {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "source_ref", "speaker_identity_basis"],
+          "properties": {
+            "kind": {"enum": ["user_recording", "licensed_library", "generated_candidate", "legacy_unknown", "other"]},
+            "source_ref": {"$ref": "#/$defs/nonEmptyString"},
+            "speaker_identity_basis": {"$ref": "#/$defs/nonEmptyString"}
+          }
+        },
+        "authorization": {
+          "type": "object", "additionalProperties": false,
+          "required": ["status", "authorization_ref", "permitted_uses"],
+          "properties": {
+            "status": {"const": "authorized"},
+            "authorization_ref": {"$ref": "#/$defs/nonEmptyString"},
+            "permitted_uses": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/nonEmptyString"}}
+          }
+        },
+        "dialogue_scope": {"enum": ["all_confirmed_dialogue_for_character", "specific_dialogue_ids"]},
+        "dialogue_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^(DLG|L)-[A-Za-z0-9._-]+$"}},
+        "applicable_scope": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/scope"}},
+        "excluded_scope": {"type": "array", "items": {"$ref": "#/$defs/scope"}},
+        "snapshot_path": {"$ref": "#/$defs/nonEmptyString"},
+        "duration_seconds": {"type": "number", "minimum": 2, "maximum": 30},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "snapshot_created_at": {"$ref": "#/$defs/nonEmptyString"},
+        "status": {"const": "current"},
+        "confirmed_by_user": {"const": true},
+        "approval_ref": {"$ref": "#/$defs/nonEmptyString"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"dialogue_scope": {"const": "specific_dialogue_ids"}}, "required": ["dialogue_scope"]},
+          "then": {"properties": {"dialogue_ids": {"minItems": 1}}}
+        }
+      ]
+    }
+  }
+}

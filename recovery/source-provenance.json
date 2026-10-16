@@ -1,0 +1,120 @@
+{
+  "source_archive_sha256": "5eb6e2801e54a0c7c02da9500c3a46ed52237403558beb1359bf942448d21b10",
+  "source_reference": "a764c59558b28dfc20e5326961c0045f603bb652",
+  "archive_file_count": 325,
+  "pinned_file_verification": [
+    {
+      "path": "skills/creative-director/SKILL.md",
+      "matches_pinned_git_blob": true
+    },
+    {
+      "path": "skills/creative-director/knowledge-profile.json",
+      "matches_pinned_git_blob": true
+    },
+    {
+      "path": "skills/creative-director/modules/story-method.md",
+      "matches_pinned_git_blob": true
+    },
+    {
+      "path": "skills/creative-director/review-profile.json",
+      "matches_pinned_git_blob": true
+    },
+    {
+      "path": "skills/creative-director/templates/narrative-package-template.md",
+      "matches_pinned_git_blob": true
+    },
+    {
+      "path": "skills/creative-director/tests/cinematic-pressure-tests.md",
+      "matches_pinned_git_blob": true
+    },
+    {
+      "path": "scripts/tests/test_method_documents.py",
+      "matches_pinned_git_blob": true
+    },
+    {
+      "path": "scripts/tests/test_stage_context_cli.py",
+      "matches_pinned_git_blob": true
+    },
+    {
+      "path": "skills/creative-director/references/dialogue-lineage-contract.md",
+      "matches_pinned_git_blob": true
+    },
+    {
+      "path": "skills/creative-director/references/asset-image-necessity.md",
+      "matches_pinned_git_blob": true
+    },
+    {
+      "path": "PROJECT_RULES.md",
+      "matches_pinned_git_blob": true
+    },
+    {
+      "path": "scripts/stage_context_cli.py",
+      "matches_pinned_git_blob": true
+    },
+    {
+      "path": "scripts/core/story_sources.py",
+      "matches_pinned_git_blob": true
+    },
+    {
+      "path": "scripts/tests/test_creative_director_contract.py",
+      "matches_pinned_git_blob": true
+    },
+    {
+      "path": "scripts/tests/test_story_dialogue_consistency.py",
+      "matches_pinned_git_blob": true
+    },
+    {
+      "path": "skills/_shared/knowledge-access.md",
+      "matches_pinned_git_blob": true
+    },
+    {
+      "path": "skills/_shared/product-usage-contract.md",
+      "matches_pinned_git_blob": true
+    },
+    {
+      "path": "skills/_shared/prompt-language.md",
+      "matches_pinned_git_blob": true
+    },
+    {
+      "path": "scripts/core/review_delta.py",
+      "matches_pinned_git_blob": true
+    },
+    {
+      "path": "scripts/core/knowledge_selector.py",
+      "matches_pinned_git_blob": true
+    },
+    {
+      "path": "scripts/tests/test_knowledge_review_boundaries.py",
+      "matches_pinned_git_blob": true
+    },
+    {
+      "path": "scripts/tests/test_review_identity.py",
+      "matches_pinned_git_blob": true
+    },
+    {
+      "path": "skills/stage-reviewer/SKILL.md",
+      "matches_pinned_git_blob": true
+    },
+    {
+      "path": "skills/stage-reviewer/review-profile.json",
+      "matches_pinned_git_blob": true
+    },
+    {
+      "path": "skills/stage-reviewer/modules/review-method.md",
+      "matches_pinned_git_blob": true
+    },
+    {
+      "path": "skills/storyboard-planner/modules/shot-planning.md",
+      "matches_pinned_git_blob": true
+    },
+    {
+      "path": "skills/storyboard-planner/review-profile.json",
+      "matches_pinned_git_blob": true
+    }
+  ],
+  "historical_import_is_new_root_commit": true,
+  "original_git_ancestry_imported": false,
+  "production_restoration_proven": false,
+  "remote_target_for_review_only": "yang43595-cell/Master-Storyboarding",
+  "pushed": false
+}

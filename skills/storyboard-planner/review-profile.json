@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0",
+  "skill": "storyboard-planner",
+  "skill_contract_checks": [
+    {"id": "CONTRACT-TRIGGER", "text": "触发条件明确指向已确认叙事包后的导演规划"},
+    {"id": "CONTRACT-BOUNDARY", "text": "职责、输入、输出与硬禁区明确，不承担资产新增、Blender、模型、生成分段或提示词"},
+    {"id": "CONTRACT-REFERENCES", "text": "本地引用、v4 schema、v1/v2/v3 只读 schema 与模板真实存在，知识 topics 与实际职责一致"},
+    {"id": "CONTRACT-TRACE", "text": "Scene、Shot 与导演决策要求可追溯到稳定 STP、DLG 与 AST"},
+    {"id": "CONTRACT-VERSION", "text": "storyboard-package v4 为唯一新生产合同，v1/v2/v3 仅只读兼容"}
+  ],
+  "production_artifact_checks": [
+    {"id": "PLAN-EXPRESSION", "text": "按本轮方法快照检查重要情绪与关系转折：先找出应被看见的变化及遗漏，再比较拍法，最后合并重复观看。逐处给出观看对象、景别、可见表演、原声覆盖和停留的证据；同框需证明关键表情及关注顺序清楚，近景需说明突出的人物感受和关系承接。关键取舍核对具体选定与未选拍法的表达收益及代价；没有实质岔路不强凑双案。先独立读整段视听展开，再核作者说明；结论以实际表达效果为依据，不用景别数量、比较词句或字段齐全代替。"},
+    {"id": "PLAN-SHOT-UNIT", "text": "往返核对带镜头边界的视听段落与逐镜表，画面、动作、声音、信息揭示顺序和切点均有对应且无暗增；逐条对照起幅、镜内过程、落幅，确认一个 Shot 条目是一段连续摄影，并能直接对应一个 shots[] 对象；不同机位的剪辑发生在条目之间。检查目标镜头条目确实存在，不能用内部 A/B、正反打组合或字段完整替代独立镜头；连续运镜、转焦和跨镜切点文字本身不构成违规"},
+    {"id": "PLAN-TRACE", "text": "故事事实回指确认叙事包；用户锁定或已确认拍法回指准确来源与范围，AI 未确认旧拍法不冒充锁定。本轮新作或修改的镜头目的、调度、摄影机、切点和声画关系标为候选决定；未改的已确认内容保留原确认范围与依据；局部修改不越出授权范围及直接影响"},
+    {"id": "PLAN-DIALOGUE", "text": "对白及其说话者未被新增、删减或改写；已选定的声音表演在对应片段 delivery 中保留，跨镜语气延续，不混入 text"},
+    {"id": "PLAN-CONTINUITY", "text": "空间、动作、视线、道具、产品、光线、声音与状态连续性可执行"},
+    {"id": "PLAN-GAPS", "text": "资产缺口绑定来源段落和受影响镜头，只报告且未生成新 AST"},
+    {"id": "PLAN-PACKAGE", "text": "Markdown 自查核对正文内部一致及已确认上游叙事包 artifact/revision；用户确认该导演稿后才生成并核对 storyboard-package v4，不把缺少产物 JSON 作为 Markdown 审查失败"},
+    {"id": "PLAN-BOUNDARY", "text": "未自行新增资产需求，用户确认调整按项目规则核对；未决定 Blender、视频模型、生成分段、提示词或正式分镜图"},
+    {"id": "KB-COMPLIANCE", "text": "产物命中对应知识：分镜方案须遵循 PROJECT_RULES、当前知识包、STORYBOARD-PLANNING-METHOD 全文快照与本地执行合同；景别/基础连续性剪辑属模型通用能力，不作动态知识包命中要求。只止于可执行导演合同，不越权写 Blender/模型/提示词。产出前已 prepare 并核对上述规范，非自行发挥"},
+    {"id": "SERIAL-DELIVERY", "text": "按 PROJECT_RULES 的串行交付阶段判断：问题在对话集中提出并等待；答疑不是稿件确认；自查后的完整 Markdown 经用户明确确认才生成交付 JSON"}
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://master-storyboarding.local/schemas/voice-reference-library.schema.json",
+  "title": "Voice Reference Library v2",
+  "type": "object",
+  "required": ["schema_version", "voices"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "updated_at": {"type": "string"},
+    "voices": {"type": "array", "items": {"$ref": "#/$defs/voice"}}
+  },
+  "$defs": {
+    "nonEmptyString": {"type": "string", "minLength": 1},
+    "voice": {
+      "type": "object",
+      "required": ["voice_id", "name", "audio_path", "character_types", "duration_seconds", "sha256", "source", "authorization"],
+      "additionalProperties": false,
+      "properties": {
+        "voice_id": {"type": "string", "pattern": "^[A-Za-z0-9._-]+$"},
+        "name": {"$ref": "#/$defs/nonEmptyString"},
+        "audio_path": {"$ref": "#/$defs/nonEmptyString"},
+        "character_types": {"type": "array", "items": {"$ref": "#/$defs/nonEmptyString"}},
+        "duration_seconds": {"type": "number", "minimum": 2, "maximum": 30},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "source": {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "source_ref", "speaker_identity_basis"],
+          "properties": {
+            "kind": {"enum": ["user_recording", "licensed_library", "generated_candidate", "legacy_unknown", "other"]},
+            "source_ref": {"$ref": "#/$defs/nonEmptyString"},
+            "speaker_identity_basis": {"$ref": "#/$defs/nonEmptyString"}
+          }
+        },
+        "authorization": {
+          "type": "object", "additionalProperties": false,
+          "required": ["status", "authorization_ref", "permitted_uses"],
+          "properties": {
+            "status": {"enum": ["authorized", "restricted", "unknown"]},
+            "authorization_ref": {"$ref": "#/$defs/nonEmptyString"},
+            "permitted_uses": {"type": "array", "items": {"$ref": "#/$defs/nonEmptyString"}}
+          }
+        }
+      }
+    }
+  }
+}

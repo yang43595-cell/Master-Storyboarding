@@ -1,0 +1,25 @@
+{
+  "schema_version": "2.0",
+  "project": "Master-Storyboarding",
+  "description": "按 Skill profile 动态发现知识；不保存中央阶段表或知识正文。",
+  "profiles": {
+    "root": "skills",
+    "filename": "knowledge-profile.json"
+  },
+  "discovery": {
+    "roots": ["wiki/concepts", "wiki/synthesis"],
+    "excluded_globs": ["**/*.evolving.md", "wiki/inbox/**", "wiki/archive/**", "projects/**"],
+    "allowed_kinds": ["rule", "reference"],
+    "allowed_statuses": ["enabled", "confirmed"],
+    "tombstones": "wiki/reference/master-storyboarding-invalid-rules.jsonl"
+  },
+  "budgets": {
+    "max_blocks": 8,
+    "max_chars": 6000,
+    "max_block_chars": 1800
+  },
+  "status_priority": {
+    "confirmed": 2000,
+    "enabled": 1000
+  }
+}

@@ -19,3 +19,7 @@ The production baseline reported before recovery was commit `6120d39965f530da489
 Source, schemas, contracts, and reproducible tests belong in Git. Credentials, environment secrets, raw footage, customer project inputs, generated media, and asset-library files stay outside this repository. Recovering those external assets is a separate prerequisite for production.
 
 Branch protections, CI, deployments, and credentials are not implied by this setup document.
+
+## Isolated audit branch
+
+On `audit/20261017`, source files are restored from the verified 2026-10-14 mask-r3 historical package. This is not the 2026-10-16 assets-v2 production tree. See [audit provenance and validation](docs/development/audit-20261017.md). Main is not merged or changed.

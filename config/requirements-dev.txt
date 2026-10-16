@@ -1,0 +1,4 @@
+-r requirements.txt
+pytest>=9.1,<9.2
+# Visual asset tests also run in a clean project Python environment.
+Pillow>=12.3,<12.4

@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0",
+  "skill": "creative-director",
+  "skill_contract_checks": [
+    {"id": "CONTRACT-TRIGGER", "text": "触发条件明确指向故事与编导正文阶段"},
+    {"id": "CONTRACT-BOUNDARY", "text": "职责、输入、输出与硬禁区明确，不承担镜头设计或生成执行"},
+    {"id": "CONTRACT-REFERENCES", "text": "本地引用、模板与 narrative-package schema 真实存在，知识 topics 与实际职责一致"},
+    {"id": "CONTRACT-DIALOGUE", "text": "对白归编导管理，提取不改及锁定或确认对白要求逐字保留"},
+    {"id": "CONTRACT-OUTPUT", "text": "人类可读编导稿与结构化叙事包的输入输出、稳定 ID 和 artifact manifest 登记明确"},
+    {"id": "CONTRACT-LEGACY", "text": "合同不依赖 V3 编排器、派发协议、任务图或旧哈希协议"}
+  ],
+  "production_artifact_checks": [
+    {"id": "CREATIVE-FACTS", "text": "用户锁定的事实、主题、人物关系与对白未被擅自改写；Markdown 中身份、关系、对白归属等有原始证据或用户回答支持；不能将待答问题先猜成事实。送审稿没有影响正确性的未决标记"},
+    {"id": "CREATIVE-STORY", "text": "有对白时已先交用户核对、再产出完整故事正文，未先出正文后补核对；正文含开场位置与活动、行动者、关键动作及物件变化，因果和人物行动成立；原片保留事件及用户纠正没有被梗概化省略或改写，非对白内容有来源核对，不由导演补造"},
+    {"id": "CREATIVE-DIALOGUE", "text": "对白自然、归属明确；正文嵌入的对白与最终对白表逐字、说话人、顺序一致，保留 DLG 引用；对白确认不扩展为正文确认"},
+    {"id": "CREATIVE-IDS", "text": "Markdown 自查核对 STP、DLG、AST 唯一且内部引用完整；用户确认后生成 JSON 时才检查双文件一致"},
+    {"id": "CREATIVE-ASSETS", "text": "资产表逐项填写处理结论与具体判断依据；只检查是否完成资产图必要性判断，不重复详细审查，不决定镜头或生成方式"},
+    {"id": "CREATIVE-MANIFEST", "text": "Markdown 确认前检查未生成或登记交付 JSON；确认后核对 JSON 与已确认稿一致，再登记两份产物的身份、revision、路径和依赖"},
+    {"id": "CREATIVE-BOUNDARY", "text": "产物未自行设计景别、机位、构图、运镜、切点、模型或生成路径；原样记录有来源的用户锁定拍法属于输入约束，不能以职责边界为由漏传，也不能借记录要求补写拍法"},
+    {"id": "KB-COMPLIANCE", "text": "当前输入、PROJECT_RULES、适用知识与对白溯源契约已核对；产品事实和宣称边界未因方法按需而省略。仅选用 CREATIVE-DIRECTION-METHOD 时要求其全文及阅读证据；不把未选理论当作缺陷。只登记必要 STP/DLG/AST，不决定画面实现"},
+    {"id": "SERIAL-DELIVERY", "text": "按 PROJECT_RULES 的串行交付阶段判断：问题在对话集中提出并等待；答疑不是稿件确认；自查后的完整 Markdown 经用户明确确认才生成交付 JSON"}
+  ]
+}

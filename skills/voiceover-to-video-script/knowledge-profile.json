@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0",
+  "skill": "voiceover-to-video-script",
+  "topics": ["video-prompt", "asset-driven-video", "continuity", "video-generation", "sound"],
+  "professional_methods": [
+    {
+      "id": "VGEN-PROMPT-FOUNDATION",
+      "path": "projects/Master-Storyboarding/应用知识/视频提示词/提示词基础方法.md",
+      "binding_status": "user_confirmed",
+      "direct_read_when": "为已确认导演包、原文对白和真实素材编写视频生成段提示词时",
+      "applies_when": "当前直读视频提示词流程",
+      "requires": {"skill": "voiceover-to-video-script", "direct_read": true}
+    },
+    {
+      "id": "VGEN-MATERIAL-RESPONSIBILITY",
+      "path": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法.md",
+      "binding_status": "user_confirmed",
+      "direct_read_when": "为已确认导演包、原文对白和真实素材编写视频生成段提示词时",
+      "applies_when": "当前直读视频提示词流程",
+      "requires": {"skill": "voiceover-to-video-script", "direct_read": true}
+    },
+    {
+      "id": "VGEN-SEEDANCE25-CONTROLS",
+      "path": "projects/Master-Storyboarding/应用知识/视频提示词/Seedance 2.5 受限表达与控制引用.md",
+      "binding_status": "user_confirmed",
+      "direct_read_when": "本轮模型为 seedance2.5 时",
+      "applies_when": "当前直读视频提示词流程",
+      "requires": {"skill": "voiceover-to-video-script", "direct_read": true}
+    },
+    {
+      "id": "VGEN-CREATOR-POLISHING-MASK-USE",
+      "path": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/方法.md",
+      "binding_status": "user_confirmed",
+      "direct_read_when": "产品为造物者抛光面膜，且本轮确有已确认的真实使用过程时",
+      "applies_when": "当前直读视频提示词流程",
+      "requires": {"skill": "voiceover-to-video-script", "direct_read": true}
+    }
+  ],
+  "conditional_experiences": [
+    {
+      "id": "VGEN-SCALE-CONTINUITY-CASE-LOOKUP",
+      "path": "projects/Master-Storyboarding/经验/经验索引.md",
+      "status": "conditional-reference",
+      "direct_read_when": "本轮已明确角色放大、缩小、微缩，或巨人/巨物涉及的比例状态与跨片段连续性、跨段衔接问题时，按索引定位相应案例并按需直读；普通任务不加载，类比不代表已验证",
+      "retrieval_keywords": [
+        "放大",
+        "缩小",
+        "微缩",
+        "巨人",
+        "巨物",
+        "巴掌大小",
+        "体型变化",
+        "比例状态",
+        "尺度漂移",
+        "跨片段连续性",
+        "跨段衔接",
+        "scale",
+        "shrink",
+        "enlarge",
+        "giant"
+      ]
+    }
+  ]
+}

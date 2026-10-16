@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://master-storyboarding.local/schemas/revision-evidence.schema.json",
+  "title": "Video revision evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "evidence_id", "artifact_ref", "base_revision", "status",
+    "observed", "expected", "preserve", "allowed_changes", "forbidden_changes",
+    "acceptance_criteria"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "evidence_id": {"type": "string", "pattern": "^REV-EVID-[A-Za-z0-9._-]+$"},
+    "artifact_ref": {"type": "string", "pattern": "^artifact://[A-Za-z0-9._-]+$"},
+    "base_revision": {"type": "string", "pattern": "^R[0-9]{2,}$"},
+    "status": {"enum": ["ready", "resolved", "superseded"]},
+    "segment_id": {"type": "string", "minLength": 1},
+    "time_range": {"type": "string", "minLength": 1},
+    "frame_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "target_unit_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unit_type", "unit_id", "selector"],
+      "properties": {
+        "unit_type": {"type": "string", "minLength": 1},
+        "unit_id": {"type": "string", "minLength": 1},
+        "selector": {"type": "string", "minLength": 1}
+      }
+    },
+    "observed": {"type": "string", "minLength": 1},
+    "expected": {"type": "string", "minLength": 1},
+    "preserve": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "allowed_changes": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+    "forbidden_changes": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "acceptance_criteria": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+    "notes": {"type": "string"}
+  },
+  "anyOf": [
+    {"required": ["segment_id"]},
+    {"required": ["time_range"]},
+    {"required": ["frame_refs"], "properties": {"frame_refs": {"minItems": 1}}},
+    {"required": ["target_unit_ref"]}
+  ]
+}

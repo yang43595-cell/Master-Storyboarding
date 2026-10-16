@@ -1,0 +1,363 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://master-storyboarding.local/schemas/narrative-package-v1.schema.json",
+  "title": "Creative Director Narrative Package",
+  "description": "编导稿的结构化引用合同。登记稳定事件、对白与叙事阶段资产需求，不包含镜头或生成决策。",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "project_id",
+    "revision",
+    "status",
+    "human_readable_path",
+    "objective",
+    "locked_facts",
+    "events",
+    "dialogues",
+    "asset_requirements",
+    "change_summary",
+    "open_questions"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "project_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "revision": {
+      "type": "string",
+      "pattern": "^R[0-9]{2,}$"
+    },
+    "status": {
+      "enum": [
+        "candidate",
+        "confirmed",
+        "superseded",
+        "rejected"
+      ]
+    },
+    "human_readable_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "objective": {
+      "type": "string",
+      "minLength": 1
+    },
+    "locked_facts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/lockedFact"
+      }
+    },
+    "events": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/event"
+      }
+    },
+    "dialogues": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/dialogue"
+      }
+    },
+    "asset_requirements": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/assetRequirement"
+      }
+    },
+    "change_summary": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "open_questions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "$defs": {
+    "lockedFact": {
+      "type": "object",
+      "required": [
+        "fact_id",
+        "statement",
+        "source_ref"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "fact_id": {
+          "type": "string",
+          "pattern": "^FACT-[A-Z0-9-]+$"
+        },
+        "statement": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_ref": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "event": {
+      "type": "object",
+      "required": [
+        "event_id",
+        "summary",
+        "start_state",
+        "change",
+        "end_state",
+        "participants",
+        "depends_on"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "type": "string",
+          "pattern": "^EVT-[A-Z0-9-]+$"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "start_state": {
+          "type": "string",
+          "minLength": 1
+        },
+        "change": {
+          "type": "string",
+          "minLength": 1
+        },
+        "end_state": {
+          "type": "string",
+          "minLength": 1
+        },
+        "participants": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9-]+$"
+          },
+          "uniqueItems": true
+        },
+        "depends_on": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^EVT-[A-Z0-9-]+$"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "dialogue": {
+      "type": "object",
+      "required": [
+        "dialogue_id",
+        "speaker_id",
+        "text",
+        "source_event_id",
+        "status",
+        "source_ref"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "dialogue_id": {
+          "type": "string",
+          "pattern": "^DLG-[A-Z0-9-]+$"
+        },
+        "speaker_id": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9-]+$"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_event_id": {
+          "type": "string",
+          "pattern": "^EVT-[A-Z0-9-]+$"
+        },
+        "status": {
+          "enum": [
+            "draft",
+            "locked",
+            "confirmed"
+          ]
+        },
+        "source_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "performance_intent": {
+          "type": "string"
+        }
+      }
+    },
+    "assetRequirement": {
+      "type": "object",
+      "required": [
+        "asset_id",
+        "category",
+        "name",
+        "narrative_purpose",
+        "source_event_ids",
+        "identity_constraints",
+        "required_states",
+        "interactions",
+        "reference_paths",
+        "unknowns"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "type": "string",
+          "pattern": "^AST-[A-Z0-9-]+$"
+        },
+        "entity_id": {
+          "type": "string",
+          "pattern": "^CHR-[A-Z0-9-]+$"
+        },
+        "category": {
+          "enum": [
+            "CHARACTER",
+            "LOCATION",
+            "PROP",
+            "REAL_PRODUCT",
+            "WARDROBE",
+            "STYLE_REFERENCE",
+            "OTHER"
+          ]
+        },
+        "spatial_scope": {
+          "enum": [
+            "SINGLE_CONTIGUOUS_SPACE"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "narrative_purpose": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_event_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^EVT-[A-Z0-9-]+$"
+          },
+          "uniqueItems": true
+        },
+        "identity_constraints": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required_states": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "interactions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "reference_paths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "unknowns": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "image_decision": {
+          "enum": [
+            "无需独立图",
+            "复用现有素材",
+            "需要制作",
+            "待定"
+          ]
+        },
+        "image_reason": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "character_type": {
+          "enum": [
+            "HUMAN",
+            "HUMANOID",
+            "ANIMAL",
+            "NON_HUMANOID",
+            "PET"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "category": {
+                "const": "CHARACTER"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "entity_id"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "category": {
+                "const": "LOCATION"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "spatial_scope"
+            ]
+          }
+        }
+      ],
+      "dependentRequired": {
+        "image_decision": [
+          "image_reason"
+        ],
+        "image_reason": [
+          "image_decision"
+        ]
+      }
+    }
+  }
+}

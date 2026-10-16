@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "skill": "knowledge-maintainer",
+  "skill_contract_checks": [
+    {"id": "CONTRACT-TRIGGER", "text": "触发条件明确指向 Master-Storyboarding 知识规则维护与入口审计"},
+    {"id": "CONTRACT-BOUNDARY", "text": "职责、输入、输出与硬禁区明确，按本机/云端属地使用合法 owner 和已有写入门禁；release 只读"},
+    {"id": "CONTRACT-REFERENCES", "text": "维护方法、审计合同、知识入口与本地 profile 引用真实存在"},
+    {"id": "CONTRACT-OWNERSHIP", "text": "专业方法保留在 Vault，Skill 本地只保留执行合同和技术清单"}
+  ],
+  "production_artifact_checks": [
+    {"id": "KNOWLEDGE-GUARD", "text": "本机写入的合法 owner、guard begin/finish 与提交证据完整；云端 cloud-owned 案例按 author/publish/verify 留存 base/hash 与真实来源，未擅改 release/pin 或自动激活"},
+    {"id": "KNOWLEDGE-CONSUMERS", "text": "知识有真实 Skill 消费者及 topic 或明确 trigger 可达路径，退役消费者已清理"},
+    {"id": "KNOWLEDGE-TRUTH", "text": "专业方法只有一个 Vault 权威正文，Skill 未复制知识正文"},
+    {"id": "KNOWLEDGE-AUDIT", "text": "知识入口审计为零错误，不存在未知消费者、无消费 topic 或 confirmed 冲突"}
+  ]
+}
