@@ -166,7 +166,7 @@ def _template_excerpt(raw, kind, view=''):
 def _writing_rules(ref, content, single_item):
     """Remove named non-writing sections; all other source text passes through verbatim."""
     omitted = {
-        'PROJECT_RULES.md': {'项目目录按生产流程排列', '双文件产物串行交付', '导演稿之后的生产顺序'},
+        'PROJECT_RULES.md': {'项目目录按生产流程排列', '双文件产物串行交付', 'JSON 交付与按需导出', '导演稿之后的生产顺序'},
         'skills/asset-image-assistant/SKILL.md': {'后续交接'},
         'skills/_shared/knowledge-access.md': {'局部维护边界', '读取与执行开销'},
     }.get(ref, set()) if single_item else set()

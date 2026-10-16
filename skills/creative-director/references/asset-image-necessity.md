@@ -26,7 +26,7 @@
 
 结构化时两列原样映射为 `image_decision` 与 `image_reason`。历史确认包缺字段时保留兼容读取，不改写旧稿、不自动撤销旧图；本轮新稿及实质修订须补齐。用户调整优先，取消项不自动恢复。
 
-新稿及实质修订沿用原 Markdown 自查命令并追加 `--check-asset-decisions`：`python -m scripts.core.story_sources --project <项目> --markdown <编导稿> --check-asset-decisions`。程序只检查列、结论和非空依据；依据是否只是“出现过”等空泛表述由当前执行者顺手检查，不再开详细审查。
+新 JSON 稿及实质修订直接填写 asset_requirements 的 image_decision/image_reason，并运行 `python -m scripts.core.story_sources --project <项目> --narrative <叙事包>`。历史 Markdown 候选才沿用原命令并追加 `--check-asset-decisions`：`python -m scripts.core.story_sources --project <项目> --markdown <编导稿> --check-asset-decisions`。程序只检查列、结论和非空依据；依据是否只是“出现过”等空泛表述由当前执行者顺手检查，不再开详细审查。
 # 产品动作参考
 
 产品在剧情中出现使用动作时，按 [产品使用参考对接](../../_shared/product-usage-contract.md) 列出具体动作参考及缺口。人物真实使用效果参考需求单列待定；幻想使用画面由分镜处理，不能因此额外生成一张剧情状态资产。

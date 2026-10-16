@@ -35,8 +35,143 @@ def rows_by_id(rows: list) -> dict:
     return result
 
 
-def compare(frozen: dict, observed: dict) -> dict:
+def validate_submission(frozen: dict, project: Path) -> dict:
+    """Check the existing frozen delivery JSON, using current project authority.
+
+    Roles/states are explicit production decisions, not inferred visual facts.
+    No remote reads, generation, adoption or additional ledger.
+    """
+    import math
+    try:
+        from .core.artifacts import load_manifest, artifact_is_confirmed, project_path, digest as file_digest
+        from .core.project_state import load_project_state
+    except ImportError:
+        from core.artifacts import load_manifest, artifact_is_confirmed, project_path, digest as file_digest
+        from core.project_state import load_project_state
+    project = project.resolve()
+    manifest, state = load_manifest(project), load_project_state(project)
+    rows_by_id(frozen['drafts'])
+    if not isinstance(frozen.get('revision'), str) or not frozen['revision'].strip():
+        raise ValueError('submission revision required')
+    def authority(ref):
+        found = [a for a in manifest['artifacts'] if a.get('artifact_id') == ref.get('artifact_id')]
+        if len(found) != 1:
+            raise ValueError('missing/ambiguous exact reference artifact')
+        item = found[0]
+        if (item['artifact_id'] not in state['current_artifacts']
+                or not artifact_is_confirmed(item, state, project)
+                or not item.get('revision') or item['revision'] != ref.get('revision')):
+            raise ValueError('reference artifact is unconfirmed, stale or another revision')
+        path = project_path(project, item['path_or_url'])
+        if (not path.is_file() or path.stat().st_size == 0 or not item.get('checksum')
+                or item['checksum'] != ref.get('sha256') or file_digest(path) != ref['sha256']):
+            raise ValueError('reference file/hash differs from current confirmed artifact')
+        return path
+    sources = frozen.get('source_artifacts')
+    if not isinstance(sources, list) or not sources:
+        raise ValueError('exact confirmed source_artifacts required')
+    for ref in sources:
+        authority(ref)
+    def seconds(value):
+        if isinstance(value, bool) or not isinstance(value, (float, int)) or not math.isfinite(value) or value <= 0:
+            raise ValueError('finite positive duration required')
+        return value
+    roles = {'identity', 'appearance', 'start_frame', 'end_frame', 'action', 'scale', 'layout', 'voice'}
+    previous = None
+    for row in frozen['drafts']:
+        if not isinstance(row.get('prompt'), str) or not row['prompt'].strip():
+            raise ValueError('complete submitted prompt body required')
+        if not isinstance(row.get('native_entity_type'), str) or not row['native_entity_type'].strip():
+            raise ValueError('versioned delivery requires native entity readback for all references')
+        duration = seconds(row['parameters']['duration'])
+        low, high = map(seconds, row['duration_bounds'])
+        if low > high or not low <= duration <= high:
+            raise ValueError('duration outside explicitly selected platform bounds')
+        parts = row.get('shot_durations')
+        if not isinstance(parts, list) or not parts or not math.isclose(sum(map(seconds, parts)), duration, abs_tol=1e-6):
+            raise ValueError('shot durations do not cover submitted duration exactly')
+        media, refs = row.get('ordered_media'), row.get('reference_checks')
+        if not isinstance(media, list) or not isinstance(refs, list) or len(refs) != len(media):
+            raise ValueError('every uploaded media needs one explicit role/authority check in actual order')
+        if any(not isinstance(m, dict) or not isinstance(m.get('node_id'), str) or not m['node_id']
+               or not isinstance(m.get('media_id'), str) or not m['media_id'] for m in media):
+            raise ValueError('every uploaded media needs exact native node/media identity')
+        required = row.get('required_entities')
+        if not isinstance(required, list) or any(not isinstance(e, str) or not e for e in required):
+            raise ValueError('required_entities must explicitly name entities needing reference coverage')
+        required_roles = row.get('required_reference_roles')
+        if (not isinstance(required_roles, dict) or set(required_roles) != set(required)
+                or any(not isinstance(v, list) or not v or not set(v).issubset(roles) for v in required_roles.values())):
+            raise ValueError('required reference roles must cover exactly the required entities')
+        covered, covered_roles, frames = set(), {}, {}
+        for ref in refs:
+            path = authority(ref)
+            role, kind = ref.get('role'), ref.get('kind')
+            if role not in roles or kind not in {'image', 'video', 'audio'}:
+                raise ValueError('unknown reference role/kind')
+            extensions = {'image': {'.png','.jpg','.jpeg','.webp'}, 'video': {'.mp4','.mov','.mkv','.webm'}, 'audio': {'.wav','.mp3','.m4a'}}
+            if path.suffix.lower() not in extensions[kind]:
+                raise ValueError('reference kind differs from actual registered file type')
+            if role == 'action':
+                if kind != 'video':
+                    raise ValueError('action video cannot be replaced by identity/still reference')
+                seconds(ref.get('duration'))
+                import subprocess
+                try:
+                    probe = subprocess.run(['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+                                            '-of', 'json', str(path)], check=True, capture_output=True, text=True, timeout=15)
+                    actual_duration = seconds(float(json.loads(probe.stdout)['format']['duration']))
+                except (subprocess.SubprocessError, OSError, KeyError, ValueError) as exc:
+                    raise ValueError('cannot read actual action video duration') from exc
+                if not math.isclose(actual_duration, ref['duration'], abs_tol=0.1):
+                    raise ValueError('declared action duration differs from actual video bytes')
+            elif role == 'voice':
+                if kind != 'audio':
+                    raise ValueError('voice role requires audio')
+            elif kind != 'image':
+                raise ValueError('frame/identity/scale/layout roles require image')
+            entities = ref.get('entity_ids')
+            if not isinstance(entities, list) or not entities or any(not isinstance(e,str) or not e for e in entities):
+                raise ValueError('reference requires explicit actual entity_ids')
+            if not set(entities).issubset(required):
+                raise ValueError('reference is assigned to an undeclared/wrong entity')
+            covered.update(entities)
+            for entity in entities:
+                covered_roles.setdefault(entity, set()).add(role)
+            if role in {'start_frame','end_frame'}:
+                if role in frames or not isinstance(ref.get('state_id'), str) or not ref['state_id']:
+                    raise ValueError('unique start/end frame state required')
+                frames[role] = ref
+        if any(not set(expected).issubset(covered_roles.get(e, set())) for e, expected in required_roles.items()):
+            raise ValueError('required start/end/identity/action reference role is missing')
+        if covered != set(required):
+            raise ValueError('required entity has no actual reference')
+        continuity = row.get('continuity')
+        if not isinstance(continuity, dict) or not continuity.get('event_id'):
+            raise ValueError('explicit event continuity required')
+        if previous and previous[0]['continuity']['event_id'] == continuity['event_id']:
+            prior, prior_frames = previous
+            if continuity.get('previous_node_id') != prior['node_id']:
+                raise ValueError('continuous event predecessor differs from actual draft order')
+            tail, head = prior_frames.get('end_frame'), frames.get('start_frame')
+            if not tail or not head:
+                raise ValueError('continuous split requires actual confirmed end/start frames')
+            if (tail['state_id'] != head['state_id'] or tail['sha256'] != head['sha256']
+                    or set(tail['entity_ids']) != set(head['entity_ids'])):
+                raise ValueError('cross-segment boundary frame/state/entity mismatch; recheck affected next segment')
+        elif continuity.get('previous_node_id'):
+            raise ValueError('predecessor cannot refer across a different event or missing segment')
+        previous = row, frames
+    return {'ok': True, 'revision': frozen['revision'], 'frozen_sha256': digest(frozen),
+            'scope': 'current registered bytes, declared reference roles/entities, durations and continuous split boundaries',
+            'limitations': 'Requires actual visual inspection of roles/states and current platform bounds; does not verify pixels, media duration metadata, remote provenance or generation authorization.'}
+
+
+def compare(frozen: dict, observed: dict, project: Path | None = None) -> dict:
     """Report only selected full-field readback; metadata is not remote proof."""
+    submission = validate_submission(frozen, project) if project is not None else None
+    if 'revision' in frozen and project is None:
+        raise ValueError('versioned delivery requires --project to revalidate current reference authority')
     if target_url(frozen['target_url']) != target_url(observed['target_url']):
         raise ValueError('readback target differs from frozen target')
     if observed.get('phase') != 'after_refresh':
@@ -89,7 +224,8 @@ def compare(frozen: dict, observed: dict) -> dict:
                                     'expected_sha256': digest(row['ordered_media']),
                                     'observed_sha256': digest(identities) if identities is not None else None})
     return {'ok': not differences, 'scope': 'selected post-refresh editor fields only',
-            'draft_count': len(expected), 'frozen_sha256': digest(frozen),
+            'draft_count': len(expected), 'submission_checks': submission or 'not_checked',
+            'revision': frozen.get('revision'), 'frozen_sha256': digest(frozen),
             'observed_sha256': digest(observed), 'differences': differences,
             'native_reference_checks': native_reference_checks,
             'limitations': 'Evidence collector must actually refresh and read native editor values. '
@@ -100,12 +236,21 @@ def compare(frozen: dict, observed: dict) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--frozen', type=Path, required=True)
-    parser.add_argument('--readback', type=Path, required=True)
+    parser.add_argument('--readback', type=Path)
+    parser.add_argument('--project', type=Path)
+    parser.add_argument('--preflight', action='store_true', help='只读核对现有交付 JSON，无远端操作')
     args = parser.parse_args()
     try:
-        result = compare(json.loads(args.frozen.read_text(encoding='utf-8')),
-                         json.loads(args.readback.read_text(encoding='utf-8')))
-    except (ValueError, KeyError, TypeError) as error:
+        frozen = json.loads(args.frozen.read_text(encoding='utf-8'))
+        if args.preflight:
+            if args.project is None:
+                parser.error('--preflight requires --project')
+            result = validate_submission(frozen, args.project)
+        else:
+            if args.readback is None:
+                parser.error('--readback required unless --preflight')
+            result = compare(frozen, json.loads(args.readback.read_text(encoding='utf-8')), args.project)
+    except (ValueError, KeyError, TypeError, OSError) as error:
         print(json.dumps({'ok': False, 'error': str(error)}, ensure_ascii=False))
         return 2
     print(json.dumps(result, ensure_ascii=False, indent=2))

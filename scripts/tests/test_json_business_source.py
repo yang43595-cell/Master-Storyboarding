@@ -13,6 +13,8 @@ from visual_asset_source import receive_table
 def test_json_only_narrative_and_director_keep_complete_reading(tmp_path):
     source = narrative(tmp_path)
     source.pop('human_readable_path')
+    for item in source['asset_requirements']:
+        item.update(image_decision='需要制作', image_reason='需要稳定身份参考')
     board = compact_package()
     board.pop('human_readable_path')
     (tmp_path / 'script.md').unlink()
@@ -34,4 +36,11 @@ def test_legacy_markdown_drift_is_not_silently_ignored(tmp_path):
     source = narrative(tmp_path)
     (tmp_path / 'script.md').write_text('wrong old story')
     with pytest.raises(ValueError, match='Markdown'):
+        validate_story_sources(source, project_root=tmp_path)
+
+
+def test_new_json_does_not_drop_existing_asset_decision_check(tmp_path):
+    source = narrative(tmp_path)
+    source.pop('human_readable_path')
+    with pytest.raises(ValueError, match='出图决定'):
         validate_story_sources(source, project_root=tmp_path)

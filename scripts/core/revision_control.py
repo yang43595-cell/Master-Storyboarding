@@ -397,11 +397,16 @@ def record_candidate(
         if any(item.get("artifact_id") == artifact_id for item in manifest.get("artifacts") or []):
             raise RevisionControlError(f"候选 artifact_id 已存在：{artifact_id}")
         source, relative = _within_project(project, candidate_path)
+        if source.suffix.lower() == '.json':
+            payload = read_json(source)
+            if isinstance(payload, dict) and 'revision' in payload and payload['revision'] != revision:
+                raise RevisionControlError('候选 JSON revision 与登记修订不一致')
         checksum = sha256_file(source)
         receipt = {
             "artifact_id": artifact_id,
             "logical_id": logical_id,
             "path": relative,
+            "revision": revision,
             "bytes": source.stat().st_size,
             "sha256": checksum,
             "base_manifest_sha256": change["manifest_sha256"],
@@ -434,16 +439,73 @@ def record_candidate(
         }, reason="record revision candidate")
 
 
+def _validate_delivery(project: Path, payload: dict) -> None:
+    if __package__ == 'scripts.core':
+        from ..canvas_readback import validate_submission
+    else:
+        from canvas_readback import validate_submission
+    try:
+        validate_submission(payload, project)
+    except (ValueError, KeyError, TypeError, OSError) as exc:
+        raise RevisionControlError(f'交付快照当前参考检查失败：{exc}') from exc
+
+
+def _assert_review_current(project: Path, change: dict[str, Any]) -> None:
+    """Use the existing change receipt, never treat an old PASS as a new review."""
+    if change.get('tier') == 'T0':
+        return
+    candidate = change.get('candidate_receipt') or {}
+    review = change.get('review') or {}
+    fields = ('artifact_id', 'revision', 'sha256')
+    if (review.get('verdict') != 'approved'
+            or review.get('change_id') != change.get('change_id')
+            or any(not candidate.get(k) or review.get(k) != candidate[k] for k in fields)):
+        raise RevisionControlError('审核凭据未绑定当前候选 artifact/revision/hash；请重新审核，不复用旧 PASS')
+    source, _ = _within_project(project, candidate['path'])
+    if source.suffix.lower() == '.json':
+        payload = read_json(source)
+        if isinstance(payload, dict) and 'target_url' in payload and 'drafts' in payload:
+            _validate_delivery(project, payload)
+    if review.get('report_sha256'):
+        report, _ = _within_project(project, review['report_ref'])
+        if not report.is_file() or sha256_file(report) != review['report_sha256']:
+            raise RevisionControlError('审核报告内容漂移；不能复用旧 PASS')
+
+
 def record_review(project: Path, *, change_id: str, verdict: str, report_ref: str) -> dict[str, Any]:
     if verdict not in {"approved", "blocked"}:
         raise RevisionControlError("审核结论必须为 approved 或 blocked")
+    if not report_ref.strip():
+        raise RevisionControlError("审核必须提供准确 report_ref")
     project = project.resolve()
     with file_lock(project / LOCK_RELATIVE):
         control = _load_control(project)
         change = _assert_active(control, change_id)
         if change.get("status") != "awaiting_review":
             raise RevisionControlError("当前变更案不等待审核")
-        receipt = {"kind": "revision-review", "change_id": change_id, "verdict": verdict, "report_ref": report_ref, "at": utc_now()}
+        candidate = change.get('candidate_receipt') or {}
+        source, _ = _within_project(project, str(candidate.get('path') or ''))
+        if not candidate.get('revision') or sha256_file(source) != candidate.get('sha256'):
+            raise RevisionControlError('候选版本缺失或审核前发生漂移，不能登记 PASS；请重新登记与审核')
+        receipt = {"kind": "revision-review", "change_id": change_id, "verdict": verdict,
+                   "report_ref": report_ref, "at": utc_now(),
+                   **{k: candidate[k] for k in ('artifact_id', 'revision', 'sha256')}}
+        if verdict == 'approved' and source.suffix.lower() == '.json':
+            payload = read_json(source)
+            if isinstance(payload, dict) and 'target_url' in payload and 'drafts' in payload:
+                _validate_delivery(project, payload)
+                report_path, relative = _within_project(project, report_ref)
+                report = read_json(report_path)
+                native = report.get('native_reference_checks', {})
+                expected_nodes = {row['node_id'] for row in payload['drafts']}
+                if (report.get('ok') is not True or not payload.get('revision')
+                        or report.get('revision') != payload['revision']
+                        or report.get('frozen_sha256') != sha256_json(payload)
+                        or not isinstance(report.get('submission_checks'), dict)
+                        or report['submission_checks'].get('ok') is not True
+                        or set(native) != expected_nodes or any(v != 'passed' for v in native.values())):
+                    raise RevisionControlError('交付快照须绑定本修订/hash的完整参考检查和实际实体回读；旧 PASS 不能复用')
+                receipt.update(report_ref=relative, report_sha256=sha256_file(report_path))
         change["review"] = receipt
         change["status"] = "awaiting_candidate_confirmation" if verdict == "approved" else "blocked"
         state = load_project_state(project)
@@ -469,6 +531,7 @@ def confirm_candidate(
         change = _assert_active(control, change_id)
         if change.get("status") != "awaiting_candidate_confirmation":
             raise RevisionControlError("当前变更案不等待候选确认")
+        _assert_review_current(project, change)
         candidate = change.get("candidate_receipt") or {}
         source, _ = _within_project(project, str(candidate.get("path") or ""))
         if sha256_file(source) != candidate.get("sha256"):
@@ -546,6 +609,7 @@ def commit_change(project: Path, *, change_id: str) -> dict[str, Any]:
         change = _assert_active(control, change_id)
         if change.get("status") != "commit_ready":
             raise RevisionControlError("当前变更案尚未具备提交条件")
+        _assert_review_current(project, change)
         if not confirmation_scope.is_whole_artifact(change.get("candidate_confirmation")):
             raise RevisionControlError("只有整稿范围的用户确认才能提交采用")
         manifest = load_manifest(project)

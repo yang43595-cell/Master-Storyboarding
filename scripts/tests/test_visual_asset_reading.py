@@ -20,7 +20,7 @@ from core.method_documents import resolve_method_documents, MethodDocumentError
 class WebReadingTests(unittest.TestCase):
     def test_writing_projection_only_omits_named_workflow_sections(self):
         for ref, headings in {
-            'PROJECT_RULES.md': {'项目目录按生产流程排列','双文件产物串行交付','导演稿之后的生产顺序'},
+            'PROJECT_RULES.md': {'项目目录按生产流程排列','双文件产物串行交付', 'JSON 交付与按需导出','导演稿之后的生产顺序'},
             'skills/asset-image-assistant/SKILL.md': {'后续交接'},
             'skills/_shared/knowledge-access.md': {'局部维护边界','读取与执行开销'},
         }.items():

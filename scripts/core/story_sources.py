@@ -146,6 +146,10 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
         if len({item[key] for item in narrative[collection]}) != len(narrative[collection]):
             raise ValueError('重复编号：' + key)
     validate_body_dialogues(narrative)
+    if not narrative.get('human_readable_path'):
+        for item in narrative['asset_requirements']:
+            if not item.get('image_decision') or not str(item.get('image_reason') or '').strip():
+                raise ValueError('新 JSON 资产需求必须保留出图决定与依据：' + item['asset_id'])
     for requirement in narrative['asset_requirements']:
         if not set(requirement['source_paragraph_ids']).issubset(by_id):
             raise ValueError('资产引用不存在的故事段落：' + requirement['asset_id'])
