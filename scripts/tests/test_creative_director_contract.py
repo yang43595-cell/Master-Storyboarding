@@ -29,7 +29,7 @@ class CreativeDirectorContractTests(unittest.TestCase):
         skill = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
         dialogue_contract = (SKILL_DIR / "references" / "dialogue-lineage-contract.md").read_text(encoding="utf-8")
         for marker in (
-            "<revision>_编导稿.md",
+            "JSON 交付与按需导出",
             "<revision>_叙事包.json",
             "STP-*",
             "DLG-*",

@@ -34,7 +34,7 @@ python scripts/stage_context_cli.py prepare --project <项目> --skill creative-
 
 ## 送审自查
 
-按 [对白契约](../references/dialogue-lineage-contract.md#送审前检查与确认范围) 检查 Markdown；新稿或实质修订追加 `--check-asset-decisions`，有有效独立对白依据时追加 `--dialogue-baseline`。再对照原片、用户修改和事实来源核对行动者、顺序、无对白动作、关键物件去向及因果。程序证明文件一致性，不代替上述语义核对或用户确认。
+新 JSON 候选运行 `python -m scripts.core.story_sources --project <项目> --narrative <叙事包>`；按 [对白契约](../references/dialogue-lineage-contract.md#送审前检查与确认范围) 核对真实来源与确认范围。旧 Markdown 候选才使用 `--markdown` 及其对白/资产检查参数。再对照原片、用户修改和事实来源核对行动者、顺序、无对白动作、关键物件去向及因果。程序证明文件一致性，不代替上述语义核对或用户确认。
 
 ## 场景资产粒度
 

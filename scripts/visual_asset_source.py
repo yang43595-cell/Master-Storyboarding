@@ -30,6 +30,8 @@ def resolve_reference(root, raw, artifacts=(), state=None):
 
 
 def receive_table(root, artifacts, entry, state, narrative, package_path):
+    if narrative.get('schema_version') == '2.0' and not narrative.get('human_readable_path'):
+        return None  # Canonical JSON: optional old exports are not business inputs.
     tables = [a for a in artifacts if a.get('logical_id') == 'narrative.assets'
               and a.get('revision') == entry['revision']]
     if not tables:

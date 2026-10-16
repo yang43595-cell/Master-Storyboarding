@@ -106,9 +106,6 @@ $hasStateMd     = Test-Path -LiteralPath $statePath -PathType Leaf
 
 if ($hasStateJson) {
   # 结构化状态存在：校验现行 stage-1.0 最小事实合同与 Markdown 投影。
-  if (-not $hasStateMd) {
-    $issues.Add((Add-Issue "ERROR" "project_state.json exists but project_state.md projection is missing"))
-  }
   try {
     $stateJson = Get-Content -LiteralPath $stateJsonPath -Raw -Encoding UTF8 | ConvertFrom-Json
     foreach ($requiredField in @("schema_version", "current_stage", "current_artifacts", "user_confirmations", "review_report", "accepted_issues", "next_stage")) {
@@ -119,14 +116,12 @@ if ($hasStateJson) {
     if ($stateJson.schema_version -ne "stage-1.0") {
       $issues.Add((Add-Issue "ERROR" "project_state.json schema_version must be stage-1.0, got: $($stateJson.schema_version)"))
     }
-    if (-not $hasStateMd) {
-      # 已在上方报错
-    } else {
+    if ($hasStateMd) {
       # JSON 与投影的当前阶段、修订必须一致，防止投影与事实脱节。
       $stateText = Get-Content -LiteralPath $statePath -Raw -Encoding UTF8
       foreach ($requiredText in @("当前阶段：", "当前有效产物：", "用户确认：", "审核报告：", "已接受问题：", "下一阶段：")) {
         if ($stateText -notmatch [regex]::Escape($requiredText)) {
-          $issues.Add((Add-Issue "ERROR" "Structured state projection missing section: $requiredText"))
+          $issues.Add((Add-Issue "WARN" "Optional state projection missing section: $requiredText"))
         }
       }
       $stageText = [regex]::Match($stateText, '当前阶段[:：]\s*\S+').Value

@@ -134,7 +134,7 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
     by_id = {p['paragraph_id']: p['text'] for p in paragraphs}
     if len(by_id) != len(paragraphs):
         raise ValueError('故事段落编号重复')
-    if project_root is not None:
+    if project_root is not None and narrative.get('human_readable_path'):
         path = project_path(project_root, narrative['human_readable_path'])
         if read_story_paragraphs(path) != paragraphs:
             raise ValueError('结构化段落与编导 Markdown 原文或顺序不一致')
@@ -366,6 +366,10 @@ def _latest_narrative_name(project_root: Path) -> str:
 def reading_supplement(narrative: dict, project_root: Path) -> dict:
     """Omit only text proven identical to Markdown, retain every other field."""
     validate_story_sources(narrative, project_root=project_root)
+    if not narrative.get('human_readable_path'):
+        return {'kind': 'narrative_reading_supplement',
+                'notice': 'JSON 是本修订唯一业务数据源；完整保留原文，不要求 Markdown。此读取不代表用户确认。',
+                'narrative': dict(narrative)}
     result = dict(narrative)
     for collection in ('story_paragraphs', 'dialogues'):
         result[collection] = [{k: v for k, v in item.items() if k != 'text'}
@@ -375,12 +379,29 @@ def reading_supplement(narrative: dict, project_root: Path) -> dict:
             'narrative': result}
 
 
+def export_markdown(package: dict, destination: Path) -> None:
+    """Explicit reading export; exclusive create protects existing confirmed files."""
+    schema = ('narrative-package.schema.json' if 'story_paragraphs' in package
+              else 'storyboard-package.schema.json')
+    require_schema(package, schema, label='导出源')
+    # Fenced JSON retains every field without a second editable business model.
+    payload = json.dumps(package, ensure_ascii=False, indent=2)
+    fence = '`' * max(3, max((len(m[0]) + 1 for m in re.finditer(r'`+', payload)), default=3))
+    text = (f"# {package['project_id']} · {package['revision']}\n\n"
+            "本文件是 JSON 的只读阅读导出；修改业务内容请另建 JSON 修订并重新审核确认。\n\n"
+            f"{fence}json\n{payload}\n{fence}\n")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with destination.open('x', encoding='utf-8') as output:
+        output.write(text)
+
+
 def main():
     parser = argparse.ArgumentParser(description='校验编导原文段落及导演引用，不生成或登记产物')
     inputs = parser.add_mutually_exclusive_group(required=True)
     inputs.add_argument('--narrative', type=Path)
     inputs.add_argument('--markdown', type=Path)
     inputs.add_argument('--shot-plan', type=Path, help='导演镜头方案 Markdown：只读检查资产引用是否仍有效')
+    parser.add_argument('--export-markdown', type=Path, help='按需从已校验 JSON 导出完整阅读视图；拒绝覆盖已有文件')
     parser.add_argument('--dialogue-baseline', type=Path)
     parser.add_argument('--check-asset-decisions', action='store_true', help='检查新稿资产表是否填写判断，不重复语义审查')
     parser.add_argument('--reading-supplement', action='store_true',
@@ -414,6 +435,8 @@ def main():
         return
     storyboard = json.loads(args.storyboard.read_text(encoding='utf-8-sig')) if args.storyboard else None
     validate_story_sources(narrative, storyboard, project_root=args.project)
+    if args.export_markdown:
+        export_markdown(storyboard or narrative, args.export_markdown)
     print('故事原文与引用一致；此检查不代表语义完整或用户确认。')
 
 

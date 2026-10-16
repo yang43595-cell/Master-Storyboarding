@@ -15,8 +15,8 @@
 | 步 | Skill | 产出 |
 |---|---|---|
 | 0 | `init_desktop_project` | 建 9 目录 + project_state.json |
-| 1 | `creative-director` 编导 | Markdown 编导稿经用户确认后，再生成叙事包 |
-| 2 | `storyboard-planner` 分镜 | Markdown 导演稿经用户确认后，再生成导演包 |
+| 1 | `creative-director` 编导 | 叙事 JSON（Markdown 按需导出） |
+| 2 | `storyboard-planner` 分镜 | 导演 JSON（Markdown 按需导出） |
 | 3 | `blender-previs` 预演（可选·已有 runner，按当前配方验收） | Blender 预演 |
 | 4 | `asset-image-assistant` 资产 | 人物/场景/道具/产品母版图 |
 | 5 | `voice-reference-manager` 声音（可选·已有导入/绑定 CLI，按当前输入验收） | 声音参考库 |

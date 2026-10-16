@@ -1,8 +1,8 @@
-# 编导双文件模板（串行交付）
+# 编导内容模板（JSON 真源，Markdown 按需导出）
 
-> 本模板规定完整稿件的内容结构；交互顺序见 [项目串行交付规则](../../../PROJECT_RULES.md#双文件产物串行交付)。内部初稿允许在不确定位置留空或标注待确认，问题在对话中集中提出；完善、自查后才交用户审稿。
+> 本模板规定完整稿件的内容结构；交互顺序见 [项目串行交付规则](../../../PROJECT_RULES.md#json-交付与按需导出)。新稿直接在 JSON 中完善，以下 Markdown 是可选阅读排版参考。问题在对话中集中提出；完善、自查后才交用户审稿。
 
-## `<revision>_编导稿.md`
+## 阅读排版参考（可选导出）
 
 ```markdown
 ---
@@ -34,13 +34,12 @@ status: candidate
 
 ## `<revision>_叙事包.json`
 
-严格使用 `schemas/narrative-package.schema.json` 2.0，逐段保存原文，不含 events。Markdown 是人类阅读正文，JSON 是稳定引用合同；两者共享 `project_id` 与 `revision`，不得各自发展不同剧情。
+严格使用 `schemas/narrative-package.schema.json` 2.0，逐段保存原文，不含 events。JSON 保存完整业务原文与稳定引用，新包省略 human_readable_path。以下阅读排版仅供按需导出，不能另行维护剧情。
 
 ## Artifact manifest 登记
 
-- 编导稿：稳定 `logical_id` 建议为 `narrative.script`。
-- 结构化叙事包：稳定 `logical_id` 建议为 `narrative.package`，依赖同修订编导稿的 `artifact_id`。
-- Markdown 确认前按路径保存候选，不登记交付产物；确认后生成并核对 JSON，再按项目状态规则登记准确采用关系，不覆盖旧修订。
+- 结构化叙事包：稳定 `logical_id` 建议为 `narrative.package`，不依赖同义 Markdown。
+- JSON 自查后交用户确认准确修订；采用记录绑定该 JSON，不覆盖旧修订，不登记导出为依赖。
 - 普通候选不写 checksum；只有修订账本明确管理时才登记。
 
 资产结构化时逐列映射：名称填人物或物件的实际称呼，叙事用途填其作用，不能将用途复制成名称。角色须明确登记 `character_type`（HUMAN 人类、HUMANOID 人形角色、ANIMAL 动物、NON_HUMANOID 非人形角色）。动物和非人形角色登记稳定外观结构，不强制服装状态，也不套人类脸部加服装流程；其动作状态仍在剧情中保留。人类及人形角色的 `wardrobe_states` 从表内“服装状态及依据”逐项抄录，每项含 `name` 与 `evidence`。状态按故事已明确的换装区分，例如“首次饭局”“二次会面”；款式未定就保持未定，由资产选图决定，不能为满足网页写死衣服颜色和款式。单套人物同样登记一项；不得把表情、皮肤变化当换装。仅当故事明确换装时才增加状态，不能按每次出场自动增加。新交付自查名称、状态项数及依据与正文一致；旧版无此字段的包仅走兼容读取。

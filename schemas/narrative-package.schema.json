@@ -9,7 +9,6 @@
     "project_id",
     "revision",
     "status",
-    "human_readable_path",
     "objective",
     "locked_facts",
     "story_paragraphs",
@@ -41,7 +40,8 @@
     },
     "human_readable_path": {
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "description": "仅历史双文件合同使用；新业务包省略此字段，Markdown 按需导出，不参与业务依赖。"
     },
     "objective": {
       "type": "string",

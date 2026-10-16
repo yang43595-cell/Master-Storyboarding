@@ -21,12 +21,7 @@ description: 从需求、素材、口播或既有脚本形成可确认的短视�
 
 ## 交付
 
-按[双文件串行交付](../../PROJECT_RULES.md#双文件产物串行交付)先完善、自查并送审 Markdown，用户明确确认后才结构化；模板只规定内容结构。
-
-1. `<revision>_编导稿.md`：事实与范围、最终对白、含对白的完整故事正文、资产需求、变更说明，见 `templates/narrative-package-template.md`
-2. `<revision>_叙事包.json`：符合 `../../schemas/narrative-package.schema.json` 2.0，保存稳定 `STP-*`、`DLG-*`、`AST-*`，与确认正文保持同一故事
-
-两份文件的 manifest 身份、依赖与登记时机见模板。普通候选不登记 checksum；修订账本明确管理的产物按现行账本规则登记。
+按[JSON 交付与按需导出](../../PROJECT_RULES.md#json-交付与按需导出)完善、自查并送审 `<revision>_叙事包.json`，使用现有 schema 2.0，完整保存故事、对白、稳定 `STP-*`、`DLG-*`、`AST-*` 与资产决定。新包省略 human_readable_path，不再依赖同义 Markdown 或独立资产表。内容结构参考模板；仅按需导出阅读文件，不能把导出作为另一真源。准确修订经用户确认后才登记采用与交接，普通候选不登记 checksum，不伪造确认。
 
 ## 职责边界
 
