@@ -1,0 +1,209 @@
+{
+  "passed": false,
+  "count": 49,
+  "failures": [
+    {
+      "name": "legacy stage benchmark survives assets and generic stage rendering; bound missing source is explicit and never uses registry",
+      "passed": false,
+      "error": "AssertionError [ERR_ASSERTION]: assets legacy history=false\n+ actual - expected\n\n+ '/api/content-media/dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd#t=0.001'\n- 'verified-case05-registry'\n\n    at /workspace/review-v78/site-source/tests/content-subscription.cjs:137:67\n    at async test (/workspace/review-v78/site-source/tests/content-subscription.cjs:126:39)\n    at async /workspace/review-v78/site-source/tests/content-subscription.cjs:128:3"
+    }
+  ],
+  "tests": [
+    {
+      "name": "legacy stage benchmark survives assets and generic stage rendering; bound missing source is explicit and never uses registry",
+      "passed": false
+    },
+    {
+      "name": "malformed declared benchmark fails closed without showing legacy player or approval controls",
+      "passed": true
+    },
+    {
+      "name": "all five subscribed scripts use the retained story/sidebar controller, persist drafts and submit exact version-scoped structured feedback",
+      "passed": true
+    },
+    {
+      "name": "subscribed script recovers initial history outage and polling hydrates only clean editors",
+      "passed": true
+    },
+    {
+      "name": "old subscribed selection quotes and every historical reference remain accessible",
+      "passed": true
+    },
+    {
+      "name": "already committed old pending IDs reconcile without duplicate feedback or draft deletion",
+      "passed": true
+    },
+    {
+      "name": "unknown old pending IDs stay blocked until an explicit exact-ID retry",
+      "passed": true
+    },
+    {
+      "name": "subscribed script never posts if persisting its retry ID fails",
+      "passed": true
+    },
+    {
+      "name": "late disposed script receipt cannot approve the newly mounted version badge",
+      "passed": true
+    },
+    {
+      "name": "clean remote script references rebase UI and persisted drafts without restoring older images",
+      "passed": true
+    },
+    {
+      "name": "same-version old subscribed drafts migrate without deletion and failed uploads remain blocked",
+      "passed": true
+    },
+    {
+      "name": "nonasset subscribed stages retain their own markup, controls and caption content",
+      "passed": true
+    },
+    {
+      "name": "strict package renders stage navigation, text, immutable image/video media, and one submit",
+      "passed": true
+    },
+    {
+      "name": "overall and context-menu image drafts autosave independently and survive target switches",
+      "passed": true
+    },
+    {
+      "name": "draft reload restores active editor and isolates versions, stages, and QA scope",
+      "passed": true
+    },
+    {
+      "name": "upload affordance appears only after nonblank comment on its own target",
+      "passed": true
+    },
+    {
+      "name": "uploaded reference purpose and note bind to one draft and persist across reload",
+      "passed": true
+    },
+    {
+      "name": "one Submit sends every nonempty entry with distinct stable IDs and exact targets",
+      "passed": true
+    },
+    {
+      "name": "ambiguous accepted submission preserves idempotency through reload and safely replays once",
+      "passed": true
+    },
+    {
+      "name": "partial success removes only successful entries and keeps remaining active editor usable",
+      "passed": true
+    },
+    {
+      "name": "receipt mismatch in every consequential field retains draft and retry ID",
+      "passed": true
+    },
+    {
+      "name": "receipt comparison accepts reordered object keys without weakening exact content match",
+      "passed": true
+    },
+    {
+      "name": "approval waits for history, sends only this version, and old approval is history only",
+      "passed": true
+    },
+    {
+      "name": "approval is blocked for unreviewable, historical, stale, dirty, failed-history, or receipted content",
+      "passed": true
+    },
+    {
+      "name": "busy submission disables attachment fields, comment, upload, remove, and target switches",
+      "passed": true
+    },
+    {
+      "name": "new attachment fields stay disabled while a second reference is still uploading",
+      "passed": true
+    },
+    {
+      "name": "failed upload preserves ready references and blocks submission through reload until removed",
+      "passed": true
+    },
+    {
+      "name": "storage failure retains in-memory text and blocks submission until persistence recovers",
+      "passed": true
+    },
+    {
+      "name": "dirty inactive draft survives new-version polling without replacement or inherited approval",
+      "passed": true
+    },
+    {
+      "name": "clean polling rerenders the new package and disposes previous navigation",
+      "passed": true
+    },
+    {
+      "name": "304 history refresh and failed polling preserve an open dirty draft",
+      "passed": true
+    },
+    {
+      "name": "pinned history and explicit legacy mode never auto-poll or replace historical content",
+      "passed": true
+    },
+    {
+      "name": "image region and selected text comments retain exact independent target geometry",
+      "passed": true
+    },
+    {
+      "name": "untrusted package and feedback text stays text; unsafe media URLs create no links or images",
+      "passed": true
+    },
+    {
+      "name": "dedicated exact-version receipt gates approval even when history is truncated",
+      "passed": true
+    },
+    {
+      "name": "active or floating video and an open media preview prevent polling replacement",
+      "passed": true
+    },
+    {
+      "name": "empty QA stage consumes rendering and shows only an isolated notice, never a live legacy form",
+      "passed": true
+    },
+    {
+      "name": "QA combined with legacy-content cannot expose a live legacy review form",
+      "passed": true
+    },
+    {
+      "name": "first package arriving over a legacy view only announces an explicit reload and preserves local work",
+      "passed": true
+    },
+    {
+      "name": "polling and version links retain the mounted case after ordinary section hash changes",
+      "passed": true
+    },
+    {
+      "name": "stale and historical approval receipts never present a current effective approval",
+      "passed": true
+    },
+    {
+      "name": "source-only update refreshes approval semantics without replacing dirty text, media or focus",
+      "passed": true
+    },
+    {
+      "name": "exact-version current state can invalidate an old approval on feedback refresh",
+      "passed": true
+    },
+    {
+      "name": "Case05 stage heads refresh independently on 304 and same-version 200 without touching drafts or media",
+      "passed": true
+    },
+    {
+      "name": "Case05 legacy navigation also gains a published stage without replacing its old form or media",
+      "passed": true
+    },
+    {
+      "name": "late package polls cannot update a disposed, switched or remounted reading pane",
+      "passed": true
+    },
+    {
+      "name": "late feedback success or failure cannot replace newer changes and source freshness on the same pane",
+      "passed": true
+    },
+    {
+      "name": "post-submit changes receipt cannot regress when initial approval hydration returns late",
+      "passed": true
+    },
+    {
+      "name": "disposing before late history completion cannot mutate the old panel",
+      "passed": true
+    }
+  ]
+}

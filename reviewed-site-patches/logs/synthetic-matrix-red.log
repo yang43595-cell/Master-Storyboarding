@@ -1,0 +1,9 @@
+AssertionError [ERR_ASSERTION]: assets legacy fallback
+    at /workspace/github-review-web/reviewed-site-patches/tests/benchmark-source-selection.cjs:27:3 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
