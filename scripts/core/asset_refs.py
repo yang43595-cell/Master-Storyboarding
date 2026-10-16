@@ -35,7 +35,7 @@ IMPACT_DIR = "04_资产/变更影响"
 ASSET_TABLE = "04_资产/当前资产需求表.md"
 MASTER_DIR = "04_资产/母版"
 OUTPUT_DECISIONS = "00_项目管理/资产输出适用决定.json"
-SCAN_GLOBS = ("03_导演/*.md", "03_导演/*.json", "05_分镜/*.md", "06_视频/*.md")
+SCAN_GLOBS = ("03_导演/*.md", "03_导演/*.json", "05_分镜/*.md", "05_分镜/**/*.json", "06_视频/*.md", "06_视频/**/*.json")
 
 # 图片之外的别名，只用于“恢复／新增资产后应补引用”的建议检索。
 NAME_ALIASES = {
@@ -511,6 +511,22 @@ def current_files(root: Path, include: list[str] | None = None) -> list[Path]:
     return sorted(out)
 
 
+def _document_fragments(path: Path):
+    text = path.read_text(encoding='utf-8-sig')
+    if path.suffix.lower() != '.json':
+        return [(number, line, None) for number, line in enumerate(text.splitlines(), 1)]
+    def walk(value, pointer='$'):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                yield from walk(item, pointer + '/' + key.replace('~', '~0').replace('/', '~1'))
+        elif isinstance(value, list):
+            for i, item in enumerate(value):
+                yield from walk(item, pointer + '/' + str(i))
+        elif isinstance(value, str):
+            yield None, pointer + ': ' + value, pointer
+    return list(walk(json.loads(text)))
+
+
 def scan_references(root: Path, asset_ids: list[str], asset_list: dict | None = None,
                     name_hit_limit: int = 8) -> dict:
     """扫描当前候选里对指定资产的引用位命中与名字命中。"""
@@ -529,23 +545,25 @@ def scan_references(root: Path, asset_ids: list[str], asset_list: dict | None = 
         name_total = 0
         for path in scanned:
             try:
-                lines = path.read_text(encoding="utf-8-sig").splitlines()
+                lines = _document_fragments(path)
             except (UnicodeDecodeError, OSError):
                 continue
-            for number, line in enumerate(lines, start=1):
+            for number, line, pointer in lines:
                 if asset_id in line:
                     is_reference = (line.lstrip().startswith("| 来源") or "资产：" in line
                                     or "source_asset_requirement_ids" in line
+                                    or (pointer is not None and any(key in pointer.split("/") for key in ("asset_id", "asset_ids", "materials", "references", "reference_checks")))
                                     or re.match(r"^\s*[-|]\s*素材", line) is not None)
                     references.append({"file": str(path.relative_to(root)), "line": number,
                                        "kind": "reference" if is_reference else "mention",
+                                       **({"json_path": pointer} if pointer else {}),
                                        "text": line.strip()[:200]})
                     continue
                 if item.get("name") and any(alias in line for alias in _aliases(item)):
                     name_total += 1
                     if len(names) < name_hit_limit:
                         names.append({"file": str(path.relative_to(root)), "line": number,
-                                      "kind": "name_hit", "text": line.strip()[:200]})
+                                      "kind": "name_hit", **({"json_path": pointer} if pointer else {}), "text": line.strip()[:200]})
         action = {"needs_image": "keep", "excluded": "remove_reference",
                   "split_parent": "replace_with_child", "unknown": "register_first"}.get(item["state"], "review")
         report["assets"].append({"asset_id": asset_id, "name": item.get("name", ""), "state": item["state"],
@@ -791,9 +809,9 @@ def main() -> int:
                   f"图片={asset['image'].get('status')}）：引用位命中 {len(asset['reference_hits'])} 处、"
                   f"文字命中 {asset['name_hit_total']} 处")
             for hit in asset["reference_hits"]:
-                print(f"    引用位 {hit['file']}:{hit['line']} [{hit['kind']}] {hit['text'][:90]}")
+                print(f"    引用位 {hit['file']}:{hit.get('json_path') or hit['line']} [{hit['kind']}] {hit['text'][:90]}")
             for hit in asset["name_hits"]:
-                print(f"    文字   {hit['file']}:{hit['line']} {hit['text'][:90]}")
+                print(f"    文字   {hit['file']}:{hit.get('json_path') or hit['line']} {hit['text'][:90]}")
             if asset["name_hit_total"] > len(asset["name_hits"]):
                 print(f"    （另有 {asset['name_hit_total'] - len(asset['name_hits'])} 处文字命中，见影响清单文件）")
         return 0

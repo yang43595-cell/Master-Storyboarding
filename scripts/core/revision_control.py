@@ -452,20 +452,21 @@ def _validate_delivery(project: Path, payload: dict) -> None:
 
 def _assert_review_current(project: Path, change: dict[str, Any]) -> None:
     """Use the existing change receipt, never treat an old PASS as a new review."""
+    candidate = change.get('candidate_receipt') or {}
+    source, _ = _within_project(project, candidate['path'])
+    if source.suffix.lower() == '.json':
+        payload = read_json(source)
+        if isinstance(payload, dict) and 'target_url' in payload and 'drafts' in payload:
+            _validate_delivery(project, payload)
+    # Equivalent copies waive repeated human review, never current input checks.
     if change.get('tier') == 'T0':
         return
-    candidate = change.get('candidate_receipt') or {}
     review = change.get('review') or {}
     fields = ('artifact_id', 'revision', 'sha256')
     if (review.get('verdict') != 'approved'
             or review.get('change_id') != change.get('change_id')
             or any(not candidate.get(k) or review.get(k) != candidate[k] for k in fields)):
         raise RevisionControlError('审核凭据未绑定当前候选 artifact/revision/hash；请重新审核，不复用旧 PASS')
-    source, _ = _within_project(project, candidate['path'])
-    if source.suffix.lower() == '.json':
-        payload = read_json(source)
-        if isinstance(payload, dict) and 'target_url' in payload and 'drafts' in payload:
-            _validate_delivery(project, payload)
     if review.get('report_sha256'):
         report, _ = _within_project(project, review['report_ref'])
         if not report.is_file() or sha256_file(report) != review['report_sha256']:

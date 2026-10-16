@@ -86,15 +86,22 @@ def director_input(root: Path, shot_id: str) -> dict:
         raise ProjectPrevisError('导演包 revision/status 与登记不一致')
     if data.get('schema_version') != '4.0':
         raise ProjectPrevisError('新白模输入须为当前 v4 导演包；旧包只读')
-    text_path = project_file(root, data['human_readable_path'])
-    plans = [a for a in entries if a.get('logical_id') == 'storyboard.plan'
-             and a.get('revision') == entry['revision']
-             and project_file(root, a['path_or_url']) == text_path
-             and a['artifact_id'] in state['current_artifacts']
-             and artifacts.artifact_is_confirmed(a, state, root)]
-    if len(plans) != 1:
-        raise ProjectPrevisError('同修订的确认导演正文未登记或已失效')
-    for a, p in ((entry, path), (plans[0], text_path)):
+    text_source = None
+    sources = [(entry, path)]
+    if data.get('human_readable_path'):
+        text_path = project_file(root, data['human_readable_path'])
+        plans = [a for a in entries if a.get('logical_id') == 'storyboard.plan'
+                 and a.get('revision') == entry['revision']
+                 and project_file(root, a['path_or_url']) == text_path
+                 and a['artifact_id'] in state['current_artifacts']
+                 and artifacts.artifact_is_confirmed(a, state, root)]
+        if len(plans) != 1:
+            raise ProjectPrevisError('同修订的确认导演正文未登记或已失效')
+        sources.append((plans[0], text_path))
+        text_source = dict(artifact_id=plans[0]['artifact_id'], **file_record(text_path, root))
+    elif not entry.get('checksum'):
+        raise ProjectPrevisError('确认导演 JSON 缺少登记指纹')
+    for a, p in sources:
         if a.get('checksum') and sha256_file(p) != a['checksum']:
             raise ProjectPrevisError(f'确认导演产物内容变化：{p}')
     found = [(s, i, shot) for s in data['scenes'] for i, shot in enumerate(s['shots'])
@@ -105,7 +112,7 @@ def director_input(root: Path, shot_id: str) -> dict:
     return {
         'source_storyboard': dict(artifact_id=entry['artifact_id'], revision=entry['revision'],
                                  **file_record(path, root)),
-        'source_director_text': dict(artifact_id=plans[0]['artifact_id'], **file_record(text_path, root)),
+        'source_director_text': text_source,
         'scene': {k: v for k, v in scene.items() if k != 'shots'},
         'shot': shot,
         'adjacent_states': {

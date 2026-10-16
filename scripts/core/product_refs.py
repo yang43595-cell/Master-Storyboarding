@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 from pathlib import Path
 
@@ -20,7 +21,7 @@ PRODUCT_REFERENCE = re.compile(
 
 
 def validate_documents(project: Path, directory: Path) -> list[str]:
-    """Check Markdown documents with explicit product markers or typed asset IDs.
+    """Check JSON and legacy Markdown explicit product markers or typed asset IDs.
 
     Free prose alone cannot establish whether a prop is an advertising product.
     Asset IDs use the confirmed narrative and current user adjustments, never the
@@ -29,8 +30,30 @@ def validate_documents(project: Path, directory: Path) -> list[str]:
     errors: list[str] = []
     categories: dict[str, str] | None = None
     source_error: str | None = None
-    for path in sorted(directory.rglob('*.md')):
+    documents = sorted(p for p in directory.rglob('*') if p.is_file() and p.suffix.lower() in {'.md', '.json'})
+    for path in documents:
         text = path.read_text(encoding='utf-8-sig')
+        structured_product = False
+        if path.suffix.lower() == '.json':
+            try:
+                value = json.loads(text)
+            except ValueError as exc:
+                errors.append(f'{path.name}: 无法核对无效 JSON：{exc}')
+                continue
+            def strings(item):
+                if isinstance(item, dict):
+                    for key, child in item.items():
+                        yield key
+                        yield from strings(child)
+                elif isinstance(item, list):
+                    for child in item:
+                        yield from strings(child)
+                elif isinstance(item, str):
+                    yield item
+            values = list(strings(value))
+            structured_product = 'REAL_PRODUCT' in values
+            text = '\n'.join(values)
+
         ids = set(ASSET_ID.findall(text))
         if ids and categories is None and source_error is None:
             try:
@@ -47,7 +70,7 @@ def validate_documents(project: Path, directory: Path) -> list[str]:
             unknown = sorted(ids - categories.keys())
             if unknown:
                 errors.append(f'{path.name}: 未登记的资产编号：{", ".join(unknown)}')
-        product_used = PRODUCT_MARKER.search(text) or any(
+        product_used = structured_product or PRODUCT_MARKER.search(text) or any(
             (categories or {}).get(asset_id) == 'REAL_PRODUCT' for asset_id in ids
         )
         if not product_used:
