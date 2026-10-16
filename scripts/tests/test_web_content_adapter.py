@@ -19,6 +19,8 @@ def registry(tmp_path):
         result[key] = {'id':ident,'localPath':str(path),'url':'/api/content-media/'+sha,
             'sha256':sha,'mime':mime,'bytes':len(data),'caption':'仅合成测试',
             'readback':{'mediaVerified':ident,'sha256':sha,'bytes':len(data)}}
+    fixture=tmp_path/'fixture';fixture.mkdir(exist_ok=True)
+    (fixture/'face.png').write_bytes(PNG);(fixture/'preview.png').write_bytes(PNG)
     return result
 
 
@@ -53,7 +55,8 @@ def compile_fixture(stage, source, media, case='01', basis=None, **extra):
     return compile_content(canonical(source).encode(),stage=stage,case_id=case,
         source_script_version=basis or hashlib.sha256(('synthetic-legacy-'+case).encode()).hexdigest(),
         expected_version=None,scope='qa',media_registry=media,
-        benchmark=BENCHMARK if stage in {'script','assets'} else None,**extra)
+        benchmark=BENCHMARK if stage in {'script','assets'} else None,
+        project_root=Path(next(iter(media.values()))['localPath']).parent,**extra)
 
 
 @pytest.mark.parametrize('case', ['01','05','06'])

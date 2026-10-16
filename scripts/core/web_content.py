@@ -5,8 +5,10 @@ import hashlib
 import json
 import re
 import subprocess
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from .schema_contracts import require_schema
+from .story_sources import validate_body_dialogues
+from .artifacts import project_path
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / 'references/web-contract-v78'
@@ -44,7 +46,7 @@ def validate_web_request(request, *, contract_root=CONTRACT):
 def compile_content(raw: bytes, *, stage: str, case_id: str, source_script_version: str,
                     expected_version: str | None, scope: str, media_registry: dict,
                     benchmark: dict | None = None, title: str | None = None,
-                    reviewable: bool = False, contract_root=CONTRACT):
+                    reviewable: bool = False, contract_root=CONTRACT, project_root: Path | None = None):
     """Compile from one source plus explicit transport/readback evidence.
 
     media_registry contains existing media descriptors/local paths and the actual
@@ -73,11 +75,21 @@ def compile_content(raw: bytes, *, stage: str, case_id: str, source_script_versi
             if first is None:
                 first = item
         return first
-    def media(key, anchor, expected_hash=None):
+    anchor_counts = {}
+    def reference_anchor(scope, identity):
+        base = scope + '-' + hashlib.sha256(canonical(identity).encode()).hexdigest()[:24]
+        occurrence = anchor_counts.get(base, 0)
+        anchor_counts[base] = occurrence + 1
+        return base if occurrence == 0 else base + '-repeat-' + str(occurrence+1)
+    def media(key, anchor, expected_hash=None, expected_path=None):
         record = media_registry.get(key)
         if not isinstance(record, dict):
             raise WebContentError('缺少实际不可变媒体/回读映射：' + key)
         witness = record.get('readback', {})
+        if (not isinstance(record.get('id'), str) or not record['id'].strip()
+                or not isinstance(witness, dict) or not isinstance(witness.get('mediaVerified'), str)
+                or not witness['mediaVerified'].strip()):
+            raise WebContentError('缺少实际媒体标识或回读标识：' + key)
         fields = ('url','sha256','mime','bytes')
         if any(k not in record for k in fields) or not record.get('localPath'):
             raise WebContentError('媒体元数据不完整：' + key)
@@ -86,6 +98,17 @@ def compile_content(raw: bytes, *, stage: str, case_id: str, source_script_versi
             raise WebContentError('媒体本地字节不存在：' + key)
         with path.open('rb') as stream:
             actual_sha = hashlib.file_digest(stream, 'sha256').hexdigest()
+        if expected_path is not None:
+            source_path = Path(expected_path)
+            if not source_path.is_absolute() and not PureWindowsPath(expected_path).is_absolute() and project_root is None:
+                raise WebContentError('相对资产来源需要明确 project_root：' + str(expected_path))
+            source_path = project_path(Path(project_root) if project_root is not None else Path.cwd(), expected_path)
+            if not source_path.is_file():
+                raise WebContentError('业务 JSON 登记的媒体来源不存在：' + str(expected_path))
+            with source_path.open('rb') as stream:
+                source_sha = hashlib.file_digest(stream, 'sha256').hexdigest()
+            if source_sha != actual_sha or source_path.stat().st_size != path.stat().st_size:
+                raise WebContentError('业务来源路径与 registry 媒体字节不一致：' + key)
         if record['mime'].startswith('image/'):
             from PIL import Image
             with Image.open(path) as image:
@@ -116,9 +139,20 @@ def compile_content(raw: bytes, *, stage: str, case_id: str, source_script_versi
         poster = media(benchmark['posterKey'], meta['posterMediaId'])
         block('benchmark-reference', '对标原视频', canonical(meta), [video, poster])
     if stage == 'script':
+        if business.get('schema_version') != '2.0':
+            raise WebContentError('编导适配仅支持 narrative 2.0；旧版 legacy v1 须按真实正文整理新修订，不猜段落')
         require_schema(business, 'narrative-package.schema.json', label='网页编导源')
+        validate_body_dialogues(business)
+        # The original renderer recognizes only numeric STP headings. If any
+        # valid source ID is outside that subset, use its generic main-scene
+        # view for the entire story. Never renumber IDs or leave a paragraph
+        # in extras merely because other paragraphs matched the numeric view.
+        numeric_view = all(re.match(r'^STP-(?:C\d+-)?\d+', p['paragraph_id'])
+                           for p in business['story_paragraphs'])
         for paragraph in business['story_paragraphs']:
-            block(paragraph['paragraph_id'], paragraph['paragraph_id'] + '｜故事正文', paragraph['text'])
+            heading = (paragraph['paragraph_id'] + '｜故事正文' if numeric_view
+                       else '正文段落｜' + paragraph['paragraph_id'])
+            block(paragraph['paragraph_id'], heading, paragraph['text'])
         add_benchmark()
         if business['open_questions'] and reviewable:
             raise WebContentError('未决事实尚在，不能把本包设为可通过')
@@ -149,7 +183,7 @@ def compile_content(raw: bytes, *, stage: str, case_id: str, source_script_versi
             items = []
             for output in asset['confirmed_outputs']:
                 key = asset['asset_id'] + '@' + output['output_id']
-                m = media(key, key)
+                m = media(key, key, expected_path=output['path'])
                 b['media'].append(m)
                 items.append({'blockId': b['id'], 'mediaId': m['id'], 'title': '资产：' + asset['name'] + ' · ' + output['view'],
                               'role': '用途：' + output['purpose'], 'origin': 'reference', 'status': 'reference',
@@ -165,15 +199,20 @@ def compile_content(raw: bytes, *, stage: str, case_id: str, source_script_versi
         if not isinstance(business.get('drafts'), list) or not business['drafts']:
             raise WebContentError('缺少现行完整视频 drafts JSON；不恢复退役 production_plan')
         for draft in business['drafts']:
-            if len(draft.get('ordered_media', [])) != len(draft.get('reference_checks', [])):
+            ordered, checks = draft.get('ordered_media'), draft.get('reference_checks')
+            if not isinstance(ordered, list) or not isinstance(checks, list) or len(ordered) != len(checks):
                 raise WebContentError('视频素材职责不能遗漏实际输入')
-            refs = [media(ref['artifact_id'] + '@' + ref['revision'], draft['node_id'] + '-' + str(i), ref['sha256'])
-                    for i, ref in enumerate(draft['reference_checks'])]
+            if any(not isinstance(item, dict) or any(not isinstance(item.get(k), str) or not item[k].strip()
+                   for k in ('node_id','media_id')) for item in ordered):
+                raise WebContentError('视频实际输入缺少准确 native node_id/media_id')
+            refs = [media(ref['artifact_id'] + '@' + ref['revision'],
+                          reference_anchor(draft['node_id'], {'reference':ref,'native':native}), ref['sha256'])
+                    for native, ref in zip(ordered, checks)]
             block(draft['node_id'], '视频段：' + draft['node_id'], draft['prompt'] + '\n\n参数：' + canonical(draft['parameters']), refs)
     elif stage in {'white_model','storyboard'}:
         if not business.get('files'):
             raise WebContentError('缺少已登记预览 files；不能从 assets-v2 缺失路径补造媒体')
-        refs = [media(f['path'], str(i), f.get('sha256')) for i, f in enumerate(business['files'])]
+        refs = [media(f['path'], reference_anchor('preview', f), f.get('sha256'), expected_path=f['path']) for f in business['files']]
         block('reference-views', '已登记参考视图', '仅展示已有登记，不运行白模或生成图片。', refs)
         if reviewable:
             raise WebContentError('此历史 JSON 仅能提供参考视图；完整 assets-v2 适配未恢复')
@@ -243,7 +282,7 @@ def main():
             case_id=job['caseId'], source_script_version=job['sourceScriptVersion'],
             expected_version=job['expectedVersion'], scope=job['scope'], media_registry=job['mediaRegistry'],
             benchmark=job.get('benchmark'), title=job.get('title'), reviewable=job.get('reviewable', False),
-            contract_root=job.get('contractRoot', CONTRACT))
+            contract_root=job.get('contractRoot', CONTRACT), project_root=job.get('projectRoot'))
         print(canonical(result))
         return 0
     except (ValueError, KeyError, TypeError, OSError, subprocess.SubprocessError) as exc:
