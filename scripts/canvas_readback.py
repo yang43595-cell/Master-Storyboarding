@@ -77,7 +77,38 @@ def validate_submission(frozen: dict, project: Path) -> dict:
             raise ValueError('finite positive duration required')
         return value
     roles = {'identity', 'appearance', 'start_frame', 'end_frame', 'action', 'scale', 'layout', 'voice'}
-    previous = None
+    event_last = {}
+    def same_boundary(tail, head, event, prior_id, current_id):
+        if (tail["state_id"] != head["state_id"]
+                or set(tail["entity_ids"]) != set(head["entity_ids"])):
+            return False
+        if tail["sha256"] == head["sha256"]:
+            return True
+        group_id = tail.get("reference_group_id")
+        if not group_id or head.get("reference_group_id") != group_id:
+            return False
+        try:
+            from .core.confirmation_scope import is_whole_artifact
+        except ImportError:
+            from core.confirmation_scope import is_whole_artifact
+        groups = [(receipt, group) for receipt in state["user_confirmations"]
+                  if is_whole_artifact(receipt) and receipt.get("approval_ref")
+                  for group in receipt.get("reference_groups", []) if group.get("group_id") == group_id]
+        if len(groups) != 1:
+            return False
+        receipt, group = groups[0]
+        if (group.get("event_id") != event or group.get("state_id") != tail["state_id"]
+                or set(group.get("entity_ids", [])) != set(tail["entity_ids"])):
+            return False
+        for ref, role, node in [(tail, "end_frame", prior_id), (head, "start_frame", current_id)]:
+            if ref["artifact_id"] not in receipt.get("artifact_ids", []):
+                return False
+            members = [m for m in group.get("members", [])
+                       if all(m.get(k) == ref[k] for k in ("artifact_id", "revision", "sha256"))
+                       and role in m.get("roles", []) and node in m.get("draft_node_ids", [])]
+            if len(members) != 1:
+                return False
+        return True
     for row in frozen['drafts']:
         if not isinstance(row.get('prompt'), str) or not row['prompt'].strip():
             raise ValueError('complete submitted prompt body required')
@@ -104,15 +135,27 @@ def validate_submission(frozen: dict, project: Path) -> dict:
                 or any(not isinstance(v, list) or not v or not set(v).issubset(roles) for v in required_roles.values())):
             raise ValueError('required reference roles must cover exactly the required entities')
         covered, covered_roles, frames = set(), {}, {}
-        for ref in refs:
+        for media_item, ref in zip(media, refs):
             path = authority(ref)
-            role, kind = ref.get('role'), ref.get('kind')
-            if role not in roles or kind not in {'image', 'video', 'audio'}:
+            item = next(a for a in manifest['artifacts'] if a['artifact_id'] == ref['artifact_id'])
+            # Bind actual native identities to source bytes in the existing source
+            # artifact registration, not a caller-provided parallel list of labels.
+            bindings = [b for b in item.get('upload_bindings', [])
+                        if b.get('node_id') == media_item['node_id']
+                        and b.get('media_id') == media_item['media_id']
+                        and b.get('target_url') == frozen.get('target_url')
+                        and b.get('revision') == ref['revision'] and b.get('sha256') == ref['sha256']]
+            if not bindings:
+                raise ValueError('actual upload node/media has no exact current source mapping')
+            assigned = ref.get('roles', [ref.get('role')])
+            kind = ref.get('kind')
+            if (not isinstance(assigned, list) or not assigned or not set(assigned).issubset(roles)
+                    or kind not in {'image', 'video', 'audio'}):
                 raise ValueError('unknown reference role/kind')
             extensions = {'image': {'.png','.jpg','.jpeg','.webp'}, 'video': {'.mp4','.mov','.mkv','.webm'}, 'audio': {'.wav','.mp3','.m4a'}}
             if path.suffix.lower() not in extensions[kind]:
                 raise ValueError('reference kind differs from actual registered file type')
-            if role == 'action':
+            if 'action' in assigned:
                 if kind != 'video':
                     raise ValueError('action video cannot be replaced by identity/still reference')
                 seconds(ref.get('duration'))
@@ -125,10 +168,10 @@ def validate_submission(frozen: dict, project: Path) -> dict:
                     raise ValueError('cannot read actual action video duration') from exc
                 if not math.isclose(actual_duration, ref['duration'], abs_tol=0.1):
                     raise ValueError('declared action duration differs from actual video bytes')
-            elif role == 'voice':
+            if 'voice' in assigned:
                 if kind != 'audio':
                     raise ValueError('voice role requires audio')
-            elif kind != 'image':
+            if set(assigned) & {'start_frame', 'end_frame', 'scale', 'layout'} and kind != 'image':
                 raise ValueError('frame/identity/scale/layout roles require image')
             entities = ref.get('entity_ids')
             if not isinstance(entities, list) or not entities or any(not isinstance(e,str) or not e for e in entities):
@@ -137,8 +180,8 @@ def validate_submission(frozen: dict, project: Path) -> dict:
                 raise ValueError('reference is assigned to an undeclared/wrong entity')
             covered.update(entities)
             for entity in entities:
-                covered_roles.setdefault(entity, set()).add(role)
-            if role in {'start_frame','end_frame'}:
+                covered_roles.setdefault(entity, set()).update(assigned)
+            for role in set(assigned) & {'start_frame', 'end_frame'}:
                 if role in frames or not isinstance(ref.get('state_id'), str) or not ref['state_id']:
                     raise ValueError('unique start/end frame state required')
                 frames[role] = ref
@@ -149,19 +192,20 @@ def validate_submission(frozen: dict, project: Path) -> dict:
         continuity = row.get('continuity')
         if not isinstance(continuity, dict) or not continuity.get('event_id'):
             raise ValueError('explicit event continuity required')
-        if previous and previous[0]['continuity']['event_id'] == continuity['event_id']:
-            prior, prior_frames = previous
-            if continuity.get('previous_node_id') != prior['node_id']:
-                raise ValueError('continuous event predecessor differs from actual draft order')
+        event = continuity['event_id']
+        prior = event_last.get(event)
+        if prior:
+            prior_row, prior_frames = prior
+            if continuity.get('previous_node_id') != prior_row['node_id']:
+                raise ValueError('event predecessor missing, forked, cyclic or out of order')
             tail, head = prior_frames.get('end_frame'), frames.get('start_frame')
             if not tail or not head:
                 raise ValueError('continuous split requires actual confirmed end/start frames')
-            if (tail['state_id'] != head['state_id'] or tail['sha256'] != head['sha256']
-                    or set(tail['entity_ids']) != set(head['entity_ids'])):
-                raise ValueError('cross-segment boundary frame/state/entity mismatch; recheck affected next segment')
+            if not same_boundary(tail, head, event, prior_row['node_id'], row['node_id']):
+                raise ValueError('cross-segment boundary frame/state/entity/group usage mismatch')
         elif continuity.get('previous_node_id'):
-            raise ValueError('predecessor cannot refer across a different event or missing segment')
-        previous = row, frames
+            raise ValueError('event root predecessor is unknown, cyclic or belongs to another event')
+        event_last[event] = row, frames
     return {'ok': True, 'revision': frozen['revision'], 'frozen_sha256': digest(frozen),
             'scope': 'current registered bytes, declared reference roles/entities, durations and continuous split boundaries',
             'limitations': 'Requires actual visual inspection of roles/states and current platform bounds; does not verify pixels, media duration metadata, remote provenance or generation authorization.'}

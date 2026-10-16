@@ -23,7 +23,10 @@ def delivery(root):
     for ident, name in [('FRAME', 'frame.png'), ('DIRECTOR', 'director.json')]:
         refs[ident] = {'artifact_id': ident, 'revision': 'R01', 'sha256': artifacts.digest(root / name)}
         entries.append({**refs[ident], 'logical_id': ident, 'status': 'current',
-                        'user_approved': True, 'path_or_url': name, 'checksum': refs[ident]['sha256']})
+                        'user_approved': True, 'path_or_url': name, 'checksum': refs[ident]['sha256'],
+                        'upload_bindings': [{'target_url': 'https://fixture.invalid/exact',
+                            'node_id': 'frame-node', 'media_id': 'frame-media',
+                            'revision': 'R01', 'sha256': refs[ident]['sha256']}]})
     write_json(root / artifacts.MANIFEST_PATH, {'artifacts': entries})
     state = new_project_state()
     state.update(current_artifacts=list(refs), user_confirmations=[{'artifact_ids': list(refs)}])
@@ -95,7 +98,9 @@ def test_action_reference_checks_actual_video_duration(tmp_path):
                     '-t', '1', '-pix_fmt', 'yuv420p', str(video)], check=True, capture_output=True)
     manifest = artifacts.load_manifest(tmp_path)
     item = {'artifact_id': 'ACTION', 'logical_id': 'ACTION', 'revision': 'R01',
-            'status': 'current', 'user_approved': True, 'path_or_url': video.name, 'checksum': artifacts.digest(video)}
+            'status': 'current', 'user_approved': True, 'path_or_url': video.name, 'checksum': artifacts.digest(video),
+            'upload_bindings': [{'target_url': frozen['target_url'], 'node_id': 'video-node',
+                                'media_id': 'video-media', 'revision': 'R01', 'sha256': artifacts.digest(video)}]}
     manifest['artifacts'].append(item); write_json(tmp_path / artifacts.MANIFEST_PATH, manifest)
     state = read_json(tmp_path / '00_项目管理/project_state.json')
     state['current_artifacts'].append('ACTION'); state['user_confirmations'].append({'artifact_ids': ['ACTION']})
