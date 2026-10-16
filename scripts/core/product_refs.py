@@ -85,13 +85,64 @@ def validate_documents(project: Path, directory: Path) -> list[str]:
     return errors
 
 
+def _json_string_fields(value, pointer=()):
+    if isinstance(value, dict):
+        for key, child in value.items():
+            yield from _json_string_fields(child, pointer + (key,))
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            yield from _json_string_fields(child, pointer + (str(index),))
+    elif isinstance(value, str):
+        yield pointer, value
+
+
+def validate_image_documents(project: Path, directory: Path) -> list[str]:
+    """Generic image path existence for JSON fields/body and legacy MD/TXT."""
+    prefixes = r'(?:05_分镜|04_资产|02_正式分镜图|06_参考帧与临时素材|assets[\\/]product-references)'
+    pattern = re.compile(r'(?:[A-Za-z]:[\\/]|\.{1,2}[\\/]|' + prefixes
+                         + r'[\\/])[^`"|()\s]+?\.(?:png|jpg|jpeg|webp)', re.I)
+    extension = re.compile(r'\.(?:png|jpg|jpeg|webp)$', re.I)
+    path_keys = {'path', 'paths', 'path_or_url', 'file', 'files', 'image', 'images', 'reference', 'references'}
+    errors = []
+    for path in sorted(directory.rglob('*')):
+        if not path.is_file() or path.suffix.lower() not in {'.json', '.md', '.txt'}:
+            continue
+        text = path.read_text(encoding='utf-8-sig')
+        fields = [((), text)]
+        if path.suffix.lower() == '.json':
+            try:
+                fields = list(_json_string_fields(json.loads(text)))
+            except ValueError as exc:
+                errors.append(f'{path.name}: 无法检查图片引用的无效 JSON：{exc}')
+                continue
+        refs = set()
+        for pointer, value in fields:
+            # JSON scalar path values may contain spaces and escaped backslashes.
+            declared_path = any(key in path_keys or key.endswith(('_path', '_paths', '_file', '_files'))
+                                for key in pointer)
+            if declared_path and extension.search(value) and '\n' not in value and '://' not in value:
+                refs.add(value)
+            else:
+                refs.update(pattern.findall(value))
+        for raw in sorted(refs):
+            try:
+                if not project_path(project, raw).is_file():
+                    errors.append(f'{path.name}: Referenced image does not exist: {raw}')
+            except (OSError, ValueError) as exc:
+                errors.append(f'{path.name}: 图片路径无法解析：{raw}: {exc}')
+    return errors
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--project', type=Path, required=True)
     parser.add_argument('--directory', type=Path, required=True)
+    parser.add_argument('--include-images', action='store_true', help='同时检查 JSON/MD/TXT 的通用图片路径')
     args = parser.parse_args()
     try:
         errors = validate_documents(args.project.resolve(), args.directory.resolve())
+        if args.include_images:
+            errors.extend(validate_image_documents(args.project.resolve(), args.directory.resolve()))
     except (OSError, ValueError) as exc:
         errors = [str(exc)]
     for error in errors:

@@ -98,3 +98,45 @@ def test_group_authority_is_exact_and_limited_to_approved_usage(tmp_path, field)
     else: group[field] = 'wrong'
     write_json(path, state)
     with pytest.raises(ValueError): validate_submission(frozen, tmp_path)
+
+
+@pytest.mark.parametrize('segments,valid', [(['one','two'], True), (['one'], False), (['two'], False), (['other'], False)])
+def test_existing_segment_approval_can_cover_exact_boundary_usage(tmp_path, segments, valid):
+    frozen = group_fixture(tmp_path)
+    path = tmp_path / '00_项目管理/project_state.json'; state = read_json(path)
+    group_receipt = state['user_confirmations'][-1]
+    # The images have their own existing whole-image confirmation; only group
+    # usage is scoped to the two segments. Do not escalate this to whole-film approval.
+    state['user_confirmations'].append({'scope': 'artifact', 'artifact_ids': ['OTHER-ANGLE'],
+                                        'approval_ref': 'fixture:whole-image'})
+    group_receipt.update(scope='segment', segment_ids=segments)
+    write_json(path, state)
+    if valid: assert validate_submission(frozen, tmp_path)['ok']
+    else:
+        with pytest.raises(ValueError): validate_submission(frozen, tmp_path)
+
+
+@pytest.mark.parametrize('different_bytes,selected,selected_alias', [
+    (True,'FRAME',True), (True,'ALIAS',True), (False,'FRAME',True), (False,'ALIAS',True),
+    (True,'FRAME',False), (False,'FRAME',False)])
+def test_reverse_upload_mapping_conflict_but_same_bytes_reuse_allowed(tmp_path, different_bytes, selected, selected_alias):
+    frozen, _ = delivery(tmp_path)
+    manifest = artifacts.load_manifest(tmp_path)
+    original = manifest['artifacts'][0]
+    alias = copy.deepcopy(original); alias.update(artifact_id='ALIAS', logical_id='ALIAS')
+    if different_bytes:
+        from PIL import Image
+        image = tmp_path / 'other.png'; Image.new('RGB', (8,8), 'red').save(image)
+        alias.update(path_or_url=image.name, checksum=artifacts.digest(image))
+        alias['upload_bindings'][0]['sha256'] = alias['checksum']
+    manifest['artifacts'].append(alias); write_json(tmp_path / artifacts.MANIFEST_PATH, manifest)
+    path = tmp_path / '00_项目管理/project_state.json'; state = read_json(path)
+    if selected_alias: state['current_artifacts'].append('ALIAS')
+    state['user_confirmations'].append({'artifact_ids': ['ALIAS'], 'approval_ref': 'fixture:alias'})
+    write_json(path, state)
+    if selected == 'ALIAS':
+        for row in frozen['drafts']:
+            row['reference_checks'][0].update(artifact_id='ALIAS', sha256=alias['checksum'])
+    if different_bytes:
+        with pytest.raises(ValueError, match='conflict'): validate_submission(frozen, tmp_path)
+    else: assert validate_submission(frozen, tmp_path)['ok']

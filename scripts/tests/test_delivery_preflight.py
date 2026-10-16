@@ -26,7 +26,7 @@ def delivery(root):
                         'user_approved': True, 'path_or_url': name, 'checksum': refs[ident]['sha256'],
                         'upload_bindings': [{'target_url': 'https://fixture.invalid/exact',
                             'node_id': 'frame-node', 'media_id': 'frame-media',
-                            'revision': 'R01', 'sha256': refs[ident]['sha256']}]})
+                            'revision': 'R01', 'sha256': refs[ident]['sha256']}] if ident == 'FRAME' else []})
     write_json(root / artifacts.MANIFEST_PATH, {'artifacts': entries})
     state = new_project_state()
     state.update(current_artifacts=list(refs), user_confirmations=[{'artifact_ids': list(refs)}])

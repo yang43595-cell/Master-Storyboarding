@@ -88,11 +88,17 @@ def validate_submission(frozen: dict, project: Path) -> dict:
         if not group_id or head.get("reference_group_id") != group_id:
             return False
         try:
-            from .core.confirmation_scope import is_whole_artifact
+            from .core.confirmation_scope import is_whole_artifact, classify, problems_for_write, KIND_SEGMENT
         except ImportError:
-            from core.confirmation_scope import is_whole_artifact
+            from core.confirmation_scope import is_whole_artifact, classify, problems_for_write, KIND_SEGMENT
+        def covers_usage(receipt):
+            if is_whole_artifact(receipt):
+                return True
+            scope = classify(receipt)
+            return (scope.kind == KIND_SEGMENT and not problems_for_write(receipt)
+                    and {prior_id, current_id} <= set(scope.ids.get('segment_ids', [])))
         groups = [(receipt, group) for receipt in state["user_confirmations"]
-                  if is_whole_artifact(receipt) and receipt.get("approval_ref")
+                  if covers_usage(receipt) and receipt.get("approval_ref")
                   for group in receipt.get("reference_groups", []) if group.get("group_id") == group_id]
         if len(groups) != 1:
             return False
@@ -147,6 +153,19 @@ def validate_submission(frozen: dict, project: Path) -> dict:
                         and b.get('revision') == ref['revision'] and b.get('sha256') == ref['sha256']]
             if not bindings:
                 raise ValueError('actual upload node/media has no exact current source mapping')
+            reverse_hashes = {binding['sha256']
+                for source in manifest['artifacts']
+                if source.get('status') == 'current'
+                and artifact_is_confirmed(source, state, project)
+                for binding in source.get('upload_bindings', [])
+                if binding.get('target_url') == frozen.get('target_url')
+                and binding.get('node_id') == media_item['node_id']
+                and binding.get('media_id') == media_item['media_id']
+                and binding.get('revision') == source.get('revision')
+                and binding.get('sha256') == source.get('checksum')}
+            if reverse_hashes != {ref['sha256']}:
+                raise ValueError('conflicting upload mapping: one native identity names different source bytes')
+
             assigned = ref.get('roles', [ref.get('role')])
             kind = ref.get('kind')
             if (not isinstance(assigned, list) or not assigned or not set(assigned).issubset(roles)

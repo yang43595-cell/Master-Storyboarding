@@ -195,25 +195,7 @@ if (Test-Path -LiteralPath $executionDir -PathType Container) {
       }
     }
 
-    # 检查引用的图片路径是否存在。
-    # 路径在 `、引号、管道、括号、空白处截止，且惰性匹配首个扩展名，防止把
-    # "…….png)\n下一行说明文字.png" 整体吞成一个路径而误报图片不存在。
-    $officialImageToken = [regex]::Escape($imageRelative)
-    $referenceToken = [regex]::Escape($referenceRelative)
-    $imagePathPattern = '(?:[A-Za-z]:[\\/]|\.{1,2}[\\/]|' + $officialImageToken + '[\\/]|' + $referenceToken + '[\\/])[^`"|()\s]+?\.(?:png|jpg|jpeg|webp)'
-    $imageMatches = [regex]::Matches($text, $imagePathPattern, "IgnoreCase")
-    foreach ($match in $imageMatches) {
-      $rawPath = $match.Value.Trim()
-      # 绝对路径（盘符 + 正斜杠或反斜杠）直接使用，避免 Join-Path 把绝对路径二次拼接。
-      if ($rawPath -match "^[A-Za-z]:[\\/]") {
-        $candidate = $rawPath
-      } else {
-        $candidate = Join-Path $projectRoot $rawPath
-      }
-      if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
-        $issues.Add((Add-Issue "ERROR" "Referenced image does not exist: $rawPath"))
-      }
-    }
+    # 通用图片引用在下方 Python --include-images 中检查，覆盖 JSON/MD/TXT。
   }
 
   # 产品类型只认明确标记或已确认资产类别；普通剧情道具名称不触发广告产品门禁。
@@ -224,7 +206,7 @@ if (Test-Path -LiteralPath $executionDir -PathType Container) {
     $OutputEncoding = [System.Text.Encoding]::UTF8
     Push-Location -LiteralPath (Split-Path -Parent $PSScriptRoot)
     try {
-      $productOutput = @(& python -m scripts.core.product_refs --project $projectRoot --directory $executionDir 2>&1)
+      $productOutput = @(& python -m scripts.core.product_refs --project $projectRoot --directory $executionDir --include-images 2>&1)
       $productExit = $LASTEXITCODE
     } finally {
       Pop-Location
