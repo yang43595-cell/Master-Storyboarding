@@ -1,0 +1,31 @@
+From d28f35dacbfa26f843e4dea5ede91562cb940b52 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Fri, 16 Oct 2026 19:02:11 +0000
+Subject: [PATCH 3/4] docs: clarify JSON publication and source review evidence
+ boundaries
+
+---
+ CONTENT_DELIVERY.md | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/CONTENT_DELIVERY.md b/CONTENT_DELIVERY.md
+index 54db34e..c8a702b 100644
+--- a/CONTENT_DELIVERY.md
++++ b/CONTENT_DELIVERY.md
+@@ -88,3 +88,13 @@ controls and review controller; no case-specific or filename classification.
+ The previous live asset package `dca354191bdeccc6562b6d191036da3bce9134dc0370c1294698e8730bb629ab`
+ has one frozen, exact-version read-only layout snapshot to preserve its deployed
+ historical presentation. It is not consulted for new revisions.
++
++## Source and review evidence boundaries
++
++New stage publication consumes `PublishRequest.content` JSON and its declared media; a new Markdown companion is not required. Retain the canonical Markdown and its original bytes for explicit legacy reading and historical comment anchors (`app.js` / `loadLegacyCase`). Do not delete legacy documents to simplify new publication.
++
++`source-binding.source_sha256` and `native_sha256` currently pass format validation only. That is not proof that either value equals the hash of the actual external source/native input bytes. The delivery producer must compute and compare those bytes separately and retain that evidence; the website has no such external input verification mechanism. Immutable media upload validation is separate from these two declarations.
++
++A package benchmark takes precedence. Unbound legacy packages retain the same-case registry preview already checked by `benchmarkSource`; bound packages without a benchmark show an explicit missing-source warning and never reuse the registry. Malformed declared metadata remains an error. No registry fallback proves the historical package's source/native hash.
++
++`GET /api/content` returns a default `approval: pending`, not a user approval receipt. Use authenticated `currentState` and exact-version `currentFeedback` from the feedback endpoint for review status; an unavailable state is unverified. Saved feedback is not an agent acceptance or processing receipt. No unattended pickup service is implemented by this contract.
+-- 
+2.52.0
+

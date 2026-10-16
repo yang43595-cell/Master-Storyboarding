@@ -1,0 +1,10 @@
+{
+  "fileCountBeforeManifest": 20,
+  "credentialPatterns": "No matches for private keys, GitHub/OpenAI token shapes, JWTs, populated auth secrets or signed transfer URLs.",
+  "emailIdentifiers": [
+    "codex@openai.com (patch author; service identity)"
+  ],
+  "excluded": "No .git, node_modules, generated builds/caches, credentials, live snapshots, media, real approvals or customer input content included. Source manifest contains paths/hashes only. Logs are isolated/synthetic test output.",
+  "manualReview": "Reviewed patch additions, README, source manifest metadata, and local test/build logs.",
+  "limitations": "Pattern scan is evidence, not a guarantee against all possible secrets."
+}

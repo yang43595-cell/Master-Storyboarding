@@ -1,0 +1,24 @@
+{
+  "deliveryKind": "patch-only; not a standalone website source checkout",
+  "canonicalSitesCommit": "5d2e1c451c6e428f92f50788d75939a37b39fec7",
+  "canonicalSitesVersion": 78,
+  "fullSourceArchive": {
+    "library_file_id": "libfile_50d8ae386fac8191a9723472939b35ef",
+    "file_name": "four-ad-review-v78-test-source-20261017.zip",
+    "bytes": 404312480,
+    "sha256": "607421269da75dd3e9ee877690cbd48f7a28780b26aba8eb37ed2526f83a0977"
+  },
+  "repairArchive": {
+    "library_file_id": "libfile_2714573aae308191b39d834f95db5340",
+    "bytes": 108781,
+    "sha256": "816280d743a06053594770a125d48924a531bfe2328ccb50c5f146b971edb6a6"
+  },
+  "githubBaseMain": "235864def0d4341d4bdda43394d0dfa355e5dcb7",
+  "changedSourceFiles": [
+    "CONTENT_DELIVERY.md",
+    "review-static/content-subscription.js",
+    "tests/content-bootstrap.cjs",
+    "tests/content-subscription.cjs"
+  ],
+  "sourceImportIsNotOriginalGitHistory": true
+}

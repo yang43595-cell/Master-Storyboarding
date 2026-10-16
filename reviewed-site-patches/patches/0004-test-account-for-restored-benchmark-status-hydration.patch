@@ -1,0 +1,37 @@
+From 0dd5dfbf3a6fd60bb7bdffbe8470165cf1302679 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Fri, 16 Oct 2026 19:03:51 +0000
+Subject: [PATCH 4/4] test: account for restored benchmark status hydration
+ without relaxing case isolation
+
+---
+ tests/content-bootstrap.cjs | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/tests/content-bootstrap.cjs b/tests/content-bootstrap.cjs
+index da1c577..4d0b54c 100644
+--- a/tests/content-bootstrap.cjs
++++ b/tests/content-bootstrap.cjs
+@@ -38,6 +38,7 @@ async function subscribed({ caseId = '01', legacyMode = 'failed', missingIndex =
+   env.CaseReviewConfigs = missingConfig ? {} : deep(configs); vm.runInNewContext(configBinding, {window:env,location:env.location,URLSearchParams}); if (!missingIndex) env.ReviewCaseIndex = deep(index);
+   const legacyRequests = [], originalFetch = env.fetch;
+   const fetch = async (url, options) => {
++    if (url === '/api/site-media?status=1') { r.requests.push({ url, request: options }); return { ok: true, json: async () => ({ entries: [] }) }; }
+     if (url.startsWith('/api/')) return originalFetch(url, options);
+     legacyRequests.push(url); if (legacyMode === 'pending') return new Promise(() => {});
+     if(legacyMode === 'healthy'){if(url === 'data/review.json'){if(legacyGate) await legacyGate.promise;return {ok:true,json:async()=>deep(base)};}if(url === 'data/project-deliveries.json')return {ok:true,json:async()=>deep(deliveries)};return {ok:true,text:async()=>read('review-static/'+url)};}
+@@ -125,7 +126,10 @@ async function test(name, run) { try { await run(); results.push({ name, passed:
+       assert.equal(r.document.querySelector('h1').textContent,'广告成果验收 · 案例 '+caseId);assert.equal(r.document.title,'广告成果验收 · 案例 '+caseId);
+       assert.equal(r.document.querySelectorAll('.case-tab').length,0);assert.equal(r.document.querySelectorAll('.case-nav').length,0);assert.equal(r.document.querySelectorAll('[role=tablist]').length,0);
+       assert.equal(r.env.ReviewActiveCaseId,caseId);assert.equal(r.env.Case01ReviewConfig.caseId,caseId);
+-      assert(r.requests.every(x=>new URL(x.url,'https://local.invalid').searchParams.get('caseId')===caseId));assert.deepEqual(r.legacyRequests,[]);assert.equal(r.posts.length,0);
++      const mediaStatus=r.requests.filter(x=>x.url==='/api/site-media?status=1');
++      assert(mediaStatus.length<=1,'Optional source status is checked at most once');
++      if(mediaStatus.length){assert(r.panel.querySelector('.benchmark-source'));assert(index.cases.find(c=>c.id===caseId).source.reviewVideo);}
++      assert(r.requests.filter(x=>x.url!=='/api/site-media?status=1').every(x=>new URL(x.url,'https://local.invalid').searchParams.get('caseId')===caseId));assert.deepEqual(r.legacyRequests,[]);assert.equal(r.posts.length,0);
+     }
+   });
+   await test('valid explicit case hashes win conflicts; otherwise the first valid query value or Case01 is used', async () => {
+-- 
+2.52.0
+

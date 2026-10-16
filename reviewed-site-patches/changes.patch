@@ -1,0 +1,114 @@
+diff --git a/CONTENT_DELIVERY.md b/CONTENT_DELIVERY.md
+index 54db34e..c8a702b 100644
+--- a/CONTENT_DELIVERY.md
++++ b/CONTENT_DELIVERY.md
+@@ -88,3 +88,13 @@ controls and review controller; no case-specific or filename classification.
+ The previous live asset package `dca354191bdeccc6562b6d191036da3bce9134dc0370c1294698e8730bb629ab`
+ has one frozen, exact-version read-only layout snapshot to preserve its deployed
+ historical presentation. It is not consulted for new revisions.
++
++## Source and review evidence boundaries
++
++New stage publication consumes `PublishRequest.content` JSON and its declared media; a new Markdown companion is not required. Retain the canonical Markdown and its original bytes for explicit legacy reading and historical comment anchors (`app.js` / `loadLegacyCase`). Do not delete legacy documents to simplify new publication.
++
++`source-binding.source_sha256` and `native_sha256` currently pass format validation only. That is not proof that either value equals the hash of the actual external source/native input bytes. The delivery producer must compute and compare those bytes separately and retain that evidence; the website has no such external input verification mechanism. Immutable media upload validation is separate from these two declarations.
++
++A package benchmark takes precedence. Unbound legacy packages retain the same-case registry preview already checked by `benchmarkSource`; bound packages without a benchmark show an explicit missing-source warning and never reuse the registry. Malformed declared metadata remains an error. No registry fallback proves the historical package's source/native hash.
++
++`GET /api/content` returns a default `approval: pending`, not a user approval receipt. Use authenticated `currentState` and exact-version `currentFeedback` from the feedback endpoint for review status; an unavailable state is unverified. Saved feedback is not an agent acceptance or processing receipt. No unattended pickup service is implemented by this contract.
+diff --git a/review-static/content-subscription.js b/review-static/content-subscription.js
+index 02755ea..25b1b2e 100644
+--- a/review-static/content-subscription.js
++++ b/review-static/content-subscription.js
+@@ -25,10 +25,10 @@
+   const p=item.content,revision=esc(p.revision),version=item.version;const mayApprove=p.reviewable;
+   let metadata;try{metadata=global.ReviewPackageMetadata.read(p);}catch(error){panel.innerHTML='<p class="error">内容包来源校验失败：'+esc(error.message)+'。本版本不可审核，请修正后重新发布。</p>';return true;}
+   if(metadata.benchmark)sourceVideoHTML=global.ReviewPackageMetadata.render(metadata.benchmark,c.id);
+-  else if(metadata.binding)sourceVideoHTML='';
++  else if(metadata.binding)sourceVideoHTML='<p class="project-warning" role="status">本版本对标原视频缺失，请补充本版本的对标视频后重新发布。</p>';
+   const nav=`<nav aria-label="项目阶段"><ol class="case01-review-stages case01-unified-stages">${stages.map(([id,title],i)=>{const available=(c.id!=='05'&&!contentOnly(c.id))||id==='script'||hasStage(c.id,id),open=available?`a href="${esc(href({stage:id,area:id==='script'?null:'production','content-version':null}))}"${id===stage?' aria-current="page"':''}`:'span class="review-stage-unavailable" aria-disabled="true"';return `<li${id===stage?' aria-current="step"':''}><${open}><span class="case01-stage-number">${String(i+1).padStart(2,'0')}</span><div><strong>${title}</strong><span${stage==='assets'&&id===stage?' data-content-asset-status':''}>${id===stage?revision+' · 待核对':available?'查看本阶段':'尚未开放'}</span></div></${available?'a':'span'}></li>`}).join('')}</ol></nav>`;
+   if(stage==='script'){active=global.ReviewSubscribedScript.mount({c,panel,item,nav,sourceVideo:sourceVideoHTML,scope,href});return true;}
+-  if(stage==='assets'){active=global.ReviewSubscribedAssets.mount({c,panel,item,nav,scope,href,sourceVideo:metadata.benchmark?sourceVideoHTML:''});return true;}
++  if(stage==='assets'){active=global.ReviewSubscribedAssets.mount({c,panel,item,nav,scope,href,sourceVideo:sourceVideoHTML});return true;}
+   // Director cards reuse the retained stage layout while comments stay on immutable source spans.
+   const directorView=stage==='director'&&global.ReviewSubscribedDirector?.supports(p)?global.ReviewSubscribedDirector:null;
+   // Other stages keep their own stage-specific presentation.
+@@ -36,7 +36,7 @@
+   const captionHTML=m=>assetStage?(()=>{const [title,...notes]=String(m.caption||'').split('｜');return `<strong>${esc(title)}</strong>${notes.map(note=>`<p class="asset-caption">${esc(note)}</p>`).join('')}`;})():esc(m.caption);
+   const blocks=p.blocks.filter(b=>b.id!=='benchmark-reference').map(b=>{if(directorView)return directorView.renderBlock(b);const cards=b.media.map(m=>{const url=mediaURL(m.url);if(!url)return '<p class="error">媒体地址无效</p>';return `<figure class="c01-media-card" data-content-media="${esc(m.id)}">${m.mime==='video/mp4'?`<video controls preload="metadata" playsinline src="${esc(url)}"></video>`:`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" aria-label="查看${esc(m.caption||b.heading)}原图"><img src="${esc(url)}" alt="${esc(m.caption||b.heading)}" loading="lazy" decoding="async"></a>`}<figcaption>${captionHTML(m)}</figcaption></figure>`}).join('');const tag=assetStage?'details':'section';return `<${tag} class="content-package-block${assetStage?' simple-details content-asset-group':''}" id="content-block-${esc(b.id)}" data-content-block="${esc(b.id)}"${assetStage?' open':''}>${assetStage?`<summary>${esc(b.heading)}${b.media.length?`<span>${b.media.length} 项</span>`:''}</summary>`:`<h4>${esc(b.heading)}</h4>`}${b.text?`<div class="content-package-text">${esc(b.text)}</div>`:''}${assetStage&&cards?`<div class="review-images content-asset-grid">${cards}</div>`:cards}</${tag}>`;}).join('');
+   const pageBody=`${scope==='qa'?'<p class="project-warning">隔离测试内容与测试意见，不代表用户审核，不影响正式版本</p>':''}<p id="content-live-notice" class="content-live-notice" role="status">${pinned&&!item.isCurrent?'正在查看历史版本，当前版本仍保留。':'内容已同步 · '+revision}</p><section class="deliverable content-package${assetStage?' content-assets':''}${directorView?' content-director c01-stage-view':''}" id="subscribed-content"><div class="deliverable-head"><h3>${stage==='script'?'编导稿':esc(p.title)}</h3><span>${revision}</span></div>${p.summary?`<p class="content-package-summary">${esc(p.summary)}</p>`:''}${item.sourceStale?'<p class="project-warning content-source-warning">来源编导稿已有更新，本包保留供对照，需新版本后再通过。</p>':''}<p class="reading-note"${assetStage?' data-content-asset-note':''}>${p.reviewable?'本阶段候选，待你验收':'过程核对版，可评论，尚不能通过'} · 每条意见绑定本版本</p>${stage==='script'?'':`<nav class="case-actions" data-review-navigation-title="${assetStage?'资产目录':'本阶段目录'}" aria-label="${assetStage?'选择资产分组':'本阶段目录'}">${directorView?directorView.navigation(p.blocks):p.blocks.map(b=>`<a href="#content-block-${esc(b.id)}">${esc(b.heading)}${assetStage&&b.media.length?`（${b.media.length}项）`:''}</a>`).join('')}</nav>`}${stage==='script'?`<div class="content-script-layout"><div class="content-script-story">${blocks}</div><aside class="content-script-comments"></aside></div>`:blocks}</section><details class="simple-details content-package-history"><summary>历史版本与意见</summary><div id="content-history"></div><a href="${esc(href({'legacy-content':'1','content-version':null}))}">查看保留的原有内容与审核记录</a><p class="reading-note">来源编导版本 ${esc(p.sourceScriptVersion.slice(0,12))} · 本阶段版本 ${esc(version.slice(0,12))}</p></details>`;
+-  panel.innerHTML=stage==='script'?global.ReviewScriptTemplate.page(c,{navigation:nav,sourceVideo:sourceVideoHTML,body:pageBody,test:scope==='qa'}):`<header class="case-heading"><p class="case-kicker">案例 ${esc(c.id)}${scope==='qa'?' · 隔离测试':''}</p><h2>${esc(c.title)}</h2>${nav}</header>${metadata.benchmark?sourceVideoHTML:''}${pageBody}<footer class="page-footer">当前仅你可见 · 内容更新无需重新发布网页</footer>`;
++  panel.innerHTML=stage==='script'?global.ReviewScriptTemplate.page(c,{navigation:nav,sourceVideo:sourceVideoHTML,body:pageBody,test:scope==='qa'}):`<header class="case-heading"><p class="case-kicker">案例 ${esc(c.id)}${scope==='qa'?' · 隔离测试':''}</p><h2>${esc(c.title)}</h2>${nav}</header>${sourceVideoHTML}${pageBody}<footer class="page-footer">当前仅你可见 · 内容更新无需重新发布网页</footer>`;
+   const section=panel.querySelector('#subscribed-content'),index=section.querySelector('nav');
+   const navigation=stage==='script'?null:global.ReviewAssetNavigation?.mount(section,index);
+   const host=stage==='script'?section.querySelector('.content-script-comments'):(navigation?.editorHost||section.appendChild(document.createElement('aside')));
+diff --git a/tests/content-bootstrap.cjs b/tests/content-bootstrap.cjs
+index da1c577..4d0b54c 100644
+--- a/tests/content-bootstrap.cjs
++++ b/tests/content-bootstrap.cjs
+@@ -38,6 +38,7 @@ async function subscribed({ caseId = '01', legacyMode = 'failed', missingIndex =
+   env.CaseReviewConfigs = missingConfig ? {} : deep(configs); vm.runInNewContext(configBinding, {window:env,location:env.location,URLSearchParams}); if (!missingIndex) env.ReviewCaseIndex = deep(index);
+   const legacyRequests = [], originalFetch = env.fetch;
+   const fetch = async (url, options) => {
++    if (url === '/api/site-media?status=1') { r.requests.push({ url, request: options }); return { ok: true, json: async () => ({ entries: [] }) }; }
+     if (url.startsWith('/api/')) return originalFetch(url, options);
+     legacyRequests.push(url); if (legacyMode === 'pending') return new Promise(() => {});
+     if(legacyMode === 'healthy'){if(url === 'data/review.json'){if(legacyGate) await legacyGate.promise;return {ok:true,json:async()=>deep(base)};}if(url === 'data/project-deliveries.json')return {ok:true,json:async()=>deep(deliveries)};return {ok:true,text:async()=>read('review-static/'+url)};}
+@@ -125,7 +126,10 @@ async function test(name, run) { try { await run(); results.push({ name, passed:
+       assert.equal(r.document.querySelector('h1').textContent,'广告成果验收 · 案例 '+caseId);assert.equal(r.document.title,'广告成果验收 · 案例 '+caseId);
+       assert.equal(r.document.querySelectorAll('.case-tab').length,0);assert.equal(r.document.querySelectorAll('.case-nav').length,0);assert.equal(r.document.querySelectorAll('[role=tablist]').length,0);
+       assert.equal(r.env.ReviewActiveCaseId,caseId);assert.equal(r.env.Case01ReviewConfig.caseId,caseId);
+-      assert(r.requests.every(x=>new URL(x.url,'https://local.invalid').searchParams.get('caseId')===caseId));assert.deepEqual(r.legacyRequests,[]);assert.equal(r.posts.length,0);
++      const mediaStatus=r.requests.filter(x=>x.url==='/api/site-media?status=1');
++      assert(mediaStatus.length<=1,'Optional source status is checked at most once');
++      if(mediaStatus.length){assert(r.panel.querySelector('.benchmark-source'));assert(index.cases.find(c=>c.id===caseId).source.reviewVideo);}
++      assert(r.requests.filter(x=>x.url!=='/api/site-media?status=1').every(x=>new URL(x.url,'https://local.invalid').searchParams.get('caseId')===caseId));assert.deepEqual(r.legacyRequests,[]);assert.equal(r.posts.length,0);
+     }
+   });
+   await test('valid explicit case hashes win conflicts; otherwise the first valid query value or Case01 is used', async () => {
+diff --git a/tests/content-subscription.cjs b/tests/content-subscription.cjs
+index a4dae29..6c76352 100644
+--- a/tests/content-subscription.cjs
++++ b/tests/content-subscription.cjs
+@@ -117,14 +117,39 @@ function runtime(options = {}) {
+   const api = env.ReviewContentSubscription;
+   function selectScript(type='评论') {const p=panel.querySelector('.script-dialogue'),node=p.firstChild;selection={isCollapsed:false,rangeCount:1,removeAllRanges(){selection=null;},getRangeAt:()=>({startContainer:node,endContainer:node,startOffset:0,endOffset:node.textContent.length,intersectsNode:n=>n===node,getBoundingClientRect:()=>({left:30,bottom:60,width:120})})};panel.querySelector('.canonical-story').fire('contextmenu',{clientX:30,clientY:60});document.querySelector('.case01-selection-tool').querySelectorAll('button').find(b=>b.textContent===type).click();}
+ 
+-  const r = { triggerMutations(){observers.forEach(fn=>fn());}, observers, selectScript, env, api, document, panel, storage, writes, requests, posts, uploads, server: service, navigations, intervals, get renders() { return renders; }, get reloads() { return reloads; }, async flush() { await new Promise(resolve => setImmediate(resolve)); }, async start(wait = true) { await api.load([options.caseId || '01']); const rendered = api.render({ id: options.caseId || '01', title: options.caseTitle || '案例一' }, panel); if (wait) await this.flush(); return rendered; }, byId(id) { const found = panel.querySelector('#' + id); assert(found, 'Missing #' + id); return found; }, button(label, host = panel) { const found = host.querySelectorAll('button').find(node => node.textContent === label); assert(found, 'Missing button ' + label); return found; }, figure(id = 'hero') { const found = panel.querySelectorAll('[data-content-media]').find(node => node.dataset.contentMedia === id); assert(found, 'Missing media ' + id); return found; }, open(id = 'hero') { this.figure(id).querySelector('img').fire('contextmenu', { clientX: 100, clientY: 90 }); this.button('评论', panel.querySelector('.case01-selection-tool')).click(); }, overall() { this.byId('content-draft-list').querySelectorAll('button').find(node => node.textContent.startsWith('整体意见')).click(); }, input(text) { const node = this.byId('content-comment'); assert.equal(node.disabled, false, 'Test may only type in an enabled editor'); node.value = text; node.fire('input'); return node; }, saved(item = service.item) { return JSON.parse(storage[keyFor(item)] || '{"entries":[]}'); }, addFiles(...names) { const node = this.byId('content-files'); assert.equal(node.disabled, false); node.files = names.map(name => ({ name, type: 'image/png', size: 1000 })); node.fire('change'); }, async submit() { this.byId('content-submit').click(); await this.flush(); }, setWritable(value) { writable = value; }, selectText(start, end, target) { const block = target || panel.querySelector('.content-package-text'), textNode = block.firstChild, exact = block.textContent.slice(start, end); selection = { isCollapsed: false, rangeCount: 1, getRangeAt: () => ({ startContainer: textNode, endContainer: textNode, startOffset: start, endOffset:end, toString: () => exact, cloneRange: () => {let end=start;return {selectNodeContents() {},setEnd(_node,at){end=at;},toString: () => block.textContent.slice(0,end)};} }) }; block.fire('mouseup', { clientX: 60, clientY: 70 }); this.button('评论', panel.querySelector('.case01-selection-tool')).click(); }, selectAcross(first,start,last,end,click=true) {const range={startContainer:first.firstChild,endContainer:last.firstChild,startOffset:start,endOffset:end,cloneRange(){let text='',at=0;return {selectNodeContents(span){text=span.textContent;},setEnd(_node,n){at=n;},toString(){return text.slice(0,at);}};}};selection={isCollapsed:false,rangeCount:1,getRangeAt:()=>range};last.fire('mouseup',{clientX:60,clientY:70});if(click)this.button('评论',panel.querySelector('.case01-selection-tool')).click();}, dispatch(type) { const event = { preventDefault() { this.defaultPrevented = true; } }; for (const fn of listeners[type] || []) fn(event); return event; } };
+-  api.onRender(() => { renders++; api.render({ id: options.caseId || '01', title: options.caseTitle || '案例一' }, panel); });
++  const r = { triggerMutations(){observers.forEach(fn=>fn());}, observers, selectScript, env, api, document, panel, storage, writes, requests, posts, uploads, server: service, navigations, intervals, get renders() { return renders; }, get reloads() { return reloads; }, async flush() { await new Promise(resolve => setImmediate(resolve)); }, async start(wait = true) { await api.load([options.caseId || '01']); const rendered = api.render({ id: options.caseId || '01', title: options.caseTitle || '案例一' }, panel, options.sourceVideoHTML || ''); if (wait) await this.flush(); return rendered; }, byId(id) { const found = panel.querySelector('#' + id); assert(found, 'Missing #' + id); return found; }, button(label, host = panel) { const found = host.querySelectorAll('button').find(node => node.textContent === label); assert(found, 'Missing button ' + label); return found; }, figure(id = 'hero') { const found = panel.querySelectorAll('[data-content-media]').find(node => node.dataset.contentMedia === id); assert(found, 'Missing media ' + id); return found; }, open(id = 'hero') { this.figure(id).querySelector('img').fire('contextmenu', { clientX: 100, clientY: 90 }); this.button('评论', panel.querySelector('.case01-selection-tool')).click(); }, overall() { this.byId('content-draft-list').querySelectorAll('button').find(node => node.textContent.startsWith('整体意见')).click(); }, input(text) { const node = this.byId('content-comment'); assert.equal(node.disabled, false, 'Test may only type in an enabled editor'); node.value = text; node.fire('input'); return node; }, saved(item = service.item) { return JSON.parse(storage[keyFor(item)] || '{"entries":[]}'); }, addFiles(...names) { const node = this.byId('content-files'); assert.equal(node.disabled, false); node.files = names.map(name => ({ name, type: 'image/png', size: 1000 })); node.fire('change'); }, async submit() { this.byId('content-submit').click(); await this.flush(); }, setWritable(value) { writable = value; }, selectText(start, end, target) { const block = target || panel.querySelector('.content-package-text'), textNode = block.firstChild, exact = block.textContent.slice(start, end); selection = { isCollapsed: false, rangeCount: 1, getRangeAt: () => ({ startContainer: textNode, endContainer: textNode, startOffset: start, endOffset:end, toString: () => exact, cloneRange: () => {let end=start;return {selectNodeContents() {},setEnd(_node,at){end=at;},toString: () => block.textContent.slice(0,end)};} }) }; block.fire('mouseup', { clientX: 60, clientY: 70 }); this.button('评论', panel.querySelector('.case01-selection-tool')).click(); }, selectAcross(first,start,last,end,click=true) {const range={startContainer:first.firstChild,endContainer:last.firstChild,startOffset:start,endOffset:end,cloneRange(){let text='',at=0;return {selectNodeContents(span){text=span.textContent;},setEnd(_node,n){at=n;},toString(){return text.slice(0,at);}};}};selection={isCollapsed:false,rangeCount:1,getRangeAt:()=>range};last.fire('mouseup',{clientX:60,clientY:70});if(click)this.button('评论',panel.querySelector('.case01-selection-tool')).click();}, dispatch(type) { const event = { preventDefault() { this.defaultPrevented = true; } }; for (const fn of listeners[type] || []) fn(event); return event; } };
++  api.onRender(() => { renders++; api.render({ id: options.caseId || '01', title: options.caseTitle || '案例一' }, panel, options.sourceVideoHTML || ''); });
+   return r;
+ }
+ 
+ const results = [];
+ async function test(name, fn) { try { await fn(); results.push({ name, passed: true }); } catch (error) { results.push({ name, passed: false, error: error.stack }); } }
+ if (require.main === module) (async () => {
++  await test('legacy stage benchmark survives assets and generic stage rendering; bound missing source is explicit and never uses registry', async () => {
++    const fallback='<section class="benchmark-source"><video src="verified-case05-registry"></video></section>';
++    const binding={id:'source-binding',heading:'来源',text:JSON.stringify({schemaVersion:1,source_sha256:'c'.repeat(64),native_sha256:'d'.repeat(64)}),media:[]};
++    const benchmark={id:'benchmark-reference',heading:'对标',text:JSON.stringify({schemaVersion:1,sourceUrl:'https://www.douyin.com/video/7696423488042601771',sourceVideoId:'7696423488042601771',author:'测试',clipStartSeconds:0,clipEndSeconds:69,clipLabel:'包内片段',videoMediaId:'video',posterMediaId:'poster'}),media:[media('video','e','原片','video/mp4'),media('poster','f','封面','image/jpeg')]};
++    for(const stage of ['script','assets','director','white_model','storyboard','prompts']) {
++      for(const historical of [false,true]) {
++        const content={...fixture().content,caseId:'05',stage};
++        const item=fixture({caseId:'05',stage,content,isCurrent:!historical});
++        const options={caseId:'05',item,actualAssets:stage==='assets',search:'?stage='+stage+'&content-test=1'+(historical?'&content-version='+V1:''),sourceVideoHTML:fallback};
++        const legacy=runtime(options);await legacy.start();assert.equal(legacy.panel.querySelector('video').getAttribute('src'),'verified-case05-registry',stage+' legacy history='+historical);
++        // Bound script requires its benchmark at schema level; other stages must explain missing source.
++        if(stage!=='script') {
++          const bound=runtime({...options,item:deep(item)});bound.server.item.content.blocks.push(binding);await bound.start();
++          assert.match(bound.panel.textContent,/对标原视频缺失/);
++          assert.equal(bound.panel.querySelector('video')?.getAttribute('src')==='verified-case05-registry',false);
++        }
++        const embedded=runtime({...options,item:deep(item)});embedded.server.item.content.blocks.push(binding,benchmark);await embedded.start();
++        const player=embedded.panel.querySelector('video');assert.equal(player.getAttribute('src'),benchmark.media[0].url);assert.equal(player.getAttribute('poster'),benchmark.media[1].url);
++        assert.equal(player.getAttribute('autoplay'),null);assert.equal(embedded.panel.querySelectorAll('[data-package-benchmark]').length,1);
++      }
++    }
++    // An unrelated registry player supplied by a caller cannot override a bound package.
++    const item=fixture();item.content.blocks.push(binding);
++    const wrong=runtime({item,sourceVideoHTML:'<video src="wrong-case-registry"></video>'});await wrong.start();assert.equal(wrong.panel.querySelector('video')?.getAttribute('src')==='wrong-case-registry',false);assert.match(wrong.panel.textContent,/对标原视频缺失/);
++  });
+   await test('malformed declared benchmark fails closed without showing legacy player or approval controls',async()=>{
+    const item=fixture();item.content.blocks.push({id:'benchmark-reference',heading:'对标',text:'{}',media:[]});
+    const r=runtime({item});await r.start();await r.flush();assert.match(r.panel.textContent,/来源校验失败/);assert.equal(r.panel.querySelector('video'),null);assert.equal(r.panel.querySelector('#content-approve'),null);assert.equal(r.posts.length,0);

@@ -1,0 +1,59 @@
+From 0c4dba968d1938734b8911c990081c517615907d Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Fri, 16 Oct 2026 19:01:31 +0000
+Subject: [PATCH 1/4] test: cover legacy and bound stage benchmark source
+ selection
+
+---
+ tests/content-subscription.cjs | 29 +++++++++++++++++++++++++++--
+ 1 file changed, 27 insertions(+), 2 deletions(-)
+
+diff --git a/tests/content-subscription.cjs b/tests/content-subscription.cjs
+index a4dae29..6c76352 100644
+--- a/tests/content-subscription.cjs
++++ b/tests/content-subscription.cjs
+@@ -117,14 +117,39 @@ function runtime(options = {}) {
+   const api = env.ReviewContentSubscription;
+   function selectScript(type='评论') {const p=panel.querySelector('.script-dialogue'),node=p.firstChild;selection={isCollapsed:false,rangeCount:1,removeAllRanges(){selection=null;},getRangeAt:()=>({startContainer:node,endContainer:node,startOffset:0,endOffset:node.textContent.length,intersectsNode:n=>n===node,getBoundingClientRect:()=>({left:30,bottom:60,width:120})})};panel.querySelector('.canonical-story').fire('contextmenu',{clientX:30,clientY:60});document.querySelector('.case01-selection-tool').querySelectorAll('button').find(b=>b.textContent===type).click();}
+ 
+-  const r = { triggerMutations(){observers.forEach(fn=>fn());}, observers, selectScript, env, api, document, panel, storage, writes, requests, posts, uploads, server: service, navigations, intervals, get renders() { return renders; }, get reloads() { return reloads; }, async flush() { await new Promise(resolve => setImmediate(resolve)); }, async start(wait = true) { await api.load([options.caseId || '01']); const rendered = api.render({ id: options.caseId || '01', title: options.caseTitle || '案例一' }, panel); if (wait) await this.flush(); return rendered; }, byId(id) { const found = panel.querySelector('#' + id); assert(found, 'Missing #' + id); return found; }, button(label, host = panel) { const found = host.querySelectorAll('button').find(node => node.textContent === label); assert(found, 'Missing button ' + label); return found; }, figure(id = 'hero') { const found = panel.querySelectorAll('[data-content-media]').find(node => node.dataset.contentMedia === id); assert(found, 'Missing media ' + id); return found; }, open(id = 'hero') { this.figure(id).querySelector('img').fire('contextmenu', { clientX: 100, clientY: 90 }); this.button('评论', panel.querySelector('.case01-selection-tool')).click(); }, overall() { this.byId('content-draft-list').querySelectorAll('button').find(node => node.textContent.startsWith('整体意见')).click(); }, input(text) { const node = this.byId('content-comment'); assert.equal(node.disabled, false, 'Test may only type in an enabled editor'); node.value = text; node.fire('input'); return node; }, saved(item = service.item) { return JSON.parse(storage[keyFor(item)] || '{"entries":[]}'); }, addFiles(...names) { const node = this.byId('content-files'); assert.equal(node.disabled, false); node.files = names.map(name => ({ name, type: 'image/png', size: 1000 })); node.fire('change'); }, async submit() { this.byId('content-submit').click(); await this.flush(); }, setWritable(value) { writable = value; }, selectText(start, end, target) { const block = target || panel.querySelector('.content-package-text'), textNode = block.firstChild, exact = block.textContent.slice(start, end); selection = { isCollapsed: false, rangeCount: 1, getRangeAt: () => ({ startContainer: textNode, endContainer: textNode, startOffset: start, endOffset:end, toString: () => exact, cloneRange: () => {let end=start;return {selectNodeContents() {},setEnd(_node,at){end=at;},toString: () => block.textContent.slice(0,end)};} }) }; block.fire('mouseup', { clientX: 60, clientY: 70 }); this.button('评论', panel.querySelector('.case01-selection-tool')).click(); }, selectAcross(first,start,last,end,click=true) {const range={startContainer:first.firstChild,endContainer:last.firstChild,startOffset:start,endOffset:end,cloneRange(){let text='',at=0;return {selectNodeContents(span){text=span.textContent;},setEnd(_node,n){at=n;},toString(){return text.slice(0,at);}};}};selection={isCollapsed:false,rangeCount:1,getRangeAt:()=>range};last.fire('mouseup',{clientX:60,clientY:70});if(click)this.button('评论',panel.querySelector('.case01-selection-tool')).click();}, dispatch(type) { const event = { preventDefault() { this.defaultPrevented = true; } }; for (const fn of listeners[type] || []) fn(event); return event; } };
+-  api.onRender(() => { renders++; api.render({ id: options.caseId || '01', title: options.caseTitle || '案例一' }, panel); });
++  const r = { triggerMutations(){observers.forEach(fn=>fn());}, observers, selectScript, env, api, document, panel, storage, writes, requests, posts, uploads, server: service, navigations, intervals, get renders() { return renders; }, get reloads() { return reloads; }, async flush() { await new Promise(resolve => setImmediate(resolve)); }, async start(wait = true) { await api.load([options.caseId || '01']); const rendered = api.render({ id: options.caseId || '01', title: options.caseTitle || '案例一' }, panel, options.sourceVideoHTML || ''); if (wait) await this.flush(); return rendered; }, byId(id) { const found = panel.querySelector('#' + id); assert(found, 'Missing #' + id); return found; }, button(label, host = panel) { const found = host.querySelectorAll('button').find(node => node.textContent === label); assert(found, 'Missing button ' + label); return found; }, figure(id = 'hero') { const found = panel.querySelectorAll('[data-content-media]').find(node => node.dataset.contentMedia === id); assert(found, 'Missing media ' + id); return found; }, open(id = 'hero') { this.figure(id).querySelector('img').fire('contextmenu', { clientX: 100, clientY: 90 }); this.button('评论', panel.querySelector('.case01-selection-tool')).click(); }, overall() { this.byId('content-draft-list').querySelectorAll('button').find(node => node.textContent.startsWith('整体意见')).click(); }, input(text) { const node = this.byId('content-comment'); assert.equal(node.disabled, false, 'Test may only type in an enabled editor'); node.value = text; node.fire('input'); return node; }, saved(item = service.item) { return JSON.parse(storage[keyFor(item)] || '{"entries":[]}'); }, addFiles(...names) { const node = this.byId('content-files'); assert.equal(node.disabled, false); node.files = names.map(name => ({ name, type: 'image/png', size: 1000 })); node.fire('change'); }, async submit() { this.byId('content-submit').click(); await this.flush(); }, setWritable(value) { writable = value; }, selectText(start, end, target) { const block = target || panel.querySelector('.content-package-text'), textNode = block.firstChild, exact = block.textContent.slice(start, end); selection = { isCollapsed: false, rangeCount: 1, getRangeAt: () => ({ startContainer: textNode, endContainer: textNode, startOffset: start, endOffset:end, toString: () => exact, cloneRange: () => {let end=start;return {selectNodeContents() {},setEnd(_node,at){end=at;},toString: () => block.textContent.slice(0,end)};} }) }; block.fire('mouseup', { clientX: 60, clientY: 70 }); this.button('评论', panel.querySelector('.case01-selection-tool')).click(); }, selectAcross(first,start,last,end,click=true) {const range={startContainer:first.firstChild,endContainer:last.firstChild,startOffset:start,endOffset:end,cloneRange(){let text='',at=0;return {selectNodeContents(span){text=span.textContent;},setEnd(_node,n){at=n;},toString(){return text.slice(0,at);}};}};selection={isCollapsed:false,rangeCount:1,getRangeAt:()=>range};last.fire('mouseup',{clientX:60,clientY:70});if(click)this.button('评论',panel.querySelector('.case01-selection-tool')).click();}, dispatch(type) { const event = { preventDefault() { this.defaultPrevented = true; } }; for (const fn of listeners[type] || []) fn(event); return event; } };
++  api.onRender(() => { renders++; api.render({ id: options.caseId || '01', title: options.caseTitle || '案例一' }, panel, options.sourceVideoHTML || ''); });
+   return r;
+ }
+ 
+ const results = [];
+ async function test(name, fn) { try { await fn(); results.push({ name, passed: true }); } catch (error) { results.push({ name, passed: false, error: error.stack }); } }
+ if (require.main === module) (async () => {
++  await test('legacy stage benchmark survives assets and generic stage rendering; bound missing source is explicit and never uses registry', async () => {
++    const fallback='<section class="benchmark-source"><video src="verified-case05-registry"></video></section>';
++    const binding={id:'source-binding',heading:'来源',text:JSON.stringify({schemaVersion:1,source_sha256:'c'.repeat(64),native_sha256:'d'.repeat(64)}),media:[]};
++    const benchmark={id:'benchmark-reference',heading:'对标',text:JSON.stringify({schemaVersion:1,sourceUrl:'https://www.douyin.com/video/7696423488042601771',sourceVideoId:'7696423488042601771',author:'测试',clipStartSeconds:0,clipEndSeconds:69,clipLabel:'包内片段',videoMediaId:'video',posterMediaId:'poster'}),media:[media('video','e','原片','video/mp4'),media('poster','f','封面','image/jpeg')]};
++    for(const stage of ['script','assets','director','white_model','storyboard','prompts']) {
++      for(const historical of [false,true]) {
++        const content={...fixture().content,caseId:'05',stage};
++        const item=fixture({caseId:'05',stage,content,isCurrent:!historical});
++        const options={caseId:'05',item,actualAssets:stage==='assets',search:'?stage='+stage+'&content-test=1'+(historical?'&content-version='+V1:''),sourceVideoHTML:fallback};
++        const legacy=runtime(options);await legacy.start();assert.equal(legacy.panel.querySelector('video').getAttribute('src'),'verified-case05-registry',stage+' legacy history='+historical);
++        // Bound script requires its benchmark at schema level; other stages must explain missing source.
++        if(stage!=='script') {
++          const bound=runtime({...options,item:deep(item)});bound.server.item.content.blocks.push(binding);await bound.start();
++          assert.match(bound.panel.textContent,/对标原视频缺失/);
++          assert.equal(bound.panel.querySelector('video')?.getAttribute('src')==='verified-case05-registry',false);
++        }
++        const embedded=runtime({...options,item:deep(item)});embedded.server.item.content.blocks.push(binding,benchmark);await embedded.start();
++        const player=embedded.panel.querySelector('video');assert.equal(player.getAttribute('src'),benchmark.media[0].url);assert.equal(player.getAttribute('poster'),benchmark.media[1].url);
++        assert.equal(player.getAttribute('autoplay'),null);assert.equal(embedded.panel.querySelectorAll('[data-package-benchmark]').length,1);
++      }
++    }
++    // An unrelated registry player supplied by a caller cannot override a bound package.
++    const item=fixture();item.content.blocks.push(binding);
++    const wrong=runtime({item,sourceVideoHTML:'<video src="wrong-case-registry"></video>'});await wrong.start();assert.equal(wrong.panel.querySelector('video')?.getAttribute('src')==='wrong-case-registry',false);assert.match(wrong.panel.textContent,/对标原视频缺失/);
++  });
+   await test('malformed declared benchmark fails closed without showing legacy player or approval controls',async()=>{
+    const item=fixture();item.content.blocks.push({id:'benchmark-reference',heading:'对标',text:'{}',media:[]});
+    const r=runtime({item});await r.start();await r.flush();assert.match(r.panel.textContent,/来源校验失败/);assert.equal(r.panel.querySelector('video'),null);assert.equal(r.panel.querySelector('#content-approve'),null);assert.equal(r.posts.length,0);
+-- 
+2.52.0
+

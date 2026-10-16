@@ -1,0 +1,82 @@
+{
+  "README.md": {
+    "bytes": 4612,
+    "sha256": "5b1fe50a0198fafcddcb7a6dda0f16c930c71704f4604339fa9ad65a4a6c9ac8"
+  },
+  "changes.patch": {
+    "bytes": 23184,
+    "sha256": "7a8d2c62f0475b305d5baabe486b442055a45229f1d3b345c98d61832f7c5e51"
+  },
+  "logs/baseline-verify.log": {
+    "bytes": 67498,
+    "sha256": "6296f66b5fc9212da1a2b312ff78ca05e805a32290c50f23482b32b2607ccd40"
+  },
+  "logs/final-build.log": {
+    "bytes": 1689,
+    "sha256": "a8633c8bb33fddd1d95465cae73f362284cb05893db651fb9cd33be626a581eb"
+  },
+  "logs/final-lint.log": {
+    "bytes": 99,
+    "sha256": "9d4ed79a683eccf54173b6034d4187b97e629a26e9f9dbedc55bc19d45839445"
+  },
+  "logs/final-tests.log": {
+    "bytes": 67589,
+    "sha256": "b40520ce1060e057f1e0e8b31bfa4b2c0ba5a94d7ae607113f541878b21a3c9f"
+  },
+  "logs/final-typecheck.log": {
+    "bytes": 63,
+    "sha256": "c35f2424235ba232f059514b72746d95f8a42286c454677ef748954aed7c5f36"
+  },
+  "logs/green-bootstrap.log": {
+    "bytes": 2690,
+    "sha256": "addcec3708a9a3b27557a7d485e03e8acbe3a255379167496266cf66ed51b17d"
+  },
+  "logs/green-tests.log": {
+    "bytes": 6821,
+    "sha256": "bf0bd94118a4b5e9fcda6db8da1a593658426d5670f0c19215ee37667b8cd54f"
+  },
+  "logs/red-tests.log": {
+    "bytes": 7490,
+    "sha256": "bb6660f14b74a220ec8bbe44f932545f34db553f4c756f5d54183e72b93143bd"
+  },
+  "logs/synthetic-matrix-red.log": {
+    "bytes": 281,
+    "sha256": "2199da77eaef21f207957a9b9b3b8f2f4fe3accd94a7a73d88fef7c2e1aa7dca"
+  },
+  "logs/synthetic-matrix.log": {
+    "bytes": 96,
+    "sha256": "d1827c3c30e1508e5fc6181fb7cc63a3c8a63fbe42947d7a8fabbd40be21d7a6"
+  },
+  "patches/0001-test-cover-legacy-and-bound-stage-benchmark-source-s.patch": {
+    "bytes": 11732,
+    "sha256": "b543883d211a1213cf48312933ca66bc1dec6e01adf947e7f43c09b90566e219"
+  },
+  "patches/0002-fix-retain-legacy-stage-benchmarks-and-explain-missi.patch": {
+    "bytes": 7505,
+    "sha256": "f459872d2b0c9b395511678b12e09ffce78b826ebed22b855520694806145668"
+  },
+  "patches/0003-docs-clarify-JSON-publication-and-source-review-evid.patch": {
+    "bytes": 2339,
+    "sha256": "980646b31e0ff8c70289afeea60c02f1d21ce5544b9e3425727a541be3130c55"
+  },
+  "patches/0004-test-account-for-restored-benchmark-status-hydration.patch": {
+    "bytes": 2990,
+    "sha256": "c18171a996bfaeaef552409ce8b64e715f9ba07123f12a1a84a7448bee1e50b5"
+  },
+  "provenance.json": {
+    "bytes": 925,
+    "sha256": "b994b5d8ce4119f4c633d02ff9c4c9a971b4ad8e970fe52ef2e186813251dae0"
+  },
+  "tests/benchmark-source-selection.cjs": {
+    "bytes": 3732,
+    "sha256": "d72059ed0a5e7dd83181746957117c4b9f5b04e0ad769efad07f1b3084dc8fa3"
+  },
+  "tests/verify-restored-source.py": {
+    "bytes": 743,
+    "sha256": "804ee0260f31cecc62de5c8a41231ab4710d3faf0922749b7e7b385d2408c15c"
+  },
+  "v78-source-manifest.json": {
+    "bytes": 151942,
+    "sha256": "3a93b519f14defea9d7b1bdc9cc98390ae4a1ec575737680c25826f4694923e6"
+  }
+}
