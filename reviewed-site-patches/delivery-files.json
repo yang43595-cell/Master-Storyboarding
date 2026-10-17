@@ -1,7 +1,11 @@
 {
   "README.md": {
-    "bytes": 11216,
-    "sha256": "f68ea27c158e04f0e55785d0705919559fd3e8c8ec2b3fa6e80fdfa28783ca79"
+    "bytes": 13794,
+    "sha256": "3ce3ee53ee570091e895d094685b0294c5ccb4806c95f275867d87e02ae40fe9"
+  },
+  "adapter-source-provenance-d0ee6ce.json": {
+    "bytes": 3806,
+    "sha256": "2e7942fe4f10531a5acbcde5128d22b4939d219dfbefc4d76704016cd8fb7831"
   },
   "adapter-source-provenance.json": {
     "bytes": 3806,
@@ -75,6 +79,10 @@
     "bytes": 2239,
     "sha256": "cc18b475c88ca160cd8cbf021a3b47708f6a451e7abedc4c212d5a2861320418"
   },
+  "logs/project-adapter-connection-d0ee6ce.log": {
+    "bytes": 2448,
+    "sha256": "6902d273dd92da07dab7e20901f736fc5d3290f0e0e33e92bc6cf00cae8b2940"
+  },
   "logs/project-adapter-connection.log": {
     "bytes": 2512,
     "sha256": "0774025d8885c5a10d8b3c15dc35e0733dc4eae75d377bcd28639f9ff67bbafa"
@@ -115,17 +123,21 @@
     "bytes": 1384,
     "sha256": "6275e8501acf1b0a493ebad5073cdc48685344a6baabcf1c7f7db4e7b69642ed"
   },
+  "project-adapter-connection-d0ee6ce-report.json": {
+    "bytes": 2362,
+    "sha256": "027dfcd912e9dd2299831f7a833ee55098420f01cd455ec4e5132df0979035ab"
+  },
   "project-adapter-connection-report.json": {
     "bytes": 2216,
     "sha256": "af2152c405c7b01d44f03ce5e22704163362828e5c784e5f4b8aa40e1aec6b06"
   },
   "provenance.json": {
-    "bytes": 2213,
-    "sha256": "d8e3c122ae61904bdeb1b2a00644899ff5c2985a8c91736c13f041273d6483a5"
+    "bytes": 2759,
+    "sha256": "bbdc1b15f7cb64fdd4b9f6acfec71da5d05c660966dec9388dc65c544157f9ad"
   },
   "sensitive-scan.json": {
-    "bytes": 1403,
-    "sha256": "6135aff3435803cf9ff0d7d93fc739abae4002e02c6559fe14381c3e193482b1"
+    "bytes": 1685,
+    "sha256": "c5220160bcda5a18dd04c6ade8402b11b938100a744b6c1828e4dd687de4e00f"
   },
   "tests/adapter_probe.py": {
     "bytes": 1200,
@@ -139,9 +151,13 @@
     "bytes": 17405,
     "sha256": "a430eaed00548b7c6c05442f68ab30209b7829318db83d00d79eb8d015eaf6b1"
   },
-  "tests/project-adapter-connect.cjs": {
+  "tests/project-adapter-connect-af212c.cjs": {
     "bytes": 11970,
     "sha256": "968306a3b3bb8d610c7ba03c62b27b89801e6ca1603854b0bb5f2e5a1f5c887d"
+  },
+  "tests/project-adapter-connect.cjs": {
+    "bytes": 13822,
+    "sha256": "f6cc66dbff4c4227d40eccc63dbe02205703c8f57aa63ef0621eb120413c3da0"
   },
   "tests/verify-restored-source.py": {
     "bytes": 743,

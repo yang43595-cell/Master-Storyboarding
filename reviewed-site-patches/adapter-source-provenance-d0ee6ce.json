@@ -1,0 +1,104 @@
+{
+  "repository": "yang43595-cell/Master-Storyboarding",
+  "commit": "d0ee6ce15edc17a1c6d83318908858b6e62263f2",
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "gitBlobSHA": "c8822adca0a7c89bd7c9d81ce532f43c2fc04ffb",
+      "sha256": "49e34d41b08ece21fd179e85b84f20cf2b62e29f16a9b17884572ff0e29acb26",
+      "bytes": 408
+    },
+    {
+      "path": "PROJECT_RULES.md",
+      "gitBlobSHA": "b714c0cc03c0963f7d66488bcee77d07b55634fb",
+      "sha256": "a4e2e34b1e669c0cc075eba4d8a4de248c7fa32fd2011f2d025eef1595dc816a",
+      "bytes": 17989
+    },
+    {
+      "path": "docs/development/token-budget.md",
+      "gitBlobSHA": "95d31b4f4afcee4a4178f0c064809e7ddef1c0d1",
+      "sha256": "78840c3b3fb8a1ab985c49bed81bf9dc8d1d9fafdbf4ffe4355437e3107d896e",
+      "bytes": 8799
+    },
+    {
+      "path": "docs/development/web-content-adapter.md",
+      "gitBlobSHA": "fbf206fa9e3dc6faf3c20314a8b3f78e0cf56f7d",
+      "sha256": "15a7a51e0ae47ba6f970927a2c5d8d00086b277262d282b8ff5544b566e340c6",
+      "bytes": 8183
+    },
+    {
+      "path": "scripts/__init__.py",
+      "gitBlobSHA": "738913593ec2ed35b5cbdcd745a036490f5d3231",
+      "sha256": "43afd6941b1524c87d873f67392cbcde0cee3794e45f56a31f10b2b8ed47fc22",
+      "bytes": 73
+    },
+    {
+      "path": "scripts/core/__init__.py",
+      "gitBlobSHA": "1585e4355391f397896fb9be045fc8ef46203337",
+      "sha256": "4dd61b2bed596232353e194ba2c1cd52173c911a224376c3dfe9e12b124d5a04",
+      "bytes": 303
+    },
+    {
+      "path": "scripts/core/web_content.py",
+      "gitBlobSHA": "876027912601fe4141377882baa86ea34dd6951f",
+      "sha256": "de8f4cad64c12cb58c9b8325cc628d286cfafcf37f241389e43bec0bec4c0b1a",
+      "bytes": 18996
+    },
+    {
+      "path": "scripts/core/schema_contracts.py",
+      "gitBlobSHA": "5086c5071d3b5c0e0c7785e8fb1d81713c5a9ca6",
+      "sha256": "9a345eacdb80fa6d0c1f8a530c8ec1acdea16d286475c1cd92f706732ceb053f",
+      "bytes": 3479
+    },
+    {
+      "path": "scripts/core/runtime_deps.py",
+      "gitBlobSHA": "1810336465909952124a4a5f53b5d3bf5ea636f8",
+      "sha256": "d7c403e246b25ba41d4d28dbdbbc03aeb5684717868f60270b2e30cac5420f0e",
+      "bytes": 9337
+    },
+    {
+      "path": "scripts/core/story_sources.py",
+      "gitBlobSHA": "a0e5445654cc632f81153a0b3635591fa3435d1b",
+      "sha256": "203694478e6188ba9c85774d388063ff1afdf59d3626fa096d8c3533dc5116e7",
+      "bytes": 26485
+    },
+    {
+      "path": "scripts/core/artifacts.py",
+      "gitBlobSHA": "8788b39360fba5c9398f4b2794308ac588767b30",
+      "sha256": "463f6b6d3333e36a28e5462b05bcea958ed1d2f238df0f6f8a7906f80e7c016d",
+      "bytes": 12675
+    },
+    {
+      "path": "scripts/core/confirmation_scope.py",
+      "gitBlobSHA": "cc9235962c255cbcac620967ba004e2ec97f4116",
+      "sha256": "d9b262816cdd4ac011eaf3af3624c08321314e0438c36c659c437de9838179c6",
+      "bytes": 11402
+    },
+    {
+      "path": "scripts/core/io.py",
+      "gitBlobSHA": "f53433f3c4b2ec7dd071d1ec664cd65d5e81c8ee",
+      "sha256": "0e8d0d2726c0f973099c1001a33feb3bdf8149839b1887ddbfa723c1c8bc7387",
+      "bytes": 4927
+    },
+    {
+      "path": "scripts/validate_web_content.mjs",
+      "gitBlobSHA": "8b16d90e9bd2c43da4f51361873d90fa08b2319a",
+      "sha256": "4c6ee7645464762b250919f282896151d1ede7b67b117db6f7ddcb18eda59bcd",
+      "bytes": 965
+    },
+    {
+      "path": "schemas/visual-asset-manifest.schema.json",
+      "gitBlobSHA": "3dcb412a4b8e956f28b29f8f040c46411976008b",
+      "sha256": "f83f56f11d7f5eeaec40744fc1a80dc849396df630c1d73d8709b23f65a00aec",
+      "bytes": 12398
+    },
+    {
+      "path": "config/requirements.txt",
+      "gitBlobSHA": "cc63bedd311fa027dee1b24a8f7e889fa8442eac",
+      "sha256": "7421f7c18ab85f23f0ea735e803f266d447692e790a9dca0ff44910c34844d11",
+      "bytes": 47
+    }
+  ],
+  "partialSourceOnly": true,
+  "primaryAdapterUnchanged": true
+}

@@ -1,0 +1,54 @@
+PASS actual persisted R2 bytes supply verified media witness to the real project compiler
+PASS real project-compiled package publishes to local D1 with exactly the compiler version
+PASS a real fresh package with null feedback remains pending without a false receipt-ID rejection
+PASS actual saved approval is read by the unchanged project effective_feedback adapter
+{"phase":"connect","passed":4,"failures":[],"outboundRequests":0}
+PASS new Node/workerd/Python processes still read the same persisted approval through the real adapter
+PASS wrong case, stage or version is rejected by the actual adapter
+PASS old-version approval remains historical and cannot become current approval
+PASS missing currentState remains unknown
+PASS missing approval receipt ID must not be accepted as approval
+PASS empty, whitespace and wrong-type receipt IDs are rejected by the pinned project adapter
+PASS conflicting current-feedback copies never produce approval
+PASS legitimate persisted approval is accepted with matching copies or authoritative state only
+PASS missing media ID, mediaVerified or both is rejected by actual compile_content
+PASS actual source-head update makes approval stale in the true project adapter
+{"phase":"restart-and-edges","passed":10,"failures":[],"outboundRequests":0}
+PASS final restart preserves source-stale approval result without changing pinned adapter bytes
+{"phase":"final-restart","passed":1,"failures":[],"outboundRequests":0}
+RESULT_DIRECTORY <isolated-connection-run>
+{
+  "passed": true,
+  "adapterCommit": "d0ee6ce15edc17a1c6d83318908858b6e62263f2",
+  "webCommit": "bad04fd827c67b5288448166ffab68a18c3ed029",
+  "adapterFileSHA256": "de8f4cad64c12cb58c9b8325cc628d286cfafcf37f241389e43bec0bec4c0b1a",
+  "phases": [
+    {
+      "phase": "connect",
+      "passed": 4,
+      "failures": [],
+      "outboundRequests": 0
+    },
+    {
+      "phase": "restart-and-edges",
+      "passed": 10,
+      "failures": [],
+      "outboundRequests": 0
+    },
+    {
+      "phase": "final-restart",
+      "passed": 1,
+      "failures": [],
+      "outboundRequests": 0
+    }
+  ],
+  "backendStorage": "existing real local Miniflare D1/R2 persisted state, not mocks",
+  "processes": 3,
+  "outboundRequests": 0,
+  "adapterUnchanged": true,
+  "limitations": [
+    "No production calls or browser QA",
+    "Thin local route bundle, not full Sites platform authentication",
+    "No automatic project adoption/confirmation or downstream run"
+  ]
+}

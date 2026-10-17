@@ -1,0 +1,60 @@
+'use strict';
+// Actual pinned Python adapter + existing persisted local workerd/D1/R2. Never remote.
+const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),assert=require('node:assert/strict'),{spawnSync}=require('node:child_process'),{createRequire}=require('node:module');
+const val=k=>{const i=process.argv.indexOf(k);return i<0?null:process.argv[i+1];};
+if(!val('--web-source')||!val('--adapter-source')||!val('--backend-state')){console.error('Required: --web-source CHECKOUT --adapter-source PINNED_CHECKOUT --backend-state EXISTING_LOCAL_TEST_STATE');process.exit(2);}
+const root=path.resolve(val('--web-source')),adapterRoot=path.resolve(val('--adapter-source')),backend=path.resolve(val('--backend-state'));
+const phase=val('--phase'),run=val('--run'),origin='http://review-integration.local',owner='synthetic-local-owner',hash=b=>crypto.createHash('sha256').update(b).digest('hex');
+const bridge=path.join(__dirname,'adapter_probe.py'),read=p=>JSON.parse(fs.readFileSync(p));
+if(!phase){
+ const dir=fs.mkdtempSync(path.join(__dirname,'run-')),summaries=[];
+ for(const mode of ['connect','restart-and-edges','final-restart']){
+  const r=spawnSync(process.execPath,[__filename,'--phase',mode,'--run',dir,'--web-source',root,'--adapter-source',adapterRoot,'--backend-state',backend],{encoding:'utf8',timeout:120000,maxBuffer:4*1024*1024});
+  fs.writeFileSync(path.join(dir,mode+'.log'),(r.stdout||'')+(r.stderr||''));process.stdout.write(r.stdout||'');process.stderr.write(r.stderr||'');
+  const line=(r.stdout||'').split('\n').find(l=>l.startsWith('{"phase":'));
+  if(!line){console.error('Fatal integration phase failure',mode,r.error||'');process.exit(2);}summaries.push(JSON.parse(line));
+ }
+ const report={passed:summaries.every(v=>!v.failures.length),adapterCommit:'af212c140b7ed94f14b0944add3318770d4027de',webCommit:'bad04fd827c67b5288448166ffab68a18c3ed029',adapterFileSHA256:hash(fs.readFileSync(path.join(adapterRoot,'scripts/core/web_content.py'))),phases:summaries,backendStorage:'existing real local Miniflare D1/R2 persisted state, not mocks',processes:3,outboundRequests:summaries.reduce((n,p)=>n+p.outboundRequests,0),adapterUnchanged:true,limitations:['No production calls or browser QA','Thin local route bundle, not full Sites platform authentication','No automatic project adoption/confirmation or downstream run']};
+ fs.writeFileSync(path.join(dir,'report.json'),JSON.stringify(report,null,2)+'\n');console.log('RESULT_DIRECTORY '+dir);console.log(JSON.stringify(report,null,2));process.exit(report.passed?0:1);
+}
+const req=createRequire(path.join(root,'package.json')),{Miniflare}=req('miniflare');let mf,outbound=0;const failures=[],passes=[];
+const savedPath=path.join(run,'connection.json'),save=o=>fs.writeFileSync(savedPath,JSON.stringify(o,null,2));
+async function test(name,fn){try{await fn();passes.push(name);console.log('PASS '+name);}catch(e){failures.push({name,error:e.message});console.log('FAIL '+name+': '+e.message);}}
+function callAdapter(job){const r=spawnSync('python3',[bridge],{input:JSON.stringify({adapterRoot,...job}),encoding:'utf8',env:{...process.env,NODE_PATH:path.join(root,'node_modules')},timeout:45000,maxBuffer:4*1024*1024});assert.equal(r.status,0,r.stderr);return JSON.parse(r.stdout);}
+function effective(response,version,extra={}){return callAdapter({action:'effective',response,version,scope:'live',caseId:'01',stage:'assets',...extra});}
+async function call(p,{method='GET',body}={}){return mf.dispatchFetch(origin+p,{method,headers:{'oai-authenticated-user-id':owner,...(method==='POST'?{origin,'content-type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});}
+async function json(p,options,status=200){const r=await call(p,options),text=await r.text();assert.equal(r.status,status,text);return JSON.parse(text);}
+const state=(version='')=>json('/api/content-feedback?caseId=01&stage=assets&scope=live'+(version?'&version='+version:''));
+const post=body=>json('/api/content-feedback',{method:'POST',body},201);
+const publish=(content,expectedVersion)=>json('/api/content',{method:'POST',body:{content,expectedVersion,scope:'live'}},201);
+async function projectRead(){const r=await json('/mcp',{method:'POST',body:{jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'read_case_reviews',arguments:{caseId:'01'}}}});assert(!r.result.isError);return r.result.structuredContent;}
+(async()=>{try{
+ mf=new Miniflare({modules:true,scriptPath:path.join(backend,'worker.mjs'),compatibilityDate:'2026-05-15',compatibilityFlags:['nodejs_compat'],d1Databases:{DB:'synthetic-review-persistence'},r2Buckets:['BUCKET'],d1Persist:path.join(backend,'state/d1'),r2Persist:path.join(backend,'state/r2'),host:'127.0.0.1',outboundService:()=>{outbound++;return new Response('No outbound traffic allowed',{status:502});}});
+ const originalAdapterHash=hash(fs.readFileSync(path.join(adapterRoot,'scripts/core/web_content.py')));assert.equal(originalAdapterHash,'7f629402a0c7870cef5ca97033ec6d09f8a9635178b10a8c2b067b8c2e655030','Project adapter differs from pinned af212c source; do not silently test another version');
+ if(phase==='connect'){
+  const old=read(path.join(backend,'saved.json')),current=await state(),tag=crypto.randomUUID().slice(0,8);let compiled;
+  await test('actual persisted R2 bytes supply verified media witness to the real project compiler',async()=>{
+   const response=await call('/api/content-media/'+old.pngHash);assert.equal(response.status,200);const bytes=Buffer.from(await response.arrayBuffer());assert.equal(hash(bytes),old.pngHash);const file=path.join(run,'synthetic.png');fs.writeFileSync(file,bytes);
+   const mediaId='synthetic-png',registry={'AST-CHAR-A@face':{id:mediaId,localPath:file,url:'/api/content-media/'+old.pngHash,sha256:old.pngHash,mime:'image/png',bytes:bytes.length,caption:'合成本地素材',readback:{mediaVerified:mediaId,sha256:old.pngHash,bytes:bytes.length}}};
+   const asset={asset_id:'AST-CHAR-A',category:'CHARACTER',name:'合成角色',status:'confirmed',paragraph_scope:['STP-01'],shot_scope:['S01-010'],interactions:[],display_surfaces:[],orientations:[],required_states:['合成状态'],must_inherit:['合成身份'],must_not_inherit:['不作为真实素材'],reference_paths:[],candidates:[],confirmed_asset:{candidate_id:'AST-CHAR-A-C01',path:'synthetic.png',user_confirmation_ref:'synthetic-only'},confirmed_outputs:[{output_id:'face',purpose:'合成脸部',view:'正面',state:'合成状态',candidate_id:'AST-CHAR-A-C01',path:'synthetic.png',user_confirmation_ref:'synthetic-only'}]};
+   const source={schema_version:'2.0',project_id:'SYNTHETIC-LOCAL',revision:'R01',source_narrative:{artifact_id:'SYNTHETIC-NARRATIVE',logical_id:'narrative.package',revision:'R01',path:'synthetic-story.json'},source_asset_requirement_ids:['AST-CHAR-A'],assets:[asset],scope_gaps:[]};
+   const job={action:'compile',raw:JSON.stringify(source),sourceScriptVersion:current.currentState.sourceScriptVersion,expectedVersion:current.currentState.version,mediaRegistry:registry,projectRoot:run,contractRoot:root};
+   compiled=callAdapter(job);assert(compiled.ok,JSON.stringify(compiled));assert.equal(compiled.value.published,false);assert.equal(compiled.value.remoteReadbackPerformed,false);save({tag,compileJob:job,compiled:compiled.value,priorApprovedVersion:old.v2,originalAdapterHash});
+  });
+  await test('real project-compiled package publishes to local D1 with exactly the compiler version',async()=>{const s=read(savedPath);const r=await json('/api/content',{method:'POST',body:s.compiled.request},201);assert.equal(r.version,s.compiled.version);save({...s,version:r.version});});
+  await test('actual saved approval is read by the unchanged project effective_feedback adapter',async()=>{const s=read(savedPath);const receipt=await post({id:'local-adapter-review-'+s.tag,scope:'live',caseId:'01',stage:'assets',version:s.version,decision:'approve',comment:'',attachments:[]});const response=await state(),project=await projectRead();assert.deepEqual(project.contentCurrent[0],response.currentState);const result=effective(response,s.version);assert(result.ok);assert.equal(result.value.effectiveApproval,'approved');assert.deepEqual(result.value.currentFeedback,receipt);save({...s,receipt,response,projectResult:result.value});});
+ }else if(phase==='restart-and-edges'){
+  const s=read(savedPath),response=await state();
+  await test('new Node/workerd/Python processes still read the same persisted approval through the real adapter',async()=>{assert.deepEqual(response.currentFeedback,s.receipt);const result=effective(response,s.version);assert.deepEqual(result.value,s.projectResult);assert.equal(result.value.effectiveApproval,'approved');});
+  await test('wrong case, stage or version is rejected by the actual adapter',async()=>{for(const extra of [{caseId:'05'},{stage:'director'},{version:'0'.repeat(64)}]){const result=effective(response,s.version,extra);assert.equal(result.ok,false,JSON.stringify(result));assert.equal(result.errorType,'WebContentError');}});
+  await test('old-version approval remains historical and cannot become current approval',async()=>{const historical=await state(s.priorApprovedVersion);assert.equal(historical.currentFeedback.decision,'approve');const result=effective(historical,s.priorApprovedVersion);assert(result.ok);assert.equal(result.value.effectiveApproval,'historical');assert.equal(effective(historical,s.version).ok,false);});
+  await test('missing currentState remains unknown',async()=>{const result=effective({approval:'pending'},s.version);assert(result.ok);assert.equal(result.value.effectiveApproval,'unknown');});
+  await test('missing approval receipt ID must not be accepted as approval',async()=>{const missing=structuredClone(response);delete missing.currentFeedback.id;delete missing.currentState.currentFeedback.id;const result=effective(missing,s.version);assert(result.ok===false||result.value.effectiveApproval!=='approved','Unchanged af212c adapter returned approved for a receipt with no id');});
+  await test('missing media ID, mediaVerified or both is rejected by actual compile_content',async()=>{for(const mode of ['id','mediaVerified','both']){const job=structuredClone(s.compileJob);if(mode!=='mediaVerified')delete job.mediaRegistry['AST-CHAR-A@face'].id;if(mode!=='id')delete job.mediaRegistry['AST-CHAR-A@face'].readback.mediaVerified;const result=callAdapter(job);assert.equal(result.ok,false,mode+' '+JSON.stringify(result));assert.equal(result.errorType,'WebContentError');}});
+  await test('actual source-head update makes approval stale in the true project adapter',async()=>{const script=await json('/api/content?scope=live&caseId=01&stage=script');const content={...script.content,revision:'synthetic-adapter-source-'+s.tag,sourceScriptVersion:script.version,blocks:[{id:'synthetic-story',heading:'Synthetic script only',text:'STP-LOCAL-001｜Synthetic source change '+s.tag,media:[]}]};await publish(content,script.version);const stale=await state(),result=effective(stale,s.version);assert(result.ok);assert.equal(result.value.effectiveApproval,'stale');assert.equal(stale.currentState.sourceStale,true);save({...s,staleResult:result.value});});
+ }else{
+  const s=read(savedPath);
+  await test('final restart preserves source-stale approval result without changing pinned adapter bytes',async()=>{const response=await state(),result=effective(response,s.version);assert.deepEqual(result.value,s.staleResult);assert.equal(result.value.effectiveApproval,'stale');assert.equal(hash(fs.readFileSync(path.join(adapterRoot,'scripts/core/web_content.py'))),s.originalAdapterHash);const project=await projectRead();assert.deepEqual(project.contentCurrent[0],response.currentState);});
+ }
+ assert.equal(outbound,0);console.log(JSON.stringify({phase,passed:passes.length,failures,outboundRequests:outbound}));if(failures.length)process.exitCode=1;
+ }catch(e){console.error(e);process.exitCode=2;}finally{if(mf)await mf.dispose();}})();

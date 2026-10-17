@@ -1,0 +1,78 @@
+{
+  "passed": true,
+  "adapterCommit": "d0ee6ce15edc17a1c6d83318908858b6e62263f2",
+  "webCommit": "bad04fd827c67b5288448166ffab68a18c3ed029",
+  "adapterFileSHA256": "de8f4cad64c12cb58c9b8325cc628d286cfafcf37f241389e43bec0bec4c0b1a",
+  "phases": [
+    {
+      "phase": "connect",
+      "passed": 4,
+      "failures": [],
+      "outboundRequests": 0
+    },
+    {
+      "phase": "restart-and-edges",
+      "passed": 10,
+      "failures": [],
+      "outboundRequests": 0
+    },
+    {
+      "phase": "final-restart",
+      "passed": 1,
+      "failures": [],
+      "outboundRequests": 0
+    }
+  ],
+  "backendStorage": "existing real local Miniflare D1/R2 persisted state, not mocks",
+  "processes": 3,
+  "outboundRequests": 0,
+  "adapterUnchanged": true,
+  "limitations": [
+    "No production calls or browser QA",
+    "Thin local route bundle, not full Sites platform authentication",
+    "No automatic project adoption/confirmation or downstream run"
+  ],
+  "passCount": 15,
+  "failCount": 0,
+  "baselineCommit": "af212c140b7ed94f14b0944add3318770d4027de",
+  "baselineReport": "project-adapter-connection-report.json",
+  "closesFinding": "Missing approval receipt ID accepted by af212c",
+  "originalAssertionsPreserved": true,
+  "additionalChecks": {
+    "invalidIdValues": [
+      "empty string",
+      "spaces",
+      "tab/newline",
+      "null",
+      "integer",
+      "boolean",
+      "list",
+      "object"
+    ],
+    "conflictingCopies": [
+      "different ID",
+      "different decision",
+      "different version",
+      "top-level null",
+      "state-level null"
+    ],
+    "validCases": [
+      "fresh null feedback pending",
+      "actual persisted approval in both copies",
+      "authoritative state-only approval"
+    ]
+  },
+  "harnessHashes": {
+    "project-adapter-connect.cjs": "f6cc66dbff4c4227d40eccc63dbe02205703c8f57aa63ef0621eb120413c3da0",
+    "adapter_probe.py": "5878b2d7f125c80c3d608f324993f0557062d62bd4bdb97c1fd82bcc28e93dc3",
+    "project-adapter-connect-af212c.cjs": "968306a3b3bb8d610c7ba03c62b27b89801e6ca1603854b0bb5f2e5a1f5c887d"
+  },
+  "syntheticEvidence": {
+    "caseId": "01",
+    "stage": "assets",
+    "scope": "live (isolated local database only)",
+    "version": "b048e3287ea62769d7ae1ba6ebb98f619a8f913f4f07774d1ba57b9889346bb6",
+    "receiptId": "local-adapter-review-77c61d3e",
+    "finalEffectiveApproval": "stale"
+  }
+}

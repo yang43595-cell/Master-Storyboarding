@@ -1,5 +1,7 @@
 # v78 网页审核修复：补丁交付
 
+**当前项目适配器连接：固定 d0ee6ce 版本，15/15 通过。af212c 的 10/11 历史红灯与原测试保留供追溯；仅限真实本地 D1/R2，不代表生产、浏览器或自动采用验收。**
+
 这是针对精确 Sites v78 源码的补丁和验证证据，不是完整站点源码，也不是主流程或 Windows 迁移实现。保留全部历史静态内容结构需要外部源文件和媒体，因此本分支没有复制删减版站点。禁止将本目录直接部署。
 
 基线：`5d2e1c451c6e428f92f50788d75939a37b39fec7`，Sites 项目身份及全部 717 个文件的路径、字节数、SHA256 见 `v78-source-manifest.json`。该清单是来源证明，不包含文件内容。修复只涉及 `provenance.json` 列出的五个文件。临时执行器曾将归档初始化成新 Git 仓库，其根提交不是 Sites 历史；本分支从 GitHub main `235864def0d4341d4bdda43394d0dfa355e5dcb7` 新建，没有导入归档根历史。
@@ -88,9 +90,28 @@ node "$PATCH_DIR/tests/persistent-review.cjs"   --source "$RESTORED/site-source"
 复现需要已授权的项目源码 checkout **af212c**（或按 provenance 逐文件原样恢复的只读最小目录）、前文修复后的网页源码、其锁定依赖，以及上一节 persistent-review.cjs 成功输出的独立本地状态目录。Python 需现有 Pillow、jsonschema、referencing；Node 使用网页现有 Zod/Miniflare。入口不自动下载源码、安装包、创建凭据或连接外部服务。
 
 ```sh
-node "$PATCH_DIR/tests/project-adapter-connect.cjs"   --web-source "$RESTORED/site-source"   --adapter-source /absolute/path/to/pinned-af212c-source   --backend-state /absolute/path/printed/by/persistent-review
+node "$PATCH_DIR/tests/project-adapter-connect-af212c.cjs"   --web-source "$RESTORED/site-source"   --adapter-source /absolute/path/to/pinned-af212c-source   --backend-state /absolute/path/printed/by/persistent-review
 ```
 
 按当前固定 af212c 源码，预期退出码为1，报告一项 missing approval receipt ID 红灯；不能将失败改成通过摘要。`project-adapter-connection-report.json` 与日志记录实际结果。现有本地测试库被本连接测试追加合成版本和审批，原14项历史报告仍是前一检查点的证据；若重新验证14项，请运行 persistent-review.cjs 创建全新库。不要向生产 URL 注入合成身份。
 
 本次只提交测试、去敏结果和来源指纹。项目源文件、合成数据库/R2对象、业务输入副本及 worker bundle 均不上传。网页源码 HEAD 仍为 bad04fd；项目适配器原字节不变。没有部署、生产写入或历史从零盲跑。
+
+
+## d0ee6ce 回执边界修复复验：15/15通过
+
+固定项目提交 `d0ee6ce15edc17a1c6d83318908858b6e62263f2`，web_content.py SHA256 `de8f4cad64c12cb58c9b8325cc628d286cfafcf37f241389e43bec0bec4c0b1a`。新源文件和15个未变依赖均按 Git blob 核验后只读加载，没有编辑项目源码。来源指纹见 `adapter-source-provenance-d0ee6ce.json`。
+
+保留上一套真实本地 D1/R2→实际项目 compile_content/effective_feedback 连接全部原断言，只更新准确 source pin 与相应消息；逐行确认旧断言仍按原顺序存在。另加缺/空白/错误类型 ID、两份当前反馈冲突、真实合法审批及无审批 pending 不误拒检查。三独立进程共15项通过：4项初连、10项重启/边界、1项最终重启；每阶段外部 fetch 均为0。
+
+旧缺 ID 红测转绿；空串、纯空白、tab/newline、null、数字、布尔、数组和对象 ID 均报 WebContentError。两份反馈的 ID/decision/version 冲突，以及任一份为 null 而另一份为有效对象，均拒绝。真正从持久化后端读回的合法审批，在两份匹配或只有权威 currentState 时保持 approved；新包无回执保持 pending；历史、错 case/stage/version、缺 media id/mediaVerified 和来源 stale 的原检查继续通过。未放宽失败标准。
+
+当前测试入口固定新版本：
+
+```sh
+node "$PATCH_DIR/tests/project-adapter-connect.cjs"   --web-source "$RESTORED/site-source"   --adapter-source /absolute/path/to/pinned-d0ee6ce-source   --backend-state /absolute/path/printed/by/persistent-review
+```
+
+依赖与隔离条件同前一节。按 d0ee6ce 预期退出码0；报告 `project-adapter-connection-d0ee6ce-report.json` 和日志保留实际15/15结果。旧 `project-adapter-connection-report.json` 与旧日志不覆盖；旧报告中当时的 project-adapter-connect.cjs hash 对应现在原样归档的 `project-adapter-connect-af212c.cjs`，该旧入口仍固定 af212c 并保留预期红灯。
+
+没有改网页产品源码或主流程源码；网页仍为 bad04fd。没有提交本地数据库/R2对象、原项目源文件、媒体、凭据或 worker bundle；没有部署、生产写入、项目自动采用/确认或历史盲跑。结论是本地保存→真实适配器读取→重启后仍一致及上述边界通过，不扩展成远端平台或浏览器验收。
