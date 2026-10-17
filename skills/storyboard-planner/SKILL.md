@@ -22,6 +22,8 @@ description: 承接已确认故事与对白，创作供用户审定整段拍法�
 
 读取 `PROJECT_RULES.md`、`../_shared/draft-lifecycle.md` 等共享红线后，按 `modules/shot-planning.md` 的唯一入口完成准备、完整方法阅读、适用本地合同与产前校验；有效阅读按共享规则复用。补充资料按当前表达或事实缺口，从准确候选路径定向读取；方法的出处链接不自动成为额外全文必读，也不因主题相近排除适用补充。灯光沿用方法快照，不重读旧导演预演段落。交付使用 `templates/专业影视分镜输出模板.md` 与 `../../schemas/storyboard-package.schema.json`；自查按 `references/专业影视分镜审查门槛.md`。
 
+本阶段适用的本地合同：[专业影视分镜执行规范](references/专业影视分镜执行规范.md)与[对白来源合同](../creative-director/references/dialogue-lineage-contract.md)，按上述唯一准备入口读取与核验。
+
 输出采用模板中的通用紧凑排版：场景共用设定写一次，逐镜保留六项决定；情绪推进与删除测试用于创作自检，不强制输出独立 Beat、Panel 或删除测试表。
 
 ## 输入门禁

@@ -204,7 +204,7 @@
             "storyboard-planner"
           ],
           "required_terms": [
-            "确认前仅交 Markdown，确认后结构化并核对双文件一致",
+            "新稿直接维护和审定 JSON，Markdown 仅按需导出；历史带 human_readable_path 的包继续双文件检查",
             "机器检查、自查、用户确认分开记录"
           ]
         }
