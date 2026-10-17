@@ -1,7 +1,11 @@
 {
   "README.md": {
-    "bytes": 8158,
-    "sha256": "7426cdddc5052651d1ccf85b1975337d60f8d3579530fb3eae1c5caf9fccce39"
+    "bytes": 11216,
+    "sha256": "f68ea27c158e04f0e55785d0705919559fd3e8c8ec2b3fa6e80fdfa28783ca79"
+  },
+  "adapter-source-provenance.json": {
+    "bytes": 3806,
+    "sha256": "56e5b8a22f5908e170cdfe5bac8c81776aea93d11c804f87139759caa722d915"
   },
   "changes.patch": {
     "bytes": 33358,
@@ -71,6 +75,10 @@
     "bytes": 2239,
     "sha256": "cc18b475c88ca160cd8cbf021a3b47708f6a451e7abedc4c212d5a2861320418"
   },
+  "logs/project-adapter-connection.log": {
+    "bytes": 2512,
+    "sha256": "0774025d8885c5a10d8b3c15dc35e0733dc4eae75d377bcd28639f9ff67bbafa"
+  },
   "logs/red-tests.log": {
     "bytes": 7490,
     "sha256": "bb6660f14b74a220ec8bbe44f932545f34db553f4c756f5d54183e72b93143bd"
@@ -107,13 +115,21 @@
     "bytes": 1384,
     "sha256": "6275e8501acf1b0a493ebad5073cdc48685344a6baabcf1c7f7db4e7b69642ed"
   },
+  "project-adapter-connection-report.json": {
+    "bytes": 2216,
+    "sha256": "af2152c405c7b01d44f03ce5e22704163362828e5c784e5f4b8aa40e1aec6b06"
+  },
   "provenance.json": {
-    "bytes": 1815,
-    "sha256": "5493f37ac6a6c5a5562156d0231c914035029e7c1136c14d36069ad90457a26e"
+    "bytes": 2213,
+    "sha256": "d8e3c122ae61904bdeb1b2a00644899ff5c2985a8c91736c13f041273d6483a5"
   },
   "sensitive-scan.json": {
-    "bytes": 1087,
-    "sha256": "af4ed0b46987d46120328dc69457d4c853a682c5c9686217116019659cff6a36"
+    "bytes": 1403,
+    "sha256": "6135aff3435803cf9ff0d7d93fc739abae4002e02c6559fe14381c3e193482b1"
+  },
+  "tests/adapter_probe.py": {
+    "bytes": 1200,
+    "sha256": "5878b2d7f125c80c3d608f324993f0557062d62bd4bdb97c1fd82bcc28e93dc3"
   },
   "tests/benchmark-source-selection.cjs": {
     "bytes": 3732,
@@ -122,6 +138,10 @@
   "tests/persistent-review.cjs": {
     "bytes": 17405,
     "sha256": "a430eaed00548b7c6c05442f68ab30209b7829318db83d00d79eb8d015eaf6b1"
+  },
+  "tests/project-adapter-connect.cjs": {
+    "bytes": 11970,
+    "sha256": "968306a3b3bb8d610c7ba03c62b27b89801e6ca1603854b0bb5f2e5a1f5c887d"
   },
   "tests/verify-restored-source.py": {
     "bytes": 743,

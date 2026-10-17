@@ -1,0 +1,55 @@
+PASS actual persisted R2 bytes supply verified media witness to the real project compiler
+PASS real project-compiled package publishes to local D1 with exactly the compiler version
+PASS actual saved approval is read by the unchanged project effective_feedback adapter
+{"phase":"connect","passed":3,"failures":[],"outboundRequests":0}
+PASS new Node/workerd/Python processes still read the same persisted approval through the real adapter
+PASS wrong case, stage or version is rejected by the actual adapter
+PASS old-version approval remains historical and cannot become current approval
+PASS missing currentState remains unknown
+FAIL missing approval receipt ID must not be accepted as approval: Unchanged af212c adapter returned approved for a receipt with no id
+PASS missing media ID, mediaVerified or both is rejected by actual compile_content
+PASS actual source-head update makes approval stale in the true project adapter
+{"phase":"restart-and-edges","passed":6,"failures":[{"name":"missing approval receipt ID must not be accepted as approval","error":"Unchanged af212c adapter returned approved for a receipt with no id"}],"outboundRequests":0}
+PASS final restart preserves source-stale approval result without changing pinned adapter bytes
+{"phase":"final-restart","passed":1,"failures":[],"outboundRequests":0}
+RESULT_DIRECTORY <isolated-connection-run>
+{
+  "passed": false,
+  "adapterCommit": "af212c140b7ed94f14b0944add3318770d4027de",
+  "webCommit": "bad04fd827c67b5288448166ffab68a18c3ed029",
+  "adapterFileSHA256": "7f629402a0c7870cef5ca97033ec6d09f8a9635178b10a8c2b067b8c2e655030",
+  "phases": [
+    {
+      "phase": "connect",
+      "passed": 3,
+      "failures": [],
+      "outboundRequests": 0
+    },
+    {
+      "phase": "restart-and-edges",
+      "passed": 6,
+      "failures": [
+        {
+          "name": "missing approval receipt ID must not be accepted as approval",
+          "error": "Unchanged af212c adapter returned approved for a receipt with no id"
+        }
+      ],
+      "outboundRequests": 0
+    },
+    {
+      "phase": "final-restart",
+      "passed": 1,
+      "failures": [],
+      "outboundRequests": 0
+    }
+  ],
+  "backendStorage": "existing real local Miniflare D1/R2 persisted state, not mocks",
+  "processes": 3,
+  "outboundRequests": 0,
+  "adapterUnchanged": true,
+  "limitations": [
+    "No production calls or browser QA",
+    "Thin local route bundle, not full Sites platform authentication",
+    "No automatic project adoption/confirmation or downstream run"
+  ]
+}

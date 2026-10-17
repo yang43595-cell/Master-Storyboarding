@@ -1,0 +1,63 @@
+{
+  "passed": false,
+  "adapterCommit": "af212c140b7ed94f14b0944add3318770d4027de",
+  "webCommit": "bad04fd827c67b5288448166ffab68a18c3ed029",
+  "adapterFileSHA256": "7f629402a0c7870cef5ca97033ec6d09f8a9635178b10a8c2b067b8c2e655030",
+  "phases": [
+    {
+      "phase": "connect",
+      "passed": 3,
+      "failures": [],
+      "outboundRequests": 0
+    },
+    {
+      "phase": "restart-and-edges",
+      "passed": 6,
+      "failures": [
+        {
+          "name": "missing approval receipt ID must not be accepted as approval",
+          "error": "Unchanged af212c adapter returned approved for a receipt with no id"
+        }
+      ],
+      "outboundRequests": 0
+    },
+    {
+      "phase": "final-restart",
+      "passed": 1,
+      "failures": [],
+      "outboundRequests": 0
+    }
+  ],
+  "backendStorage": "existing real local Miniflare D1/R2 persisted state, not mocks",
+  "processes": 3,
+  "outboundRequests": 0,
+  "adapterUnchanged": true,
+  "limitations": [
+    "No production calls or browser QA",
+    "Thin local route bundle, not full Sites platform authentication",
+    "No automatic project adoption/confirmation or downstream run"
+  ],
+  "passCount": 10,
+  "failCount": 1,
+  "blockingFinding": {
+    "file": "scripts/core/web_content.py",
+    "function": "effective_feedback",
+    "lines": "240-267",
+    "behavior": "Deleting id from both copies of a valid persisted approval receipt still yields effectiveApproval approved.",
+    "expected": "Reject or remain unknown when current approval receipt has no nonempty stable ID.",
+    "scope": "Pinned af212c project adapter untouched; product-core fix must be owned by the main project task."
+  },
+  "syntheticEvidence": {
+    "caseId": "01",
+    "stage": "assets",
+    "scope": "live (new local database only)",
+    "compiledVersion": "ea3219ee6b90a6089cc28374e4811038658a3bd18f05a04a75045a8898a55503",
+    "savedReceiptId": "local-adapter-review-42f52ea5",
+    "restartAgreement": true,
+    "finalEffectiveApproval": "stale"
+  },
+  "harnessHashes": {
+    "project-adapter-connect.cjs": "968306a3b3bb8d610c7ba03c62b27b89801e6ca1603854b0bb5f2e5a1f5c887d",
+    "adapter_probe.py": "5878b2d7f125c80c3d608f324993f0557062d62bd4bdb97c1fd82bcc28e93dc3"
+  }
+}

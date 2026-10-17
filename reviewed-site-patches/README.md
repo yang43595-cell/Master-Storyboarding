@@ -74,4 +74,23 @@ node "$PATCH_DIR/tests/persistent-review.cjs"   --source "$RESTORED/site-source"
 
 先按前文恢复源码并应用完整修复，安装原锁文件依赖；需要 Node >=22.13、可运行 workerd 的主机和可写本地目录。无需部署、远程账号或网络隧道。每次执行创建新的隔离目录，内部 `live` 只是本地命名空间，用于验证 MCP 正式读取契约，绝非生产写入；测试数据全部为合成内容。该脚本不纳入原 38 套自动门禁，须明确手动执行，缺运行能力时报告失败，不能换成内存 mock 宣称通过。
 
-`local-persistence-report.json` 和 `logs/local-persistence.log` 为本轮结果。数据库、R2 对象、Worker bundle 和状态文件只留执行器，没有提交。外部项目程序的适配器尚未实际执行，本轮只证明网站现有 MCP 读取接口一致；浏览器实际保存/生产媒体播放仍需分别验收。没有发现需要修改的产品源码，原源码 HEAD 仍为 bad04fd。
+`local-persistence-report.json` 和 `logs/local-persistence.log` 为本轮结果。数据库、R2 对象、Worker bundle 和状态文件只留执行器，没有提交。上述14项存储测试没有执行外部项目适配器；下节记录后续真实适配器连接验证，不能据前一轮推断其通过。浏览器实际保存/生产媒体播放仍需分别验收。没有发现需要修改的产品源码，原源码 HEAD 仍为 bad04fd。
+
+
+## 项目真实适配器连接：10通过，1红灯
+
+指定 `audit/20261017` 的 `af212c140b7ed94f14b0944add3318770d4027de`。读取并校验 Git blob 后，在独立只读源码目录导入实际 `scripts.core.web_content.compile_content` 和 `effective_feedback`；没有复制解析逻辑或用 stub 替代适配器。`adapter-source-provenance.json` 列出本轮实际读取的最小依赖文件，测试入口还固定校验 web_content.py 的 SHA256。
+
+`tests/project-adapter-connect.cjs` 配合薄调用器 `tests/adapter_probe.py`，重新打开上一节真实本地 D1/R2。实际 GET 回读合成 PNG 并核验 hash/大小，形成明确的本地传输回读证据；真实编译器生成资产 ContentPackage，经实际网页 schema 校验后发布到本地 D1，服务端 version 与项目编译 version 相同。保存的合成审批返回给原项目 effective_feedback，按准确 case/stage/version 读为 approved。三个独立 Node/workerd/Python 进程验证重启后的相同审批、历史不继承、错身份拒绝、媒体证据缺失拒绝和来源 stale 不采纳。未自动登记项目确认或推进下一阶段。
+
+**当前不是全绿**：11项检查中10项通过。删除真实合成审批响应两份 currentFeedback 的 id 后，原 af212c 适配器仍返回 approved；此行为不满足“无回执ID不能采纳审批”的验收要求。精确位置为 `scripts/core/web_content.py` 的 effective_feedback：身份循环未检查 id，末尾仅凭 decision=approve 返回 approved。本轮不改主流程源码，红测和失败说明保持原样，待主项目任务修复后以新准确提交复核。
+
+复现需要已授权的项目源码 checkout **af212c**（或按 provenance 逐文件原样恢复的只读最小目录）、前文修复后的网页源码、其锁定依赖，以及上一节 persistent-review.cjs 成功输出的独立本地状态目录。Python 需现有 Pillow、jsonschema、referencing；Node 使用网页现有 Zod/Miniflare。入口不自动下载源码、安装包、创建凭据或连接外部服务。
+
+```sh
+node "$PATCH_DIR/tests/project-adapter-connect.cjs"   --web-source "$RESTORED/site-source"   --adapter-source /absolute/path/to/pinned-af212c-source   --backend-state /absolute/path/printed/by/persistent-review
+```
+
+按当前固定 af212c 源码，预期退出码为1，报告一项 missing approval receipt ID 红灯；不能将失败改成通过摘要。`project-adapter-connection-report.json` 与日志记录实际结果。现有本地测试库被本连接测试追加合成版本和审批，原14项历史报告仍是前一检查点的证据；若重新验证14项，请运行 persistent-review.cjs 创建全新库。不要向生产 URL 注入合成身份。
+
+本次只提交测试、去敏结果和来源指纹。项目源文件、合成数据库/R2对象、业务输入副本及 worker bundle 均不上传。网页源码 HEAD 仍为 bad04fd；项目适配器原字节不变。没有部署、生产写入或历史从零盲跑。

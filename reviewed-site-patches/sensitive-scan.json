@@ -1,5 +1,5 @@
 {
-  "fileCountExcludingScanAndInventory": 32,
+  "fileCountExcludingScanAndInventory": 37,
   "credentialPatterns": "No private keys, provider token shapes, JWTs, populated auth secrets or signed transfer URLs detected.",
   "emailIdentifiers": [
     "codex@openai.com"
@@ -8,5 +8,6 @@
   "hydrationFollowup": "Only real Case05 registry identity is reused; added package content and status HTTP responses are isolated synthetic fixtures. No fabricated verified flag.",
   "manualReview": "Reviewed synthetic fixture and route harness, report, README changes, source evidence hashes and test log. Pattern scan does not guarantee absence of all secrets.",
   "limitations": "Pattern scan does not guarantee detection of all possible secrets.",
-  "localBackendFollowup": "Only synthetic local D1/R2 fixture script and sanitized summaries; no database, R2 blob, worker bundle, private media, credentials or real feedback included. All local state stays in execution environment."
+  "localBackendFollowup": "Only synthetic local D1/R2 fixture script and sanitized summaries; no database, R2 blob, worker bundle, private media, credentials or real feedback included. All local state stays in execution environment.",
+  "projectAdapterConnection": "Only synthetic caller tests, sanitized aggregate pass/fail evidence, and Git source fingerprints. No copied project source, raw approvals, DB/R2 state, worker bundle, media or credentials uploaded. Adapter af212c remains unchanged; one failed ID-validation check is reported openly."
 }

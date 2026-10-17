@@ -42,5 +42,15 @@
     "storage": "actual local Miniflare D1 SQLite and R2 persisted across restarts",
     "productCodeChanged": false,
     "externalProjectAdapterExecuted": false
+  },
+  "projectAdapterConnection": {
+    "adapterCommit": "af212c140b7ed94f14b0944add3318770d4027de",
+    "adapterSHA256": "7f629402a0c7870cef5ca97033ec6d09f8a9635178b10a8c2b067b8c2e655030",
+    "webCommit": "bad04fd827c67b5288448166ffab68a18c3ed029",
+    "passed": false,
+    "passes": 10,
+    "failures": 1,
+    "report": "project-adapter-connection-report.json",
+    "projectCoreChanged": false
   }
 }
