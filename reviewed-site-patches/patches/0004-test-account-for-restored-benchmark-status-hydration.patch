@@ -1,7 +1,7 @@
 From 0dd5dfbf3a6fd60bb7bdffbe8470165cf1302679 Mon Sep 17 00:00:00 2001
 From: Codex <codex@openai.com>
 Date: Fri, 16 Oct 2026 19:03:51 +0000
-Subject: [PATCH 4/4] test: account for restored benchmark status hydration
+Subject: [PATCH 4/6] test: account for restored benchmark status hydration
  without relaxing case isolation
 
 ---

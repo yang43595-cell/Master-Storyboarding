@@ -16,9 +16,21 @@
   "githubBaseMain": "235864def0d4341d4bdda43394d0dfa355e5dcb7",
   "changedSourceFiles": [
     "CONTENT_DELIVERY.md",
+    "review-static/app.js",
     "review-static/content-subscription.js",
     "tests/content-bootstrap.cjs",
     "tests/content-subscription.cjs"
   ],
-  "sourceImportIsNotOriginalGitHistory": true
+  "sourceImportIsNotOriginalGitHistory": true,
+  "hydrationFollowup": {
+    "supersedesInitialClaim": "Initial source-selection repair did not hydrate asset registry media; this followup repairs app startup too.",
+    "incrementPatchBaseLocalRepair": "0dd5dfb",
+    "githubParent": "6a5f4cfa0c7ed56dc3b9979a0b265f22fede9c77",
+    "localRepairCommits": [
+      "132a776",
+      "bad04fd"
+    ],
+    "combinedPatchBase": "5d2e1c451c6e428f92f50788d75939a37b39fec7",
+    "libraryRepairArchiveIsInitialVersionOnly": true
+  }
 }

@@ -1,0 +1,28 @@
+From bad04fd827c67b5288448166ffab68a18c3ed029 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Fri, 16 Oct 2026 19:18:25 +0000
+Subject: [PATCH 6/6] fix: hydrate confirmed registry media on subscribed asset
+ pages
+
+---
+ review-static/app.js | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/review-static/app.js b/review-static/app.js
+index e77126c..f6f36e2 100644
+--- a/review-static/app.js
++++ b/review-static/app.js
+@@ -436,8 +436,8 @@ async function bootstrapReview(){
+  if(!currentCaseRoute())return;
+  reviewReady=true;render();
+  // A source preview is optional and never delays a healthy published package.
+- const c=data.cases.find(c=>c.id===selected),params=new URLSearchParams(location.search||'');
+- if(c?.source?.reviewVideo&&params.get('stage')!=='assets'&&!canonicalDocuments.has(c.id)&&document.querySelector('.benchmark-source')){
++ const c=data.cases.find(c=>c.id===selected);
++ if(c?.source?.reviewVideo&&!canonicalDocuments.has(c.id)&&document.querySelector('.benchmark-source')){
+   void updateLegacyMedia(c).then(()=>{const host=document.querySelector('.benchmark-source');if(!currentCaseRoute(c.id)||selected!==c.id||!host||host.querySelector('video')||!c.source.reviewVideo.available)return;const shell=document.createElement('div');shell.innerHTML=benchmarkSource(c);host.replaceWith(shell.firstChild);});
+  }
+ }
+-- 
+2.52.0
+

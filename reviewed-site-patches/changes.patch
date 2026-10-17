@@ -16,6 +16,21 @@ index 54db34e..c8a702b 100644
 +A package benchmark takes precedence. Unbound legacy packages retain the same-case registry preview already checked by `benchmarkSource`; bound packages without a benchmark show an explicit missing-source warning and never reuse the registry. Malformed declared metadata remains an error. No registry fallback proves the historical package's source/native hash.
 +
 +`GET /api/content` returns a default `approval: pending`, not a user approval receipt. Use authenticated `currentState` and exact-version `currentFeedback` from the feedback endpoint for review status; an unavailable state is unverified. Saved feedback is not an agent acceptance or processing receipt. No unattended pickup service is implemented by this contract.
+diff --git a/review-static/app.js b/review-static/app.js
+index e77126c..f6f36e2 100644
+--- a/review-static/app.js
++++ b/review-static/app.js
+@@ -436,8 +436,8 @@ async function bootstrapReview(){
+  if(!currentCaseRoute())return;
+  reviewReady=true;render();
+  // A source preview is optional and never delays a healthy published package.
+- const c=data.cases.find(c=>c.id===selected),params=new URLSearchParams(location.search||'');
+- if(c?.source?.reviewVideo&&params.get('stage')!=='assets'&&!canonicalDocuments.has(c.id)&&document.querySelector('.benchmark-source')){
++ const c=data.cases.find(c=>c.id===selected);
++ if(c?.source?.reviewVideo&&!canonicalDocuments.has(c.id)&&document.querySelector('.benchmark-source')){
+   void updateLegacyMedia(c).then(()=>{const host=document.querySelector('.benchmark-source');if(!currentCaseRoute(c.id)||selected!==c.id||!host||host.querySelector('video')||!c.source.reviewVideo.available)return;const shell=document.createElement('div');shell.innerHTML=benchmarkSource(c);host.replaceWith(shell.firstChild);});
+  }
+ }
 diff --git a/review-static/content-subscription.js b/review-static/content-subscription.js
 index 02755ea..25b1b2e 100644
 --- a/review-static/content-subscription.js
@@ -43,18 +58,79 @@ index 02755ea..25b1b2e 100644
    const navigation=stage==='script'?null:global.ReviewAssetNavigation?.mount(section,index);
    const host=stage==='script'?section.querySelector('.content-script-comments'):(navigation?.editorHost||section.appendChild(document.createElement('aside')));
 diff --git a/tests/content-bootstrap.cjs b/tests/content-bootstrap.cjs
-index da1c577..4d0b54c 100644
+index da1c577..10b1e71 100644
 --- a/tests/content-bootstrap.cjs
 +++ b/tests/content-bootstrap.cjs
-@@ -38,6 +38,7 @@ async function subscribed({ caseId = '01', legacyMode = 'failed', missingIndex =
+@@ -27,17 +27,19 @@ function fixtureModule(file, names, transform = source => source) {
+   return scope.module.exports;
+ }
+ const { runtime, fixture, createDOM } = fixtureModule('content-subscription.cjs', 'runtime,fixture,createDOM');
+-async function subscribed({ caseId = '01', legacyMode = 'failed', missingIndex = false, missingConfig = false, browserNavigation = false, contentGate = null, legacyGate = null, emptyScript = false, storage = {}, search = '?case=01&stage=director&content-test=1', hash = '#case-01' } = {}) {
++async function subscribed({ caseId = '01', legacyMode = 'failed', missingIndex = false, missingConfig = false, browserNavigation = false, contentGate = null, legacyGate = null, emptyScript = false, mediaEntries = [], mediaGate = null, mediaStatus = 200, mediaError = false, registryOverride, contentBlocks = [], heads = null, storage = {}, search = '?case=01&stage=director&content-test=1', hash = '#case-01' } = {}) {
+   const stage = new URLSearchParams(search).get('stage') || 'script';
+-  const item = fixture({ caseId, stage, content: { ...fixture().content, caseId, stage } });
+-  const r = runtime({ caseId, item, search, hash, storage, actualAssets: stage === 'assets' }); const { document, env } = r; if(contentGate) r.server.contentGate = contentGate;
++  const item = fixture({ caseId, stage, content: { ...fixture().content, caseId, stage, blocks: [...fixture().content.blocks, ...contentBlocks] } });
++  const r = runtime({ caseId, item, search, hash, storage, actualAssets: stage === 'assets' }); const { document, env } = r; if(contentGate) r.server.contentGate = contentGate;if(heads)r.server.heads=heads;
+   if(emptyScript)r.server.item={...r.server.item,content:null,version:null};
+   r.panel.remove();
+   const app = document.createElement('main'); app.id = 'app'; document.body.append(app);
+   const title = document.createElement('h1'), product = document.createElement('span'), skip = document.createElement('a'); product.id = 'product-name'; skip.className = 'skip'; skip.href = '#case-content'; document.body.append(title, product, skip);
    env.CaseReviewConfigs = missingConfig ? {} : deep(configs); vm.runInNewContext(configBinding, {window:env,location:env.location,URLSearchParams}); if (!missingIndex) env.ReviewCaseIndex = deep(index);
++  if(registryOverride!==undefined&&env.ReviewCaseIndex)env.ReviewCaseIndex.cases.find(c=>c.id===caseId).source.reviewVideo=deep(registryOverride);
    const legacyRequests = [], originalFetch = env.fetch;
    const fetch = async (url, options) => {
-+    if (url === '/api/site-media?status=1') { r.requests.push({ url, request: options }); return { ok: true, json: async () => ({ entries: [] }) }; }
++    if (url === '/api/site-media?status=1') { r.requests.push({ url, request: options });if(mediaGate)await mediaGate;if(mediaError)throw Error('media offline');return { ok: mediaStatus===200, status:mediaStatus,json: async () => ({ entries: deep(mediaEntries) }) }; }
      if (url.startsWith('/api/')) return originalFetch(url, options);
      legacyRequests.push(url); if (legacyMode === 'pending') return new Promise(() => {});
      if(legacyMode === 'healthy'){if(url === 'data/review.json'){if(legacyGate) await legacyGate.promise;return {ok:true,json:async()=>deep(base)};}if(url === 'data/project-deliveries.json')return {ok:true,json:async()=>deep(deliveries)};return {ok:true,text:async()=>read('review-static/'+url)};}
-@@ -125,7 +126,10 @@ async function test(name, run) { try { await run(); results.push({ name, passed:
+@@ -88,6 +90,45 @@ function baselineHTML(caseId, stage, search, code = baselineApp) {
+ const results = [];
+ async function test(name, run) { try { await run(); results.push({ name, passed: true }); } catch (error) { results.push({ name, passed: false, error: error.stack }); } }
+ (async () => {
++  await test('real Case05 registry hydrates asset startup and stage-link navigation only after confirmed media status',async()=>{
++    const registry=JSON.parse(read('review-static/benchmark-videos.json'))['05'];
++    assert.equal(registry.verified,undefined);assert.equal(registry.available,undefined);
++    const heads=['script','assets','director'].map(stage=>({stage})),mediaEntries=[{path:'/'+registry.sitePath,present:true}];
++    const asset=await subscribed({caseId:'05',search:'?case=05&stage=assets&content-test=1',hash:'#case-05',mediaEntries,heads});
++    const player=asset.panel.querySelector('.benchmark-source').querySelector('video');assert(player,'confirmed Case05 asset preview must play');assert.equal(player.getAttribute('src'),registry.sitePath);assert.equal(player.getAttribute('autoplay'),null);
++    assert.equal(asset.requests.filter(r=>r.url==='/api/site-media?status=1').length,1);assert.equal(asset.env.ReviewCaseIndex.cases.find(c=>c.id==='05').source.reviewVideo.verified,undefined);
++    const toDirector=asset.panel.querySelector('.case01-review-stages').querySelectorAll('a').find(a=>new URL(a.href,'https://local.invalid').searchParams.get('stage')==='director');assert(toDirector);
++    const directorURL=new URL(toDirector.href,'https://local.invalid'),director=await subscribed({caseId:'05',search:directorURL.search,hash:directorURL.hash,mediaEntries,heads});
++    assert.equal(director.panel.querySelector('.benchmark-source').querySelector('video').getAttribute('src'),registry.sitePath);
++    const toAssets=director.panel.querySelector('.case01-review-stages').querySelectorAll('a').find(a=>new URL(a.href,'https://local.invalid').searchParams.get('stage')==='assets');assert(toAssets);
++    const assetsURL=new URL(toAssets.href,'https://local.invalid'),returned=await subscribed({caseId:'05',search:assetsURL.search,hash:assetsURL.hash,mediaEntries,heads});
++    assert.equal(returned.panel.querySelector('.benchmark-source').querySelector('video').getAttribute('src'),registry.sitePath);assert.equal(returned.requests.filter(r=>r.url==='/api/site-media?status=1').length,1);
++    for(const r of [asset,director,returned]){assert.equal(r.posts.length,0);assert.deepEqual(r.legacyRequests,[]);}
++  });
++  await test('Case05 asset hydration denies unknown, absent, failed and wrong-identity registry previews',async()=>{
++    const registry=JSON.parse(read('review-static/benchmark-videos.json'))['05'],path='/'+registry.sitePath;
++    for(const options of [{mediaEntries:[]},{mediaEntries:[{path,present:false}]},{mediaEntries:[{path,present:'true'}]},{mediaEntries:[{path:'/other-case.mp4',present:true}]},{mediaStatus:404},{mediaError:true},{registryOverride:null},{registryOverride:{...registry,sourceVideoId:'123'},mediaEntries:[{path,present:true}]}]){
++      const r=await subscribed({caseId:'05',search:'?case=05&stage=assets&content-test=1',hash:'#case-05',...options});
++      const host=r.panel.querySelector('.benchmark-source');assert(host);assert.equal(host.querySelector('video'),null);assert.equal(host.querySelector('a').href,'https://www.douyin.com/video/'+registry.sourceVideoId);assert.equal(r.posts.length,0);
++    }
++  });
++  await test('late Case05 asset media status never replaces a new-case benchmark after route change',async()=>{
++    const registry=JSON.parse(read('review-static/benchmark-videos.json'))['05'];let resolve;
++    const mediaGate=new Promise(yes=>{resolve=yes;}),r=await subscribed({caseId:'05',search:'?case=05&stage=assets&content-test=1',hash:'#case-05',mediaGate,mediaEntries:[{path:'/'+registry.sitePath,present:true}],browserNavigation:true});
++    assert.equal(r.requests.filter(r=>r.url==='/api/site-media?status=1').length,1);assert.equal(r.panel.querySelector('.benchmark-source').querySelector('video'),null);
++    r.env.location.hash='#case-02';r.dispatch('hashchange');
++    const next=r.document.createElement('section');next.className='benchmark-source';next.innerHTML='<p>案例02当前来源</p>';r.app.append(next);
++    resolve();await flush();await flush();assert.equal(next.textContent,'案例02当前来源');assert.equal(next.querySelector('video'),null);assert.equal(r.document.querySelector('.benchmark-source'),next);assert.equal(r.navigation.reloads.length,1);assert.equal(r.posts.length,0);
++  });
++  await test('bound Case05 asset packages never hydrate a registry fallback or replace their own video',async()=>{
++    const registry=JSON.parse(read('review-static/benchmark-videos.json'))['05'],binding={id:'source-binding',heading:'来源',text:JSON.stringify({schemaVersion:1,source_sha256:'c'.repeat(64),native_sha256:'d'.repeat(64)}),media:[]};
++    const video={id:'benchmark-video',mime:'video/mp4',sha256:'e'.repeat(64),url:'/api/content-media/'+'e'.repeat(64),bytes:100,caption:'测试'},poster={...video,id:'benchmark-poster',mime:'image/jpeg',sha256:'f'.repeat(64),url:'/api/content-media/'+'f'.repeat(64)};
++    const benchmark={id:'benchmark-reference',heading:'对标',text:JSON.stringify({schemaVersion:1,sourceUrl:'https://www.douyin.com/video/123456789',sourceVideoId:'123456789',author:'测试',clipStartSeconds:0,clipEndSeconds:10,clipLabel:'包内片段',videoMediaId:video.id,posterMediaId:poster.id}),media:[video,poster]};
++    const common={caseId:'05',search:'?case=05&stage=assets&content-test=1',hash:'#case-05',mediaEntries:[{path:'/'+registry.sitePath,present:true}]};
++    const missing=await subscribed({...common,contentBlocks:[binding]});assert.match(missing.panel.textContent,/对标原视频缺失/);assert.equal(missing.panel.querySelector('.benchmark-source'),null);assert.equal(missing.requests.filter(r=>r.url==='/api/site-media?status=1').length,0);
++    let resolve;const mediaGate=new Promise(yes=>{resolve=yes;}),owned=await subscribed({...common,contentBlocks:[binding,benchmark],mediaGate});const original=owned.panel.querySelector('[data-package-benchmark]').querySelector('video');assert.equal(original.getAttribute('src'),video.url);
++    resolve();await flush();await flush();assert.equal(owned.panel.querySelector('[data-package-benchmark]').querySelector('video'),original);assert.equal(original.getAttribute('src'),video.url);assert.equal(owned.posts.length,0);
++  });
+   await test('Case06 dialogue-only page keeps retained script UI and disables unpublished stages without legacy fallback',async()=>{
+     const r=await subscribed({caseId:'06',search:'?case=06&stage=script',hash:'#case-06'});
+     assert.equal(r.legacyRequests.length,0);assert(r.panel.querySelector('.canonical-story'));
+@@ -125,7 +166,10 @@ async function test(name, run) { try { await run(); results.push({ name, passed:
        assert.equal(r.document.querySelector('h1').textContent,'广告成果验收 · 案例 '+caseId);assert.equal(r.document.title,'广告成果验收 · 案例 '+caseId);
        assert.equal(r.document.querySelectorAll('.case-tab').length,0);assert.equal(r.document.querySelectorAll('.case-nav').length,0);assert.equal(r.document.querySelectorAll('[role=tablist]').length,0);
        assert.equal(r.env.ReviewActiveCaseId,caseId);assert.equal(r.env.Case01ReviewConfig.caseId,caseId);

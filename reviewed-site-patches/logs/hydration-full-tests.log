@@ -1,0 +1,1736 @@
+
+> site-creator-vinext-starter@0.1.0 test
+> node scripts/test-suite.mjs
+
+
+=== tests/benchmark-publication.mjs ===
+PASS all six generated top players; contentOnly source binding; missing registration/source/file, corrupt bytes and mismatched IDs block publication
+
+=== tests/approval-display.cjs ===
+{
+  "passed": 23,
+  "total": 23,
+  "failures": [],
+  "tests": [
+    {
+      "name": "script history is unknown while loading and remains non-actionable after failure",
+      "passed": true
+    },
+    {
+      "name": "assets history is unknown while loading and remains non-actionable after failure",
+      "passed": true
+    },
+    {
+      "name": "script approval response immediately disables the approved action",
+      "passed": true
+    },
+    {
+      "name": "assets approval response immediately disables the approved action",
+      "passed": true
+    },
+    {
+      "name": "script server approval stays disabled after reload and repeated case switch",
+      "passed": true
+    },
+    {
+      "name": "assets server approval stays disabled after reload and repeated case switch",
+      "passed": true
+    },
+    {
+      "name": "late script approval response after case switch is restored only in the original case",
+      "passed": true
+    },
+    {
+      "name": "late assets approval response after case switch restores its scoped disabled action",
+      "passed": true
+    },
+    {
+      "name": "new local script feedback preserves current approval and remains independently submittable",
+      "passed": true
+    },
+    {
+      "name": "preexisting local script feedback survives approval history loading",
+      "passed": true
+    },
+    {
+      "name": "local asset opinions and pending uploads preserve approval history without dropping drafts",
+      "passed": true
+    },
+    {
+      "name": "stale version and different case server approvals never approve this version",
+      "passed": true
+    },
+    {
+      "name": "stale nested local script record cannot create current approval",
+      "passed": true
+    },
+    {
+      "name": "stale nested local receipt cannot create current script approval",
+      "passed": true
+    },
+    {
+      "name": "script and assets approvals remain independent when returned in mixed history",
+      "passed": true
+    },
+    {
+      "name": "later submitted changes override current approval, without borrowing another stage approval",
+      "passed": true
+    },
+    {
+      "name": "prior version chat confirmation does not approve current R08",
+      "passed": true
+    },
+    {
+      "name": "navigation and headers start unknown and sync both independent current approvals",
+      "passed": true
+    },
+    {
+      "name": "other-stage summaries reject stale versions, wrong cases, and unsupported decisions",
+      "passed": true
+    },
+    {
+      "name": "header retains approval for a local draft and updates after later submitted changes",
+      "passed": true
+    },
+    {
+      "name": "header reacts to the approval response before reload",
+      "passed": true
+    },
+    {
+      "name": "failed history read exposes unknown status instead of a false pending or approval label",
+      "passed": true
+    },
+    {
+      "name": "stale nested feedback cannot label the current script header as needing changes",
+      "passed": true
+    }
+  ]
+}
+
+=== tests/approval-stage-statuses.mjs ===
+{
+  "passed": 14,
+  "total": 14,
+  "failures": [],
+  "tests": [
+    {
+      "name": "helper scopes exact case and current hash without migrating old approvals",
+      "passed": true
+    },
+    {
+      "name": "helper keeps script and assets independent and ignores unrelated production stages",
+      "passed": true
+    },
+    {
+      "name": "helper selects the latest decision separately per stage regardless of input order",
+      "passed": true
+    },
+    {
+      "name": "empty legacy records do not become explicit approvals",
+      "passed": true
+    },
+    {
+      "name": "helper rejects feedback-bearing approval as approval",
+      "passed": true
+    },
+    {
+      "name": "GET reads both areas for the same authenticated principal and keeps submissions area-scoped",
+      "passed": true
+    },
+    {
+      "name": "formal and test GET summaries cannot borrow approvals or changes from the other table",
+      "passed": true
+    },
+    {
+      "name": "GET current-stage summaries ignore old hashes, other cases and unrelated production stages",
+      "passed": true
+    },
+    {
+      "name": "GET later submitted changes supersede approval while keeping the other stage approved",
+      "passed": true
+    },
+    {
+      "name": "GET gives another principal only their own statuses, and denies unauthenticated reads",
+      "passed": true
+    },
+    {
+      "name": "failure in either area fails closed without returning misleading partial approval statuses",
+      "passed": true
+    },
+    {
+      "name": "old-version chat approval remains historical and QA does not use current chat approval",
+      "passed": true
+    },
+    {
+      "name": "valid current chat approval survives empty legacy rows but never supersedes later changes",
+      "passed": true
+    },
+    {
+      "name": "unrelated production activity cannot push a current assets approval out of the status window",
+      "passed": true
+    }
+  ]
+}
+
+=== tests/asset-navigation-feedback.cjs ===
+PASS desktop case buttons, stage buttons and asset content share the reserved sidebar column
+PASS initial desktop rail reserves room for every category on a short viewport
+PASS real rail click opens collapsed target ancestors and preserves case router hash
+PASS real scrollspy selects later target and manual scrolling back restores earlier current
+PASS compact rail reaches later horizontal anchors and click clears the feedback overlay
+PASS anchor jumps clear an overlapping floating player without modifying media
+PASS navigation disposal restores source nav and removes RAF observers and listeners
+PASS compact CSS explicitly defeats inherited wrapping and retains touch-size links
+PASS Case5 no-rail floating-player behavior matches published v50 exactly
+PASS floating-player bounds handle desktop to compact resize before rail class RAF
+{
+  "passed": true,
+  "count": 10,
+  "tests": [
+    "desktop case buttons, stage buttons and asset content share the reserved sidebar column",
+    "initial desktop rail reserves room for every category on a short viewport",
+    "real rail click opens collapsed target ancestors and preserves case router hash",
+    "real scrollspy selects later target and manual scrolling back restores earlier current",
+    "compact rail reaches later horizontal anchors and click clears the feedback overlay",
+    "anchor jumps clear an overlapping floating player without modifying media",
+    "navigation disposal restores source nav and removes RAF observers and listeners",
+    "compact CSS explicitly defeats inherited wrapping and retains touch-size links",
+    "Case5 no-rail floating-player behavior matches published v50 exactly",
+    "floating-player bounds handle desktop to compact resize before rail class RAF"
+  ]
+}
+
+=== tests/case01-dr05-r1.cjs ===
+fatal: path 'review-static/data/project-deliveries.json' exists on disk, but not in '795ff4419599eaaf4b72904848dbb973650e38dd'
+node:child_process:981
+    throw err;
+    ^
+
+Error: Command failed: git show 795ff4419599eaaf4b72904848dbb973650e38dd:review-static/data/project-deliveries.json
+fatal: path 'review-static/data/project-deliveries.json' exists on disk, but not in '795ff4419599eaaf4b72904848dbb973650e38dd'
+
+    at genericNodeError (node:internal/errors:985:15)
+    at wrappedFn (node:internal/errors:539:14)
+    at checkExecSyncError (node:child_process:942:11)
+    at Object.execFileSync (node:child_process:978:15)
+    at old (/workspace/review-v78/site-source/tests/case01-dr05-r1.cjs:6:28)
+    at Object.<anonymous> (/workspace/review-v78/site-source/tests/case01-dr05-r1.cjs:8:67)
+    at Module._compile (node:internal/modules/cjs/loader:1872:14)
+    at Object..js (node:internal/modules/cjs/loader:2003:10)
+    at Module.load (node:internal/modules/cjs/loader:1594:32)
+    at Module._load (node:internal/modules/cjs/loader:1396:12) {
+  status: 128,
+  signal: null,
+  output: [
+    null,
+    '',
+    "fatal: path 'review-static/data/project-deliveries.json' exists on disk, but not in '795ff4419599eaaf4b72904848dbb973650e38dd'\n"
+  ],
+  pid: 4843,
+  stdout: '',
+  stderr: "fatal: path 'review-static/data/project-deliveries.json' exists on disk, but not in '795ff4419599eaaf4b72904848dbb973650e38dd'\n"
+}
+
+Node.js v24.19.0
+
+=== tests/case01-r08-candidate.cjs ===
+fatal: path 'review-static/data/case01-config.json' exists on disk, but not in 'f01b834152b02124f34d935c2d77be03c4e7227f'
+node:child_process:981
+    throw err;
+    ^
+
+Error: Command failed: git show f01b834152b02124f34d935c2d77be03c4e7227f:review-static/data/case01-config.json
+fatal: path 'review-static/data/case01-config.json' exists on disk, but not in 'f01b834152b02124f34d935c2d77be03c4e7227f'
+
+    at genericNodeError (node:internal/errors:985:15)
+    at wrappedFn (node:internal/errors:539:14)
+    at checkExecSyncError (node:child_process:942:11)
+    at Object.execFileSync (node:child_process:978:15)
+    at old (/workspace/review-v78/site-source/tests/case01-r08-candidate.cjs:3:115)
+    at Object.<anonymous> (/workspace/review-v78/site-source/tests/case01-r08-candidate.cjs:4:166)
+    at Module._compile (node:internal/modules/cjs/loader:1872:14)
+    at Object..js (node:internal/modules/cjs/loader:2003:10)
+    at Module.load (node:internal/modules/cjs/loader:1594:32)
+    at Module._load (node:internal/modules/cjs/loader:1396:12) {
+  status: 128,
+  signal: null,
+  output: [
+    null,
+    '',
+    "fatal: path 'review-static/data/case01-config.json' exists on disk, but not in 'f01b834152b02124f34d935c2d77be03c4e7227f'\n"
+  ],
+  pid: 4851,
+  stdout: '',
+  stderr: "fatal: path 'review-static/data/case01-config.json' exists on disk, but not in 'f01b834152b02124f34d935c2d77be03c4e7227f'\n"
+}
+
+Node.js v24.19.0
+
+=== tests/content-delivery-edge.mjs ===
+PASS media hash mismatch cannot alter existing immutable bytes
+PASS matching hash with contradictory stored metadata fails without overwrite
+PASS media MIME and URL hash mismatch fail closed
+PASS wrong case, stage, version, block and media IDs cannot save feedback
+PASS text selection must exactly match the target version and bounds
+PASS regions require valid normalized bounds and a bound image
+PASS new source script invalidates the asset ETag and makes it stale
+PASS over 100 other-version records cannot hide current exact-version receipt
+PASS approval retry is idempotent while a new ID cannot repeat approval
+PASS existing changes, reference-only package and mixed approval all block approval
+PASS feedback reads and writes require owner identity and same-origin writes
+PASS missing, foreign-owner and wrong-QA-mode attachments cannot save feedback
+PASS QA packages, source heads and receipts cannot leak into live namespace
+PASS concurrent first publication has exactly one winner and preserves both versions
+PASS concurrent CAS from one head never overwrites a competing winner
+PASS concurrent approvals with different IDs have exactly one accepted receipt
+PASS concurrent exact approval retries are accepted idempotently
+PASS approval cannot commit after its current stage head has changed
+PASS approval cannot commit after its source script has changed
+PASS selection end beyond text length cannot produce a saved target
+{"passed":20,"failed":0,"failures":[],"scope":"in-memory local QA only"}
+
+=== tests/content-delivery.mjs ===
+PASS additive migrations leave old table definitions and existing records intact
+PASS publish immutable package, canonical hash, pointer, idempotent retry
+PASS QA namespace excluded from live reads
+PASS ETag polling responds unchanged without content
+PASS malformed schema, wrong source, dangerous URLs, duplicate blocks fail closed
+PASS cross-origin publisher and oversized body are rejected
+PASS private immutable media upload validates real bytes and supports range
+PASS new media must exist with matching bytes and hash before package publication
+PASS reference image upload and exact owner/scope feedback binding
+PASS v2 content-only publish keeps v1 body, comment and attachment immutable
+PASS approval cannot be sent for old version, mixed feedback, or unknown target
+PASS new script makes prior asset package stale, never approved by inheritance
+PASS legacy reviews and all previous migration files remain unchanged
+PASS script UI round preserves structured comments/replacements and rejects wrong source, stage, version, mixed approval and foreign references
+{"passed":14,"versions":["f53e96445dff92fd40ddbe911ef5513a1089ac13de14af0600137a22b207824f","3a59a3df710efa6e5143182a7e2e5a3a08db806f5408383cd76130c471cddff1"],"scope":"local-only QA","legacyRecordsUnchanged":true}
+
+=== tests/content-subscription.cjs ===
+{
+  "passed": true,
+  "count": 49,
+  "failures": [],
+  "tests": [
+    {
+      "name": "legacy stage benchmark survives assets and generic stage rendering; bound missing source is explicit and never uses registry",
+      "passed": true
+    },
+    {
+      "name": "malformed declared benchmark fails closed without showing legacy player or approval controls",
+      "passed": true
+    },
+    {
+      "name": "all five subscribed scripts use the retained story/sidebar controller, persist drafts and submit exact version-scoped structured feedback",
+      "passed": true
+    },
+    {
+      "name": "subscribed script recovers initial history outage and polling hydrates only clean editors",
+      "passed": true
+    },
+    {
+      "name": "old subscribed selection quotes and every historical reference remain accessible",
+      "passed": true
+    },
+    {
+      "name": "already committed old pending IDs reconcile without duplicate feedback or draft deletion",
+      "passed": true
+    },
+    {
+      "name": "unknown old pending IDs stay blocked until an explicit exact-ID retry",
+      "passed": true
+    },
+    {
+      "name": "subscribed script never posts if persisting its retry ID fails",
+      "passed": true
+    },
+    {
+      "name": "late disposed script receipt cannot approve the newly mounted version badge",
+      "passed": true
+    },
+    {
+      "name": "clean remote script references rebase UI and persisted drafts without restoring older images",
+      "passed": true
+    },
+    {
+      "name": "same-version old subscribed drafts migrate without deletion and failed uploads remain blocked",
+      "passed": true
+    },
+    {
+      "name": "nonasset subscribed stages retain their own markup, controls and caption content",
+      "passed": true
+    },
+    {
+      "name": "strict package renders stage navigation, text, immutable image/video media, and one submit",
+      "passed": true
+    },
+    {
+      "name": "overall and context-menu image drafts autosave independently and survive target switches",
+      "passed": true
+    },
+    {
+      "name": "draft reload restores active editor and isolates versions, stages, and QA scope",
+      "passed": true
+    },
+    {
+      "name": "upload affordance appears only after nonblank comment on its own target",
+      "passed": true
+    },
+    {
+      "name": "uploaded reference purpose and note bind to one draft and persist across reload",
+      "passed": true
+    },
+    {
+      "name": "one Submit sends every nonempty entry with distinct stable IDs and exact targets",
+      "passed": true
+    },
+    {
+      "name": "ambiguous accepted submission preserves idempotency through reload and safely replays once",
+      "passed": true
+    },
+    {
+      "name": "partial success removes only successful entries and keeps remaining active editor usable",
+      "passed": true
+    },
+    {
+      "name": "receipt mismatch in every consequential field retains draft and retry ID",
+      "passed": true
+    },
+    {
+      "name": "receipt comparison accepts reordered object keys without weakening exact content match",
+      "passed": true
+    },
+    {
+      "name": "approval waits for history, sends only this version, and old approval is history only",
+      "passed": true
+    },
+    {
+      "name": "approval is blocked for unreviewable, historical, stale, dirty, failed-history, or receipted content",
+      "passed": true
+    },
+    {
+      "name": "busy submission disables attachment fields, comment, upload, remove, and target switches",
+      "passed": true
+    },
+    {
+      "name": "new attachment fields stay disabled while a second reference is still uploading",
+      "passed": true
+    },
+    {
+      "name": "failed upload preserves ready references and blocks submission through reload until removed",
+      "passed": true
+    },
+    {
+      "name": "storage failure retains in-memory text and blocks submission until persistence recovers",
+      "passed": true
+    },
+    {
+      "name": "dirty inactive draft survives new-version polling without replacement or inherited approval",
+      "passed": true
+    },
+    {
+      "name": "clean polling rerenders the new package and disposes previous navigation",
+      "passed": true
+    },
+    {
+      "name": "304 history refresh and failed polling preserve an open dirty draft",
+      "passed": true
+    },
+    {
+      "name": "pinned history and explicit legacy mode never auto-poll or replace historical content",
+      "passed": true
+    },
+    {
+      "name": "image region and selected text comments retain exact independent target geometry",
+      "passed": true
+    },
+    {
+      "name": "untrusted package and feedback text stays text; unsafe media URLs create no links or images",
+      "passed": true
+    },
+    {
+      "name": "dedicated exact-version receipt gates approval even when history is truncated",
+      "passed": true
+    },
+    {
+      "name": "active or floating video and an open media preview prevent polling replacement",
+      "passed": true
+    },
+    {
+      "name": "empty QA stage consumes rendering and shows only an isolated notice, never a live legacy form",
+      "passed": true
+    },
+    {
+      "name": "QA combined with legacy-content cannot expose a live legacy review form",
+      "passed": true
+    },
+    {
+      "name": "first package arriving over a legacy view only announces an explicit reload and preserves local work",
+      "passed": true
+    },
+    {
+      "name": "polling and version links retain the mounted case after ordinary section hash changes",
+      "passed": true
+    },
+    {
+      "name": "stale and historical approval receipts never present a current effective approval",
+      "passed": true
+    },
+    {
+      "name": "source-only update refreshes approval semantics without replacing dirty text, media or focus",
+      "passed": true
+    },
+    {
+      "name": "exact-version current state can invalidate an old approval on feedback refresh",
+      "passed": true
+    },
+    {
+      "name": "Case05 stage heads refresh independently on 304 and same-version 200 without touching drafts or media",
+      "passed": true
+    },
+    {
+      "name": "Case05 legacy navigation also gains a published stage without replacing its old form or media",
+      "passed": true
+    },
+    {
+      "name": "late package polls cannot update a disposed, switched or remounted reading pane",
+      "passed": true
+    },
+    {
+      "name": "late feedback success or failure cannot replace newer changes and source freshness on the same pane",
+      "passed": true
+    },
+    {
+      "name": "post-submit changes receipt cannot regress when initial approval hydration returns late",
+      "passed": true
+    },
+    {
+      "name": "disposing before late history completion cannot mutate the old panel",
+      "passed": true
+    }
+  ]
+}
+
+=== tests/contrast.cjs ===
+[
+  {
+    "role": "正文",
+    "foreground": "#1f2329",
+    "background": "#ffffff",
+    "ratio": 15.78
+  },
+  {
+    "role": "次要文字",
+    "foreground": "#4e5969",
+    "background": "#ffffff",
+    "ratio": 7.1
+  },
+  {
+    "role": "蓝色操作",
+    "foreground": "#1456cc",
+    "background": "#ffffff",
+    "ratio": 6.5
+  },
+  {
+    "role": "白字主按钮",
+    "foreground": "#ffffff",
+    "background": "#1456cc",
+    "ratio": 6.5
+  },
+  {
+    "role": "评论高亮",
+    "foreground": "#1f2329",
+    "background": "#ffe58f",
+    "ratio": 12.67
+  },
+  {
+    "role": "原文灰删除线",
+    "foreground": "#5b616b",
+    "background": "#f1f2f4",
+    "ratio": 5.57
+  },
+  {
+    "role": "删除线选中状态",
+    "foreground": "#5b616b",
+    "background": "#e4e8ef",
+    "ratio": 5.08
+  },
+  {
+    "role": "替换文字",
+    "foreground": "#123f8e",
+    "background": "#edf3ff",
+    "ratio": 8.87
+  },
+  {
+    "role": "引用文字",
+    "foreground": "#4b3c12",
+    "background": "#fff6d8",
+    "ratio": 9.94
+  }
+]
+
+=== tests/current-stage-review-targets.mjs ===
+PASS existing director and prompt document targets stay Case01-scoped; no storage writes
+
+=== tests/director-approval-ui.cjs ===
+{
+  "passed": 33,
+  "total": 33,
+  "failures": [],
+  "tests": [
+    {
+      "name": "director approval is visible only for an explicitly valid current capability",
+      "passed": true
+    },
+    {
+      "name": "loading and failed history never enable director approval",
+      "passed": true
+    },
+    {
+      "name": "missing or mismatched server capability summary fails closed despite a valid local config",
+      "passed": true
+    },
+    {
+      "name": "authoritative pending director status clears only cached director receipt and record",
+      "passed": true
+    },
+    {
+      "name": "director status and row contradictions fail closed without enabling another approval",
+      "passed": true
+    },
+    {
+      "name": "script history sync accepts independent director summaries without production rows",
+      "passed": true
+    },
+    {
+      "name": "director POST binds current director version without replacing R08 document identity",
+      "passed": true
+    },
+    {
+      "name": "actual director button click submits once and disables immediately through verified receipt",
+      "passed": true
+    },
+    {
+      "name": "director overall UI autosaves version-local feedback across stage switches and reload",
+      "passed": true
+    },
+    {
+      "name": "wrong or missing response stageVersion never creates an approval receipt",
+      "passed": true
+    },
+    {
+      "name": "mismatched response case and explicit test mode are rejected",
+      "passed": true
+    },
+    {
+      "name": "offline director retry survives reload and preserves the same submission ID",
+      "passed": true
+    },
+    {
+      "name": "server director approval remains disabled after reload and repeated case switches",
+      "passed": true
+    },
+    {
+      "name": "late director approval after leaving a case updates only its original store",
+      "passed": true
+    },
+    {
+      "name": "new current director feedback blocks approval without deleting the current approval",
+      "passed": true
+    },
+    {
+      "name": "other-stage drafts do not enter director payload and remain after approval",
+      "passed": true
+    },
+    {
+      "name": "unresolved current director upload blocks approval and preserves local text",
+      "passed": true
+    },
+    {
+      "name": "old director histories never approve or hydrate current director drafts",
+      "passed": true
+    },
+    {
+      "name": "legacy whole-production history keeps other stages but not old director comments",
+      "passed": true
+    },
+    {
+      "name": "mixed histories keep script assets and director approval independent",
+      "passed": true
+    },
+    {
+      "name": "missing or wrong case and explicit wrong-mode histories cannot approve director",
+      "passed": true
+    },
+    {
+      "name": "production and QA director approval stores and payloads remain independent",
+      "passed": true
+    },
+    {
+      "name": "stale nested records and receipts cannot create current director approval",
+      "passed": true
+    },
+    {
+      "name": "director status headers require the exact stage version in both areas",
+      "passed": true
+    },
+    {
+      "name": "director header becomes approved on verified POST and reflects later changes",
+      "passed": true
+    },
+    {
+      "name": "director migration archives old drafts receipts and pending IDs without touching other stages",
+      "passed": true
+    },
+    {
+      "name": "unversioned director drafts are archived and never silently reinterpreted as the new version",
+      "passed": true
+    },
+    {
+      "name": "returning to an archived director version restores only its matching local content",
+      "passed": true
+    },
+    {
+      "name": "old director history stays read-only and exposes original attachment links",
+      "passed": true
+    },
+    {
+      "name": "legacy asset-store migration preserves other stages and archives director drafts before sync",
+      "passed": true
+    },
+    {
+      "name": "intentional empty canonical asset drafts never resurrect a legacy asset store",
+      "passed": true
+    },
+    {
+      "name": "legacy migration merges safely when a current archived director draft is restored",
+      "passed": true
+    },
+    {
+      "name": "R08 script and assets approval payloads remain unchanged by director capability",
+      "passed": true
+    }
+  ]
+}
+
+=== tests/director-stage-approval.mjs ===
+{
+  "passed": true,
+  "checks": 16,
+  "tests": [
+    "append migration preserves six preexisting rows byte for byte and leaves director history unversioned",
+    "declared capability matches the actual director JSON bytes while the R08 script identity stays unchanged",
+    "director approval persists an exact content version and reload returns the receipt and independent current status",
+    "missing, blocked, historical, malformed and hash-mismatched capabilities fail closed for new director decisions",
+    "even internally consistent hashes cannot approve malformed or wrong-script director content",
+    "approve and changes require exact stageVersion; other stages reject any explicit stageVersion",
+    "versioned director records require an explicit supported decision and malformed test modes never write either table",
+    "director approval rejects all feedback and changes require only the director stage feedback",
+    "later director changes supersede approval, even when both records share a timestamp, without rewriting history",
+    "a fresh director hash invalidates the old current status while preserving the old versioned approval",
+    "idempotency binds stageVersion, decision, stage, area, owner, case and document version",
+    "QA, principal and case isolation also apply to director status and historical reads",
+    "director attachment-only feedback remains owner and test-mode scoped",
+    "legacy unversioned director records stay readable without inheriting a current approval",
+    "history limits cannot hide an older current director approval and every query remains read-only and owner-scoped",
+    "director current-status read failure returns 503 instead of a misleading partial status"
+  ]
+}
+
+=== tests/media-preview.cjs ===
+{
+  "passed": true,
+  "count": 15,
+  "results": [
+    "content-addressed private image previews require the exact same hash URL",
+    "clicking image opens full same-origin image without download/navigation",
+    "Back closes; Forward reopens same image without extra entries",
+    "visible close and Escape each traverse only overlay entry, restoring focus",
+    "backdrop closes while image and interior clicks do not",
+    "case change closes without undoing navigation or resurrecting old image",
+    "stage navigation and detached images invalidate stale overlay state",
+    "rerender removes obsolete focus target and dynamic image clicks still work",
+    "documents, video, opinion buttons, remote sources and modified clicks stay native",
+    "image download anchors open in preview; uploaded references retain authenticated URL",
+    "loading/error message does not replace controls or navigate away",
+    "preview does not recreate video, change playback or change page scroll",
+    "history errors leave preview closable without traversing page history",
+    "foreign document history cannot reopen an image or inject an image URL",
+    "mobile bounds and full-image contain are explicit, with safe header sizing"
+  ]
+}
+
+=== tests/production-stage-approval.mjs ===
+{
+  "passed": true,
+  "checks": 12,
+  "tests": [
+    "append migration preserves old formal and QA rows without inferring a stage or approval",
+    "current assets approval persists its explicit stage and never approves script or unlocks another stage",
+    "idempotency includes stage, case, decision, area, version and owner",
+    "feedback, uploaded references and script annotations cannot accompany approval",
+    "new explicit decisions require a bounded stage and do not approve unready or reference-only stages",
+    "assets approval rejects missing, stale, incomplete, blocked or reference-only asset batches",
+    "stage-scoped changes require feedback and cannot carry another stage or script comments",
+    "assets may comment on explicitly displayed supplemental white models without adopting their whole stage",
+    "image region selections are normalized, finite, asset-only and preserved through storage",
+    "uploaded-reference-only feedback stays stage-scoped and enforces attachment owner and mode",
+    "legacy record payloads, read history and script approval keep their original meanings",
+    "formal and QA stage receipts, principal ownership, origin and malformed body remain isolated"
+  ]
+}
+
+=== tests/review-access.mjs ===
+{
+  "passed": true,
+  "checks": 17,
+  "tests": [
+    "authentication accepts opaque site principals without comparing platform account IDs",
+    "every HTTP review endpoint rejects anonymous requests before storage or body reads",
+    "all MCP tool calls deny anonymous requests before arguments or storage",
+    "owner review reads and writes still enforce origin and input validation",
+    "reviewArea defaults to review and is saved separately for formal and QA rounds",
+    "GET partitions review and production plus formal and QA while MCP reads all formal areas",
+    "authenticated principals keep separate round ownership and cannot claim another principal through payloads",
+    "reviewArea values are bounded and idempotency cannot move a round to a different area",
+    "production records never approve script or storyboard, including blank submissions",
+    "new rounds reject stale or missing anchors, invalid types and empty quotes without discarding old history",
+    "non-R04 review rejects asset opinions but production and historical R04 reads retain them",
+    "owner uploads and reads private originals/previews without widening formal/QA attachment access",
+    "explicit decisions reject blank changes, feedback approval and missing approval intent",
+    "chat approval is separately sourced and never creates a website submission",
+    "unregistered cases fail closed, registered case reads/writes and idempotency stay isolated",
+    "process-only case basis cannot approve a nonexistent full script",
+    "legacy image review paths redirect only through authenticated byte-lossless allowlist"
+  ]
+}
+
+=== tests/review-attachments.mjs ===
+{
+  "passed": true,
+  "checks": 10,
+  "tests": [
+    "valid PNG JPEG and WebP container magic",
+    "authentication and exact same-origin required before writes",
+    "reject SVG HTML fake MIME signatures truncated and oversized dimensions",
+    "original 8MiB preview 1MiB and aggregate request limits",
+    "multipart malformed fields duplicate fields and ambiguous mode rejected",
+    "store original and preview in private R2 with stable safe metadata",
+    "exact user and production/test isolation for metadata and ownership",
+    "authenticated original/preview GET protects cache and browser origin",
+    "MCP reads real bounded image bytes and cannot read test/other owners",
+    "storage failures return explicit failure and no successful metadata"
+  ]
+}
+
+=== tests/runtime-media-packaging.cjs ===
+{"passed":true,"runtimeDuplicatesOmitted":108,"currentReferenceSourcesAndLosslessDisplaysVerified":117,"anonymousDenied":true,"unknownPathDenied":true,"sourceOriginalsPreserved":true}
+
+=== tests/simple-asset-comments.cjs ===
+{
+  "passed": true,
+  "count": 26,
+  "failures": [],
+  "tests": [
+    {
+      "name": "typing autosaves canonical reviews and drafts without Save/Add or changing the original asset",
+      "passed": true
+    },
+    {
+      "name": "overall and image feedback autosave to distinct targets and stable IDs",
+      "passed": true
+    },
+    {
+      "name": "legacy asset drafts migrate once and an intentional empty canonical store stays empty on reload",
+      "passed": true
+    },
+    {
+      "name": "canonical drafts take priority over stale legacy content and survive reload",
+      "passed": true
+    },
+    {
+      "name": "right-click targets the clicked card, ordinary clicks still reach image preview, and the background keeps its context menu",
+      "passed": true
+    },
+    {
+      "name": "keyboard and mobile comment controls reach the exact card without a mouse",
+      "passed": true
+    },
+    {
+      "name": "dragged region suppresses only that drag click and stays attached to the selected asset",
+      "passed": true
+    },
+    {
+      "name": "region geometry clips to image bounds when dragging beyond its left/top edge",
+      "passed": true
+    },
+    {
+      "name": "ready upload auto-binds to the canonical comment and survives reload with existing purpose and note",
+      "passed": true
+    },
+    {
+      "name": "pending upload blocks submit, does not leak to a second editor, and binds to its original target after switching",
+      "passed": true
+    },
+    {
+      "name": "failed upload retains text and previous references, blocks submit, and removing only the failed image recovers",
+      "passed": true
+    },
+    {
+      "name": "interrupted uploads restore as failed with recoverable text and ready references",
+      "passed": true
+    },
+    {
+      "name": "withdrawing an in-flight reference prevents a late upload from recreating it",
+      "passed": true
+    },
+    {
+      "name": "repeated case/stage switches do not multiply listeners, editors, controls, or comments",
+      "passed": true
+    },
+    {
+      "name": "storage failure keeps text in memory, blocks both actions, and retry restores persistence",
+      "passed": true
+    },
+    {
+      "name": "read-only legacy storage failure does not block a working canonical store",
+      "passed": true
+    },
+    {
+      "name": "removing the currently open comment never resurrects it or loses other comments",
+      "passed": true
+    },
+    {
+      "name": "approval is stage-scoped, requires loaded history, and comments prevent approval",
+      "passed": true
+    },
+    {
+      "name": "only explicitly listed supplementary white-model asset comments join the assets stage",
+      "passed": true
+    },
+    {
+      "name": "late upload completion through a stage switch preserves both independent stage drafts",
+      "passed": true
+    },
+    {
+      "name": "unchanged revisits preserve record timestamps and do not rewrite submitted content",
+      "passed": true
+    },
+    {
+      "name": "overall and image uploads bind separately even when they finish in reverse order",
+      "passed": true
+    },
+    {
+      "name": "canonical hydration refreshes clean open editors and their preserved attachment metadata",
+      "passed": true
+    },
+    {
+      "name": "canonical hydration cannot replace an editor with an unresolved local upload",
+      "passed": true
+    },
+    {
+      "name": "typing an overall image note keeps the same focused textarea while saving each edit",
+      "passed": true
+    },
+    {
+      "name": "busy submissions lock all text and upload inputs without mutating existing records",
+      "passed": true
+    }
+  ]
+}
+
+=== tests/simple-review-bridge.cjs ===
+{
+  "passed": 14,
+  "tests": [
+    "single script action pair, compact copy and unmigrated drafts",
+    "asset storage setter and subscription status",
+    "assets scoped submit omits other stages and retry reuses id",
+    "approval requires history and zero scoped feedback, verifies scope",
+    "scoped history hydrates without deleting older other-stage review",
+    "pending upload prevents history overwrite and stage identity is signed",
+    "script composer autosaves and can submit without save button",
+    "untouched replacement is not feedback and deletion is explicit",
+    "empty migration marker does not block server hydration",
+    "supplement scope includes named white model only",
+    "late receipt after case switch updates correct scoped store",
+    "cancel restores original comment after autosave and reload",
+    "same in-memory retry really writes after quota recovers",
+    "opening empty draft does not dirty or block server hydration"
+  ]
+}
+
+=== tests/site-media.mjs ===
+{
+  "passed": true,
+  "checks": 22,
+  "tests": [
+    "production manifest is finite, capped and MIME/filename/hash validated",
+    "GET POST HEAD page and status reject anonymous calls before storage reads or writes",
+    "strict origin and fetch-site checks precede writes",
+    "allowlist excludes arbitrary paths filenames hashes and unknown/duplicate parameters",
+    "exact MIME and content encoding enforce manifest contract",
+    "advertised and streamed short/long bodies are rejected before persistence",
+    "same-length changed bytes fail SHA-256 validation",
+    "interrupted request stream cannot appear as a successful upload",
+    "verified originals are stored with principal-derived immutable keys and private metadata",
+    "retry is idempotent; no overwrite or second object for duplicate content",
+    "status counts only current allowlist and deduplicated current-principal bytes",
+    "full GET and HEAD remain authenticated and private; ownership cannot be supplied through query",
+    "MP4 single byte ranges including suffix, open end and clamping are correct",
+    "invalid unsatisfiable and multipart ranges fail safely",
+    "ETag conditional requests and If-Range do not bypass authentication",
+    "existing conflicting metadata is never overwritten or served as an original",
+    "conditional race is safely idempotent and does not overwrite",
+    "bounded R2 metadata listing handles pagination and never reports incomplete counts",
+    "unavailable storage is reported without false success",
+    "authenticated file chooser page requires explicit start and validates its browser script",
+    "browser-side import stops the batch on a server failure and preserves selection",
+    "browser-side read-back verification hashes actual response bytes and stops on mismatch"
+  ]
+}
+
+=== tests/sticky-video-layout.cjs ===
+{
+  "passed": true,
+  "model": "block-flow + synchronous layout-read audit; not a browser engine",
+  "baseline": {
+    "commit": "139a2ae9623f097511312de94ce924a48f132b49",
+    "doubleFlowReads": 1,
+    "temporaryExtraHeight": 480,
+    "trailingPageHeightChange": 454
+  },
+  "fixed": {
+    "intermediateDoubleFlowReads": 0,
+    "intermediateZeroFlowReads": 0,
+    "automaticTextOffsetChange": 0,
+    "automaticPageHeightChange": 0,
+    "explicitScrollCalls": 0,
+    "repeatedScrollTransitions": 150,
+    "dragResizeCancelResetCycles": 20,
+    "sameMediaState": true,
+    "pausedResizeAndCloseStable": true
+  }
+}
+
+=== tests/sticky-video.cjs ===
+{
+  "passed": true,
+  "count": 43,
+  "results": [
+    "unplayed benchmark source docks at one pixel clipping without autoplay and respects dismissal",
+    "playing video docks when its top is clipped, using the exact same media node and parent",
+    "scrolling back restores inline layout without resetting time, source, audio or parent",
+    "one pixel of top-edge clipping docks immediately while almost the whole video is still visible",
+    "a video exactly at the usable top remains inline, and one pixel back inside restores it",
+    "fixed-header occlusion triggers at the header boundary, not only the physical screen edge",
+    "stable placeholder geometry prevents docking from feeding its own floating bounds back into the trigger",
+    "native letterboxing and a still-visible source card do not delay the media-element clipping trigger",
+    "partial clipping on a short usable viewport docks without covering the dialogue half",
+    "inline pause waits for a new play, while paused floating media restores once the original top clears",
+    "unplayed or paused-inline videos never dock, and scrolling down past an unplayed video does not start it",
+    "pause in centered mode keeps native controls reachable for seek/resume; ended restores inline",
+    "return button scrolls to and focuses original video without a pause or a duplicate",
+    "close pauses the video and stays dismissed while reading, then a new play can dock again",
+    "starting another video pauses the previous one and permits only one centered player",
+    "rerender, case switch, stage switch, and media source replacement all stop stale audio",
+    "ordinary dialogue hash jumps preserve playback, while pagehide stops it",
+    "fullscreen and picture-in-picture temporarily own the player without pausing it",
+    "WebKit presentation mode changes suspend docking and restore it afterward",
+    "ending playback restores a visible reading focus when a toolbar button held focus",
+    "closing a details section containing playback pauses hidden audio and removes overlay",
+    "load errors clear the centered player and later dynamically inserted videos still work",
+    "mobile, narrow mobile, landscape and visual viewport geometry stay inside screen",
+    "desktop player matches the large centered marked area instead of the right thumbnail",
+    "phone player spans the reading column while leaving meaningful dialogue space",
+    "wide monitors keep the viewer centered on the review column and cap excessive width",
+    "tiny zoomed viewports keep the video inline rather than overflowing controls",
+    "a pinned navigation bar is kept above the centered player; scrolling navigation is not counted",
+    "rotation remeasures the inline placeholder without resetting paused centered playback",
+    "installation is idempotent; non-review videos remain untouched",
+    "styles keep full image and controls, retain safe-area spacing, and sit below review dialogs",
+    "dedicated title bar drags the same playing video and commits without seeking",
+    "corner resizes in both directions, keeps the origin fixed, and respects viewport and useful minima",
+    "pointer cancellation, lost capture and Escape roll back only the unfinished adjustment",
+    "foreign pointer-capture losses do not cancel the active first-finger gesture",
+    "reset restores the large centered default even during a gesture",
+    "touch uses the same dedicated handles, ignores extra pointers and never hijacks native controls",
+    "keyboard arrows move and resize, Shift changes step, and viewport clipping is bounded",
+    "custom geometry survives scroll and same-video dock cycles, while a different case resets it",
+    "mobile viewport changes clamp custom geometry and cancel an unfinished touch operation",
+    "ending playback or navigating during a gesture clears capture without stale changes",
+    "a small bottom-positioned frame does not reserve the whole screen for anchors or move feedback",
+    "resize grip is outside native video controls, with touch and keyboard affordances"
+  ]
+}
+
+=== tests/unified-review-ui.cjs ===
+PASS Cases02–04 retain every previously rendered artifact in all six stages
+PASS all registered production stages expose valid grouped directory destinations
+PASS Case05 script-only view displays five disabled future stages even on legacy production URLs
+PASS every production stage mounts one shared dock and preserves draft through repeated stage changes
+PASS assets approval fails closed on missing, wrong-case, wrong-version or blocked capability
+PASS real server statuses keep Cases02–04 blocked and Case01 DR05-R1 eligible without inventing approval
+PASS all data/config/artifact content bytes remain unchanged from the review baseline
+{
+  "passed": 7,
+  "total": 7,
+  "failures": []
+}
+
+=== tests/benchmark-source.cjs ===
+PASS 5 exact source links;fail closed until media present;ID mismatch denied;poster/no autoplay;production content unchanged
+
+=== tests/director-review-projection.mjs ===
+{
+  "passed": true,
+  "checks": 13,
+  "tests": [
+    "current projection preserves exact d90c content bytes and every runtime capability field",
+    "tracked projection exactly matches the deterministic canonical-source projection",
+    "physical bytes and manifest text cannot diverge even by whitespace or line endings",
+    "stale capability hashes script identities and delivery pointers all fail closed",
+    "blocked historical withdrawn and reference-only metadata remains fail-closed in both layers",
+    "missing duplicate malformed or wrong-case artifact sources never produce a projection",
+    "unsafe physical artifact paths fail before any file read",
+    "consistent replacement hashes still require valid JSON and exact embedded script and revision",
+    "disabled capability removes a previously active projection without reading artifacts",
+    "generator replaces stale output and is idempotent while preserving every canonical input byte",
+    "failed regeneration throws before replacing an existing valid projection",
+    "supported build and development entrypoints regenerate before compiling and use only the small server import",
+    "actual preparation aborts on bad physical bytes instead of copying assets or letting compilation proceed"
+  ]
+}
+
+=== tests/case05-feedback-server.mjs ===
+PASS Case5 actual config server integration: owner isolation, old feedback unchanged, old writes rejected, new review idempotency, no inherited approval, script-only stage
+
+=== tests/preservation-and-build.mjs ===
+{
+  "passed": true,
+  "checks": 8,
+  "preserved": {
+    "review-static/assets": {
+      "files": 492,
+      "sha256": "6b5ff3bbcdd395e5183c684258585feeff4a05c1e25bd619e7b2d1d408eb9cab"
+    },
+    "review-static/data": {
+      "files": 5,
+      "sha256": "800857cfc52aacef2af19be3da56ecc7d8ff0e86581afa992b8381fd4574e232"
+    },
+    "drizzle": {
+      "files": 19,
+      "sha256": "e738d786b99784d40bae5c8ea7eec96a8e174d9d8ffe0113822c70539780b5e3"
+    }
+  },
+  "configAndIndexBytes": 23973
+}
+
+=== tests/content-bootstrap.cjs ===
+{
+  "passed": true,
+  "count": 23,
+  "failures": [],
+  "tests": [
+    {
+      "name": "real Case05 registry hydrates asset startup and stage-link navigation only after confirmed media status",
+      "passed": true
+    },
+    {
+      "name": "Case05 asset hydration denies unknown, absent, failed and wrong-identity registry previews",
+      "passed": true
+    },
+    {
+      "name": "late Case05 asset media status never replaces a new-case benchmark after route change",
+      "passed": true
+    },
+    {
+      "name": "bound Case05 asset packages never hydrate a registry fallback or replace their own video",
+      "passed": true
+    },
+    {
+      "name": "Case06 dialogue-only page keeps retained script UI and disables unpublished stages without legacy fallback",
+      "passed": true
+    },
+    {
+      "name": "published package renders while every legacy manifest would fail or remain pending",
+      "passed": true
+    },
+    {
+      "name": "missing optional lightweight index cannot prevent loading a healthy package",
+      "passed": true
+    },
+    {
+      "name": "skip link moves focus and scroll without changing the case fragment or polling identity",
+      "passed": true
+    },
+    {
+      "name": "Case01 remains the only visible default and supports query routing plus content anchors",
+      "passed": true
+    },
+    {
+      "name": "each case opens directly as a separate page, with no cross-case picker or requests",
+      "passed": true
+    },
+    {
+      "name": "valid explicit case hashes win conflicts; otherwise the first valid query value or Case01 is used",
+      "passed": true
+    },
+    {
+      "name": "all six shared stages keep their own case in links and clear stage-specific pinned versions",
+      "passed": true
+    },
+    {
+      "name": "content anchors preserve editors and identity even when query and initial case hash disagree",
+      "passed": true
+    },
+    {
+      "name": "real case hash changes dispose editors, preserve drafts and synchronously canonicalize before one reload",
+      "passed": true
+    },
+    {
+      "name": "every separate case loads and edits only its own version-scoped draft",
+      "passed": true
+    },
+    {
+      "name": "case changes during startup suppress late successful, empty and failed content responses",
+      "passed": true
+    },
+    {
+      "name": "a late legacy manifest cannot mount a former case or start its document/media requests",
+      "passed": true
+    },
+    {
+      "name": "actual case02 empty script subscription projects its retained source without creating a content head",
+      "passed": true
+    },
+    {
+      "name": "retained internal renderers preserve all thirty case/stage source projections",
+      "passed": true
+    },
+    {
+      "name": "each independent legacy page loads only its own source and preserves every draft namespace",
+      "passed": true
+    },
+    {
+      "name": "legacy catalog consumers share the single successful manifest read",
+      "passed": true
+    },
+    {
+      "name": "legacy-only manifest failure is visible and cannot render an incomplete review form",
+      "passed": true
+    },
+    {
+      "name": "published package pages do not eagerly start the legacy asset catalog",
+      "passed": true
+    }
+  ]
+}
+
+=== tests/content-delivery-consistency.mjs ===
+PASS CD02: update CAS atomically rechecks changed script source
+PASS CD02: first publication also atomically rechecks changed source
+PASS CD02: script replacement retains its exact prior source basis
+PASS CD05: identical concurrent initial publication has one write and two successes
+PASS CD05: identical concurrent updates are idempotent without extra generation
+PASS CD05: existing version is not success when a third head wins
+PASS CD05: exact retry of now-stale package is explicit and does not republish
+PASS CD01: delayed changes dominate overlapping approval by commit order
+PASS CD01: delayed approval cannot commit after changes
+PASS CD01: clock skew does not hide latest saved changes or rewrite approval
+PASS CD03: MCP keeps exact current approval outside a 100-entry history page
+PASS CD03: source freshness overrides old approval while preserving receipt
+PASS CD03: current changes and historical approval have distinct exact states
+PASS CD03: paged history excludes other accounts, QA and unrelated cases
+PASS CD03: stable keyset pagination survives appended records
+PASS CD03: continuation cursors are bound to principal, scope, case and stage
+PASS CD03: bad pagination and malformed RPC bodies fail as client input
+PASS CD06: missing, foreign, wrong-mode attachments return safe 400
+PASS CD06: actual attachment database outages remain 503
+PASS CD04: ftyp-only MP4 upload fails before storing
+PASS CD04: legacy poisoned MP4 cannot bypass validation via an existing object
+PASS CD04: real moov after mdat MP4 passes upload and reference validation
+PASS CD04: real fast-start MP4 passes upload and reference validation
+PASS CD04: real fragmented MP4 passes upload and reference validation
+PASS CD04: 64-bit box sizes and final size-zero mdat are supported
+PASS CD04: malformed, truncated, audio-only and invalid nested MP4 boxes fail
+{"passed":26,"failed":0,"failures":[],"scope":"real SQLite and local MP4 fixtures only; no Site requests"}
+
+=== tests/content-publish-helper.mjs ===
+PASS real fast-start MP4 decodes before the first request and publishes once
+PASS real MP4 with moov after mdat is accepted through seekable input
+PASS real fragmented MP4 is accepted
+PASS real fragmented initialization metadata without video samples is rejected
+PASS audio-only MP4 is rejected with no request
+PASS ftyp/moov/mdat impostor is rejected with no request
+PASS a real video track with a corrupted first frame is rejected
+PASS a later invalid MP4 prevents requests for earlier valid media too
+PASS even duplicate hash declarations must match their own local files
+PASS duplicate valid hashes upload once after every declaration is decoded
+PASS hash mismatch fails before tools or requests
+PASS size mismatch fails before tools or requests
+PASS oversize declaration fails before allocation or requests
+PASS missing matching map fails before requests
+PASS ffprobe timeout fails closed with a clear bounded-time error
+PASS ffprobe missing executable fails closed with installation guidance
+PASS ffprobe excess output fails closed with a clear limit error
+PASS ffmpeg timeout fails closed with a clear bounded-time error
+PASS ffmpeg missing executable fails closed with installation guidance
+PASS ffmpeg excess output fails closed with a clear limit error
+PASS invalid probe output fails closed
+PASS oversize frame fails before decoder allocation
+PASS decoder exit success with no actual output frame is rejected
+PASS source mutation during probe cannot change the snapshot or escape the final hash check
+PASS readback hash failure still prevents package publication
+PASS post-publication source-stale is reported without hiding the successful write or republishing
+PASS post-publication superseded is reported without hiding the successful write or republishing
+PASS post-publication superseded-source-stale is reported without hiding the successful write or republishing
+PASS post-publication package-readback-failure preserves the receipt and reports unknown current status
+PASS post-publication package-readback-mismatch preserves the receipt and reports unknown current status
+PASS post-publication package-readback-incomplete preserves the receipt and reports unknown current status
+PASS read operation preserves its hidden-stdin interface without requiring media tools
+
+32 content publish helper checks passed
+
+=== tests/script-template-feedback.cjs ===
+PASS script retains its original reading/comment columns and never mounts an asset dock
+PASS same-case remount preserves draft and leaving disposes the original comment sidebar and bridge
+PASS duplicate heading IDs retain text and highlight only the correct source index
+PASS selection in a duplicate heading uses its actual offset rather than the first heading
+PASS pending reference upload blocks approval and submission; successful image-only round is changes
+PASS failed upload survives reload and blocks submission until removed
+PASS ready references and notes survive same-version reload but never enter a new version
+PASS late disposed upload never changes storage and pending draft reopens as failed
+PASS server-hydrated reference images are displayed and retained when adding another image
+PASS editing a hydrated reference note never mutates the saved submission receipt
+PASS submitted script references remain accessible in history after removal from the new draft
+PASS busy submission disables every reference field and rejects stale field events
+PASS server permits script stage-only references and denies assets, regions and cross-stage writes
+PASS reference extension retains attachment limits, blocked candidates and unchanged old payloads
+{
+  "passed": 14,
+  "total": 14,
+  "failures": []
+}
+
+=== tests/script-benchmark-registry.cjs ===
+PASS all five immutable benchmark registrations, source identity binding, poster/player URL validation and no autoplay
+
+=== tests/subscribed-assets.cjs ===
+{
+  "passed": true,
+  "count": 31,
+  "failures": [],
+  "tests": [
+    {
+      "name": "all five cases route through the real retained asset factory, with original groups, captions, image/video actions and one action pair",
+      "passed": true
+    },
+    {
+      "name": "overall, image and video comments autosave separately and persist in case/version/scope-specific stores",
+      "passed": true
+    },
+    {
+      "name": "context menu, keyboard, mobile, region drag and Escape preserve native original preview behavior",
+      "passed": true
+    },
+    {
+      "name": "uploads use the retained validator, preserve QA scope and original purpose/note after reload",
+      "passed": true
+    },
+    {
+      "name": "pending/failed uploads remain bound to their original draft and block approval and submit after reload",
+      "passed": true
+    },
+    {
+      "name": "one Submit sends exact isolated targets once, disables mutation during flight and clears only acknowledged drafts",
+      "passed": true
+    },
+    {
+      "name": "partial success retries the remaining exact payload ID and never duplicates successful entries",
+      "passed": true
+    },
+    {
+      "name": "an ambiguous accepted request recovers from matching history without posting again",
+      "passed": true
+    },
+    {
+      "name": "all consequential receipt mismatches preserve drafts and the exact retry payload",
+      "passed": true
+    },
+    {
+      "name": "history must synchronize before approval; current exact receipt blocks duplicate or stale approvals",
+      "passed": true
+    },
+    {
+      "name": "history outage recovers on polling without replacing drafts; stale feedback remains isolated from fresh state",
+      "passed": true
+    },
+    {
+      "name": "new-version polling preserves inactive drafts, focus, media and the old exact version",
+      "passed": true
+    },
+    {
+      "name": "clean remount disposes old navigation, menus and event listeners while media blocks clean replacement",
+      "passed": true
+    },
+    {
+      "name": "generic draft migration preserves multiple same-image/text targets, typed purposes, failed uploads and original bytes",
+      "passed": true
+    },
+    {
+      "name": "legacy uncertain submission IDs migrate and replay exactly, including original selection, region and references",
+      "passed": true
+    },
+    {
+      "name": "temporary storage failures retain in-memory edits, forbid posting and recover through the retained retry action",
+      "passed": true
+    },
+    {
+      "name": "late disposed submission cannot rewrite the new version badge, history or recovery panel",
+      "passed": true
+    },
+    {
+      "name": "malformed stores preserve original bytes and block all mutations rather than silently discarding drafts",
+      "passed": true
+    },
+    {
+      "name": "every stage-status badge follows current and expired approval instead of leaving a second stale label",
+      "passed": true
+    },
+    {
+      "name": "full feedback pagination recovers pending IDs without replacing authoritative current approval with the last old history row",
+      "passed": true
+    },
+    {
+      "name": "feedback history retains exact media, text and region provenance plus reference purpose and note",
+      "passed": true
+    },
+    {
+      "name": "untrusted asset package/history text stays text and unsafe media does not produce empty image links",
+      "passed": true
+    },
+    {
+      "name": "inconsistent persisted image identity fails closed without rewriting or submitting to a different target",
+      "passed": true
+    },
+    {
+      "name": "pending payload scope/case/version mismatch fails closed and never replays outside the mounted namespace",
+      "passed": true
+    },
+    {
+      "name": "disposing during a multi-item submission persists only its resolved old receipt and stops sending the remaining old drafts",
+      "passed": true
+    },
+    {
+      "name": "enabled production-style legacy observers cannot mount a second asset sidebar or overwrite subscribed storage",
+      "passed": true
+    },
+    {
+      "name": "underscores in independent block/media identifiers never alias two assets sharing identical image bytes",
+      "passed": true
+    },
+    {
+      "name": "interrupted upload and failed persistence retain beforeunload protection, which clears after recovery",
+      "passed": true
+    },
+    {
+      "name": "a late initial history response cannot regress a newer successful changes receipt or next draft",
+      "passed": true
+    },
+    {
+      "name": "disposing before delayed feedback completes cannot write history or remount removed menus",
+      "passed": true
+    },
+    {
+      "name": "declared layout fixes groups and preserves comment IDs without case or filename heuristics",
+      "passed": true
+    }
+  ]
+}
+
+=== tests/subscribed-director.cjs ===
+{
+  "passed": true,
+  "count": 9,
+  "tests": [
+    {
+      "name": "retained shot cards show two separate shots, camera, action, dialogue and cuts, without literal headings",
+      "passed": true
+    },
+    {
+      "name": "every rendered source span maps byte-for-character to immutable original block",
+      "passed": true
+    },
+    {
+      "name": "selected dialogue maps original chapter offsets and survives reload before exact version submission",
+      "passed": true
+    },
+    {
+      "name": "new version never inherits old opinion or approval and keeps old draft scoped",
+      "passed": true
+    },
+    {
+      "name": "historical cards remain readable and approval disabled",
+      "passed": true
+    },
+    {
+      "name": "cross-dialogue range maps both exact source lines instead of retaining a previous single-line target",
+      "passed": true
+    },
+    {
+      "name": "invalid/reordered range clears the previous proposed target; shot IDs and titles are selectable",
+      "passed": true
+    },
+    {
+      "name": "malicious titles, dialogue and values stay escaped text",
+      "passed": true
+    },
+    {
+      "name": "unknown director media package and every other stage retain generic presentation",
+      "passed": true
+    }
+  ]
+}
+
+=== tests/script-source-projection.cjs ===
+{
+  "passed": true,
+  "tests": [
+    {
+      "name": "real C2 projection preserves original model bytes and all nine source/six advertisement scenes",
+      "passed": true
+    },
+    {
+      "name": "standalone scene headings and unknown formats retain safe behavior",
+      "passed": true
+    },
+    {
+      "name": "retained source comment highlights the exact original range and refresh retains it",
+      "passed": true
+    },
+    {
+      "name": "new selected text uses old offsets, comments submit once to case02 and original version",
+      "passed": true
+    },
+    {
+      "name": "old replacement ending in an omitted newline renders exactly once and can be cancelled without loss",
+      "passed": true
+    },
+    {
+      "name": "QA drafts stay isolated and the actual blocked approval handler cannot submit",
+      "passed": true
+    },
+    {
+      "name": "selection cannot silently cross collapsed source notes",
+      "passed": true
+    },
+    {
+      "name": "selection across a Markdown-only gap keeps exact source including its prefix",
+      "passed": true
+    },
+    {
+      "name": "invalid projection fails closed before creating annotation controls",
+      "passed": true
+    }
+  ]
+}
+
+=== tests/case06-dialogue-content.mjs ===
+PASS Case06 publication, all 42 line replacements, no approval, owner/QA isolation, retained renderer offsets, generated URL/index
+
+=== tests/package-metadata.mjs ===
+PASS immutable benchmark and source binding; malformed blocks fail closed; legacy compatible; metadata excluded from script text
+PASS fixed asset-layout fields, exact targets, fail-closed publication and legacy reading
+{
+  "supported": [
+    {
+      "file": "tests/benchmark-publication.mjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/approval-display.cjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/approval-stage-statuses.mjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/asset-navigation-feedback.cjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/case01-dr05-r1.cjs",
+      "status": "failed"
+    },
+    {
+      "file": "tests/case01-r08-candidate.cjs",
+      "status": "failed"
+    },
+    {
+      "file": "tests/content-delivery-edge.mjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/content-delivery.mjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/content-subscription.cjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/contrast.cjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/current-stage-review-targets.mjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/director-approval-ui.cjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/director-stage-approval.mjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/media-preview.cjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/production-stage-approval.mjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/review-access.mjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/review-attachments.mjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/runtime-media-packaging.cjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/simple-asset-comments.cjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/simple-review-bridge.cjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/site-media.mjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/sticky-video-layout.cjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/sticky-video.cjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/unified-review-ui.cjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/benchmark-source.cjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/director-review-projection.mjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/case05-feedback-server.mjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/preservation-and-build.mjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/content-bootstrap.cjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/content-delivery-consistency.mjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/content-publish-helper.mjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/script-template-feedback.cjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/script-benchmark-registry.cjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/subscribed-assets.cjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/subscribed-director.cjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/script-source-projection.cjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/case06-dialogue-content.mjs",
+      "status": "passed"
+    },
+    {
+      "file": "tests/package-metadata.mjs",
+      "status": "passed"
+    }
+  ],
+  "historicalNotRun": [
+    "tests/annotations.cjs",
+    "tests/case01-asset-status-source.cjs",
+    "tests/case01-assets.cjs",
+    "tests/case01-current-content.cjs",
+    "tests/case01-dialogue-hold.cjs",
+    "tests/case01-dr03-full.cjs",
+    "tests/case01-r07-candidate.cjs",
+    "tests/case01-review.cjs",
+    "tests/case01-stage-navigation.cjs",
+    "tests/case01-stage-views.cjs",
+    "tests/case01-two-area.cjs",
+    "tests/case01-versioned.cjs",
+    "tests/case05-feedback-revision.cjs",
+    "tests/case05-long-take.cjs",
+    "tests/case05-mask-candidate.cjs",
+    "tests/case05-original-shots.cjs",
+    "tests/case05-regression.cjs",
+    "tests/case05-rework.cjs",
+    "tests/case05-simple-reading.cjs",
+    "tests/case05-source-complete.cjs",
+    "tests/content-state.cjs",
+    "tests/home-wipe-references.cjs",
+    "tests/light-preview.cjs",
+    "tests/media-review-ui.cjs",
+    "tests/multicase-config.cjs",
+    "tests/project-deliveries.cjs",
+    "tests/withdraw-openbox.cjs"
+  ],
+  "environmentRequiredNotRun": [
+    "tests/browser-preview.cjs",
+    "tests/case01-dr03-browser.cjs",
+    "tests/case01-review-browser.cjs",
+    "tests/case05-reading-browser.cjs",
+    "tests/server-integration.mjs"
+  ]
+}

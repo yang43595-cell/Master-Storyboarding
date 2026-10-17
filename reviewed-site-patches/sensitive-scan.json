@@ -1,10 +1,11 @@
 {
-  "fileCountBeforeManifest": 20,
-  "credentialPatterns": "No matches for private keys, GitHub/OpenAI token shapes, JWTs, populated auth secrets or signed transfer URLs.",
+  "fileCountExcludingScanAndInventory": 29,
+  "credentialPatterns": "No private keys, provider token shapes, JWTs, populated auth secrets or signed transfer URLs detected.",
   "emailIdentifiers": [
-    "codex@openai.com (patch author; service identity)"
+    "codex@openai.com"
   ],
-  "excluded": "No .git, node_modules, generated builds/caches, credentials, live snapshots, media, real approvals or customer input content included. Source manifest contains paths/hashes only. Logs are isolated/synthetic test output.",
-  "manualReview": "Reviewed patch additions, README, source manifest metadata, and local test/build logs.",
-  "limitations": "Pattern scan is evidence, not a guarantee against all possible secrets."
+  "excluded": "No .git, node_modules, builds/caches, media, credentials, live snapshots, real approvals or customer inputs. Manifest contains source paths/hashes only.",
+  "hydrationFollowup": "Only real Case05 registry identity is reused; added package content and status HTTP responses are isolated synthetic fixtures. No fabricated verified flag.",
+  "manualReview": "Patch additions, metadata, README and local logs reviewed.",
+  "limitations": "Pattern scan does not guarantee detection of all possible secrets."
 }

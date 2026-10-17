@@ -1,0 +1,99 @@
+{
+  "passed": true,
+  "count": 23,
+  "failures": [],
+  "tests": [
+    {
+      "name": "real Case05 registry hydrates asset startup and stage-link navigation only after confirmed media status",
+      "passed": true
+    },
+    {
+      "name": "Case05 asset hydration denies unknown, absent, failed and wrong-identity registry previews",
+      "passed": true
+    },
+    {
+      "name": "late Case05 asset media status never replaces a new-case benchmark after route change",
+      "passed": true
+    },
+    {
+      "name": "bound Case05 asset packages never hydrate a registry fallback or replace their own video",
+      "passed": true
+    },
+    {
+      "name": "Case06 dialogue-only page keeps retained script UI and disables unpublished stages without legacy fallback",
+      "passed": true
+    },
+    {
+      "name": "published package renders while every legacy manifest would fail or remain pending",
+      "passed": true
+    },
+    {
+      "name": "missing optional lightweight index cannot prevent loading a healthy package",
+      "passed": true
+    },
+    {
+      "name": "skip link moves focus and scroll without changing the case fragment or polling identity",
+      "passed": true
+    },
+    {
+      "name": "Case01 remains the only visible default and supports query routing plus content anchors",
+      "passed": true
+    },
+    {
+      "name": "each case opens directly as a separate page, with no cross-case picker or requests",
+      "passed": true
+    },
+    {
+      "name": "valid explicit case hashes win conflicts; otherwise the first valid query value or Case01 is used",
+      "passed": true
+    },
+    {
+      "name": "all six shared stages keep their own case in links and clear stage-specific pinned versions",
+      "passed": true
+    },
+    {
+      "name": "content anchors preserve editors and identity even when query and initial case hash disagree",
+      "passed": true
+    },
+    {
+      "name": "real case hash changes dispose editors, preserve drafts and synchronously canonicalize before one reload",
+      "passed": true
+    },
+    {
+      "name": "every separate case loads and edits only its own version-scoped draft",
+      "passed": true
+    },
+    {
+      "name": "case changes during startup suppress late successful, empty and failed content responses",
+      "passed": true
+    },
+    {
+      "name": "a late legacy manifest cannot mount a former case or start its document/media requests",
+      "passed": true
+    },
+    {
+      "name": "actual case02 empty script subscription projects its retained source without creating a content head",
+      "passed": true
+    },
+    {
+      "name": "retained internal renderers preserve all thirty case/stage source projections",
+      "passed": true
+    },
+    {
+      "name": "each independent legacy page loads only its own source and preserves every draft namespace",
+      "passed": true
+    },
+    {
+      "name": "legacy catalog consumers share the single successful manifest read",
+      "passed": true
+    },
+    {
+      "name": "legacy-only manifest failure is visible and cannot render an incomplete review form",
+      "passed": true
+    },
+    {
+      "name": "published package pages do not eagerly start the legacy asset catalog",
+      "passed": true
+    }
+  ]
+}

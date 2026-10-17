@@ -1,11 +1,15 @@
 {
   "README.md": {
-    "bytes": 4612,
-    "sha256": "5b1fe50a0198fafcddcb7a6dda0f16c930c71704f4604339fa9ad65a4a6c9ac8"
+    "bytes": 5835,
+    "sha256": "cc76d136f64317101c6daf19d15575064f8507ff5e1685e242648d1b7d218355"
   },
   "changes.patch": {
-    "bytes": 23184,
-    "sha256": "7a8d2c62f0475b305d5baabe486b442055a45229f1d3b345c98d61832f7c5e51"
+    "bytes": 33358,
+    "sha256": "4bd79ff59a3e74e6a01a6cbcc4a6368e2841b2045d06cdbcfa9cba0f97a41483"
+  },
+  "hydration-increment.patch": {
+    "bytes": 11507,
+    "sha256": "d62ec4c9eff115609492ce475dbe7db5cbf33f2284d30135339d0ad9d4db2386"
   },
   "logs/baseline-verify.log": {
     "bytes": 67498,
@@ -35,6 +39,30 @@
     "bytes": 6821,
     "sha256": "bf0bd94118a4b5e9fcda6db8da1a593658426d5670f0c19215ee37667b8cd54f"
   },
+  "logs/hydration-build.log": {
+    "bytes": 1689,
+    "sha256": "483a813fd1c56fba769a3d227fe69fff989b324208bb836fb4cf4bff2cecc582"
+  },
+  "logs/hydration-full-tests.log": {
+    "bytes": 68163,
+    "sha256": "0f8486fbab5eaa0ab36ac727921e95d9c9ea0bd6f428654d23197d2d7fad7fab"
+  },
+  "logs/hydration-green.log": {
+    "bytes": 3264,
+    "sha256": "d92a8a825aa6e56bfefe91bf7daeec3fe5b69ba308b89d98e52d8bef33de16d6"
+  },
+  "logs/hydration-lint.log": {
+    "bytes": 99,
+    "sha256": "9d4ed79a683eccf54173b6034d4187b97e629a26e9f9dbedc55bc19d45839445"
+  },
+  "logs/hydration-red.log": {
+    "bytes": 4249,
+    "sha256": "7179ef31746258dfaa331268dbc304a2d925fb0029a63ce0fe5b1fcc70bdc9e6"
+  },
+  "logs/hydration-typecheck.log": {
+    "bytes": 63,
+    "sha256": "c35f2424235ba232f059514b72746d95f8a42286c454677ef748954aed7c5f36"
+  },
   "logs/red-tests.log": {
     "bytes": 7490,
     "sha256": "bb6660f14b74a220ec8bbe44f932545f34db553f4c756f5d54183e72b93143bd"
@@ -49,23 +77,35 @@
   },
   "patches/0001-test-cover-legacy-and-bound-stage-benchmark-source-s.patch": {
     "bytes": 11732,
-    "sha256": "b543883d211a1213cf48312933ca66bc1dec6e01adf947e7f43c09b90566e219"
+    "sha256": "64f3b5477f96e3e69c1074a23ed3ade32787936ca46feb3f574ef129332c2cf2"
   },
   "patches/0002-fix-retain-legacy-stage-benchmarks-and-explain-missi.patch": {
     "bytes": 7505,
-    "sha256": "f459872d2b0c9b395511678b12e09ffce78b826ebed22b855520694806145668"
+    "sha256": "7ef17aa1262ca00cb237a5ecb3f5bf621d5c67ca6d29c7364c69b250d4c3c3c1"
   },
   "patches/0003-docs-clarify-JSON-publication-and-source-review-evid.patch": {
     "bytes": 2339,
-    "sha256": "980646b31e0ff8c70289afeea60c02f1d21ce5544b9e3425727a541be3130c55"
+    "sha256": "c24bf78ae6c7ba02c811820edea74973040c5dca60f36002d6896936f7a06722"
   },
   "patches/0004-test-account-for-restored-benchmark-status-hydration.patch": {
     "bytes": 2990,
-    "sha256": "c18171a996bfaeaef552409ce8b64e715f9ba07123f12a1a84a7448bee1e50b5"
+    "sha256": "781f7ca36cb045ede3598521f17223c813b73e27cda1ed2c790ff23876aceb7a"
+  },
+  "patches/0005-test-reproduce-Case05-asset-media-hydration-and-stal.patch": {
+    "bytes": 10816,
+    "sha256": "62177b7be86fc29fd6407850aa5797c06ba3eb5b6302a9d1f3e63a67074104ae"
+  },
+  "patches/0006-fix-hydrate-confirmed-registry-media-on-subscribed-a.patch": {
+    "bytes": 1384,
+    "sha256": "6275e8501acf1b0a493ebad5073cdc48685344a6baabcf1c7f7db4e7b69642ed"
   },
   "provenance.json": {
-    "bytes": 925,
-    "sha256": "b994b5d8ce4119f4c633d02ff9c4c9a971b4ad8e970fe52ef2e186813251dae0"
+    "bytes": 1427,
+    "sha256": "75f2d9da8ca2f8025fc2af0cadda7aad46d2128f94301e1630c5f74e4c7297d7"
+  },
+  "sensitive-scan.json": {
+    "bytes": 748,
+    "sha256": "1deb390636d5019ecd37e6dcd7c63249587ffecb21c4491ab73cd312d2bbce70"
   },
   "tests/benchmark-source-selection.cjs": {
     "bytes": 3732,
