@@ -792,7 +792,15 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     profile = _read_json(profile_path, default=None)
     if not isinstance(profile, dict) or profile.get("skill") != args.skill:
         raise StageContextError(f"Skill 知识 profile 无效：{profile_path}")
-    request = _read_json(Path(args.request_json).resolve(), default=None) if args.request_json else {}
+    request = {}
+    if args.request_json:
+        request_path = Path(args.request_json).resolve()
+        try:
+            request = json.loads(request_path.read_text(encoding="utf-8"))
+        except FileNotFoundError as exc:
+            raise StageContextError(f"请求文件不存在：{request_path}；请提供明确请求来源，不从项目入口或待审候选推断。") from exc
+        except (OSError, json.JSONDecodeError) as exc:
+            raise StageContextError(f"无法读取请求 JSON：{request_path}: {exc}") from exc
     if not isinstance(request, dict):
         raise StageContextError("request JSON 必须是对象")
     delivery_contract = _delivery_contract(request)
