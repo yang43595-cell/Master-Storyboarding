@@ -1,4 +1,6 @@
-# v78 网页审核修复：补丁交付
+# 审核网页修复：来源与增量补丁
+
+**当前网页规则：对标原视频仅在编导稿页显示，资产/导演/其他阶段不显示。正式发布由根代理统一执行；v79 生产增量见 `script-only-v79-production.patch`。**
 
 **当前项目适配器连接：固定 d0ee6ce 版本，15/15 通过。af212c 的 10/11 历史红灯与原测试保留供追溯；仅限真实本地 D1/R2，不代表生产、浏览器或自动采用验收。**
 
@@ -8,19 +10,19 @@
 
 ## 修复范围
 
-`content-subscription.js` 三处最小改动：优先使用包内 benchmark；未声明 source-binding 的旧包保留上游已验证、同 case 的 registry 视频；bound 新包缺 benchmark 时明确提示缺失，不套用旧或其他 case 视频。声明但无效的元数据继续失败关闭。未改 CSS、布局组件、审核结论、历史 MD 或任何线上数据。
+当前两份生产 JS 限制原片仅在 script 编导稿页显示；编导稿仍优先使用包内 benchmark，未声明 source-binding 的旧编导稿保留上游已验证同 case registry。其他阶段不显示 benchmark、缺原片提示或其目录入口；普通动作视频和图片仍保留。声明但无效的元数据继续失败关闭。未改 CSS、审核结论、历史 MD 或线上数据。
 
-两个测试文件覆盖当前/历史版本、全部六阶段、包内来源优先、缺失及无效来源和无自动播放。启动测试精确允许恢复的视频触发既有的只读媒体状态请求，内容请求仍全部校验 caseId。
+两个测试文件覆盖当前/历史版本、全部六阶段、包内来源优先、缺失及无效来源和无自动播放。启动测试精确允许编导稿原视频触发既有的只读媒体状态请求，内容请求仍全部校验 caseId。
 
 契约说明保留历史 MD 回看；新 ContentPackage 发布不强制 MD。source-binding 的 source/native hash 当前仅验证格式，不证明与外部实际输入字节一致。内容 GET 的默认 pending 不是审批凭据，审批应读 currentState/currentFeedback。保存反馈不代表 agent 接单，本轮没有增加持续服务。
 
-## 资产媒体状态加载补修
+## 历史记录：资产媒体状态加载补修（已被新显示规则替代）
 
 独立复核确认首轮修复仅保留了视频来源 HTML；`app.js` 仍将 assets 排除在媒体状态加载之外，所以真实 Case05 registry（没有 verified/available 字段）在资产页仍只有链接。本次去掉该阶段排除条件，保留同 case/currentRoute 异步校验、已有 video 不覆盖、真实 available 状态和来源身份匹配。没有写入或伪造 verified。
 
 `tests/content-bootstrap.cjs` 新增四组真实 app/subscriber/asset-controller DOM 测试，使用真实 Case05 registry 与合成阶段内容：资产启动、资产↔导演阶段链接切换、状态缺失/404/失败/错误身份、bound 缺失和包内视频保护，以及旧 case 延迟请求不污染新 case。新增测试在首轮修复上红灯，补修后绿灯。
 
-`changes.patch` 已更新为从精确 v78 一次应用的完整补丁；只对已经应用首轮四份 patch 的 checkout，使用 `hydration-increment.patch`。不要重复叠加两者。`patches/` 现在共有六份，最后两份为本轮测试和修复。Library 初始 repair ZIP 保持原样，它不包含本次补修；本 GitHub 分支是更新后的交付。
+`changes.patch` 已更新为从精确 v78 一次应用的完整补丁；只对已经应用首轮四份 patch 的 checkout，使用 `hydration-increment.patch`。不要重复叠加两者。该历史检查点当时共六份 patch；现在追加第7/8份，覆盖并撤销其他阶段显示原片的旧要求。Library 初始 repair ZIP 保持原样，它不包含本次补修；本 GitHub 分支是更新后的交付。
 
 ## 恢复与重现
 
@@ -46,7 +48,7 @@ npm_config_cache=/absolute/writable/npm-cache npm run install:ci
 npm run verify
 ```
 
-组合 patch 和 `patches/` 六份顺序 patch 是同一变更的两种应用方式，只选一种。源文件校验必须在应用之前执行，应用之后预期有五个文件与基线不同。
+组合 patch 和 `patches/` 八份顺序 patch 是同一变更的两种应用方式，只选一种。源文件校验必须在应用之前执行，应用之后预期有五个文件与基线不同。
 
 无需媒体的独立合成测试读取恢复后的真实 renderer 和元数据模块；48 项检查在修复后通过，原版失败。它不代替真实 DOM、媒体保全或完整门禁。既有 717 文件清单已在原始恢复时全部核验。不能声称缺少完整媒体也能跑完整保全测试。
 
@@ -54,7 +56,7 @@ npm run verify
 
 - 原版与最终 supported collection 均为 36/38 通过；27 historical 和 5 environmentRequired 未运行。
 - 两项既有失败：`case01-dr05-r1.cjs` 依赖缺失 Git 对象 `795ff4419599eaaf4b72904848dbb973650e38dd`；`case01-r08-candidate.cjs` 依赖 `f01b834152b02124f34d935c2d77be03c4e7227f`。归档不含这些对象，须由真实历史仓库或经验证的历史 fixture 补齐，不能用当前文件冒充；未跳过或修改这些测试。
-- 订阅测试 49/49、启动测试 23/23 通过；typecheck、lint 和实际生产构建通过。`npm run verify` 仍会因上述两项停止，不能标为全绿。
+- 订阅测试 49/49、启动测试 24/24 通过；typecheck、lint 和实际生产构建通过。`npm run verify` 仍会因上述两项停止，不能标为全绿。
 - `logs/` 是本地合成/隔离测试日志，`hydration-*.log` 为补修验证；未包含线上快照、真实审批记录、客户输入、凭据或媒体。已扫描提交候选中的凭据模式、签名链接、PII 和禁入文件。
 - 没有可用浏览器工具，本轮未执行浏览器视觉 QA。确定性 DOM 测试不证明浏览器外观、播放或认证行为已验收。
 - 未部署、未推送 Sites 源仓库、未改 D1/R2、未提交线上表单、未改变可见性或配置 CI。
@@ -115,3 +117,16 @@ node "$PATCH_DIR/tests/project-adapter-connect.cjs"   --web-source "$RESTORED/si
 依赖与隔离条件同前一节。按 d0ee6ce 预期退出码0；报告 `project-adapter-connection-d0ee6ce-report.json` 和日志保留实际15/15结果。旧 `project-adapter-connection-report.json` 与旧日志不覆盖；旧报告中当时的 project-adapter-connect.cjs hash 对应现在原样归档的 `project-adapter-connect-af212c.cjs`，该旧入口仍固定 af212c 并保留预期红灯。
 
 没有改网页产品源码或主流程源码；网页仍为 bad04fd。没有提交本地数据库/R2对象、原项目源文件、媒体、凭据或 worker bundle；没有部署、生产写入、项目自动采用/确认或历史盲跑。结论是本地保存→真实适配器读取→重启后仍一致及上述边界通过，不扩展成远端平台或浏览器验收。
+
+
+## 用户纠正：对标原视频仅在编导稿页（当前显示规则）
+
+此前恢复 assets/其他阶段对标原片是需求理解错误。当前测试已替换该要求，不保留“assets必须显示原片”作为通过标准；历史补丁和日志仅供追溯，不能单独用旧六份 patch 作为最终版本。
+
+已只读确认最新保存的 Sites v79 源 `a029413f0b7e74bb616762b21853d7b58a1b15a9`。根代理提供该版本的两份生产 JS 与 bad04fd 相同。当前生产增量 **只含** `review-static/app.js` 与 `review-static/content-subscription.js`，见 `script-only-v79-production.patch`。准确预期基线/更新后 SHA256、补丁 SHA256 和本地提交见 `script-only-report.json`；根代理必须在官方最新 checkout 校验基线 hash，并保留后续用户修改，再决定应用，不能拿本地归档导入历史覆盖源仓库。
+
+行为：app 的所有 legacy/registry 入口按真实 URL 阶段只向 script 输出 benchmark；订阅器在所有非 script stage 清空专属原片区域，包括包内 benchmark 与 source-binding 缺失提示，且不列隐藏 benchmark 的目录链接。普通 media block（动作视频、人物/产品图等）、script 原片选择/状态加载及播放控件、跨案例异步保护不变。没有删除 D1 内的 benchmark 元数据或审核记录。
+
+新规则在旧产品代码上红灯，修复后订阅49/49、启动24/24、独立来源矩阵48项通过。覆盖六阶段 × 当前/历史 × 未绑定/绑定缺失/包内原片、普通视频/图片保留、legacy五案例六阶段、script→assets延迟启动的全部 HTML 写入无原片闪回、返回script原片恢复、跨案例旧请求不污染新页。既有30个 legacy 内容投影只剔除有意移除的 benchmark 区域后逐字比较，其他内容和媒体相同。定向测试仍是确定性DOM/HTTP替身，不冒充本执行器真实浏览器验收。
+
+新工作区先 prepare 再运行全量支持套件：36/38通过，两个失败仍仅为既有历史Git对象缺失。类型、lint和实际生产构建通过。源改动本地提交：81499d92f6fe438fc1abb1e3b1633eeb31324e19（红测），8685c87b60a71b958b0e729b54d6e0e9dcce3553（修复）。`script-only-bad04fd-review.patch` 包含相对审查树的测试/说明变更；`changes.patch` 已更新为从原v78恢复完整当前源树的五文件组合补丁。正式v79上线只应用生产两文件增量，不上传测试、日志或夹具数据；由根代理发布，本执行器未部署。

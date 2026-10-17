@@ -24,12 +24,12 @@ async function render(stage,blocks,historical=false,caseId='05'){
 (async()=>{
  let checks=0;
  for(const stage of ['script','assets','director','white_model','storyboard','prompts'])for(const historical of [false,true]){
-  assert((await render(stage,[],historical)).includes(fallback),stage+' legacy fallback');checks++;
+  const legacy=await render(stage,[],historical);assert.equal(legacy.includes(fallback),stage==='script',stage+' script-only legacy benchmark');checks++;
   const embedded=await render(stage,[binding,benchmark],historical);
-  assert(embedded.includes(benchmark.media[0].url));assert(embedded.includes(benchmark.media[1].url));assert(!embedded.includes('synthetic-validated-case05-registry'));assert(!embedded.includes('autoplay'));checks++;
+  assert.equal(embedded.includes(benchmark.media[0].url),stage==='script');assert.equal(embedded.includes(benchmark.media[1].url),stage==='script');assert(!embedded.includes('synthetic-validated-case05-registry'));assert(!embedded.includes('autoplay'));checks++;
   const missing=await render(stage,[binding],historical);
   assert(!missing.includes('synthetic-validated-case05-registry'));
-  assert.match(missing,stage==='script'?/来源校验失败/:/对标原视频缺失/);checks++;
+  if(stage==='script')assert.match(missing,/来源校验失败/);else{assert(!missing.includes('对标原视频缺失'));assert(!missing.includes('class="benchmark-source"'));}checks++;
   const malformed=await render(stage,[{...benchmark,text:'{}'}],historical);assert.match(malformed,/来源校验失败/);assert(!malformed.includes(fallback));checks++;
  }
  console.log(JSON.stringify({passed:true,checks,fixture:'synthetic only',network:'in-memory doubles; no writes'}));

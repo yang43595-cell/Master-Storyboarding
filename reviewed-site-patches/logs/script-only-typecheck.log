@@ -1,0 +1,4 @@
+
+> site-creator-vinext-starter@0.1.0 typecheck
+> tsc --noEmit
+

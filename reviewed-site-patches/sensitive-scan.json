@@ -1,5 +1,5 @@
 {
-  "fileCountExcludingScanAndInventory": 41,
+  "fileCountExcludingScanAndInventory": 57,
   "credentialPatterns": "No private keys, provider token shapes, JWTs, populated auth secrets or signed transfer URLs detected.",
   "emailIdentifiers": [
     "codex@openai.com"
@@ -10,5 +10,6 @@
   "limitations": "Pattern scan does not guarantee detection of all possible secrets.",
   "localBackendFollowup": "Only synthetic local D1/R2 fixture script and sanitized summaries; no database, R2 blob, worker bundle, private media, credentials or real feedback included. All local state stays in execution environment.",
   "projectAdapterConnection": "Only synthetic caller tests, sanitized aggregate pass/fail evidence, and Git source fingerprints. No copied project source, raw approvals, DB/R2 state, worker bundle, media or credentials uploaded. Adapter af212c remains unchanged; one failed ID-validation check is reported openly.",
-  "d0ee6ceRevalidation": "Pinned project code read-only; only additive synthetic test checks, previous test caller preserved exactly, new sanitized 15/15 result and source hashes. No raw project source, DB/R2 objects, worker bundle, real approvals, media or credentials included."
+  "d0ee6ceRevalidation": "Pinned project code read-only; only additive synthetic test checks, previous test caller preserved exactly, new sanitized 15/15 result and source hashes. No raw project source, DB/R2 objects, worker bundle, real approvals, media or credentials included.",
+  "scriptOnlyPolicyCorrection": "Only production JS delta, synthetic updated stage-display tests and sanitized validation logs added. No site deployment, data, real media, credentials, database or worker bundle included. Prior all-stage benchmark acceptance explicitly superseded."
 }

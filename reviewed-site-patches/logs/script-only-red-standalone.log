@@ -1,0 +1,12 @@
+AssertionError [ERR_ASSERTION]: assets script-only legacy benchmark
+
+true !== false
+
+    at /workspace/github-review-web/reviewed-site-patches/tests/benchmark-source-selection.cjs:27:57 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: true,
+  expected: false,
+  operator: 'strictEqual',
+  diff: 'simple'
+}

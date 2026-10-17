@@ -1,0 +1,55 @@
+{
+  "requirement": "Benchmark original appears only on script; never on other stages, including legacy and bound paths. Ordinary content videos/images remain.",
+  "sitesBase": {
+    "version": 79,
+    "sourceCommit": "a029413f0b7e74bb616762b21853d7b58a1b15a9"
+  },
+  "reviewBaseLocal": "bad04fd827c67b5288448166ffab68a18c3ed029",
+  "localTestCommit": "81499d92f6fe438fc1abb1e3b1633eeb31324e19",
+  "localFixCommit": "8685c87b60a71b958b0e729b54d6e0e9dcce3553",
+  "productionFiles": {
+    "review-static/app.js": {
+      "expectedBaseSHA256": "0efe74493f4789131cf3e44f26eaf819562e89bd2078a281870d6147293d6595",
+      "updatedSHA256": "68f9695c386252bf490fe9d14be3933c8f7620d9da53898bff15047657d2c035"
+    },
+    "review-static/content-subscription.js": {
+      "expectedBaseSHA256": "4e05774c3926bbdf5079aca4af719e406b1778718e3000ff29b11bd31152939e",
+      "updatedSHA256": "8d9965bfa9b9758c13da7e42ad47282d329deeee103e7f66d9f0dff0c2749940"
+    }
+  },
+  "productionPatch": "script-only-v79-production.patch",
+  "productionPatchSHA256": "b57e4e9689450ba1ba10ab4b2da7a949d1ad86b0e4d187d092110faa6fb818d8",
+  "testsAreDeterministicDOM": true,
+  "browserVerificationPerformedHere": false,
+  "productionDataWritten": false,
+  "deploymentOwner": "parent/root only; this executor did not publish",
+  "validation": {
+    "subscription": {
+      "passed": 49,
+      "total": 49
+    },
+    "bootstrap": {
+      "passed": 24,
+      "total": 24
+    },
+    "sourceSelectionMatrix": {
+      "passed": 48,
+      "total": 48
+    },
+    "supportedSuites": {
+      "passed": 36,
+      "total": 38,
+      "failures": [
+        "tests/case01-dr05-r1.cjs (missing historical Git object)",
+        "tests/case01-r08-candidate.cjs (missing historical Git object)"
+      ]
+    },
+    "typecheck": "passed after prepare",
+    "lint": "passed",
+    "productionBuild": "passed",
+    "gitDiffCheck": "passed",
+    "browser": "not performed in this executor"
+  },
+  "supersedesOldRequirement": "Prior assertions requiring benchmarks on assets/director/other stages are replaced. Historical logs/patches are trace only, not current acceptance.",
+  "testAndDocsBase": "Full review patch is relative to bad04fd audit tree; production delta relative to v79 includes exactly two JS files."
+}

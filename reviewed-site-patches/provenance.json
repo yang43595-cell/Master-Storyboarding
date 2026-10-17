@@ -64,5 +64,16 @@
     "originalAssertionsPreserved": true,
     "projectCoreChanged": false
   },
-  "currentProjectAdapterConnectionReport": "project-adapter-connection-d0ee6ce-report.json"
+  "currentProjectAdapterConnectionReport": "project-adapter-connection-d0ee6ce-report.json",
+  "currentDisplayPolicy": {
+    "benchmarkOnlyStage": "script",
+    "otherMediaPreserved": true,
+    "sitesBaseVersion": 79,
+    "sitesBaseSource": "a029413f0b7e74bb616762b21853d7b58a1b15a9",
+    "localFixCommit": "8685c87b60a71b958b0e729b54d6e0e9dcce3553",
+    "productionPatch": "script-only-v79-production.patch",
+    "report": "script-only-report.json",
+    "supersedes": "prior all-stage benchmark restoration acceptance",
+    "productionDeployedByThisExecutor": false
+  }
 }
