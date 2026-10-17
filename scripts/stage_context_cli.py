@@ -14,7 +14,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Any
 
 try:
-    from .core.artifacts import artifact_is_confirmed, project_path, digest
+    from .core.artifacts import artifact_is_confirmed, project_path, digest, validate_current_dependencies
     from .core.io import write_text, write_text_if_changed
     from .core.knowledge_blocks import build_knowledge_index, load_policy, parse_knowledge_blocks
     from .core.knowledge_selector import render_knowledge_bundle, render_knowledge_candidates, select_knowledge
@@ -24,7 +24,7 @@ try:
     from .core.review_delta import fingerprint, revision_delta, lightweight_revision
     from .session_usage import measure, measure_boundaries, check_budget
 except ImportError:  # direct CLI execution
-    from core.artifacts import artifact_is_confirmed, project_path, digest
+    from core.artifacts import artifact_is_confirmed, project_path, digest, validate_current_dependencies
     from core.io import write_text, write_text_if_changed
     from core.knowledge_blocks import build_knowledge_index, load_policy, parse_knowledge_blocks
     from core.knowledge_selector import render_knowledge_bundle, render_knowledge_candidates, select_knowledge
@@ -209,6 +209,10 @@ def _confirmed_project_inputs(project: Path, state: dict[str, Any]) -> tuple[dic
             raise StageContextError(f"交接产物文件不存在：{artifact_id}: {path}")
         if item.get("checksum") and digest(path) != item["checksum"]:
             raise StageContextError(f"交接产物内容与确认版本不一致：{artifact_id}")
+        try:
+            validate_current_dependencies(item, manifest, state, project)
+        except ValueError as exc:
+            raise StageContextError(str(exc)) from exc
         inputs.append(item)
     return state, inputs
 

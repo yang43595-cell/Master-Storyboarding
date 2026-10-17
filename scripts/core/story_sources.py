@@ -11,6 +11,103 @@ from .schema_contracts import require_schema
 from .artifacts import project_path
 
 
+def _dialogue_comparison_text(text):
+    """Only whitespace/punctuation; never normalize numerals or meaning."""
+    import unicodedata
+    return ''.join(c for c in text if not c.isspace() and not unicodedata.category(c).startswith('P'))
+
+
+def validate_dialogue_review(record, project_root):
+    """Check declared evidence and provenance, not pixels, sound or human approval."""
+    import hashlib
+    import math
+    if not isinstance(record, dict) or not isinstance(record.get('sources'), list):
+        raise ValueError('对白审核记录须为对象且 sources 为数组')
+    sources = {}
+    for source in record['sources']:
+        if not isinstance(source, dict):
+            raise ValueError('原始证据须为对象')
+        ident = source.get('source_id')
+        if not isinstance(ident, str) or not ident or ident in sources:
+            raise ValueError('对白证据 ID 缺失或重复')
+        if source.get('kind') not in {'subtitle_verbatim', 'asr_hypothesis'}:
+            raise ValueError('原始证据类型只能为字幕逐字或 ASR 候选；解释修订另列')
+        if any(not isinstance(source.get(k), str) or not source[k].strip()
+               for k in ('text', 'evidence_path', 'evidence_sha256', 'locator', 'producer')):
+            raise ValueError('原始证据缺少文字、路径、hash、定位或记录者/模型')
+        path = project_path(project_root, source['evidence_path'])
+        if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != source['evidence_sha256']:
+            raise ValueError('原始证据文件缺失或 hash 不符：' + ident)
+        # ASR must point into the retained machine output, not a manually copied paraphrase.
+        pointer = source.get('text_pointer')
+        if source['kind'] == 'asr_hypothesis' and not pointer:
+            raise ValueError('ASR 原始证据须定位原输出 text_pointer')
+        if pointer is not None:
+            if not isinstance(pointer, str) or not pointer.startswith('/'):
+                raise ValueError('原始证据 text_pointer 无效')
+            try:
+                value = json.loads(path.read_text(encoding='utf-8-sig'))
+                for part in pointer[1:].split('/'):
+                    key = part.replace('~1', '/').replace('~0', '~')
+                    value = value[int(key)] if isinstance(value, list) else value[key]
+            except (ValueError, KeyError, IndexError, TypeError) as exc:
+                raise ValueError('原始证据字段不可解析：' + ident) from exc
+            if value != source['text']:
+                raise ValueError('原始证据文字被改写：' + ident)
+        sources[ident] = source
+    rows = record.get('dialogues')
+    if not isinstance(rows, list) or not rows:
+        raise ValueError('对白审核记录需要非空 dialogues')
+    conflicts, unresolved, verified_times, ids = [], [], [], set()
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError('对白审核行须为对象')
+        ident = row.get('dialogue_id')
+        if not isinstance(ident, str) or not re.fullmatch(r'DLG-[A-Z0-9-]+', ident) or ident in ids:
+            raise ValueError('对白 ID 无效或重复')
+        ids.add(ident)
+        refs = row.get('source_ids')
+        if (not isinstance(refs, list) or not refs or any(not isinstance(x, str) or x not in sources for x in refs)
+                or len(set(refs)) != len(refs) or not isinstance(row.get('text'), str) or not row['text']):
+            raise ValueError('对白缺少精确原始证据引用或文字：' + ident)
+        originals = [sources[x]['text'] for x in refs]
+        if len({_dialogue_comparison_text(t) for t in originals}) > 1:
+            conflicts.append(ident)
+        proposal = row.get('editorial_proposal')
+        if row['text'] not in originals or proposal is not None:
+            if (not isinstance(proposal, dict) or proposal.get('proposed_text') != row['text']
+                    or proposal.get('original_text') not in originals
+                    or not isinstance(proposal.get('reason'), str) or not proposal['reason'].strip()
+                    or not isinstance(proposal.get('source_ids'), list) or not proposal['source_ids']
+                    or not set(proposal['source_ids']).issubset(refs)
+                    or proposal['original_text'] not in [sources[x]['text'] for x in proposal['source_ids']]):
+                raise ValueError('解释修订须绑定原文、拟改原句、理由与本行证据：' + ident)
+        resolution = row.get('verification')
+        if resolution is not None:
+            if (not isinstance(resolution, dict) or resolution.get('scope') != 'dialogue'
+                    or resolution.get('dialogue_id') != ident or resolution.get('text') != row['text']
+                    or resolution.get('method') not in {'human_listening', 'user_confirmation'}
+                    or any(not isinstance(resolution.get(k), str) or not resolution[k].strip() for k in ('reference', 'reviewer'))):
+                raise ValueError('对白核对记录须绑定本行原文、范围、真实依据与核对者：' + ident)
+        else:
+            unresolved.append(ident)
+        for field in ('source_locator', 'verified_timing'):
+            timing = row.get(field)
+            if timing is None:
+                continue
+            if (not isinstance(timing, dict) or any(isinstance(timing.get(k), bool)
+                    or not isinstance(timing.get(k), (int, float)) or not math.isfinite(timing[k]) for k in ('start','end'))
+                    or timing['start'] < 0 or timing['end'] <= timing['start']):
+                raise ValueError('时码须为有限、非负且递增的起止秒数：' + ident)
+            if field == 'verified_timing':
+                if not resolution or any(not isinstance(timing.get(k), str) or not timing[k].strip() for k in ('verification_ref', 'reviewer')):
+                    raise ValueError('已核时码需要本行核对及独立对齐依据：' + ident)
+                verified_times.append(ident)
+    return {'verification': 'source_consistency_only', 'conflicts': conflicts,
+            'unresolved_ids': unresolved, 'verified_timing_ids': verified_times,
+            'limits': 'Hashes and declared provenance do not prove subtitle transcription, listening, identity or approval authenticity.'}
+
+
 def read_dialogue_table(path: Path) -> list[tuple[str, str, str, str]]:
     """Read content columns only; later approval records may supersede row status."""
     text = path.read_text(encoding='utf-8-sig')
@@ -130,6 +227,19 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
     require_schema(narrative, 'narrative-package.schema.json', label='编导包')
     if narrative.get('schema_version') != '2.0':
         raise ValueError('新段落引用要求编导包 2.0；旧事件包须按原稿重新整理，不能自动换编号')
+    if narrative.get('dialogue_evidence_path'):
+        if project_root is None:
+            raise ValueError('绑定对白审核记录需要 project_root')
+        from .artifacts import digest
+        evidence_path = project_path(project_root, narrative['dialogue_evidence_path'])
+        if digest(evidence_path) != narrative.get('dialogue_evidence_sha256'):
+            raise ValueError('对白审核记录已偏离绑定字节')
+        evidence = json.loads(evidence_path.read_text(encoding='utf-8-sig'))
+        report = validate_dialogue_review(evidence, project_root)
+        if report['unresolved_ids']:
+            raise ValueError('完整叙事包仍有未核对白证据：' + ', '.join(report['unresolved_ids']))
+        if [(r['dialogue_id'], r['text']) for r in evidence['dialogues']] != [(r['dialogue_id'], r['text']) for r in narrative['dialogues']]:
+            raise ValueError('叙事包与对白审核记录的 ID、原文或顺序不一致')
     paragraphs = narrative['story_paragraphs']
     by_id = {p['paragraph_id']: p['text'] for p in paragraphs}
     if len(by_id) != len(paragraphs):
@@ -402,6 +512,7 @@ def export_markdown(package: dict, destination: Path) -> None:
 def main():
     parser = argparse.ArgumentParser(description='校验编导原文段落及导演引用，不生成或登记产物')
     inputs = parser.add_mutually_exclusive_group(required=True)
+    inputs.add_argument('--dialogue-review', type=Path, help='只读核查单份对白审核记录；不代表整包或人工听核')
     inputs.add_argument('--narrative', type=Path)
     inputs.add_argument('--markdown', type=Path)
     inputs.add_argument('--shot-plan', type=Path, help='导演镜头方案 Markdown：只读检查资产引用是否仍有效')
@@ -415,6 +526,11 @@ def main():
                         help='把“引用了已取消／已拆分的资产”也当作错误（默认只告警）')
     parser.add_argument('--project', type=Path, required=True)
     args = parser.parse_args()
+    if args.dialogue_review:
+        if args.storyboard or args.export_markdown or args.reading_supplement or args.dialogue_baseline:
+            parser.error('--dialogue-review 不接受完整叙事包参数')
+        print(json.dumps(validate_dialogue_review(json.loads(args.dialogue_review.read_text(encoding='utf-8-sig')), args.project), ensure_ascii=False, indent=2))
+        return
     if args.reading_supplement and (not args.narrative or args.storyboard):
         parser.error('--reading-supplement 仅与 --narrative 使用')
     if args.shot_plan:

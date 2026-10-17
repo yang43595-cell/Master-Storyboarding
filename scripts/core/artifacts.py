@@ -282,3 +282,57 @@ def artifact_is_confirmed(entry, state, root=None):
     # completed change history.  Read that canonical evidence directly rather
     # than manufacturing a duplicate project-state receipt for every member.
     return bool(root and formal_adoption(entry, root))
+
+
+def validate_current_dependencies(entry, manifest, state, root):
+    """Read-only consumption check; never resurrect historical files as current.
+
+    Logical edges establish availability, not version equality. Existing explicit
+    source_narrative/source_storyboard refs establish exact revision/path identity.
+    """
+    visiting, checked = set(), set()
+    def visit(item):
+        ident = item.get('artifact_id')
+        if ident in visiting:
+            raise ValueError('产物依赖存在循环：' + str(ident))
+        if ident in checked:
+            return
+        visiting.add(ident)
+        deps = item.get('depends_on') or []
+        if not isinstance(deps, list) or any(not isinstance(dep, str) for dep in deps):
+            raise ValueError('depends_on 必须是 logical_id 列表')
+        path = project_path(root, item.get('path_or_url', ''))
+        payload = {}
+        if path.is_file() and path.suffix.lower() == '.json':
+            try:
+                value = read_json(path)
+                if isinstance(value, dict):
+                    payload = value
+            except (OSError, ValueError) as exc:
+                raise ValueError('依赖来源 JSON 不可读：' + str(path)) from exc
+        named = {'narrative.package': 'source_narrative', 'storyboard.package': 'source_storyboard'}
+        # An explicit reference is also a dependency even when a legacy edge was omitted.
+        required = set(deps) | {lid for lid, field in named.items() if field in payload}
+        for logical_id in sorted(required):
+            matches = [a for a in manifest.get('artifacts', [])
+                       if a.get('logical_id') == logical_id and a.get('status') == 'current']
+            if len(matches) != 1:
+                raise ValueError('上游必须有唯一 current，不能回退历史：' + logical_id)
+            source = matches[0]
+            if not artifact_is_confirmed(source, state, root):
+                raise ValueError('上游 current 缺少有效确认：' + logical_id)
+            source_path = project_path(root, source.get('path_or_url', ''))
+            if not source_path.is_file() or (source.get('checksum') and digest(source_path) != source['checksum']):
+                raise ValueError('上游文件缺失或已偏离登记字节：' + logical_id)
+            ref = payload.get(named.get(logical_id, ''))
+            if ref is not None:
+                if not isinstance(ref, dict) or ref.get('revision') != source.get('revision'):
+                    raise ValueError('来源修订与 current 上游不一致：' + logical_id)
+                if any(key in ref and ref[key] != source.get(key) for key in ('artifact_id', 'logical_id')):
+                    raise ValueError('来源身份与 current 上游不一致：' + logical_id)
+                if ref.get('path') and project_path(root, ref['path']) != source_path:
+                    raise ValueError('来源路径与 current 上游不一致：' + logical_id)
+            visit(source)
+        visiting.remove(ident)
+        checked.add(ident)
+    visit(entry)

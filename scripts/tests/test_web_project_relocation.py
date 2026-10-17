@@ -53,11 +53,13 @@ def test_project_copy_keeps_json_confirmations_and_web_request_version(tmp_path,
     for stage in ('white_model', 'storyboard'):
         values[stage] = {'project_id': 'SYNTHETIC', 'revision': 'R01', 'files': [
             {'path': preview, 'sha256': media[preview]['sha256']} ]}
+    for stage in ('director', 'assets'):
+        values[stage]['source_narrative'].update(artifact_id='SYNTH-SCRIPT', logical_id='narrative.package', path=source_path('script.json', absolute))
     entries = []
     for stage, value in values.items():
         path = before / (stage + '.json')
         path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8')
-        entries.append({'artifact_id': 'SYNTH-' + stage.upper(), 'logical_id': 'synthetic.' + stage,
+        entries.append({'artifact_id': 'SYNTH-' + stage.upper(), 'logical_id': {'script': 'narrative.package', 'director': 'storyboard.package'}.get(stage, 'synthetic.' + stage),
                         'revision': 'R01', 'status': 'current', 'user_approved': True,
                         'path_or_url': source_path(path.name, absolute),
                         'checksum': hashlib.sha256(path.read_bytes()).hexdigest()})

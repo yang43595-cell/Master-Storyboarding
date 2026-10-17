@@ -17,6 +17,7 @@
     "change_summary",
     "open_questions"
   ],
+  "dependentRequired": {"dialogue_evidence_path": ["dialogue_evidence_sha256"], "dialogue_evidence_sha256": ["dialogue_evidence_path"]},
   "additionalProperties": false,
   "properties": {
     "schema_version": {
@@ -37,6 +38,12 @@
         "superseded",
         "rejected"
       ]
+    },
+    "dialogue_evidence_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "dialogue_evidence_path": {
+      "type": "string",
+      "minLength": 1,
+      "description": "显式绑定单份对白审核记录；新来源核对使用，历史无此字段保持原校验。"
     },
     "human_readable_path": {
       "type": "string",

@@ -503,7 +503,7 @@ def test_manifest_invalidation_preserves_planner_repair_handoff(tmp_path):
         ("BOARD", "storyboard.package", ["narrative.package", "visual.assets"]),
     ]:
         path = project / (artifact_id + ".json")
-        path.write_text(artifact_id, encoding="utf-8")
+        path.write_text(json.dumps({"artifact_id": artifact_id}), encoding="utf-8")
         manifest["artifacts"].append({"artifact_id": artifact_id, "logical_id": logical_id,
             "status": "current", "user_approved": True, "path_or_url": path.name,
             "revision": "R01", "type": "json", "depends_on": dependencies, "checksum": cli.digest(path)})
@@ -879,7 +879,7 @@ def test_handoff_revision_receipt_relative_path_and_hash(tmp_path, invalid):
     project = _project(tmp_path)
     artifact = project / "03_director" / "R03.json"
     artifact.parent.mkdir()
-    artifact.write_text("confirmed", encoding="utf-8")
+    artifact.write_text(json.dumps({"status": "confirmed"}), encoding="utf-8")
     checksum = cli.digest(artifact)
     entry = {"artifact_id": "ART-R03", "logical_id": "storyboard.package",
              "type": "storyboard.package", "revision": "R03", "status": "current",

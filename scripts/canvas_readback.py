@@ -43,10 +43,10 @@ def validate_submission(frozen: dict, project: Path) -> dict:
     """
     import math
     try:
-        from .core.artifacts import load_manifest, artifact_is_confirmed, project_path, digest as file_digest
+        from .core.artifacts import load_manifest, artifact_is_confirmed, project_path, digest as file_digest, validate_current_dependencies
         from .core.project_state import load_project_state
     except ImportError:
-        from core.artifacts import load_manifest, artifact_is_confirmed, project_path, digest as file_digest
+        from core.artifacts import load_manifest, artifact_is_confirmed, project_path, digest as file_digest, validate_current_dependencies
         from core.project_state import load_project_state
     project = project.resolve()
     manifest, state = load_manifest(project), load_project_state(project)
@@ -66,6 +66,7 @@ def validate_submission(frozen: dict, project: Path) -> dict:
         if (not path.is_file() or path.stat().st_size == 0 or not item.get('checksum')
                 or item['checksum'] != ref.get('sha256') or file_digest(path) != ref['sha256']):
             raise ValueError('reference file/hash differs from current confirmed artifact')
+        validate_current_dependencies(item, manifest, state, project)
         return path
     sources = frozen.get('source_artifacts')
     if not isinstance(sources, list) or not sources:

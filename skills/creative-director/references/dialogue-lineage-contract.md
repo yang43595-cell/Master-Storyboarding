@@ -2,6 +2,14 @@
 
 ## 送审前检查与确认范围
 
+原始来源核对使用同一份 JSON 审核记录：`sources[]` 逐项保存 `source_id`、`kind`（`subtitle_verbatim` 或 `asr_hypothesis`）、逐字 `text`、`evidence_path`、`evidence_sha256`、`locator` 与 `producer`（实际记录者或准确模型版本）。字幕按原帧逐字记录，不凭 ASR 或常识纠错；ASR 用 `text_pointer`（原输出 JSON Pointer）绑定原始字段，保留各模型差异。字幕记录的字节绑定不证明抄录正确，仍须回看原帧；两模型一致不等于人工听核。
+
+`dialogues[]` 沿用稳定 `dialogue_id`、`text`、`source_ids`。解释修订单列 `editorial_proposal` 的 `original_text`、`proposed_text`、`reason`、`source_ids`，不回写来源；实际核对后才记录 `verification` 的 `scope: dialogue`、`dialogue_id`、准确 `text`、`method`（`human_listening` 或 `user_confirmation`）、`reference` 和 `reviewer`。这些是可追溯声明，不是程序证明人声、身份或批准真实。只忽略标点空白比较字词，数字和近义字不自动转换。
+
+运行 `python -m scripts.core.story_sources --project <项目> --dialogue-review <审核记录>`，返回差异与未核行，不凭检查通过登记确认。新任务形成完整稿时以 `dialogue_evidence_path` 与 `dialogue_evidence_sha256` 绑定这份记录的准确字节，现有 `--narrative` 校验会核对行序、原文及未核状态；历史未绑定记录的包沿原校验，不声称已补足来源核对，也不复制一份同义业务稿。
+
+`source_locator` 的 `start/end` 仅用于找原片位置，ASR 时码默认属于此类；不得当导演精确对白时间。仅实际逐句对齐后记录 `verified_timing` 的 `start/end`、`verification_ref`、`reviewer`，且该行已有上述核对记录。没有已核时码不阻挡无精确时间承诺的故事创作；下游不得把定位时间自动升格。程序只检查显式数值与声明，不能听辨、判断转场或自动验证对齐准确性。
+
 对白先行核对属于完整叙事包形成前的审核步骤，可先在对话核对；仅对白核对不运行完整叙事包校验，故事尚未产出时来源 STP 可空，不为校验提前制造段落或事件。需持久保存时只保留一份必要的 JSON 审核记录，注明对白范围与阶段未完成，不登记为 narrative.package，不另维护同义 Markdown；该记录不是 schema 2.0 完整交付包。收到实际对白范围确认后才完成故事、补齐真实 STP，并执行下述完整稿校验；对白确认不扩展为整稿确认。
 
 新业务稿以 JSON 保存全部故事与对白，送审前运行 `python -m scripts.core.story_sources --project <项目> --narrative <叙事包>`；不要求 Markdown。以下表格解析及旧送审命令只用于历史双文件输入，不要求新流程复刻。
