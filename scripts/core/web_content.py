@@ -13,6 +13,8 @@ from .artifacts import project_path
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / 'references/web-contract-v78'
 HASH = re.compile(r'^[a-f0-9]{64}$')
+# Existing website FeedbackRequest.id (pinned content-contract.ts), not a new ID format.
+FEEDBACK_ID = re.compile(r'[A-Za-z0-9_-]{8,100}')
 
 
 class WebContentError(ValueError):
@@ -242,10 +244,14 @@ def effective_feedback(response: dict, *, scope: str, case_id: str, stage: str, 
         if state.get(key) != expected:
             raise WebContentError('当前网页反馈身份不匹配：' + key)
     feedback = state.get('currentFeedback')
-    other = response.get('currentFeedback')
-    if other is not None and feedback != other:
+    if 'currentFeedback' in response and feedback != response['currentFeedback']:
         raise WebContentError('currentState 与 currentFeedback 不一致')
     if feedback is not None:
+        if not isinstance(feedback, dict):
+            raise WebContentError('当前反馈回执必须是对象')
+        ident = feedback.get('id')
+        if not isinstance(ident, str) or not FEEDBACK_ID.fullmatch(ident):
+            raise WebContentError('当前反馈回执 id 不符合网页 FeedbackRequest 契约')
         for key, expected in [('scope',scope),('caseId',case_id),('stage',stage),('version',version)]:
             if feedback.get(key) != expected:
                 raise WebContentError('反馈不属于本次准确版本：' + key)
