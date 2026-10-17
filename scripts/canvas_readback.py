@@ -303,9 +303,16 @@ def main() -> int:
     parser.add_argument('--readback', type=Path)
     parser.add_argument('--project', type=Path)
     parser.add_argument('--preflight', action='store_true', help='只读核对现有交付 JSON，无远端操作')
+    parser.add_argument('--delivery', action='store_true',
+                        help='正式交付：强制当前项目与修订核验；不替代人工动作自查或生成授权')
     args = parser.parse_args()
     try:
         frozen = json.loads(args.frozen.read_text(encoding='utf-8'))
+        if args.delivery:
+            if args.project is None:
+                raise ValueError('--delivery requires --project; legacy comparison is not delivery validation')
+            if not isinstance(frozen.get('revision'), str) or not frozen['revision'].strip():
+                raise ValueError('--delivery requires exact submission revision')
         if args.preflight:
             if args.project is None:
                 parser.error('--preflight requires --project')

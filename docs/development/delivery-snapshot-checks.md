@@ -20,9 +20,13 @@
 ## 操作与采用
 
 ```sh
-python scripts/canvas_readback.py --project <隔离项目> --frozen <本修订JSON> --preflight
-python scripts/canvas_readback.py --project <隔离项目> --frozen <本修订JSON> --readback <实际刷新后读数JSON>
+python scripts/canvas_readback.py --delivery --project <隔离项目> --frozen <本修订JSON> --preflight
+python scripts/canvas_readback.py --delivery --project <隔离项目> --frozen <本修订JSON> --readback <实际刷新后读数JSON>
 ```
+
+`--delivery` 是每次新画布交付的明确调用模式，要求准确项目和非空修订，继续复用当前来源、引用及原生回读校验。它不是后台拦截器：绕过此入口的外部操作不会自动获得检查。历史只读比较可不带该开关，但缺项目/修订的历史结果不能替代正式交付。缺 manifest 或真实确认时如实报告，不自动补审批。
+
+中断时没有完整刷新回读就未完成交付核验，先只读核实已保存部分，不自动重试写入/生成。重复运行这两条命令只读且重新核验当前来源；源版本、字节、引用或正文改变后必须重跑，不能复用先前 PASS。动作语义仍执行视频方法的同次自查，不将技术通过写为人工已看图。
 
 第二条命令只比较读数，不执行网页操作。读取者必须真实刷新并读取原生编辑器；输出含本修订、frozen_sha256、实际读数摘要及各项差异。没有实际读取时不可填造通过。
 

@@ -144,3 +144,77 @@ def test_delivery_pass_must_match_snapshot_and_current_registered_inputs(tmp_pat
     (tmp_path / 'frame.png').write_bytes(b'changed-reference')
     with pytest.raises(rc.RevisionControlError, match='参考检查失败'):
         rc.confirm_candidate(tmp_path, change_id='DELIVERY', approval_ref='fixture:user')
+
+
+def delivery_cli(root, *extra):
+    import sys
+    return subprocess.run([sys.executable, '-m', 'scripts.canvas_readback',
+        '--frozen', str(root / 'frozen.json'), *extra], capture_output=True, text=True)
+
+
+def test_explicit_delivery_cli_rechecks_after_interrupt_repeat_and_source_change(tmp_path):
+    frozen, observed = delivery(tmp_path)
+    write_json(tmp_path / 'frozen.json', frozen)
+    write_json(tmp_path / 'observed.json', observed)
+    args = ['--delivery', '--project', str(tmp_path)]
+    assert delivery_cli(tmp_path, *args, '--preflight').returncode == 0
+    # A completed preflight cannot turn an interrupted write into readback proof.
+    assert delivery_cli(tmp_path, *args).returncode != 0
+    args += ['--readback', str(tmp_path / 'observed.json')]
+    before = {str(p.relative_to(tmp_path)): p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}
+    first, repeated = delivery_cli(tmp_path, *args), delivery_cli(tmp_path, *args)
+    assert first.returncode == repeated.returncode == 0
+    assert first.stdout == repeated.stdout
+    assert before == {str(p.relative_to(tmp_path)): p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}
+    # Unchanged candidate/readback and prior PASS do not freeze authority.
+    (tmp_path / 'director.json').write_text('{"fixture":"new revision bytes"}')
+    assert delivery_cli(tmp_path, *args).returncode != 0
+
+
+@pytest.mark.parametrize('missing', ['project', 'revision', 'manifest'])
+def test_explicit_delivery_never_falls_back_to_legacy(tmp_path, missing):
+    frozen, observed = delivery(tmp_path)
+    args = ['--delivery', '--readback', str(tmp_path / 'observed.json')]
+    if missing != 'project': args += ['--project', str(tmp_path)]
+    if missing == 'revision':
+        frozen.pop('revision'); observed['frozen_sha256'] = digest(frozen)
+    if missing == 'manifest': (tmp_path / artifacts.MANIFEST_PATH).unlink()
+    write_json(tmp_path / 'frozen.json', frozen); write_json(tmp_path / 'observed.json', observed)
+    result = delivery_cli(tmp_path, *args)
+    assert result.returncode != 0
+    assert 'unrecognized arguments' not in result.stderr
+
+
+def test_legacy_comparison_stays_read_only_and_unchecked(tmp_path):
+    from scripts.tests.test_canvas_readback import sample
+    frozen, observed = sample()
+    write_json(tmp_path / 'frozen.json', frozen); write_json(tmp_path / 'observed.json', observed)
+    result = delivery_cli(tmp_path, '--readback', str(tmp_path / 'observed.json'))
+    assert result.returncode == 0
+    assert json.loads(result.stdout)['submission_checks'] == 'not_checked'
+
+
+def test_workflow_links_action_selfcheck_and_explicit_delivery():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    skill = (root / 'skills/voiceover-to-video-script/SKILL.md').read_text()
+    method = (root / 'skills/voiceover-to-video-script/modules/video-method.md').read_text()
+    contract = (root / 'skills/voiceover-to-video-script/references/seedance-delivery-package.md').read_text()
+    docs = (root / 'docs/development/delivery-snapshot-checks.md').read_text()
+    # Configuration reachability only, never an automated semantic judgment.
+    assert '动作链自查' in skill and '动作链自查' in method
+    assert all(s in method for s in ['未检查', '发现问题', '已人工看图', '放回', '相邻两段'])
+    assert '--delivery' in contract and docs.count('--delivery') >= 2
+
+
+def test_delivery_source_revision_changes_after_preflight(tmp_path):
+    frozen, observed = delivery(tmp_path)
+    write_json(tmp_path / 'frozen.json', frozen); write_json(tmp_path / 'observed.json', observed)
+    args = ['--delivery', '--project', str(tmp_path)]
+    assert delivery_cli(tmp_path, *args, '--preflight').returncode == 0
+    manifest = artifacts.load_manifest(tmp_path)
+    next(a for a in manifest['artifacts'] if a['artifact_id'] == 'DIRECTOR')['revision'] = 'R02'
+    write_json(tmp_path / artifacts.MANIFEST_PATH, manifest)
+    result = delivery_cli(tmp_path, *args, '--readback', str(tmp_path / 'observed.json'))
+    assert result.returncode != 0
+    assert 'revision' in result.stdout
