@@ -32,5 +32,15 @@
     ],
     "combinedPatchBase": "5d2e1c451c6e428f92f50788d75939a37b39fec7",
     "libraryRepairArchiveIsInitialVersionOnly": true
+  },
+  "localBackendValidation": {
+    "sourceCommit": "bad04fd827c67b5288448166ffab68a18c3ed029",
+    "test": "tests/persistent-review.cjs",
+    "report": "local-persistence-report.json",
+    "checks": 14,
+    "processes": 4,
+    "storage": "actual local Miniflare D1 SQLite and R2 persisted across restarts",
+    "productCodeChanged": false,
+    "externalProjectAdapterExecuted": false
   }
 }

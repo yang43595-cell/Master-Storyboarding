@@ -1,11 +1,12 @@
 {
-  "fileCountExcludingScanAndInventory": 29,
+  "fileCountExcludingScanAndInventory": 32,
   "credentialPatterns": "No private keys, provider token shapes, JWTs, populated auth secrets or signed transfer URLs detected.",
   "emailIdentifiers": [
     "codex@openai.com"
   ],
   "excluded": "No .git, node_modules, builds/caches, media, credentials, live snapshots, real approvals or customer inputs. Manifest contains source paths/hashes only.",
   "hydrationFollowup": "Only real Case05 registry identity is reused; added package content and status HTTP responses are isolated synthetic fixtures. No fabricated verified flag.",
-  "manualReview": "Patch additions, metadata, README and local logs reviewed.",
-  "limitations": "Pattern scan does not guarantee detection of all possible secrets."
+  "manualReview": "Reviewed synthetic fixture and route harness, report, README changes, source evidence hashes and test log. Pattern scan does not guarantee absence of all secrets.",
+  "limitations": "Pattern scan does not guarantee detection of all possible secrets.",
+  "localBackendFollowup": "Only synthetic local D1/R2 fixture script and sanitized summaries; no database, R2 blob, worker bundle, private media, credentials or real feedback included. All local state stays in execution environment."
 }

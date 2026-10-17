@@ -1,0 +1,34 @@
+LOCAL_ONLY_STATE <isolated-local-run>
+PASS seed: brand-new real local D1 has zero review rows
+PASS seed: upload real synthetic PNG through actual media route into local R2
+PASS seed: publish synthetic JSON and upload private synthetic reference through actual multipart route
+PASS seed: save review then fresh GET and MCP return same exact version/receipt/target/reference
+PASS seed: unauthenticated, foreign principal and cross-origin cannot read/write this synthetic receipt
+{"phase":"seed","passed":5,"outboundRequests":0}
+PASS restart: fresh Node/workerd process recovers exact D1 review and R2 media/reference bytes
+PASS restart: identical retry is idempotent, conflicting same ID returns409 without rewriting receipt
+PASS restart: old approval cannot masquerade as a new-version receipt; historical feedback stays on its hash
+PASS restart: local QA review never leaks through live project MCP reader
+{"phase":"restart","passed":4,"outboundRequests":0}
+PASS concurrency: two actual concurrent publishers: one new head, one409, no head overwrite
+PASS concurrency: concurrent approval has one201 and one409; subsequent changes dominate, idempotent old retry does not restore approval
+PASS concurrency: concurrent same-ID feedback retries create one row and consistent receipts
+PASS concurrency: new script source marks persisted assets stale in both feedback and project reads; stale approval denied
+{"phase":"concurrency","passed":4,"outboundRequests":0}
+PASS final-restart: second full process restart retains final head, review decision and project read agreement
+{"phase":"final-restart","passed":1,"outboundRequests":0}
+{
+  "passed": true,
+  "engine": "installed Miniflare/workerd local D1 + local R2",
+  "independentNodeProcesses": 4,
+  "stateDirectory": "<isolated-local-run>",
+  "storageFiles": 14,
+  "sourceCommit": "bad04fd827c67b5288448166ffab68a18c3ed029",
+  "outboundRequests": 0,
+  "scope": "synthetic live and qa namespaces in a NEW LOCAL database only; never a production request",
+  "limits": [
+    "Local emulation is not remote Cloudflare persistence or Sites authorization",
+    "MCP website read contract validated; external project adapter not executed",
+    "No browser or production media playback tested"
+  ]
+}

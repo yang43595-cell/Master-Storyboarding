@@ -58,3 +58,20 @@ npm run verify
 - 未部署、未推送 Sites 源仓库、未改 D1/R2、未提交线上表单、未改变可见性或配置 CI。
 
 此分支是待审核补丁交付。没有合并 main，也没有改主流程审计分支。
+
+
+## 独立真实本地存储集成
+
+`tests/persistent-review.cjs` 使用已有依赖中的 Miniflare/workerd 启动全新、仅 loopback 的本地 Worker。薄路由只转发到实际 content/content-feedback/content-media/review-attachments/MCP 路由，未替换 D1、R2 或业务存储函数。所有外部 fetch 均阻断；不读取生产 wrangler 配置、真实登录信息或远端数据库。
+
+本次 14 项检查在四个独立 Node/workerd 进程中通过。D1 使用 Miniflare 的实际 SQLite 持久化文件，R2 使用其本地持久化对象存储；关闭并重启进程后重新读取审核回执、内容图片和参考图原字节，验证 SHA256、range 和 MCP 图片读取。它比原内存 R2 替身验证更进一步，但不是远端 Cloudflare/Sites 验收。
+
+覆盖新审核保存与刷新、currentState/currentFeedback 与 MCP read_case_reviews 一致、同 ID 重试/冲突、两并发发布 CAS、并发审批只生成一条、审批后的修改意见不被旧回执覆盖、历史审批不继承到新版本、QA/主体隔离以及来源更新后的 stale 拒批。通用 content GET 的默认 pending 不作为审批证据。局部身份仅为本地合成 header，未创建凭据，不能证明 Sites 平台登录策略。
+
+```sh
+node "$PATCH_DIR/tests/persistent-review.cjs"   --source "$RESTORED/site-source"   --output /absolute/writable/isolated-test-results
+```
+
+先按前文恢复源码并应用完整修复，安装原锁文件依赖；需要 Node >=22.13、可运行 workerd 的主机和可写本地目录。无需部署、远程账号或网络隧道。每次执行创建新的隔离目录，内部 `live` 只是本地命名空间，用于验证 MCP 正式读取契约，绝非生产写入；测试数据全部为合成内容。该脚本不纳入原 38 套自动门禁，须明确手动执行，缺运行能力时报告失败，不能换成内存 mock 宣称通过。
+
+`local-persistence-report.json` 和 `logs/local-persistence.log` 为本轮结果。数据库、R2 对象、Worker bundle 和状态文件只留执行器，没有提交。外部项目程序的适配器尚未实际执行，本轮只证明网站现有 MCP 读取接口一致；浏览器实际保存/生产媒体播放仍需分别验收。没有发现需要修改的产品源码，原源码 HEAD 仍为 bad04fd。

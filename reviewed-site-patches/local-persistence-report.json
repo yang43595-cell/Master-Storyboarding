@@ -1,0 +1,53 @@
+{
+  "passed": true,
+  "engine": "installed Miniflare/workerd local D1 + local R2",
+  "independentNodeProcesses": 4,
+  "stateDirectory": "retained only in execution environment; not uploaded",
+  "storageFiles": 14,
+  "sourceCommit": "bad04fd827c67b5288448166ffab68a18c3ed029",
+  "outboundRequests": 0,
+  "scope": "synthetic live and qa namespaces in a NEW LOCAL database only; never a production request",
+  "limits": [
+    "Local emulation is not remote Cloudflare persistence or Sites authorization",
+    "MCP website read contract validated; external project adapter not executed",
+    "No browser or production media playback tested"
+  ],
+  "phaseResults": [
+    {
+      "phase": "seed",
+      "passed": 5,
+      "outboundRequests": 0
+    },
+    {
+      "phase": "restart",
+      "passed": 4,
+      "outboundRequests": 0
+    },
+    {
+      "phase": "concurrency",
+      "passed": 4,
+      "outboundRequests": 0
+    },
+    {
+      "phase": "final-restart",
+      "passed": 1,
+      "outboundRequests": 0
+    }
+  ],
+  "passedChecks": 14,
+  "nodeVersion": "v24.19.0",
+  "versions": {
+    "miniflare": "4.20260515.0",
+    "wrangler": "4.92.0",
+    "esbuild": "0.28.0"
+  },
+  "harnessSHA256": "a430eaed00548b7c6c05442f68ab30209b7829318db83d00d79eb8d015eaf6b1",
+  "sourceFilesSHA256": {
+    "lib/content-store.ts": "a103775ea5990f599e20176ef6171e7b3488475dbc72aad3bedcb00789321697",
+    "lib/content-contract.ts": "ffab2539dbe6f06daefd6fa297d6b60b404303dcc6edcda00bdb6f4da9336dae",
+    "lib/review-access.ts": "071bdb974eca879e86461f32adf1af67bbfd0fb5add250fb88541723a83ea2fe",
+    "lib/review-attachments.ts": "d2f08cb0eeee1d9dc3e5701ea3009474b16df0fd0e2b5b5afbe2fb476b795ead",
+    "app/mcp/route.ts": "fabd9a382a73f6d1592664c730df0f71b354a5e3271f412a72fa6e427f0fffe7",
+    "package-lock.json": "eedaeab6870c0f70f9db869fcaa24abae9b0f945cbc9acb8a43b6e7ed6bcbfca"
+  }
+}
