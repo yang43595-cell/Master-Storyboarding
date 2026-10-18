@@ -6,6 +6,22 @@
 
 `dialogues[]` 沿用稳定 `dialogue_id`、`text`、`source_ids`。解释修订单列 `editorial_proposal` 的 `original_text`、`proposed_text`、`reason`、`source_ids`，不回写来源；实际核对后才记录 `verification` 的 `scope: dialogue`、`dialogue_id`、准确 `text`、`method`（`human_listening` 或 `user_confirmation`）、`reference` 和 `reviewer`。这些是可追溯声明，不是程序证明人声、身份或批准真实。只忽略标点空白比较字词，数字和近义字不自动转换。
 
+### 原片、作者新增与授权修订
+
+完整创作对白表不只收原片句子。仍用同一审核 JSON 的 `dialogues[]`、稳定 DLG 和现有 `verification`，不另维护作者稿/测试稿。行级可选 `origin.kind`：
+
+- `source_reproduction`：原片复刻，必须引用非空 `source_ids` 的真实字幕/ASR，原文字节及疑点检查不变；显式标此类别不能同时放改编 `editorial_proposal`。
+- `authored_addition`：没有原片对应句的作者新增（也包括用户直接给出的新句）。`source_ids: []`，`origin` 同时记录 `reference`（真实创作要求/用户消息引用）、`scope`（允许创作范围）、`author`、`purpose`、`revision`（创作修订）。不得编造原片来源、`editorial_proposal.original_text`、`source_locator` 或 `verified_timing`。
+- `authorized_revision`：有原片对应句的授权修订/改编。`origin` 记录上述五项，`reference/scope` 指向真实授权及范围；复用 `editorial_proposal` 的原文→拟改文、理由、`source_ids`，保留原始来源。与听辨纠错区分，不把新措辞说成原片音轨。
+
+缺 `origin` 的旧行继续原来源规则和已有解释修订入口，不自动豁免。新增/改编的创作依据不等于逐字批准：未实际核对仍无 `verification`；实际逐字确认才用 `method: user_confirmation`，不允许 `human_listening` 或原片已核时码。程序只检查声明字段，不能验证消息真实、授权范围语义或产品客观功效；广告说法仍须对照真实产品资料，缺依据留未决，不以作者身份补证。
+
+原片保真任务混入上述新来源时，以可选 `source_baseline: {"path": "已有原始抽取审核.json", "sha256": "原记录准确hash"}` 绑定已保留的抽取稿，不从当前创作稿倒抄基线、不增加平行业务稿或基线链。校验完整保留其原始 `sources`，再从当前完整表投影原片 DLG，比对 ID、来源、字词与顺序；作者新增不能复用原片 ID。基线本身仍可能有听辨/人物错误，绑定字节不是核对确认。纯原创任务不需要原片基线；旧记录缺此字段兼容，但报告 `source_fidelity_checked: false`，不得宣称已自动证明原片无遗漏或换序。
+
+原片改字走上述 `authorized_revision` + `editorial_proposal`。删除/换序只在同一记录可选 `source_changes[]` 留精确映射：`action: delete` + `dialogue_id`，或 `action: reorder` + 完整剩余原片 `dialogue_ids` 顺序；每项带真实授权 `reference`、`scope`、`reason`，不删除原始证据。缺授权不通过，空引用/布尔“已授权”不通过；引用真实性仍须执行者核对。
+
+审核表与叙事、正文依然全量全序一致；所有新增行同样要真实人物/STP、唯一 DLG、下游对白承载。测试态仅沿已存在的 `candidate_test` 允许未核候选推进，继续 `unreviewed` / `production_blocked`；正常生产仍须真实逐字核对及产物确认。不得移除新任务的 `dialogue_evidence_path/sha256` 伪装历史包；程序拒绝残缺绑定，但为历史兼容，完全移除两字段尚不能自动识别。不要把这项兼容缺口或自由文本内容审核说成技术封闭。
+
 运行 `python -m scripts.core.story_sources --project <项目> --dialogue-review <审核记录>`，返回差异与未核行，不凭检查通过登记确认。新任务形成完整稿时以 `dialogue_evidence_path` 与 `dialogue_evidence_sha256` 绑定这份记录的准确字节，现有 `--narrative` 校验会核对行序、原文及未核状态；历史未绑定记录的包沿原校验，不声称已补足来源核对，也不复制一份同义业务稿。
 
 `source_locator` 的 `start/end` 仅用于找原片位置，ASR 时码默认属于此类；不得当导演精确对白时间。仅实际逐句对齐后记录 `verified_timing` 的 `start/end`、`verification_ref`、`reviewer`，且该行已有上述核对记录。没有已核时码不阻挡无精确时间承诺的故事创作；下游不得把定位时间自动升格。程序只检查显式数值与声明，不能听辨、判断转场或自动验证对齐准确性。

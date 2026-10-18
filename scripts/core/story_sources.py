@@ -17,6 +17,90 @@ def _dialogue_comparison_text(text):
     return ''.join(c for c in text if not c.isspace() and not unicodedata.category(c).startswith('P'))
 
 
+def _origin(row):
+    """Origin is provenance, never an approval or audio verification."""
+    value = row.get('origin')
+    if 'origin' not in row:
+        return 'source_reproduction'
+    if not isinstance(value, dict) or value.get('kind') not in {
+            'source_reproduction', 'authored_addition', 'authorized_revision'}:
+        raise ValueError('对白 origin 类型无效')
+    kind = value['kind']
+    if kind != 'source_reproduction':
+        for key in ('reference', 'scope', 'author', 'purpose', 'revision'):
+            if not isinstance(value.get(key), str) or not value[key].strip():
+                raise ValueError('创作来源须有真实请求/授权引用、范围、作者、用途和修订')
+    return kind
+
+
+def _validate_source_projection(record, root):
+    """Optional fidelity binding to an existing extraction, not another script."""
+    import hashlib
+    binding = record.get('source_baseline')
+    changes = record.get('source_changes', [])
+    if not isinstance(changes, list):
+        raise ValueError('source_changes 须为授权变更数组')
+    if binding is None:
+        if changes:
+            raise ValueError('source_changes 需要原始抽取基线')
+        return False
+    if (not isinstance(binding, dict) or set(binding) != {'path', 'sha256'}
+            or any(not isinstance(binding[k], str) or not binding[k].strip() for k in binding)):
+        raise ValueError('原片基线须绑定已有审核记录 path/sha256')
+    path = project_path(root, binding['path'])
+    if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != binding['sha256']:
+        raise ValueError('原片基线文件缺失或字节改变')
+    baseline = json.loads(path.read_text(encoding='utf-8-sig'))
+    if not isinstance(baseline, dict) or baseline.get('source_baseline') is not None:
+        raise ValueError('原片基线须直接引用原始抽取，不建立基线链')
+    validate_dialogue_review(baseline, root)
+    if any(_origin(row) != 'source_reproduction' for row in baseline['dialogues']):
+        raise ValueError('原片基线不能包含作者新增或授权改编')
+    originals = {row['dialogue_id']: row for row in baseline['dialogues']}
+    sources = {source['source_id']: source for source in record['sources']}
+    if any(sources.get(source['source_id']) != source for source in baseline['sources']):
+        raise ValueError('原片基线的原始证据必须完整保留')
+    deleted, reordered = set(), None
+    for change in changes:
+        if (not isinstance(change, dict) or any(not isinstance(change.get(k), str)
+                or not change[k].strip() for k in ('reference', 'scope', 'reason'))):
+            raise ValueError('原片变更须有真实授权引用、范围和理由')
+        if change.get('action') == 'delete':
+            ident = change.get('dialogue_id')
+            if not isinstance(ident, str) or ident not in originals or ident in deleted:
+                raise ValueError('删除授权须准确绑定唯一原片 DLG')
+            deleted.add(ident)
+        elif change.get('action') == 'reorder' and reordered is None:
+            reordered = change.get('dialogue_ids')
+            if not isinstance(reordered, list) or any(not isinstance(x, str) for x in reordered):
+                raise ValueError('换序授权须列完整原片 DLG 顺序')
+        else:
+            raise ValueError('不支持或重复的原片变更；改文复用 editorial_proposal')
+    projection = []
+    for row in record['dialogues']:
+        ident, kind = row['dialogue_id'], _origin(row)
+        if kind == 'authored_addition':
+            if ident in originals:
+                raise ValueError('作者新增不能覆盖原片 DLG')
+            continue
+        original = originals.get(ident)
+        if original is None or row['source_ids'] != original['source_ids']:
+            raise ValueError('原片行须映射原始 DLG 及来源')
+        if kind == 'source_reproduction' and row['text'] != original['text']:
+            raise ValueError('原片复刻不得改字')
+        if kind == 'authorized_revision' and row['editorial_proposal']['original_text'] != original['text']:
+            raise ValueError('授权修订须准确映射基线原句')
+        projection.append(ident)
+    expected = [ident for ident in originals if ident not in deleted]
+    if reordered is not None:
+        if len(reordered) != len(expected) or set(reordered) != set(expected):
+            raise ValueError('换序授权不能遗漏、重复或添加原片 DLG')
+        expected = reordered
+    if projection != expected:
+        raise ValueError('原片投影存在未授权删除、换序或重复')
+    return True
+
+
 def validate_dialogue_review(record, project_root):
     """Check declared evidence and provenance, not pixels, sound or human approval."""
     import hashlib
@@ -66,15 +150,21 @@ def validate_dialogue_review(record, project_root):
         if not isinstance(ident, str) or not re.fullmatch(r'DLG-[A-Z0-9-]+', ident) or ident in ids:
             raise ValueError('对白 ID 无效或重复')
         ids.add(ident)
+        kind = _origin(row)
         refs = row.get('source_ids')
-        if (not isinstance(refs, list) or not refs or any(not isinstance(x, str) or x not in sources for x in refs)
+        if (not isinstance(refs, list) or (not refs and kind != 'authored_addition') or any(not isinstance(x, str) or x not in sources for x in refs)
                 or len(set(refs)) != len(refs) or not isinstance(row.get('text'), str) or not row['text']):
             raise ValueError('对白缺少精确原始证据引用或文字：' + ident)
+        if kind == 'authored_addition' and (refs or row.get('editorial_proposal') is not None
+                or row.get('source_locator') is not None or row.get('verified_timing') is not None):
+            raise ValueError('作者新增不得伪造原片来源、原文修订或时码：' + ident)
+        if row.get('origin') is not None and kind == 'source_reproduction' and row.get('editorial_proposal') is not None:
+            raise ValueError('明确原片复刻不能混入修订；使用 authorized_revision')
         originals = [sources[x]['text'] for x in refs]
         if len({_dialogue_comparison_text(t) for t in originals}) > 1:
             conflicts.append(ident)
         proposal = row.get('editorial_proposal')
-        if row['text'] not in originals or proposal is not None:
+        if kind != 'authored_addition' and (row['text'] not in originals or proposal is not None or kind == 'authorized_revision'):
             if (not isinstance(proposal, dict) or proposal.get('proposed_text') != row['text']
                     or proposal.get('original_text') not in originals
                     or not isinstance(proposal.get('reason'), str) or not proposal['reason'].strip()
@@ -83,6 +173,9 @@ def validate_dialogue_review(record, project_root):
                     or proposal['original_text'] not in [sources[x]['text'] for x in proposal['source_ids']]):
                 raise ValueError('解释修订须绑定原文、拟改原句、理由与本行证据：' + ident)
         resolution = row.get('verification')
+        if kind != 'source_reproduction' and (row.get('verified_timing') is not None
+                or (isinstance(resolution, dict) and resolution.get('method') != 'user_confirmation')):
+            raise ValueError('创作/改编只能独立逐字用户确认，不能冒充听核或原片已核时码：' + ident)
         if resolution is not None:
             if (not isinstance(resolution, dict) or resolution.get('scope') != 'dialogue'
                     or resolution.get('dialogue_id') != ident or resolution.get('text') != row['text']
@@ -103,9 +196,11 @@ def validate_dialogue_review(record, project_root):
                 if not resolution or any(not isinstance(timing.get(k), str) or not timing[k].strip() for k in ('verification_ref', 'reviewer')):
                     raise ValueError('已核时码需要本行核对及独立对齐依据：' + ident)
                 verified_times.append(ident)
+    fidelity_checked = _validate_source_projection(record, project_root)
     return {'verification': 'source_consistency_only', 'conflicts': conflicts,
+            'source_fidelity_checked': fidelity_checked,
             'unresolved_ids': unresolved, 'verified_timing_ids': verified_times,
-            'limits': 'Hashes and declared provenance do not prove subtitle transcription, listening, identity or approval authenticity.'}
+            'limits': 'Hashes and declared provenance do not prove subtitle transcription, listening, identity, product claims or approval authenticity. Missing source_baseline cannot prove source completeness/order.'}
 
 
 def read_dialogue_table(path: Path) -> list[tuple[str, str, str, str]]:
@@ -231,7 +326,7 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
             raise ValueError("候选测试需要显式隔离项目状态")
         if narrative.get("status") != "candidate" or (storyboard is not None and storyboard.get("status") != "candidate"):
             raise ValueError("候选测试只消费 candidate 业务稿")
-        test_report = {**result_metadata(), "unresolved_dialogue_ids": []}
+        test_report = {**result_metadata(), "unresolved_dialogue_ids": [], "source_fidelity_checked": False}
     require_schema(narrative, 'narrative-package.schema.json', label='编导包')
     if narrative.get('schema_version') != '2.0':
         raise ValueError('新段落引用要求编导包 2.0；旧事件包须按原稿重新整理，不能自动换编号')
@@ -244,6 +339,8 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
             raise ValueError('对白审核记录已偏离绑定字节')
         evidence = json.loads(evidence_path.read_text(encoding='utf-8-sig'))
         report = validate_dialogue_review(evidence, project_root)
+        if test_report is not None:
+            test_report['source_fidelity_checked'] = report['source_fidelity_checked']
         if report['unresolved_ids']:
             if test_report is None:
                 raise ValueError('完整叙事包仍有未核对白证据：' + ', '.join(report['unresolved_ids']))
