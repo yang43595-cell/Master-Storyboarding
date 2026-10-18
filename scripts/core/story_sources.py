@@ -223,7 +223,15 @@ def read_story_paragraphs(path: Path) -> list[dict[str, str]]:
     return result
 
 
-def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, project_root: Path | None = None) -> None:
+def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, project_root: Path | None = None, candidate_test: bool = False) -> dict | None:
+    test_report = None
+    if candidate_test:
+        from .candidate_test import context, result_metadata
+        if project_root is None or not context(project_root):
+            raise ValueError("候选测试需要显式隔离项目状态")
+        if narrative.get("status") != "candidate" or (storyboard is not None and storyboard.get("status") != "candidate"):
+            raise ValueError("候选测试只消费 candidate 业务稿")
+        test_report = {**result_metadata(), "unresolved_dialogue_ids": []}
     require_schema(narrative, 'narrative-package.schema.json', label='编导包')
     if narrative.get('schema_version') != '2.0':
         raise ValueError('新段落引用要求编导包 2.0；旧事件包须按原稿重新整理，不能自动换编号')
@@ -237,7 +245,9 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
         evidence = json.loads(evidence_path.read_text(encoding='utf-8-sig'))
         report = validate_dialogue_review(evidence, project_root)
         if report['unresolved_ids']:
-            raise ValueError('完整叙事包仍有未核对白证据：' + ', '.join(report['unresolved_ids']))
+            if test_report is None:
+                raise ValueError('完整叙事包仍有未核对白证据：' + ', '.join(report['unresolved_ids']))
+            test_report['unresolved_dialogue_ids'] = report['unresolved_ids']
         if [(r['dialogue_id'], r['text']) for r in evidence['dialogues']] != [(r['dialogue_id'], r['text']) for r in narrative['dialogues']]:
             raise ValueError('叙事包与对白审核记录的 ID、原文或顺序不一致')
     paragraphs = narrative['story_paragraphs']
@@ -264,7 +274,7 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
         if not set(requirement['source_paragraph_ids']).issubset(by_id):
             raise ValueError('资产引用不存在的故事段落：' + requirement['asset_id'])
     if storyboard is None:
-        return
+        return test_report
     require_schema(storyboard, 'storyboard-package.schema.json', label='导演包')
     if storyboard.get('schema_version') not in {'3.0', '4.0'}:
         raise ValueError('段落引用要求导演包 4.0（3.0 仅历史兼容）')
@@ -366,6 +376,7 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
     for gap in storyboard['asset_gaps']:
         if not set(gap['source_paragraph_ids']).issubset(all_ids):
             raise ValueError('缺口引用未知段落')
+    return test_report
 
 
 def validate_asset_decisions(path: Path) -> None:
@@ -524,8 +535,11 @@ def main():
     parser.add_argument('--storyboard', type=Path)
     parser.add_argument('--strict-assets', action='store_true',
                         help='把“引用了已取消／已拆分的资产”也当作错误（默认只告警）')
+    parser.add_argument('--candidate-test', action='store_true', help='仅隔离候选试跑；保留未核对白并报告生产阻塞')
     parser.add_argument('--project', type=Path, required=True)
     args = parser.parse_args()
+    if args.candidate_test and (not args.narrative or args.reading_supplement):
+        parser.error("--candidate-test 仅用于 narrative/storyboard 完整候选校验")
     if args.dialogue_review:
         if args.storyboard or args.export_markdown or args.reading_supplement or args.dialogue_baseline:
             parser.error('--dialogue-review 不接受完整叙事包参数')
@@ -554,7 +568,9 @@ def main():
         print(json.dumps(reading_supplement(narrative, args.project), ensure_ascii=False, indent=2))
         return
     storyboard = json.loads(args.storyboard.read_text(encoding='utf-8-sig')) if args.storyboard else None
-    validate_story_sources(narrative, storyboard, project_root=args.project)
+    report = validate_story_sources(narrative, storyboard, project_root=args.project, candidate_test=args.candidate_test)
+    if report is not None:
+        print(json.dumps(report, ensure_ascii=False))
     if args.export_markdown:
         export_markdown(storyboard or narrative, args.export_markdown)
     print('故事原文与引用一致；此检查不代表语义完整或用户确认。')

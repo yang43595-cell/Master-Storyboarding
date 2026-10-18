@@ -14,6 +14,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Any
 
 try:
+    from .core.candidate_test import context as test_context, configure as configure_test, resolve_inputs as test_inputs, result_metadata as test_metadata, require_production
     from .core.artifacts import artifact_is_confirmed, project_path, digest, validate_current_dependencies
     from .core.io import write_text, write_text_if_changed
     from .core.knowledge_blocks import build_knowledge_index, load_policy, parse_knowledge_blocks
@@ -24,6 +25,7 @@ try:
     from .core.review_delta import fingerprint, revision_delta, lightweight_revision
     from .session_usage import measure, measure_boundaries, check_budget
 except ImportError:  # direct CLI execution
+    from core.candidate_test import context as test_context, configure as configure_test, resolve_inputs as test_inputs, result_metadata as test_metadata, require_production
     from core.artifacts import artifact_is_confirmed, project_path, digest, validate_current_dependencies
     from core.io import write_text, write_text_if_changed
     from core.knowledge_blocks import build_knowledge_index, load_policy, parse_knowledge_blocks
@@ -69,6 +71,22 @@ def _state(project: Path) -> dict[str, Any]:
         return load_project_state(project)
     except (OSError, ValueError) as exc:
         raise StageContextError(f"无法读取项目状态：{exc}") from exc
+
+
+def _test_request(args, project):
+    testing = test_context(project)
+    explicit = bool(getattr(args, "candidate_test", False))
+    if bool(testing) != explicit:
+        raise StageContextError("隔离测试须配置 candidate-test 并显式传 --candidate-test；生产入口不消费测试稿")
+    if not testing:
+        require_production(project)
+    return testing
+
+
+def _selected_inputs(project, state):
+    if test_context(project):
+        return state, test_inputs(project)
+    return _confirmed_project_inputs(project, state)
 
 
 def _state_summary(raw: dict[str, Any]) -> dict[str, Any]:
@@ -234,9 +252,15 @@ def _current_handoff_text(project: Path, target_skill: str) -> str:
         rf"  - {field}：`([^`\n]*)`" for field in fields[1:]
     )
     records = re.findall(pattern, text)
-    _, inputs = _confirmed_project_inputs(project, _state(project))
+    _, inputs = _selected_inputs(project, _state(project))
+    if bool(test_context(project)) != ("execution_mode: candidate_test" in text):
+        raise StageContextError("交接卡运行模式与项目不一致；重新 handoff")
     expected = [tuple(str(item.get(field, "")) for field in fields[:-1])
                 + (str(project_path(project, item["path_or_url"])),) for item in inputs]
+    if test_context(project):
+        hashes = re.findall(r"(?m)^  - candidate_sha256：`([a-f0-9]{64})`$", text)
+        if hashes != [digest(project_path(project, item["path_or_url"])) for item in inputs]:
+            raise StageContextError("候选交接来源字节已改变；重新核对并 handoff")
     if sorted(records) != sorted(expected):
         raise StageContextError("已有交接卡的产物、版本或路径已过期；先按当前确认输入重新运行 handoff。")
     return text
@@ -472,7 +496,8 @@ def _input_snapshot(project: Path, inputs: dict[str, Any], state: dict[str, Any]
     manifest = _read_json(project / "00_项目管理/artifact_manifest.json", default={})
     if not isinstance(manifest, dict) or not isinstance(manifest.get("artifacts", []), list):
         raise StageContextError("artifact_manifest.json 无效")
-    selected = list(state.get("current_artifacts") or [])
+    testing = test_context(project)
+    selected = list(testing["input_artifact_ids"] if testing else (state.get("current_artifacts") or []))
     def collect_ids(value: Any, key: str = "") -> None:
         if isinstance(value, dict):
             for name, child in value.items():
@@ -500,7 +525,10 @@ def _input_snapshot(project: Path, inputs: dict[str, Any], state: dict[str, Any]
             selected.append(entry.get("artifact_id"))
     records = []
     if selected:
-        _, records = _confirmed_project_inputs(project, {**state, "current_artifacts": selected})
+        if testing:
+            records = test_inputs(project, selected)
+        else:
+            _, records = _confirmed_project_inputs(project, {**state, "current_artifacts": selected})
     selected_set = set(selected)
     def relevant(receipt: Any) -> bool:
         if not isinstance(receipt, dict):
@@ -513,7 +541,8 @@ def _input_snapshot(project: Path, inputs: dict[str, Any], state: dict[str, Any]
         return not referenced or bool(referenced & selected_set)
     return {
         "sources": [fingerprint(path) for path in sources],
-        "selected_artifact_ids": list(state.get("current_artifacts") or []),
+        "selected_artifact_ids": list(testing["input_artifact_ids"] if testing else (state.get("current_artifacts") or [])),
+        **({"candidate_test": testing} if testing else {}),
         "artifacts": [{"record": {k: v for k, v in item.items() if k not in {"updated_at", "created_at"}},
                        "file": fingerprint(project_path(project, item["path_or_url"])),
                        "confirmation_byte_binding": "recorded" if item.get("checksum") else "legacy_unhashed"}
@@ -807,7 +836,10 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
             raise StageContextError(f"无法读取请求 JSON：{request_path}: {exc}") from exc
     if not isinstance(request, dict):
         raise StageContextError("request JSON 必须是对象")
+    testing = _test_request(args, project)
     delivery_contract = _delivery_contract(request)
+    if testing and (delivery_contract["delivery_object"] == "submission" or request.get("generation_authorized")):
+        raise StageContextError("候选测试只允许 plan/prompt，不允许生成提交")
     raw_state = _state(project)
     summary = _state_summary(raw_state)
     handoff_text = _current_handoff_text(project, args.skill)
@@ -911,11 +943,14 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "reading_manifest": reading_manifest,
         "revision": revision,
     }
+    if testing:
+        task_basis.update(test_metadata())
     task_basis['reading_reuse_key'] = _reading_reuse_key(project, task_basis, request, raw_state, handoff_text)
     content = "\n".join([
         "# 阶段启动包", "",
         f"- Skill：`{args.skill}`",
         f"- 目标：{objective}",
+        *(["- execution_mode: candidate_test；review_status: unreviewed；production_blocked: true。仅候选文本/结构试跑，不生成、不发布、不正式采用。"] if testing else []),
         f"- 本轮唯一任务依据：`{_task_basis_path(project)}`（机器完整记录；通过 ensure-prepared --show-task-basis 读取目标、输入与冻结验收项，不整份打印后台目录）",
         f"- 交付意图：`{json.dumps(delivery_contract, ensure_ascii=False)}`；按本轮交付对象及适用检查项审核。",
         f"- 根规则：`{ROOT / 'PROJECT_RULES.md'}`",
@@ -968,6 +1003,8 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     report["pending_method_count"] = len(methods.pending)
     report["optional_experience_count"] = len(optional_experience)
     report["method_reading_bytes"] = len(base_packet.encode("utf-8"))
+    if testing:
+        report.update(test_metadata())
     if usage is not None:
         report["run_usage"] = usage
     return report
@@ -980,7 +1017,13 @@ def handoff(args: argparse.Namespace) -> dict[str, Any]:
     target_skill = str(args.to_skill or "").strip()
     if not target_skill:
         raise StageContextError("handoff 必须提供非空 --to-skill")
-    state, inputs = _confirmed_handoff_inputs(project, target_skill)
+    testing = _test_request(args, project)
+    if testing:
+        state, inputs = _selected_inputs(project, _state(project))
+        if state.get("next_stage") and state["next_stage"] != target_skill:
+            raise StageContextError("目标 Skill 与项目下一阶段不一致")
+    else:
+        state, inputs = _confirmed_handoff_inputs(project, target_skill)
     current_stage = str(state.get("current_stage") or "")
     if not current_stage:
         raise StageContextError("项目当前阶段为空，不能生成交接卡")
@@ -988,8 +1031,8 @@ def handoff(args: argparse.Namespace) -> dict[str, Any]:
         "# 下一阶段交接卡", "",
         f"- 来源阶段：`{current_stage}`",
         f"- 目标 Skill：`{target_skill}`",
-        "- 交接状态：上游候选已审核通过且已获用户确认；本卡不启动、路由或批准下一阶段。", "",
-        "## 当前有效上游产物", "",
+        ("- execution_mode: candidate_test；review_status: unreviewed；production_blocked: true。只试写，不生成、不发布、不采用。" if testing else "- 交接状态：上游候选已审核通过且已获用户确认；本卡不启动、路由或批准下一阶段。"), "",
+        ("## 本轮未确认候选输入" if testing else "## 当前有效上游产物"), "",
     ]
     for item in inputs:
         lines.extend([
@@ -998,6 +1041,7 @@ def handoff(args: argparse.Namespace) -> dict[str, Any]:
             f"  - revision：`{item.get('revision', '')}`",
             f"  - type：`{item.get('type', '')}`",
             f"  - path：`{project_path(project, item['path_or_url'])}`",
+            *([f"  - candidate_sha256：`{digest(project_path(project, item['path_or_url']))}`"] if testing else []),
         ])
     startup_requirement = (
         "- `voiceover-to-video-script` 直接按其 Skill 的原始资料读取例外建立本段输入范围；不生成或校验 stage_startup.md。"
@@ -1006,9 +1050,9 @@ def handoff(args: argparse.Namespace) -> dict[str, Any]:
     )
     lines.extend([
         "", "## 接收约束", "",
-        startup_requirement,
+        ("- 仅按独立测试授权继续候选试写；保留所有未核对事实和素材阻塞。视频 Skill 仍直接读取，不重建准备包。" if testing else startup_requirement),
         "- 默认在当前对话完成制作、自查和修正；仅用户明确要求独立审核或明确委派时才交接，并核对执行仓库与当前规则。",
-        "- 只消费以上已确认产物及其稳定 ID；不得读取旧生产对话或未列入启动包的历史内容。",
+        ("- 只消费以上未确认候选及准确稳定 ID；不得读取旧案例答案，不得写入确认记录。" if testing else "- 只消费以上已确认产物及其稳定 ID；不得读取旧生产对话或未列入启动包的历史内容。"),
         "- 本交接不等于下一阶段已启动，也不替代下一阶段的输入门禁。", "",
     ])
     output = _handoff_path(project)
@@ -1018,12 +1062,15 @@ def handoff(args: argparse.Namespace) -> dict[str, Any]:
     report["from_stage"] = current_stage
     report["to_skill"] = target_skill
     report["artifact_ids"] = [item["artifact_id"] for item in inputs]
+    if testing:
+        report.update(test_metadata())
     return report
 
 
 def review_pack(args: argparse.Namespace) -> dict[str, Any]:
     _require_preparation_skill(args.skill)
     project = Path(args.project).expanduser().resolve()
+    require_production(project)
     review_kind = getattr(args, "review_kind", "production")
     if review_kind not in {"production", "skill_contract"}:
         raise StageContextError(f"未知审核类型：{review_kind}")
@@ -1305,6 +1352,16 @@ def _ensure_prepared_base(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def ensure_prepared(args: argparse.Namespace) -> dict[str, Any]:
+    project = Path(args.project).expanduser().resolve()
+    testing = _test_request(args, project)
+    result = _ensure_prepared(args)
+    if testing:
+        result.update(test_metadata())
+        result["candidate_checks_passed"] = result.get("ok") is True
+    return result
+
+
+def _ensure_prepared(args: argparse.Namespace) -> dict[str, Any]:
     usage = _check_run_budget(args)
     result = _ensure_prepared_base(args)
     project = Path(args.project).expanduser().resolve()
@@ -1428,6 +1485,11 @@ def record_candidate_reading(args: argparse.Namespace) -> dict[str, Any]:
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(description=__doc__)
     commands = root.add_subparsers(dest="command", required=True)
+    testing = commands.add_parser("candidate-test", help="显式配置独立候选试跑；绝不登记用户产物确认")
+    testing.add_argument("--project", required=True)
+    testing.add_argument("--run-id", required=True)
+    testing.add_argument("--authorization-ref", required=True)
+    testing.add_argument("--input-artifact", action="append", default=[])
     start = commands.add_parser("prepare")
     start.add_argument("--project", required=True)
     start.add_argument("--skill", required=True)
@@ -1449,6 +1511,7 @@ def parser() -> argparse.ArgumentParser:
     gate.add_argument("--required-rule", action="append", default=[], help="本任务必需的动态规则 ID，可重复")
     gate.add_argument("--required-reference", action="append", default=[], help="本任务必需的本地规范，仓库相对路径，可重复")
     for command in (start, gate):
+        command.add_argument("--candidate-test", action="store_true", help="仅隔离候选试跑；不构成生产放行")
         command.add_argument("--usage-log", action="append", help="本次 Codex 原始日志，可重复提供窗口分片")
         command.add_argument("--usage-turn-id", help="准确的本轮 turn_id；不以文件名代替边界")
         command.add_argument("--usage-boundaries-json", help="显式累计边界 JSON；不自动发现宿主历史")
@@ -1492,6 +1555,7 @@ def parser() -> argparse.ArgumentParser:
         review.add_argument(option, **kwargs)
     review.add_argument("--usage-boundaries-json", help="显式累计边界 JSON；与单轮参数二选一")
     handoff_cmd = commands.add_parser("handoff")
+    handoff_cmd.add_argument("--candidate-test", action="store_true")
     handoff_cmd.add_argument("--project", required=True)
     handoff_cmd.add_argument("--to-skill", required=True)
     check = commands.add_parser("validate")
@@ -1502,7 +1566,9 @@ def parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
-    if args.command == "prepare":
+    if args.command == "candidate-test":
+        result = configure_test(Path(args.project), args.run_id, args.authorization_ref, args.input_artifact)
+    elif args.command == "prepare":
         result = prepare(args)
     elif args.command == "ensure-prepared":
         result = ensure_prepared(args)

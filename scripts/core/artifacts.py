@@ -122,6 +122,12 @@ def register_workspace_artifact(project_root: Path, artifact: dict[str, Any]) ->
     if any(item.get("artifact_id") == artifact.get("artifact_id") for item in manifest.get("artifacts", [])):
         raise ValueError(f"产物已存在：{artifact.get('artifact_id')}")
     entry = dict(artifact)
+    from .candidate_test import context
+    testing = context(project_root)
+    if testing:
+        if entry.get("status", "candidate") != "candidate" or entry.get("user_approved", False) is not False:
+            raise ValueError("候选测试不能登记正式产物")
+        entry.update(candidate_test=testing["run_id"], review_status="unreviewed", production_blocked=True)
     entry.setdefault("status", "candidate")
     entry.setdefault("revision", "")
     entry.setdefault("depends_on", [])
@@ -162,6 +168,8 @@ def mark_impacted_artifacts_stale(
 
 def promote_candidate(project_root: Path, logical_id: str, artifact_id: str) -> PromotionReport:
     """确认新候选产物：新版本设 current，同一 logical_id 的旧版本变 superseded。"""
+    from .candidate_test import require_production
+    require_production(project_root)
     manifest = load_manifest(project_root)
     new_item = next((item for item in manifest.get("artifacts", []) if item.get("artifact_id") == artifact_id), None)
     if new_item is None:
@@ -261,6 +269,8 @@ def _whole_artifact_receipt(receipt):
 
 
 def artifact_is_confirmed(entry, state, root=None):
+    if entry.get('candidate_test') or state.get('candidate_test'):
+        return False
     if entry.get('status') != 'current' or entry.get('user_approved') is not True:
         return False
     artifact_id = entry.get('artifact_id')

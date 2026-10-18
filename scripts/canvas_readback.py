@@ -45,10 +45,13 @@ def validate_submission(frozen: dict, project: Path) -> dict:
     try:
         from .core.artifacts import load_manifest, artifact_is_confirmed, project_path, digest as file_digest, validate_current_dependencies
         from .core.project_state import load_project_state
+        from .core.candidate_test import require_production
     except ImportError:
         from core.artifacts import load_manifest, artifact_is_confirmed, project_path, digest as file_digest, validate_current_dependencies
         from core.project_state import load_project_state
+        from core.candidate_test import require_production
     project = project.resolve()
+    require_production(project)
     manifest, state = load_manifest(project), load_project_state(project)
     rows_by_id(frozen['drafts'])
     if not isinstance(frozen.get('revision'), str) or not frozen['revision'].strip():

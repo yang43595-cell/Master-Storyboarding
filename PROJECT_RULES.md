@@ -75,6 +75,22 @@
 - 用户明确要求独立审核时，才按 [审核方法](skills/stage-reviewer/modules/review-method.md) 向独立审核者交当前候选、准确来源和验收范围；返修仍由当前执行者完成，必要复审回原审核者。此时文件是交接事实源，只传路径、未决 ID、实际改动及直接影响，不传完整对话或全部历史。
 - 用户确认、付费或提交的明确授权，以及不覆盖已确认产物的边界仍然生效；只有用户确认并明确要求继续后，才在授权范围内准备交接或进入下一阶段。
 
+## 独立候选链路试跑
+
+仅在用户明确要求独立盲测、从头跑候选流程时适用：测试执行授权不等于对白核对、产物审核、正式采用或生成授权。只在独立项目目录试写故事、导演、资产制作说明与视频提示词，全部保持 `candidate` / `unreviewed`，不得读取旧案例答案。此处允许未确认候选进入下一候选阶段，是对白先核对和生产阶段只读确认输入规则的测试例外，不改变正常生产门禁。
+
+复用同一业务 JSON 与稳定 ID，不另建测试稿格式。对白保留真实来源证据和未核状态，疑点、缺图与假设写现有未决字段；不制造 verification、locked、confirmed_outputs、user_confirmations 或 current。结构与来源一致性检查继续执行，未知事实、错字节、错引用不能用测试模式掩盖。未生成图片时只能验资产需求及提示词链，不能宣称视觉效果或成片已经验证。
+
+本轮运行在现有 `project_state.json` 保存 `candidate_test`，现有 manifest 中候选标记 `unreviewed` 和生产阻塞。以下命令只记录用户已给出的测试授权引用，不自行取得授权；输入 ID 每次列全本阶段实际用到的准确候选及其依赖，不按最新文件猜选：
+
+- 配置或更新输入：`python scripts/stage_context_cli.py candidate-test --project <独立项目> --run-id <本轮ID> --authorization-ref <用户原话或消息引用> [--input-artifact <准确候选ID> ...]`
+- 普通候选仍用 `artifacts.register_workspace_artifact` 登记；不登记确认 checksum。测试标记由登记入口继承，不写入 current_artifacts。
+- `prepare`、`ensure-prepared`、`handoff` 额外传 `--candidate-test`。检查 `ok` 只表示本次候选结构/准备检查通过；结果始终含 `production_blocked: true`。专业方法读取不豁免。
+- 故事与导演检查：`python -m scripts.core.story_sources --project <独立项目> --narrative <候选JSON> [--storyboard <候选JSON>] --candidate-test`。未核对白列在结果中；去掉测试参数仍按生产规则阻塞。
+- 视频沿现有直接读取和候选试写入口，读取本轮测试上下文与准确候选，不启用退役 prepare/production_plan。资产网页仍不接受候选项目；本轮在本职 Skill 写候选需求和制作说明，不导入正式资产库。
+
+禁止正式采用、图片/视频生成、发布及其他外部提交。已接线的产物 promote、修订确认/commit、付费授权、canvas 提交前检查及项目关联图片生成入口会拒绝测试项目；移除状态开关不清除 manifest 的测试标记。直接浏览器、独立提供商 CLI 及脱离项目身份的工具并未形成统一技术沙箱，执行者不得调用，不宣称全部出口已被程序封闭。进入正常生产须重新建立真实确认与合法输入，不能删标记自动晋升测试稿。
+
 ## 项目目录按生产流程排列
 
 新项目由 `scripts/init_desktop_project.py` 创建下列目录。各 Skill 交付写入对应目录，产物清单中的路径相对项目根目录；读取以登记路径为准。

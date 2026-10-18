@@ -526,6 +526,8 @@ def confirm_candidate(
 ) -> dict[str, Any]:
     if not approval_ref.strip():
         raise RevisionControlError("候选确认必须提供 approval_ref")
+    from .candidate_test import require_production
+    require_production(project)
     project = project.resolve()
     with file_lock(project / LOCK_RELATIVE):
         control = _load_control(project)
@@ -589,6 +591,8 @@ def record_scoped_confirmation(
             **(scoped_ids or {}),
         },
     )
+    from .candidate_test import require_production
+    require_production(project)
     project = project.resolve()
     with file_lock(project / LOCK_RELATIVE):
         control = _load_control(project)
@@ -604,6 +608,8 @@ def record_scoped_confirmation(
 
 
 def commit_change(project: Path, *, change_id: str) -> dict[str, Any]:
+    from .candidate_test import require_production
+    require_production(project)
     project = project.resolve()
     with file_lock(project / LOCK_RELATIVE):
         control = _load_control(project)
@@ -682,6 +688,8 @@ def record_paid_approval(
     # 项目，删除会被当成缺陷重新提，接线会打断资产与导演规划的并行流程。
     if not approval_ref.strip() or quantity <= 0:
         raise RevisionControlError("付费授权需要 approval_ref 和正数量")
+    from .candidate_test import require_production
+    require_production(project)
     project = project.resolve()
     with file_lock(project / LOCK_RELATIVE):
         control = _load_control(project)
@@ -712,6 +720,9 @@ def guard_action(
     paid_action_id: str | None = None,
 ) -> dict[str, Any]:
     """Fail closed when a requested action touches a frozen branch."""
+    if paid_action_id:
+        from .candidate_test import require_production
+        require_production(project)
     project = project.resolve()
     control = _load_control(project)
     active = control.get("active_change")

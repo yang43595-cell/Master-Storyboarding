@@ -1316,6 +1316,9 @@ class Library:
     def submit(self, p):
         with self.lock:
             job = self.operation_job(p['id'], p.get('project_id', _UNSCOPED_PROJECT))
+            if job.get('project_id'):
+                from core.candidate_test import require_production
+                require_production(Path(self.projects.get(job['project_id'])['path']))
             index = int(p['index'])
             step = job['steps'][index]
             if job['provider'] != 'dreamina' or p.get('authorize') is not True:
@@ -1460,6 +1463,9 @@ class Library:
     def submit_imagegen(self, p):
         with self.lock:
             job = self.operation_job(p['id'], p.get('project_id', _UNSCOPED_PROJECT))
+            if job.get('project_id'):
+                from core.candidate_test import require_production
+                require_production(Path(self.projects.get(job['project_id'])['path']))
             index = int(p['index'])
             self.step_request(job, index)
             step = job['steps'][index]

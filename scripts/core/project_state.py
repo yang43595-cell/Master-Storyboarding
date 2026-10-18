@@ -51,9 +51,13 @@ def normalize_project_state(value: dict[str, Any]) -> dict[str, Any]:
         for key in STATE_KEYS:
             if key in value:
                 state[key] = value[key]
+        if "candidate_test" in value:
+            state["candidate_test"] = value["candidate_test"]
         state["current_artifacts"] = _artifact_ids(state["current_artifacts"], legacy=True)
         return state
     state = new_project_state(current_stage=str(value.get("current_stage") or value.get("active_stage") or ""))
+    if "candidate_test" in value:
+        state["candidate_test"] = value["candidate_test"]
     state["current_artifacts"] = _artifact_ids(
         value["current_artifacts"] if "current_artifacts" in value else value.get("active_artifact_ids", []),
         legacy=True,
@@ -78,10 +82,13 @@ def load_project_state(project_root: Path) -> dict[str, Any]:
 
 
 def validate_project_state(state: dict[str, Any]) -> None:
-    if set(state) != set(STATE_KEYS):
+    if set(state) - {"candidate_test"} != set(STATE_KEYS):
         extra = sorted(set(state) - set(STATE_KEYS))
         missing = sorted(set(STATE_KEYS) - set(state))
         raise ValueError(f"project_state 字段不符合最小契约：extra={extra}, missing={missing}")
+    if "candidate_test" in state:
+        from .candidate_test import validate_context
+        validate_context(state["candidate_test"], state)
     if state.get("schema_version") != SCHEMA_VERSION:
         raise ValueError(f"schema_version 必须为 {SCHEMA_VERSION}")
     if not isinstance(state.get("current_stage"), str):
@@ -114,6 +121,8 @@ def render_project_state_markdown(state: dict[str, Any]) -> str:
         f"- 已接受问题：{len(state['accepted_issues'])}",
         f"- 下一阶段：{state['next_stage'] or '未设置'}",
     ]
+    if state.get("candidate_test"):
+        lines.append("- 独立候选试跑：unreviewed；禁止生成、发布与正式采用")
     final_edit = next((receipt for receipt in reversed(state["user_confirmations"])
                        if isinstance(receipt, dict)
                        and receipt.get("kind") == "final-edit-confirmation"
