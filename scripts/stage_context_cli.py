@@ -1040,6 +1040,8 @@ def handoff(args: argparse.Namespace) -> dict[str, Any]:
             f"  - logical_id：`{item.get('logical_id', '')}`",
             f"  - revision：`{item.get('revision', '')}`",
             f"  - type：`{item.get('type', '')}`",
+            *([f"  - business_status：`{item['business_status']}`；return_upstream：{json.dumps(item['return_upstream'], ensure_ascii=False)}"]
+              if testing and "business_status" in item else []),
             f"  - path：`{project_path(project, item['path_or_url'])}`",
             *([f"  - candidate_sha256：`{digest(project_path(project, item['path_or_url']))}`"] if testing else []),
         ])

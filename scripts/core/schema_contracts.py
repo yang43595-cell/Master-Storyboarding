@@ -79,3 +79,30 @@ def validate_prompt_intent(value: Any) -> None:
 
 def validate_revision_evidence(value: Any) -> None:
     require_schema(value, "revision-evidence.schema.json", label="revision evidence")
+
+
+def validate_visual_supplement_request(value: Any, *, project_root=None, candidate_test=False) -> dict:
+    """One contract-specific test exception; the cached production schema stays strict."""
+    from .candidate_test import context, require_production, result_metadata
+    name = "visual-supplement-request.schema.json"
+    if candidate_test:
+        if project_root is None or not context(project_root):
+            raise SchemaContractError("补图候选校验需要显式隔离测试项目")
+        from copy import deepcopy
+        validator = _validator(name)
+        schema = deepcopy(validator.schema)
+        schema["$defs"]["storyboardRef"]["properties"]["status"] = {"const": "candidate"}
+        # These are business outcomes, independent of manifest adoption identity.
+        schema["properties"]["status"] = {"enum": ["candidate", "blocked", "not_needed"]}
+        errors = list(type(validator)(schema).iter_errors(value))
+        if errors:
+            raise SchemaContractError("补图候选不符合合同：" + "; ".join(
+                f"{'.'.join(str(p) for p in error.absolute_path) or '$'}: {error.message}" for error in errors))
+    else:
+        if project_root is not None:
+            require_production(project_root)
+        require_schema(value, name, label="视觉补充请求")
+    result = {"schema_valid": True, "business_status": value["status"], "decision": value["decision"]}
+    if candidate_test:
+        result.update(result_metadata())
+    return result

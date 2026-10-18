@@ -112,7 +112,13 @@ def resolve_inputs(project, ids=None):
         payload = json.loads(path.read_text(encoding="utf-8-sig")) if path.suffix.lower() == '.json' else {}
         if not isinstance(payload, dict):
             raise ValueError("候选 JSON 须为对象")
-        if "status" in payload and payload["status"] != "candidate":
+        if item.get("type") == "visual-supplement-request":
+            from .schema_contracts import validate_visual_supplement_request
+            report = validate_visual_supplement_request(payload, project_root=project, candidate_test=True)
+            # Return diagnostics, never mutate manifest status or the business JSON.
+            item = {**item, "business_status": report["business_status"],
+                    "return_upstream": payload["return_upstream"]}
+        elif "status" in payload and payload["status"] != "candidate":
             raise ValueError("测试候选正文不可宣称确认：" + str(ident))
         if "revision" in payload and payload["revision"] != item.get("revision"):
             raise ValueError("候选正文 revision 与登记不一致")

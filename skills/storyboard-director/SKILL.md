@@ -19,6 +19,8 @@ description: 在导演稿和资产图确认后、视频提示词之前，检查�
 - 先以本轮镜头关联的 AST 和明确 output ID 取得最小参考集合；同一有效上下文且同一用途可复用已完成的视觉结论。新执行者、新 Web 调用或结论未覆盖当前状态时没有可复用的“已看图”，必须实际查看需要判断的确认输出；登记与路径核对不代替此步骤。
 - 检查输入至少包含：确认导演包 revision、本轮镜头及对应确认资产、动作参考和产品实拍。检查后登记目标状态、出现/禁止/保留项、参考覆盖和决策；只有 request_supplement 必须填写缺口证据及最大生成数量。reuse_existing 用 existing_references.coverage 说明覆盖依据，return_upstream 用 return_upstream.reason 说明上游问题，不虚构缺口。
 - 用 `visual-supplement-request.json` 按 schema 登记判断。现有材料足够时记录 `reuse_existing`，最大图片数为 0，并直接复用；真正缺图时才记录 `request_supplement`。
+- 独立候选试跑仅按 PROJECT_RULES 的现有测试授权例外执行。补图请求调用 `scripts.core.schema_contracts.validate_visual_supplement_request(value, project_root=项目路径, candidate_test=True)`，须有有效隔离项目状态；默认不传测试参数或直接校验原 schema 仍要求已确认导演。测试来源如实写 `source_storyboard.status: candidate`，不伪写 confirmed。请求登记 `type: visual-supplement-request`，manifest 的采用身份继续 candidate/unreviewed；正文保留实际业务结果：补图草案 candidate、复用 not_needed、退回 blocked。不能为消费者改成假 candidate；return_upstream 仍须有真实原因且 max_images=0。候选消费者复核此合同及准确来源，交接卡带业务状态和退回原因。schema_valid 只证明结构，不说明已确认、已解决或可生成；blocked 应返回指定上游处理。其他合同不获得此状态例外，不生成、不采用、不发布。
+
 - 用户为本镜选择白模时，读取 `blender-previs handoff-reference` 产出的 `reference-handoff.json`，核对确切镜号、目标状态、覆盖、局限与确认记录；失效则返回白模步骤，不自行重建。未选择白模不新增门禁。白模只约束空间构图、承托、站位及相机路径，身份/服装/场景外观仍使用其列明的确认母图，不继承代理颜色材质或精细姿态；静态起幅图不当作完整运镜或表演证据。本 Skill 不运行 Blender。
 
 ## 对话选图
