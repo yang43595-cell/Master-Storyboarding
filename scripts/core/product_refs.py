@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .asset_refs import current_narrative
 from .artifacts import project_path
+from .delivery_files import validate_required_files, discover_dependencies, check_package_files, DEFAULT_MAX_PACKAGE_BYTES
 from ..visual_asset_choices import effective, read_choices
 
 
@@ -133,49 +134,35 @@ def validate_image_documents(project: Path, directory: Path) -> list[str]:
     return errors
 
 
-def validate_required_files(project: Path, files: list[str], input_roots: list[Path] = ()) -> list[str]:
-    """Read-only readiness for explicitly selected inputs, not content/approval."""
-    errors = []
-    try:
-        project = project.resolve()
-        allowed_roots = [project, *(Path(root).resolve() for root in input_roots)]
-    except (OSError, ValueError, RuntimeError) as exc:
-        return [f'输入根目录无法解析：{exc}']
-    for raw in files:
-        try:
-            if not raw.strip():
-                raise ValueError('必需文件路径不能为空')
-            path = project_path(project, raw)
-            # External absolute inputs require an explicitly allowed root.
-            # Relative inputs always stay inside this project, including symlinks.
-            absolute = Path(raw).is_absolute() or bool(re.match(r'^[A-Za-z]:[/\\]', raw))
-            if not absolute and not path.is_relative_to(project):
-                raise ValueError('相对必需文件路径越出项目')
-            if not any(path.is_relative_to(root) for root in allowed_roots):
-                raise ValueError('必需文件越出项目及显式 input-root 范围')
-            if not path.is_file() or path.stat().st_size == 0:
-                raise ValueError('必需文件缺失、不是文件或为空')
-            with path.open('rb') as stream:
-                stream.read(1)
-        except (OSError, ValueError, RuntimeError) as exc:
-            errors.append(f'{raw}: {exc}')
-    return errors
-
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--project', type=Path, required=True)
     parser.add_argument('--directory', type=Path, help='可选：检查已写文档中的产品引用')
     parser.add_argument('--require-file', action='append', default=[], help='产出前必须可读且非空的准确文件；可重复，外置绝对路径须同时声明 --input-root')
-    parser.add_argument('--input-root', type=Path, action='append', default=[], help='本轮显式选用的外部输入根目录；只检查 require-file 指定文件，不扫描根目录')
+    parser.add_argument('--input-root', type=Path, action='append', default=[], help='本轮显式选用的外部输入根目录；检查所选文件及已启用发现的可达依赖，不扫描根目录')
     parser.add_argument('--include-images', action='store_true', help='同时检查 JSON/MD/TXT 的通用图片路径')
+    parser.add_argument('--discover-dependencies', action='store_true', help='递归检查所选 JSON 结构化文件引用及 manifest 依赖；不推断自然语言')
+    parser.add_argument('--package', type=Path, action='append', default=[], help='发送前检查实际成品文件字节，可重复')
+    parser.add_argument('--max-package-bytes', type=int, default=DEFAULT_MAX_PACKAGE_BYTES, help='每包严格小于该字节数，默认19000000')
     args = parser.parse_args()
-    if args.directory is None and not args.require_file:
-        parser.error('至少提供 --directory 或 --require-file')
+    if args.directory is None and not args.require_file and not args.package:
+        parser.error('至少提供 --directory、--require-file 或 --package')
     if args.include_images and args.directory is None:
         parser.error('--include-images 需要 --directory')
     try:
         errors = validate_required_files(args.project, args.require_file, args.input_root)
+        if args.discover_dependencies:
+            selected = list(args.require_file)
+            if args.directory is not None:
+                selected += [str(p.resolve()) for p in sorted(args.directory.rglob('*.json'))]
+            if not selected:
+                raise ValueError('--discover-dependencies requires selected files or JSON directory')
+            report = discover_dependencies(args.project, selected, args.input_root)
+            print(json.dumps(report, ensure_ascii=False))
+            errors.extend(report['errors'] + report['uncheckable'])
+        if args.package:
+            print(json.dumps({'packages': check_package_files(args.package, args.max_package_bytes)}, ensure_ascii=False))
         if args.directory is not None:
             errors.extend(validate_documents(args.project.resolve(), args.directory.resolve()))
         if args.include_images:

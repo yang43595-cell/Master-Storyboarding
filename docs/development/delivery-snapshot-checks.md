@@ -45,3 +45,11 @@ T0 等价副本仍免重复人工审稿，但确认和采用时仍重查当前�
 当前已确认的上传来源映射还检查反向一致性：同一 target_url/node_id/media_id 不得指向两份不同字节，不能通过改选矛盾登记中的另一项求通过。相同字节的合法多次复用仍允许。
 
 validate-project.ps1 的通用图片路径检查复用现有 Python product_refs 命令的 --include-images，覆盖 JSON 正文与解码后的结构字段、MD/TXT。路径含空格或 JSON 转义反斜杠时按实际值解析，迁移仍使用明确 MSB_PROJECT_PATH_MAP。Linux 已验证 Python 命令及缺图负例；本云环境没有 PowerShell，未声称执行过 Windows 包装器或迁移过 Windows111。
+
+## 依赖发现与文件包预算
+
+正式 validate_submission（包括 --delivery 的 preflight、回读和现有 revision_control 调用）递归检查本交付 JSON 可达的结构化依赖。支持 path/paths/path_or_url/file/files/localPath 及 *_path(s)/*_file(s)、reference(s)/image(s) 的已知文件扩展名、source_image/source_video/source_audio、reference_images/reference_videos、准确 artifact_id/source_artifact_id/artifact_ids/source_artifact_ids，以及 depends_on 的唯一 current logical_id（候选检查仅按本轮 input_artifact_ids 选择，保留 production_blocked/unreviewed）；相对路径始终按项目根解析，与 manifest 一致。选中文件也按准确路径反查 manifest 依赖，重复登记报歧义；JSON 循环去重，不全项目扫描，不从自由文字猜文件、不解析 Markdown 链接；空的可选 path 字段表示未选用，不制造声音/补图需求。已声明 required_reference_roles 的职责覆盖仍由原校验负责，未结构化的业务必要性仍须人工核对。
+
+外置输入只在直接读取 CLI 中通过准确 --input-root 允许；正式画布交付依赖要求位于项目内。丢失、空文件、越界、无效 JSON、manifest 缺失/歧义或远端不可核验均不返回成功。文件可读不是确认或版本证据，既有 current/revision/hash/确认检查继续执行，候选生产阻塞不改变。
+
+文件包交付在原命令追加 --package <实际成品.zip>（多包重复），可显式设置 --max-package-bytes；每包实际字节严格小于默认 19000000，成功输出实际 SHA-256。无包时不要求造包，也不声称测过包大小。生成包后发送前重跑；工具不负责创建/拆包、传输或安全解压未知归档。可单独使用 python -m scripts.core.product_refs --project <项目> --package <成品>。外部上传绕过命令不会被自动拦截。

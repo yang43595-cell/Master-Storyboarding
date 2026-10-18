@@ -46,12 +46,17 @@ def validate_submission(frozen: dict, project: Path) -> dict:
         from .core.artifacts import load_manifest, artifact_is_confirmed, project_path, digest as file_digest, validate_current_dependencies
         from .core.project_state import load_project_state
         from .core.candidate_test import require_production
+        from .core.delivery_files import discover_dependencies
     except ImportError:
         from core.artifacts import load_manifest, artifact_is_confirmed, project_path, digest as file_digest, validate_current_dependencies
         from core.project_state import load_project_state
         from core.candidate_test import require_production
+        from core.delivery_files import discover_dependencies
     project = project.resolve()
     require_production(project)
+    dependencies = discover_dependencies(project, payload=frozen)
+    if not dependencies['ok']:
+        raise ValueError('Dependency readiness failed: ' + '; '.join(dependencies['errors'] + dependencies['uncheckable']))
     manifest, state = load_manifest(project), load_project_state(project)
     rows_by_id(frozen['drafts'])
     if not isinstance(frozen.get('revision'), str) or not frozen['revision'].strip():
@@ -230,6 +235,7 @@ def validate_submission(frozen: dict, project: Path) -> dict:
             raise ValueError('event root predecessor is unknown, cyclic or belongs to another event')
         event_last[event] = row, frames
     return {'ok': True, 'revision': frozen['revision'], 'frozen_sha256': digest(frozen),
+            'dependency_checks': dependencies,
             'scope': 'current registered bytes, declared reference roles/entities, durations and continuous split boundaries',
             'limitations': 'Requires actual visual inspection of roles/states and current platform bounds; does not verify pixels, media duration metadata, remote provenance or generation authorization.'}
 
@@ -308,6 +314,8 @@ def main() -> int:
     parser.add_argument('--preflight', action='store_true', help='只读核对现有交付 JSON，无远端操作')
     parser.add_argument('--delivery', action='store_true',
                         help='正式交付：强制当前项目与修订核验；不替代人工动作自查或生成授权')
+    parser.add_argument('--package', type=Path, action='append', default=[], help='交付文件包时必传实际成品路径，可重复；严格检查实际字节')
+    parser.add_argument('--max-package-bytes', type=int, default=19_000_000, help='每包字节数必须严格小于此值')
     args = parser.parse_args()
     try:
         frozen = json.loads(args.frozen.read_text(encoding='utf-8'))
@@ -324,7 +332,13 @@ def main() -> int:
             if args.readback is None:
                 parser.error('--readback required unless --preflight')
             result = compare(frozen, json.loads(args.readback.read_text(encoding='utf-8')), args.project)
-    except (ValueError, KeyError, TypeError, OSError) as error:
+        if args.package:
+            try:
+                from .core.delivery_files import check_package_files
+            except ImportError:
+                from core.delivery_files import check_package_files
+            result['packages'] = check_package_files(args.package, args.max_package_bytes)
+    except (ValueError, KeyError, TypeError, OSError, RuntimeError) as error:
         print(json.dumps({'ok': False, 'error': str(error)}, ensure_ascii=False))
         return 2
     print(json.dumps(result, ensure_ascii=False, indent=2))
