@@ -78,6 +78,47 @@ class TrialTests(unittest.TestCase):
   result=t.finish(self.root,'A01',self.output(),{'passed':True,'notes':'Synthetic producer pass'})
   self.reject(result); self.request['attempt_id']='A02'
   t.preflight(self.root,self.request)
+ def amendment_fixture(self):
+  donor=self.base/'donor.png'; Image.new('RGB',(16,16),'green').save(donor)
+  queue=t.read(self.queue)
+  queue['items'].append(dict(queue_id='test:B',source_manifest=str(self.source),source_narrative=str(self.source),references=[dict(resolved_path=str(donor),exists=True,sha256=t.artifacts.digest(donor))]))
+  queuepath=self.base/'queue-amend.json'; t.create(queuepath,queue)
+  auth=t.read(self.auth);auth['allowed_queue_ids']=['test:A','test:B']
+  authpath=self.base/'auth-amend.json';t.create(authpath,auth)
+  root=self.base/'amend-trial';t.initialize(root,queuepath,authpath)
+  amendment=dict(amendment_id='synthetic-ref',target_queue_id='test:A',donor_queue_id='test:B',reference=t.snap(donor),visual_purpose='Visible full-body wardrobe',visual_observation='Synthetic green square inspected',authorization_ref='synthetic scope correction')
+  return root,amendment
+ def test_reference_amendment_allows_frozen_donor_without_scope_mutation(self):
+  root,amendment=self.amendment_fixture()
+  before=(root/'asset_generation_trial.json').read_bytes()
+  t.amend_reference(root,amendment)
+  req={**self.request,'reference_paths':[amendment['reference']['path']]}
+  result=t.preflight(root,req)
+  self.assertEqual(before,(root/'asset_generation_trial.json').read_bytes())
+  self.assertEqual(len(result['request']['reference_amendments']),1)
+  with self.assertRaises(ValueError): candidate_test.require_production(root)
+  with self.assertRaises(FileExistsError): t.amend_reference(root,amendment)
+ def test_reference_amendment_rejects_unbound_path_and_wrong_target(self):
+  root,amendment=self.amendment_fixture()
+  for changes in ({'reference':t.snap(self.ref)},{'target_queue_id':'unknown'},{'visual_observation':''}):
+   with self.assertRaises(ValueError): t.amend_reference(root,{**amendment,**changes})
+ def test_reference_amendment_wrong_scope_and_cross_case_rejected(self):
+  root,amendment=self.amendment_fixture()
+  record=t.amend_reference(root,amendment)
+  scope=t.read(root/'asset_generation_trial.json')
+  with self.assertRaises(ValueError): t.validate_reference_amendment(root,scope,{**record,'run_id':'other'})
+  scope['items']['test:B']['case_id']='other-case'
+  with self.assertRaises(ValueError): t.validate_reference_amendment(root,scope,record)
+ def test_reference_amendment_changed_bytes_rejected(self):
+  root,amendment=self.amendment_fixture();t.amend_reference(root,amendment)
+  Image.new('RGB',(16,16),'yellow').save(amendment['reference']['path'])
+  with self.assertRaises(ValueError): t.preflight(root,self.request)
+ def test_reference_amendment_changed_during_generation_rejected(self):
+  root,amendment=self.amendment_fixture();t.amend_reference(root,amendment)
+  t.preflight(root,{**self.request,'reference_paths':[amendment['reference']['path']]})
+  path=root/'reference-amendments/synthetic-ref.json';value=t.read(path);value['visual_purpose']='Changed purpose'
+  path.write_text(json.dumps(value))
+  with self.assertRaises(ValueError): t.finish(root,'A01',self.output(),{'passed':True,'notes':'Synthetic'})
  def test_source_change_rejected(self):
   self.source.write_text('{}')
   with self.assertRaises(ValueError): t.preflight(self.root,self.request)

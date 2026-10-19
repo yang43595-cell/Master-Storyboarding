@@ -109,6 +109,62 @@ def check_reference_reviews(root, references):
         if receipt.get('image') in references and baseline_rejected(path.parent, receipt):
             raise ValueError('Reference baseline rejected by later visual review')
 
+def validate_reference_amendment(root, scope, record):
+    """Only rebind an exact, already frozen original within the same source case."""
+    if (record.get('trial_root') != str(root) or record.get('run_id') != scope['run_id']
+            or record.get('scope_sha256') != artifacts.digest(root/'asset_generation_trial.json')):
+        raise ValueError('Reference amendment belongs to another scope')
+    target = scope['items'].get(record.get('target_queue_id'))
+    donor = scope['items'].get(record.get('donor_queue_id'))
+    if (not target or not donor or target.get('source_narrative') != donor.get('source_narrative')
+            or target.get('case_id') != donor.get('case_id')):
+        raise ValueError('Reference amendment must remain in the same frozen source case')
+    for key in ('visual_purpose', 'visual_observation', 'authorization_ref'):
+        if not isinstance(record.get(key), str) or not record[key].strip():
+            raise ValueError('Reference amendment requires actual visual review and authority evidence')
+    reference = record.get('reference')
+    if not isinstance(reference, dict) or set(reference) != {'path','sha256'}:
+        raise ValueError('Exact original reference path and hash required')
+    if not any(r.get('exists') and r.get('resolved_path')
+               and str(Path(r['resolved_path']).resolve()) == reference['path']
+               and r.get('sha256') == reference['sha256'] for r in donor.get('references', [])):
+        raise ValueError('Amendment reference is not an exact frozen donor original')
+    verify([reference])
+    with Image.open(reference['path']) as image:
+        image.verify()
+
+
+def amend_reference(root, request):
+    root, scope = root_path(root)
+    ident = token(request['amendment_id'])
+    record = {key: request.get(key) for key in
+              ('target_queue_id','donor_queue_id','reference','visual_purpose','visual_observation','authorization_ref')}
+    record.update(amendment_id=ident,trial_root=str(root),run_id=scope['run_id'],
+                  scope_sha256=artifacts.digest(root/'asset_generation_trial.json'))
+    validate_reference_amendment(root, scope, record)
+    folder = root/'reference-amendments'
+    if folder.is_symlink() or not folder.resolve().is_relative_to(root):
+        raise ValueError('Reference amendment directory escapes trial')
+    create(folder/(ident+'.json'), record)
+    return record
+
+
+def amended_references(root, scope, queue_id):
+    references, evidence = {}, []
+    folder = root/'reference-amendments'
+    if folder.is_symlink():
+        raise ValueError('Reference amendment directory must not be a symlink')
+    for path in sorted(folder.glob('*.json')):
+        if path.is_symlink():
+            raise ValueError('Reference amendment must not be a symlink')
+        record = read(path)
+        validate_reference_amendment(root, scope, record)
+        if record['target_queue_id'] == queue_id:
+            reference = record['reference']
+            references[reference['path']] = reference['sha256']
+            evidence.append(snap(path))
+    return references, evidence
+
 def preflight(root, request):
     root, scope = root_path(root)
     ident = token(request['attempt_id'])
@@ -128,6 +184,8 @@ def preflight(root, request):
     methods = [snap(p) for p in request['method_evidence']]
     allowed = {str(Path(r['resolved_path']).resolve()):r.get('sha256')
                for r in item.get('references',[]) if r.get('exists') and r.get('resolved_path')}
+    additions, amendment_evidence = amended_references(root, scope, request['queue_id'])
+    allowed.update(additions)
     refs = []
     for raw in request.get('reference_paths',[]):
         record = snap(raw)
@@ -155,7 +213,7 @@ def preflight(root, request):
     record = dict(attempt_id=ident,queue_id=request['queue_id'],stage=request.get('stage','asset'),
                   baseline_role=baseline_role,reference_roles=request.get('reference_roles', []),
                   prompt=prompt,prompt_sha256=hashlib.sha256(prompt.encode()).hexdigest(),
-                  references_before=refs,methods=methods,visual_inspection=request['visual_inspection'],
+                  reference_amendments=amendment_evidence,references_before=refs,methods=methods,visual_inspection=request['visual_inspection'],
                   tool='image_gen',model_disclosure=MODEL,count=1,
                   authorization_ref=scope['authorization']['message_id'],state='reserved_for_one_host_call',**FLAGS)
     folder = attempt_folder(root, ident)
@@ -170,6 +228,7 @@ def finish(root, attempt_id, image_path, assessment):
     if (folder/'result.json').exists() or (folder/'completion.lock').exists():
         raise ValueError('Attempt already completed or completion interrupted; do not overwrite')
     verify(request['references_before']); verify(request['methods'])
+    verify(request.get('reference_amendments', []))
     check_reference_reviews(root, request['references_before'])
     if not isinstance(assessment.get('passed'),bool) or not assessment.get('notes'):
         raise ValueError('Explicit visual self-check result and observations required')
@@ -214,12 +273,13 @@ def fail(root, attempt_id, reason):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action',choices=['init','preflight','finish','fail'])
+    parser.add_argument('action',choices=['init','preflight','finish','fail','amend-reference'])
     parser.add_argument('--trial-root',required=True)
     parser.add_argument('--queue'); parser.add_argument('--authorization-file'); parser.add_argument('--request')
     parser.add_argument('--attempt-id'); parser.add_argument('--image'); parser.add_argument('--assessment'); parser.add_argument('--reason')
     args = parser.parse_args()
     if args.action == 'init': result = initialize(args.trial_root,args.queue,args.authorization_file)
+    elif args.action == 'amend-reference': result = amend_reference(args.trial_root,read(args.request))
     elif args.action == 'preflight': result = preflight(args.trial_root,read(args.request))
     elif args.action == 'finish': result = finish(args.trial_root,args.attempt_id,args.image,read(args.assessment))
     else: result = fail(args.trial_root,args.attempt_id,args.reason)
