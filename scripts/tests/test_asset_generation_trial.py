@@ -119,6 +119,53 @@ class TrialTests(unittest.TestCase):
   path=root/'reference-amendments/synthetic-ref.json';value=t.read(path);value['visual_purpose']='Changed purpose'
   path.write_text(json.dumps(value))
   with self.assertRaises(ValueError): t.finish(root,'A01',self.output(),{'passed':True,'notes':'Synthetic'})
+ def dag_image(self, role, references=None, wardrobe='red', approved=True):
+  n=getattr(self,'dag_counter',0)+1;self.dag_counter=n;ident='D'+str(n)
+  baselines={'face':'face','wardrobe_front':'wardrobe','scene_master':'scene_master'}
+  req={**self.request,'attempt_id':ident,'baseline_role':baselines.get(role),
+       'reference_paths':references or [str(self.ref)],'wardrobe_set':wardrobe,
+       'dependency_role':None if role in baselines else role}
+  t.preflight(self.root,req)
+  output=self.base/(ident+'.png');Image.new('RGB',(16,16),(n,22,33)).save(output)
+  result=t.finish(self.root,ident,output,{'passed':True,'notes':'Synthetic role check'})
+  if approved:
+   index=self.base/(ident+'-qa.json')
+   t.create(index,{'items':[dict(attempt_id=ident,reviewed_path=result['image']['path'],image_sha256=result['image']['sha256'],status='passed')]})
+   t.approve_dependency(self.root,dict(attempt_id=ident,dependency_role=role,wardrobe_set=wardrobe,independent_single_view=True,role_review='Synthetic exact role visual check',review_index=str(index)))
+  return result
+ def wardrobe_dag(self):
+  face=self.dag_image('face');front=self.dag_image('wardrobe_front')
+  side=self.dag_image('wardrobe_side',[front['image']['path']])
+  back=self.dag_image('wardrobe_back',[front['image']['path']])
+  return face,front,side,back
+ def test_finite_wardrobe_dag_board_depth_two(self):
+  sources=self.wardrobe_dag()
+  board=self.dag_image('identity_board',[r['image']['path'] for r in sources],approved=False)
+  self.assertEqual(board['dependency']['depth'],2)
+  self.assertIsNone(board['baseline_role'])
+ def test_dag_board_requires_all_roles_and_same_set(self):
+  face,front,side,back=self.wardrobe_dag()
+  with self.assertRaises(ValueError): self.dag_image('identity_board',[r['image']['path'] for r in (face,front,side)],approved=False)
+  blue=self.dag_image('wardrobe_front',wardrobe='blue')
+  with self.assertRaises(ValueError): self.dag_image('identity_board',[r['image']['path'] for r in (face,blue,side,back)],approved=False)
+ def test_scene_top_dag_requires_master_reverse_oblique(self):
+  master=self.dag_image('scene_master')
+  reverse=self.dag_image('scene_reverse',[master['image']['path']])
+  oblique=self.dag_image('scene_oblique',[master['image']['path']])
+  top=self.dag_image('scene_top',[r['image']['path'] for r in (master,reverse,oblique)],approved=False)
+  self.assertEqual(top['dependency']['depth'],2)
+ def test_dag_ancestor_rejection_propagates(self):
+  face,front,side,back=self.wardrobe_dag()
+  board=self.dag_image('identity_board',[r['image']['path'] for r in (face,front,side,back)],approved=False)
+  folder=self.root/'attempts'/front['attempt_id']
+  t.create(folder/'review-overrides/later.json',dict(image_sha256=front['image']['sha256'],passed=False,notes='Synthetic later rejection'))
+  with self.assertRaises(ValueError): t.check_reference_reviews(self.root,[board['image']])
+ def test_dag_self_check_is_not_independent_qa(self):
+  front=self.dag_image('wardrobe_front',approved=False)
+  with self.assertRaises(ValueError): self.dag_image('wardrobe_side',[front['image']['path']])
+ def test_terminal_board_cannot_reenter_graph(self):
+  board=self.dag_image('identity_board',[r['image']['path'] for r in self.wardrobe_dag()],approved=False)
+  with self.assertRaises(ValueError): self.dag_image('wardrobe_side',[board['image']['path']])
  def test_source_change_rejected(self):
   self.source.write_text('{}')
   with self.assertRaises(ValueError): t.preflight(self.root,self.request)

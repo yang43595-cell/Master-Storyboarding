@@ -103,11 +103,109 @@ def baseline_rejected(folder, receipt):
         return True
     return False
 
+def generated_records(root):
+    return {r['image']['path']: (path.parent, r) for path in (root/'attempts').glob('*/result.json')
+            if (r := read(path)).get('image')}
+
+
 def check_reference_reviews(root, references):
-    for path in (root/'attempts').glob('*/result.json'):
-        receipt = read(path)
-        if receipt.get('image') in references and baseline_rejected(path.parent, receipt):
+    records = generated_records(root)
+    def visit(reference, visiting):
+        if reference['path'] not in records:
+            return -1
+        folder, receipt = records[reference['path']]
+        if reference['path'] in visiting:
+            raise ValueError('Generated reference dependency cycle')
+        if receipt['image'] != reference or snap(reference['path']) != reference:
+            raise ValueError('Generated reference bytes changed')
+        if receipt.get('outcome') != 'qualified_candidate' or baseline_rejected(folder, receipt):
             raise ValueError('Reference baseline rejected by later visual review')
+        request = read(folder/'request.json')
+        verify(request['references_before'])
+        parents = [visit(ref, visiting | {reference['path']}) for ref in request['references_before']]
+        depth = 1 + max(parents, default=-1)
+        if depth > 2:
+            raise ValueError('Generated reference dependency exceeds two edges')
+        return depth
+    return {ref['path']: visit(ref, set()) for ref in references}
+
+
+DEPENDENCY_ROLES = {'face','wardrobe_front','wardrobe_side','wardrobe_back',
+                    'identity_board','scene_master','scene_reverse','scene_oblique','scene_top'}
+
+
+def approve_dependency(root, request):
+    """Record an independent reviewer's explicit role binding, never infer approval."""
+    root, _ = root_path(root)
+    folder = attempt_folder(root, request['attempt_id'])
+    receipt, original = read(folder/'result.json'), read(folder/'request.json')
+    check_reference_reviews(root, [receipt['image']])
+    role = request['dependency_role']
+    if role not in DEPENDENCY_ROLES - {'identity_board','scene_top'}:
+        raise ValueError('Only nonterminal method roles can be reference-approved')
+    expected = original.get('dependency_role') or {'face':'face','wardrobe':'wardrobe_front',
+               'scene_master':'scene_master'}.get(original.get('baseline_role'))
+    if not expected and original.get('stage') in {'scene_reverse','scene_oblique'}:
+        expected = original['stage']
+    if role != expected:
+        raise ValueError('Review role does not match original generation role')
+    wardrobe_set = request.get('wardrobe_set')
+    if role.startswith('wardrobe_') and (not wardrobe_set or request.get('independent_single_view') is not True):
+        raise ValueError('Wardrobe role requires exact set and reviewed independent single view')
+    if original.get('wardrobe_set') and original['wardrobe_set'] != wardrobe_set:
+        raise ValueError('Wardrobe set differs from generation request')
+    index = read(request['review_index'])
+    matches = [r for r in index['items'] if r.get('attempt_id') == request['attempt_id']
+               and r.get('reviewed_path') == receipt['image']['path']
+               and r.get('image_sha256') == receipt['image']['sha256'] and r.get('status') == 'passed']
+    if len(matches) != 1 or not request.get('role_review'):
+        raise ValueError('Exact independent passed review and explicit role review required')
+    approval = dict(attempt_id=request['attempt_id'],image=receipt['image'],dependency_role=role,
+                    wardrobe_set=wardrobe_set,independent_single_view=request.get('independent_single_view',False),
+                    role_review=request['role_review'],independent_qa=matches[0],review_index_at_binding=snap(request['review_index']))
+    create(folder/'dependency-approval.json',approval)
+    return approval
+
+
+def dependency_context(root, request, references):
+    role = request.get('dependency_role')
+    if role not in DEPENDENCY_ROLES:
+        raise ValueError('Explicit method dependency role required')
+    records = generated_records(root)
+    depths = check_reference_reviews(root, references)
+    edges = []
+    for ref in references:
+        if ref['path'] not in records:
+            continue
+        folder, receipt = records[ref['path']]
+        if receipt['queue_id'] != request['queue_id']:
+            raise ValueError('Method dependency must remain in the same AST')
+        if not (folder/'dependency-approval.json').is_file():
+            raise ValueError('Reference lacks explicit independent method-role approval')
+        approval = read(folder/'dependency-approval.json')
+        if approval.get('image') != ref or approval.get('attempt_id') != receipt['attempt_id']:
+            raise ValueError('Independent role approval does not match reference')
+        qa = approval.get('independent_qa', {})
+        if qa.get('status') != 'passed' or qa.get('image_sha256') != ref['sha256']:
+            raise ValueError('Independent QA approval missing or stale')
+        edges.append(dict(attempt_id=receipt['attempt_id'],role=approval['dependency_role'],
+                          wardrobe_set=approval.get('wardrobe_set'),depth=depths[ref['path']],
+                          approval=snap(folder/'dependency-approval.json'),
+                          parent_request=snap(folder/'request.json'),parent_result=snap(folder/'result.json')))
+    needed = {'wardrobe_side':{'wardrobe_front'},'wardrobe_back':{'wardrobe_front'},
+              'identity_board':{'face','wardrobe_front','wardrobe_side','wardrobe_back'},
+              'scene_reverse':{'scene_master'},'scene_oblique':{'scene_master'},
+              'scene_top':{'scene_master','scene_reverse','scene_oblique'}}
+    if role not in needed or {e['role'] for e in edges} != needed[role] or len(edges) != len(needed[role]):
+        raise ValueError('Method dependency role set is incomplete, duplicated or not permitted')
+    if role.startswith('wardrobe_') or role == 'identity_board':
+        if not request.get('wardrobe_set') or any(e['wardrobe_set'] != request['wardrobe_set'] for e in edges if e['role'].startswith('wardrobe_')):
+            raise ValueError('Wardrobe dependencies must belong to one explicit set')
+    depth = 1 + max(e['depth'] for e in edges)
+    if depth > 2:
+        raise ValueError('Method dependency exceeds two edges / three image layers')
+    return dict(role=role,depth=depth,edges=edges)
+
 
 def validate_reference_amendment(root, scope, record):
     """Only rebind an exact, already frozen original within the same source case."""
@@ -198,7 +296,7 @@ def preflight(root, request):
                 receipt = read(receipt_path)
                 if (receipt.get('image') == record and receipt.get('assessment',{}).get('passed') is True
                     and receipt.get('queue_id') == request['queue_id'] and receipt.get('outcome') == 'qualified_candidate'
-                    and receipt.get('baseline_role') in {'face','wardrobe','scene_master','object_master'}
+                    and (request.get('dependency_role') or receipt.get('baseline_role') in {'face','wardrobe','scene_master','object_master'})
                     and not baseline_rejected(receipt_path.parent, receipt)):
                     matching.append(receipt)
             if baseline_role is not None:
@@ -210,7 +308,10 @@ def preflight(root, request):
         refs.append(record)
     if allowed and not refs:
         raise ValueError('Bound original references cannot be silently omitted')
+    dependency = dependency_context(root, request, refs) if request.get('dependency_role') else None
+    check_reference_reviews(root, refs)
     record = dict(attempt_id=ident,queue_id=request['queue_id'],stage=request.get('stage','asset'),
+                  dependency_role=request.get('dependency_role'),wardrobe_set=request.get('wardrobe_set'),dependency=dependency,
                   baseline_role=baseline_role,reference_roles=request.get('reference_roles', []),
                   prompt=prompt,prompt_sha256=hashlib.sha256(prompt.encode()).hexdigest(),
                   reference_amendments=amendment_evidence,references_before=refs,methods=methods,visual_inspection=request['visual_inspection'],
@@ -230,6 +331,9 @@ def finish(root, attempt_id, image_path, assessment):
     verify(request['references_before']); verify(request['methods'])
     verify(request.get('reference_amendments', []))
     check_reference_reviews(root, request['references_before'])
+    if request.get('dependency_role'):
+        if dependency_context(root, request, request['references_before']) != request.get('dependency'):
+            raise ValueError('Method dependency evidence changed during generation')
     if not isinstance(assessment.get('passed'),bool) or not assessment.get('notes'):
         raise ValueError('Explicit visual self-check result and observations required')
     source = Path(image_path).resolve(strict=True)
@@ -249,7 +353,8 @@ def finish(root, attempt_id, image_path, assessment):
     if artifacts.digest(destination) != source_record['sha256']:
         raise ValueError('Output copy checksum mismatch')
     verify(scope['source_snapshots']); verify(request['references_before'])
-    receipt = dict(attempt_id=attempt_id,queue_id=request['queue_id'],baseline_role=request.get('baseline_role'),image=snap(destination),
+    receipt = dict(attempt_id=attempt_id,queue_id=request['queue_id'],baseline_role=request.get('baseline_role'),
+                   dependency_role=request.get('dependency_role'),wardrobe_set=request.get('wardrobe_set'),dependency=request.get('dependency'),image=snap(destination),
                    source_image=source_record,dimensions=dimensions,assessment=assessment,
                    references_after=[snap(r['path']) for r in request['references_before']],
                    prompt_sha256=request['prompt_sha256'],tool=request['tool'],model_disclosure=MODEL,
@@ -273,12 +378,13 @@ def fail(root, attempt_id, reason):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action',choices=['init','preflight','finish','fail','amend-reference'])
+    parser.add_argument('action',choices=['init','preflight','finish','fail','amend-reference','approve-dependency'])
     parser.add_argument('--trial-root',required=True)
     parser.add_argument('--queue'); parser.add_argument('--authorization-file'); parser.add_argument('--request')
     parser.add_argument('--attempt-id'); parser.add_argument('--image'); parser.add_argument('--assessment'); parser.add_argument('--reason')
     args = parser.parse_args()
     if args.action == 'init': result = initialize(args.trial_root,args.queue,args.authorization_file)
+    elif args.action == 'approve-dependency': result = approve_dependency(args.trial_root,read(args.request))
     elif args.action == 'amend-reference': result = amend_reference(args.trial_root,read(args.request))
     elif args.action == 'preflight': result = preflight(args.trial_root,read(args.request))
     elif args.action == 'finish': result = finish(args.trial_root,args.attempt_id,args.image,read(args.assessment))
