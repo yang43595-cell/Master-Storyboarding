@@ -166,6 +166,30 @@ class TrialTests(unittest.TestCase):
  def test_terminal_board_cannot_reenter_graph(self):
   board=self.dag_image('identity_board',[r['image']['path'] for r in self.wardrobe_dag()],approved=False)
   with self.assertRaises(ValueError): self.dag_image('wardrobe_side',[board['image']['path']])
+ def legacy_scene_result(self, stage, parent):
+  ident='legacy-'+stage
+  request={**self.request,'attempt_id':ident,'stage':stage,'baseline_role':None,'reference_paths':[parent['image']['path']]}
+  t.preflight(self.root,request)
+  result=t.finish(self.root,ident,self.output(),{'passed':True,'notes':'Synthetic scene view'})
+  index=self.base/(ident+'-review.json')
+  t.create(index,{'items':[dict(attempt_id=ident,reviewed_path=result['image']['path'],image_sha256=result['image']['sha256'],status='passed')]})
+  return ident,index
+ def test_exact_legacy_scene_aliases_bind_without_mutating_request(self):
+  master=self.dag_image('scene_master')
+  for stage,role in [('reverse','scene_reverse'),('high45','scene_oblique')]:
+   ident,index=self.legacy_scene_result(stage,master)
+   path=self.root/'attempts'/ident/'request.json';before=path.read_bytes()
+   result=t.approve_dependency(self.root,dict(attempt_id=ident,dependency_role=role,role_review='Synthetic exact scene view',review_index=str(index)))
+   self.assertEqual(result['dependency_role'],role);self.assertEqual(before,path.read_bytes())
+ def test_legacy_scene_alias_does_not_guess_suffix_or_accept_wardrobe_parent(self):
+  master=self.dag_image('scene_master')
+  ident,index=self.legacy_scene_result('reverse-extra',master)
+  with self.assertRaises(ValueError):
+   t.approve_dependency(self.root,dict(attempt_id=ident,dependency_role='scene_reverse',role_review='Synthetic',review_index=str(index)))
+  front=self.dag_image('wardrobe_front')
+  ident,index=self.legacy_scene_result('high45',front)
+  with self.assertRaises(ValueError):
+   t.approve_dependency(self.root,dict(attempt_id=ident,dependency_role='scene_oblique',role_review='Synthetic',review_index=str(index)))
  def test_source_change_rejected(self):
   self.source.write_text('{}')
   with self.assertRaises(ValueError): t.preflight(self.root,self.request)

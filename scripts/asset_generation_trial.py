@@ -147,6 +147,15 @@ def approve_dependency(root, request):
                'scene_master':'scene_master'}.get(original.get('baseline_role'))
     if not expected and original.get('stage') in {'scene_reverse','scene_oblique'}:
         expected = original['stage']
+    # Exact historical scene spellings only; retain the original frozen request.
+    legacy_scene_roles = {'reverse': 'scene_reverse', 'high45': 'scene_oblique'}
+    if not expected and original.get('stage') in legacy_scene_roles:
+        records = generated_records(root)
+        parents = [records[ref['path']][1] for ref in original['references_before'] if ref['path'] in records]
+        if (len(parents) != 1 or parents[0].get('baseline_role') != 'scene_master'
+                or parents[0].get('queue_id') != receipt.get('queue_id')):
+            raise ValueError('Legacy scene alias must derive from its own scene master')
+        expected = legacy_scene_roles[original['stage']]
     if role != expected:
         raise ValueError('Review role does not match original generation role')
     wardrobe_set = request.get('wardrobe_set')
