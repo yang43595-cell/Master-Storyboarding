@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "verified_at_utc": "2026-10-20T18:59:45Z",
+  "source_commit": "c0bf64f62f2e0cb05a6c72787d33f5066983c760",
+  "source_tree": "a28da1616e514894da27289787decd3ae6533671",
+  "local_candidate_commit": "89882a8e055714e9604324489f9131e49d4cfe9b",
+  "source_content_unchanged": true,
+  "checks": [
+    {
+      "kind": "focused_director_contract",
+      "command": "python -m unittest -v scripts.tests.test_storyboard_planner_contract",
+      "passed": 9
+    },
+    {
+      "kind": "existing_negative_loading_cases",
+      "cases": [
+        "missing_before_prepare",
+        "changed_after_prepare",
+        "empty_at_prepare_blocked_by_documented_ensure",
+        "missing_after_prepare"
+      ],
+      "passed": 4,
+      "positive_prepare_controls_passed": true
+    },
+    {
+      "kind": "expanded_pytest",
+      "command": "PYTHONPATH=<existing isolated dependency directory> PYTHONDONTWRITEBYTECODE=1 python -m pytest -c config/pytest.ini -o cache_dir=<isolated cache> --basetemp=<isolated temp> scripts/tests/test_method_documents.py scripts/tests/test_stage_context_cli.py scripts/tests/test_knowledge_review_boundaries.py -q",
+      "pytest_version": "9.1.1",
+      "python_version": "3.12.14",
+      "passed": 114,
+      "elapsed_seconds": 2.64
+    }
+  ],
+  "earlier_blocker": "The default interpreter initially lacked pytest and three test modules failed at import. Later verification reused an already-present isolated pytest dependency directory without installing packages or changing global configuration.",
+  "limits": [
+    "Only the named test scope was run, not the entire repository suite.",
+    "These are matching-tree local tests, not a claim of GitHub CI execution.",
+    "No image/video generation, production adoption, merge or deployment.",
+    "Test timings are not a controlled performance comparison."
+  ]
+}
