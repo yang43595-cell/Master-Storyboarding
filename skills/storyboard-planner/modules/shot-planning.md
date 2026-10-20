@@ -14,7 +14,7 @@ python scripts/stage_context_cli.py prepare --project <项目> --skill storyboar
 
 ```powershell
 python scripts/stage_context_cli.py record-method-reading --project <项目> --skill storyboard-planner --method STORYBOARD-PLANNING-METHOD --actor-id <执行者ID> --task-id <任务ID>
-python scripts/stage_context_cli.py ensure-prepared --project <项目> --skill storyboard-planner --actor-id <执行者ID> --task-id <任务ID>
+python scripts/stage_context_cli.py ensure-prepared --project <项目> --skill storyboard-planner --actor-id <执行者ID> --task-id <任务ID> --required-reference skills/storyboard-planner/references/foundations/01_分镜与剪辑组织.md --required-reference skills/storyboard-planner/references/foundations/02_景别与构图.md --required-reference skills/storyboard-planner/references/foundations/03_运镜与人物调度.md
 ```
 
 校验通过后才产出。缺少输入、确认冲突或阅读证据失效时，按具体缺口处理；动态规则与本地合同分别核对，本地合同无需重复嵌入知识包。
@@ -22,6 +22,18 @@ python scripts/stage_context_cli.py ensure-prepared --project <项目> --skill s
 - **项目根规则**：`PROJECT_RULES.md`（唯一正文）与当前知识包（stage_startup 选中的规则块）。
 - **已确认专业方法**：本 Skill profile 绑定的 `STORYBOARD-PLANNING-METHOD` 全文快照；它承担场景、节拍、观众信息、调度、摄影机理由、声画、切点、连续性和删除测试。不另存本地方法正文；当前知识包的适用补充内容仍按共享规则读取。
 - **本地合同**：`references/专业影视分镜执行规范.md`（Scene/Shot 紧凑字段、来源引用、资产缺口格式与技术精度边界）和 `../creative-director/references/dialogue-lineage-contract.md`（对白来源不可改写）。
+
+## 从整场意图想出画面
+
+实质创作与拍法返修，先完整阅读下列三份本地基础参考，再选择具体拍法；同一任务、同一版本且原文仍在有效上下文时按共享规则复用，发生改变只补读受影响内容。它们是通用基础整理 v0.1，不是已从知识库核实的案例，也不替代绑定专业方法或输入确认：
+
+- [分镜与剪辑组织](../references/foundations/01_分镜与剪辑组织.md)：把整场变化组织成观看次序，判断何时连续、切镜、反应、留空位及声画转场。
+- [景别与构图](../references/foundations/02_景别与构图.md)：按可见载体选择范围、角度与画内关系，检查手物动作、遮挡和竖屏读性。
+- [运镜与人物调度](../references/foundations/03_运镜与人物调度.md)：比较固定、移动与切镜，设计人物目的与站位变化，核对连续路径、落幅与时间成本。
+
+这三份由上述显式路径进入 prepare 的本地规范及哈希清单，正文按原路径阅读，不作为新的 Vault 知识块。缺文件、空正文或版本变动须停止相关准备/产出并修复，不能用文件名或阅读登记代替全文。进入具体构思时把三类判断应用于下述观看路线与两层自查，不要求每场用空镜、运镜或固定镜头配额，不增加独立表格或生产阶段。
+
+实质创作与拍法返修在逐镜表之前，读取 [画面构思与拍法选择](../references/visual-conception.md)；其推导与示例是已绑定方法的项目应用补充，不替代专业方法身份或全文阅读。先确定整场目标、阻力和关系前后态，再想观众怎样经历变化；从现有行动、空间、物件与声音寻找可见载体。重要岔路比较真正不同的观看路线，选择并组织后再决定景别、切镜、运镜和跨场转场。范围未变可复用既有阅读；局部技术维护不重做整场构思。
 
 ## 从视听稿整理为逐镜表
 
@@ -32,6 +44,6 @@ python scripts/stage_context_cli.py ensure-prepared --project <项目> --skill s
 1. 先写连贯的视听展开，作出画面、表演、声音及观看方式的具体选择，暂不按 Shot 表格字段或编号组织；专业判断应用方法快照中的“人物态度与表演承载”“旁观者反应与叙事铺垫”和“拍法选择与整段表现”，将整段注意力安排落实到实际画面顺序。
 2. 在实际剪辑边界处分出连续摄影，把 Shot 编号标回各段摄影开始处；含糊的观看位置变化先确定是剪辑还是镜内变化，同一编号不跨越切镜。
 3. 按边界展开逐镜表，保留原段落的拍法、声音、揭示顺序与切换目的。改变决定时同步修订段落和编号；对白只引用和承载，不改写事实。
-4. 按方法先核对重要变化的实际视听承载与遗漏，再比较拍法、精简重复，往返对照段落与逐镜表的画面、动作、声音、切点和状态；按“拍法选择与整段表现”核对观看对象切换、景别与动作范围、反应和细节的可读时间，指出具体遗漏或冲突，不以条数相同或字段齐全替代判断。声音表演在结构化时保留至对应对白片段的可选 delivery，不混入 text。
+4. 分两层自查：先核整场观众体验与关键变化是否有充分且具体的视听承载，表达不足回到构思而非添加镜头术语；再核可见范围、动作状态、轴线、声音与时长是否可执行。按方法先核对重要变化的实际视听承载与遗漏，再比较拍法、精简重复，往返对照段落与逐镜表的画面、动作、声音、切点和状态；按“拍法选择与整段表现”核对观看对象切换、景别与动作范围、反应和细节的可读时间，指出具体遗漏或冲突，不以条数相同或字段齐全替代判断。声音表演在结构化时保留至对应对白片段的可选 delivery，不混入 text。
 
 这一过程在同一导演 JSON 内完成，不额外创建生产阶段、固定多次模型调用或独立审核角色。保留带边界编号的视听段落供用户阅读，分镜表展开其具体拍法。只在影响整段表现的关键取舍处，在现有视听展开或核对记录简述选定拍法比一个确实可行的未选拍法多带来什么、付出什么；两者都成立时明确本稿选择。没有实质岔路不强凑双案，不要求每镜比较或另表。情绪、关系、节奏及符合本片目标的观看快感都是有效收益，不因没有新增剧情信息否定镜头；长镜、同框与安静表演同样按实际效果判断。该记录留下具体决定供检查，不以出现比较词句证明创作质量。

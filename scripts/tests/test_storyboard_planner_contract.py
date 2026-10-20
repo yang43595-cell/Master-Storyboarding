@@ -168,6 +168,42 @@ class StoryboardPlannerContractTests(unittest.TestCase):
         self.assertIn("用户锁定一镜到底，只换服装", pressure)
         self.assertIn("未锁定对白拍法，旧候选却写固定正反打", pressure)
 
+    def test_visual_conception_is_loaded_by_real_preparation_collector(self) -> None:
+        from scripts import stage_context_cli
+        reference = SKILL_DIR / "references" / "visual-conception.md"
+        frozen = stage_context_cli._local_standard_documents(SKILL_DIR)
+        self.assertIn(reference.resolve(), frozen)
+        self.assertIn("references/visual-conception.md", (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8"))
+        self.assertIn("../references/visual-conception.md", (SKILL_DIR / "modules" / "shot-planning.md").read_text(encoding="utf-8"))
+        self.assertTrue(reference.read_text(encoding="utf-8").strip())
+        # Wiring only: actual creative quality needs a fresh-scene trial.
+
+    def test_foundations_are_frozen_by_module_links_and_missing_files_block(self) -> None:
+        import shutil
+        import tempfile
+        from unittest.mock import patch
+        from scripts import stage_context_cli as cli
+        names = ("01_分镜与剪辑组织.md", "02_景别与构图.md", "03_运镜与人物调度.md")
+        documents = cli._local_standard_documents(SKILL_DIR)
+        for name in names:
+            reference = SKILL_DIR / "references" / "foundations" / name
+            self.assertIn(reference.resolve(), documents)
+            self.assertGreater(len(reference.read_bytes()), 0)
+            module = (SKILL_DIR / "modules" / "shot-planning.md").read_text(encoding="utf-8")
+            self.assertIn("../references/foundations/" + name, module)
+            self.assertIn("--required-reference skills/storyboard-planner/references/foundations/" + name, module)
+        # Mutate only a temporary repository, never the active references.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copytree(ROOT / "skills", root / "skills")
+            shutil.copytree(ROOT / "schemas", root / "schemas")
+            shutil.copyfile(ROOT / "PROJECT_RULES.md", root / "PROJECT_RULES.md")
+            target = root / "skills/storyboard-planner/references/foundations" / names[1]
+            target.unlink()
+            with patch.object(cli, "ROOT", root):
+                with self.assertRaisesRegex(cli.StageContextError, "明确引用的本地规范缺失"):
+                    cli._local_standard_documents(root / "skills/storyboard-planner")
+
     def test_v2_schema_references_upstream_assets_without_embedding_requirements(self) -> None:
         schema = json.loads(SCHEMA_V2.read_text(encoding="utf-8"))
         self.assertTrue({"source_narrative", "source_paragraph_ids", "source_dialogue_ids", "source_asset_requirement_ids"}.issubset(schema["required"]))
