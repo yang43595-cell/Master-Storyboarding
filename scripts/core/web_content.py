@@ -61,6 +61,8 @@ def compile_content(raw: bytes, *, stage: str, case_id: str, source_script_versi
     business = json.loads(raw)
     if not isinstance(business, dict) or not business.get('revision'):
         raise WebContentError('业务 JSON 必须有准确 revision')
+    if not isinstance(media_registry, dict):
+        raise WebContentError('mediaRegistry 必须是媒体映射对象')
     native_hash = hashlib.sha256(canonical(business).encode()).hexdigest()
     blocks = []
     compiled_media_map = []
@@ -95,6 +97,8 @@ def compile_content(raw: bytes, *, stage: str, case_id: str, source_script_versi
         fields = ('url','sha256','mime','bytes')
         if any(k not in record for k in fields) or not record.get('localPath'):
             raise WebContentError('媒体元数据不完整：' + key)
+        if not isinstance(record['mime'], str):
+            raise WebContentError('媒体 mime 必须是字符串：' + key)
         path = Path(record['localPath'])
         if not path.is_file():
             raise WebContentError('媒体本地字节不存在：' + key)
@@ -136,6 +140,9 @@ def compile_content(raw: bytes, *, stage: str, case_id: str, source_script_versi
     def add_benchmark():
         if not benchmark:
             raise WebContentError('bound script 缺少真实 benchmark 原视频/海报及来源片段；不补造')
+        if not isinstance(benchmark, dict) or any(not isinstance(benchmark.get(k), str)
+                for k in ('videoKey', 'posterKey', 'videoMediaId', 'posterMediaId')):
+            raise WebContentError('benchmark 必须是对象并提供准确 videoKey/posterKey/videoMediaId/posterMediaId')
         meta = {k: v for k, v in benchmark.items() if k not in {'videoKey','posterKey'}}
         video = media(benchmark['videoKey'], meta['videoMediaId'])
         poster = media(benchmark['posterKey'], meta['posterMediaId'])
@@ -201,12 +208,17 @@ def compile_content(raw: bytes, *, stage: str, case_id: str, source_script_versi
         if not isinstance(business.get('drafts'), list) or not business['drafts']:
             raise WebContentError('缺少现行完整视频 drafts JSON；不恢复退役 production_plan')
         for draft in business['drafts']:
+            if not isinstance(draft, dict):
+                raise WebContentError('drafts 每项必须是视频段对象')
             ordered, checks = draft.get('ordered_media'), draft.get('reference_checks')
             if not isinstance(ordered, list) or not isinstance(checks, list) or len(ordered) != len(checks):
                 raise WebContentError('视频素材职责不能遗漏实际输入')
             if any(not isinstance(item, dict) or any(not isinstance(item.get(k), str) or not item[k].strip()
                    for k in ('node_id','media_id')) for item in ordered):
                 raise WebContentError('视频实际输入缺少准确 native node_id/media_id')
+            if any(not isinstance(ref, dict) or any(not isinstance(ref.get(k), str)
+                    for k in ('artifact_id', 'revision', 'sha256')) for ref in checks):
+                raise WebContentError('reference_checks 每项必须提供准确 artifact_id/revision/sha256')
             refs = [media(ref['artifact_id'] + '@' + ref['revision'],
                           reference_anchor(draft['node_id'], {'reference':ref,'native':native}), ref['sha256'])
                     for native, ref in zip(ordered, checks)]
@@ -214,6 +226,9 @@ def compile_content(raw: bytes, *, stage: str, case_id: str, source_script_versi
     elif stage in {'white_model','storyboard'}:
         if not business.get('files'):
             raise WebContentError('缺少已登记预览 files；不能从 assets-v2 缺失路径补造媒体')
+        if not isinstance(business['files'], list) or any(not isinstance(f, dict)
+                or not isinstance(f.get('path'), str) for f in business['files']):
+            raise WebContentError('files 必须是提供准确 path 的预览对象数组')
         refs = [media(f['path'], reference_anchor('preview', f), f.get('sha256'), expected_path=f['path']) for f in business['files']]
         block('reference-views', '已登记参考视图', '仅展示已有登记，不运行白模或生成图片。', refs)
         if reviewable:

@@ -103,3 +103,49 @@ def test_duplicate_native_reference_reuse_remains_unique_and_stable(tmp_path):
     row['reference_checks']=row['reference_checks'][1:]+row['reference_checks'][:1]
     second=compile_fixture('prompts',source,media)['request']['content']['blocks'][0]['media']
     assert {m['id']:m['sha256'] for m in first}=={m['id']:m['sha256'] for m in second}
+
+
+@pytest.mark.parametrize('field', ['mediaRegistry', 'mime', 'benchmark', 'drafts',
+                                  'reference_checks', 'files'])
+def test_malformed_input_is_explained_before_web_schema(tmp_path, field):
+    """No validation bypass: malformed types must fail before invoking the bridge."""
+    media = registry(tmp_path)
+    values = sources(tmp_path)
+    stage = 'script' if field in {'mediaRegistry', 'mime', 'benchmark'} else 'prompts'
+    source = values[stage]
+    from test_web_content_adapter import BENCHMARK
+    benchmark = copy.deepcopy(BENCHMARK)
+    if field == 'mediaRegistry':
+        media = []
+    elif field == 'mime':
+        media['video']['mime'] = None
+    elif field == 'benchmark':
+        benchmark = ['not an object']
+    elif field == 'drafts':
+        source['drafts'] = [None]
+    elif field == 'reference_checks':
+        source['drafts'][0]['reference_checks'] = [None]
+    else:
+        stage = 'storyboard'
+        source = {'revision': 'R01', 'files': [None]}
+    with pytest.raises(WebContentError, match=field):
+        compile_content(canonical(source).encode(), stage=stage, case_id='01',
+            source_script_version='a'*64, expected_version=None, scope='qa',
+            media_registry=media, benchmark=benchmark, project_root=tmp_path)
+
+
+def test_cli_malformed_draft_returns_structured_error_not_traceback(tmp_path):
+    import sys
+    source = tmp_path / 'invalid.json'
+    source.write_text(canonical({'revision':'R01', 'drafts':[None]}))
+    job = {'sourcePath':str(source), 'stage':'prompts', 'caseId':'01',
+           'sourceScriptVersion':'a'*64, 'expectedVersion':None, 'scope':'qa',
+           'mediaRegistry':{}}
+    before = source.read_bytes()
+    result = subprocess.run([sys.executable, '-m', 'scripts.core.web_content'],
+        input=canonical(job), text=True, capture_output=True,
+        cwd=Path(__file__).resolve().parents[2])
+    assert result.returncode == 2 and not result.stdout
+    error = json.loads(result.stderr)
+    assert error['ok'] is False and error['published'] is False
+    assert 'drafts' in error['error'] and source.read_bytes() == before
