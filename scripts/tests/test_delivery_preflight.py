@@ -17,12 +17,19 @@ from scripts.tests.test_review_receipt_binding import pending
 def delivery(root):
     # Tiny synthetic local fixtures; no customer content or model execution.
     Image.new('RGB', (8, 8), 'blue').save(root / 'frame.png')
-    (root / 'director.json').write_text('{"fixture":"director"}')
+    from scripts.tests.test_story_paragraph_sources import narrative
+    from scripts.tests.test_director_compact import compact_package
+    n = narrative(root); n.pop('human_readable_path')
+    b = compact_package(); b.pop('human_readable_path')
+    b['revision'] = 'R01'
+    b['source_narrative'] = {'artifact_id': 'NARRATIVE', 'logical_id': 'narrative.package', 'revision': 'R01', 'path': 'narrative.json'}
+    write_json(root / 'narrative.json', n); write_json(root / 'director.json', b)
     refs = {}
     entries = []
-    for ident, name in [('FRAME', 'frame.png'), ('DIRECTOR', 'director.json')]:
+    for ident, name in [('FRAME', 'frame.png'), ('DIRECTOR', 'director.json'), ('NARRATIVE', 'narrative.json')]:
         refs[ident] = {'artifact_id': ident, 'revision': 'R01', 'sha256': artifacts.digest(root / name)}
-        entries.append({**refs[ident], 'logical_id': ident, 'status': 'current',
+        logical = {'DIRECTOR': 'storyboard.package', 'NARRATIVE': 'narrative.package'}.get(ident, ident)
+        entries.append({**refs[ident], 'logical_id': logical, 'type': logical, 'status': 'current',
                         'user_approved': True, 'path_or_url': name, 'checksum': refs[ident]['sha256'],
                         'upload_bindings': [{'target_url': 'https://fixture.invalid/exact',
                             'node_id': 'frame-node', 'media_id': 'frame-media',
@@ -32,7 +39,7 @@ def delivery(root):
     state.update(current_artifacts=list(refs), user_confirmations=[{'artifact_ids': list(refs)}])
     write_project_state(root, state)
     def row(ident, previous=None):
-        return {'node_id': ident, 'prompt': 'Synthetic actor holds the item.',
+        return {'node_id': ident, 'prompt': 'Synthetic actor holds the item.', 'source_shot_ids': ['S01-010'],
                 'parameters': {'duration': 4}, 'duration_bounds': [2, 8], 'shot_durations': [1, 3],
                 'native_entity_type': 'fixture-chip', 'required_entities': ['ACTOR'],
                 'required_reference_roles': {'ACTOR': ['start_frame' if previous else 'end_frame']},
@@ -42,7 +49,11 @@ def delivery(root):
                                       'state_id': 'handoff', 'entity_ids': ['ACTOR']}],
                 'continuity': {'event_id': 'one-event', **({'previous_node_id': previous} if previous else {})}}
     frozen = {'target_url': 'https://fixture.invalid/exact', 'revision': 'R02',
-              'source_artifacts': [refs['DIRECTOR']], 'drafts': [row('one'), row('two', 'one')]}
+              'schema_version': 'video-prompt-1.0', 'document_type': 'video.prompt',
+              'stage': 'voiceover-to-video-script', 'project_id': 'MSB-TEST',
+              'source_storyboard': {**refs['DIRECTOR'], 'logical_id': 'storyboard.package', 'path': 'director.json'},
+              'source_narrative': {**refs['NARRATIVE'], 'logical_id': 'narrative.package', 'path': 'narrative.json'},
+              'source_artifacts': [refs['DIRECTOR'], refs['NARRATIVE']], 'drafts': [row('one'), row('two', 'one')]}
     observed = copy.deepcopy(frozen)
     observed.update(phase='after_refresh', frozen_sha256=digest(frozen))
     for row in observed['drafts']:
@@ -189,7 +200,7 @@ def test_legacy_comparison_stays_read_only_and_unchecked(tmp_path):
     from scripts.tests.test_canvas_readback import sample
     frozen, observed = sample()
     write_json(tmp_path / 'frozen.json', frozen); write_json(tmp_path / 'observed.json', observed)
-    result = delivery_cli(tmp_path, '--readback', str(tmp_path / 'observed.json'))
+    result = delivery_cli(tmp_path, '--legacy-read-only', '--readback', str(tmp_path / 'observed.json'))
     assert result.returncode == 0
     assert json.loads(result.stdout)['submission_checks'] == 'not_checked'
 

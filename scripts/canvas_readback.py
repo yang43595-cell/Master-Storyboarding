@@ -54,6 +54,11 @@ def validate_submission(frozen: dict, project: Path) -> dict:
         from core.delivery_files import discover_dependencies
     project = project.resolve()
     require_production(project)
+    try:
+        from .core.schema_contracts import validate_video_prompt_identity
+    except ImportError:
+        from core.schema_contracts import validate_video_prompt_identity
+    document_identity = validate_video_prompt_identity(frozen, project)
     dependencies = discover_dependencies(project, payload=frozen)
     if not dependencies['ok']:
         raise ValueError('Dependency readiness failed: ' + '; '.join(dependencies['errors'] + dependencies['uncheckable']))
@@ -235,16 +240,18 @@ def validate_submission(frozen: dict, project: Path) -> dict:
             raise ValueError('event root predecessor is unknown, cyclic or belongs to another event')
         event_last[event] = row, frames
     return {'ok': True, 'revision': frozen['revision'], 'frozen_sha256': digest(frozen),
-            'dependency_checks': dependencies,
+            'dependency_checks': dependencies, 'document_identity': document_identity,
             'scope': 'current registered bytes, declared reference roles/entities, durations and continuous split boundaries',
             'limitations': 'Requires actual visual inspection of roles/states and current platform bounds; does not verify pixels, media duration metadata, remote provenance or generation authorization.'}
 
 
-def compare(frozen: dict, observed: dict, project: Path | None = None) -> dict:
+def compare(frozen: dict, observed: dict, project: Path | None = None, *, legacy_read_only: bool = False) -> dict:
     """Report only selected full-field readback; metadata is not remote proof."""
+    if legacy_read_only and project is not None:
+        raise ValueError("legacy read-only comparison cannot claim project submission checks")
     submission = validate_submission(frozen, project) if project is not None else None
-    if 'revision' in frozen and project is None:
-        raise ValueError('versioned delivery requires --project to revalidate current reference authority')
+    if project is None and not legacy_read_only:
+        raise ValueError('delivery requires --project or explicit legacy_read_only comparison')
     if target_url(frozen['target_url']) != target_url(observed['target_url']):
         raise ValueError('readback target differs from frozen target')
     if observed.get('phase') != 'after_refresh':
@@ -254,12 +261,21 @@ def compare(frozen: dict, observed: dict, project: Path | None = None) -> dict:
     expected = rows_by_id(frozen['drafts'])
     actual = rows_by_id(observed['drafts'])
     differences = []
+    if submission is not None:
+        for field in ('schema_version', 'document_type', 'stage', 'project_id', 'revision',
+                      'source_storyboard', 'source_narrative', 'source_artifacts'):
+            if field not in observed or digest(observed[field]) != digest(frozen[field]):
+                differences.append({'field': field, 'reason': 'readback association differs from frozen identity'})
     native_reference_checks = {}
     if set(actual) != set(expected):
         differences.append({'field': 'node_ids', 'missing': sorted(set(expected)-set(actual)),
                             'extra': sorted(set(actual)-set(expected))})
     for node_id, row in expected.items():
         got = actual.get(node_id, {})
+        if submission is not None and ('source_shot_ids' not in got
+                or digest(got['source_shot_ids']) != digest(row['source_shot_ids'])):
+            differences.append({'node_id': node_id, 'field': 'source_shot_ids',
+                                'reason': 'readback shot association differs from frozen identity'})
         for field in ('prompt', 'parameters', 'ordered_media'):
             value = row.get(field)
             valid = (isinstance(value, str) if field == 'prompt' else
@@ -301,6 +317,7 @@ def compare(frozen: dict, observed: dict, project: Path | None = None) -> dict:
             'revision': frozen.get('revision'), 'frozen_sha256': digest(frozen),
             'observed_sha256': digest(observed), 'differences': differences,
             'native_reference_checks': native_reference_checks,
+            **({'legacy_read_only': True, 'production_blocked': True} if legacy_read_only else {}),
             'limitations': 'Evidence collector must actually refresh and read native editor values. '
                            'Native entity checks only cover explicitly requested drafts. '
                            'This comparison cannot establish remote provenance, pixel quality, generation status or generation authorization.'}
@@ -314,11 +331,16 @@ def main() -> int:
     parser.add_argument('--preflight', action='store_true', help='只读核对现有交付 JSON，无远端操作')
     parser.add_argument('--delivery', action='store_true',
                         help='正式交付：强制当前项目与修订核验；不替代人工动作自查或生成授权')
+    parser.add_argument('--legacy-read-only', action='store_true', help='显式历史比较；不校验新交付、不允许生产，不能与 project/delivery/preflight 同用')
     parser.add_argument('--package', type=Path, action='append', default=[], help='交付文件包时必传实际成品路径，可重复；严格检查实际字节')
     parser.add_argument('--max-package-bytes', type=int, default=19_000_000, help='每包字节数必须严格小于此值')
     args = parser.parse_args()
     try:
         frozen = json.loads(args.frozen.read_text(encoding='utf-8'))
+        if args.legacy_read_only and (args.delivery or args.preflight or args.project is not None):
+            raise ValueError('--legacy-read-only cannot bypass delivery/project/preflight checks')
+        if args.project is None and not args.delivery and not args.legacy_read_only:
+            raise ValueError('choose --project for new delivery or explicit --legacy-read-only for historical comparison')
         if args.delivery:
             if args.project is None:
                 raise ValueError('--delivery requires --project; legacy comparison is not delivery validation')
@@ -331,7 +353,7 @@ def main() -> int:
         else:
             if args.readback is None:
                 parser.error('--readback required unless --preflight')
-            result = compare(frozen, json.loads(args.readback.read_text(encoding='utf-8')), args.project)
+            result = compare(frozen, json.loads(args.readback.read_text(encoding='utf-8')), args.project, legacy_read_only=args.legacy_read_only)
         if args.package:
             try:
                 from .core.delivery_files import check_package_files

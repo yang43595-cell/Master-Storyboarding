@@ -4,7 +4,7 @@
 
 ## 同一份 JSON
 
-复用既有 `drafts`、`prompt`、`parameters`、`ordered_media`。业务修订写在顶层 `revision`，来源写 `source_artifacts`（每项准确 artifact_id、revision、sha256）。网页目标仍用准确 `target_url`。历史无 revision 的快照继续按原范围只读比较，返回 submission_checks=not_checked，不得据此宣称完整提交检查或用于新交付采用。
+复用既有 `drafts`、`prompt`、`parameters`、`ordered_media`。业务修订写在顶层 `revision`，来源写 `source_artifacts`（每项准确 artifact_id、revision、sha256）。网页目标仍用准确 `target_url`。历史快照必须显式以 `--legacy-read-only`（Python API 为 `legacy_read_only=True`）按原范围只读比较，返回 submission_checks=not_checked 与 production_blocked=true；删除 revision 不能降级为默认历史通过，不得据此宣称完整提交检查或用于新交付采用。
 
 逐 draft 增补本轮确有需要的声明，仍存在同一 JSON：
 
@@ -24,7 +24,7 @@ python scripts/canvas_readback.py --delivery --project <隔离项目> --frozen <
 python scripts/canvas_readback.py --delivery --project <隔离项目> --frozen <本修订JSON> --readback <实际刷新后读数JSON>
 ```
 
-`--delivery` 是每次新画布交付的明确调用模式，要求准确项目和非空修订，继续复用当前来源、引用及原生回读校验。它不是后台拦截器：绕过此入口的外部操作不会自动获得检查。历史只读比较可不带该开关，但缺项目/修订的历史结果不能替代正式交付。缺 manifest 或真实确认时如实报告，不自动补审批。
+`--delivery` 是每次新画布交付的明确调用模式，要求准确项目和非空修订，继续复用当前来源、引用及原生回读校验。它不是后台拦截器：绕过此入口的外部操作不会自动获得检查。历史只读比较须用独立的 `--legacy-read-only`，不能与 project/delivery/preflight 混用；历史结果不能替代正式交付。缺 manifest 或真实确认时如实报告，不自动补审批。
 
 中断时没有完整刷新回读就未完成交付核验，先只读核实已保存部分，不自动重试写入/生成。重复运行这两条命令只读且重新核验当前来源；源版本、字节、引用或正文改变后必须重跑，不能复用先前 PASS。动作语义仍执行视频方法的同次自查，不将技术通过写为人工已看图。
 
@@ -53,3 +53,19 @@ validate-project.ps1 的通用图片路径检查复用现有 Python product_refs
 外置输入只在直接读取 CLI 中通过准确 --input-root 允许；正式画布交付依赖要求位于项目内。丢失、空文件、越界、无效 JSON、manifest 缺失/歧义或远端不可核验均不返回成功。文件可读不是确认或版本证据，既有 current/revision/hash/确认检查继续执行，候选生产阻塞不改变。
 
 文件包交付在原命令追加 --package <实际成品.zip>（多包重复），可显式设置 --max-package-bytes；每包实际字节严格小于默认 19000000，成功输出实际 SHA-256。无包时不要求造包，也不声称测过包大小。生成包后发送前重跑；工具不负责创建/拆包、传输或安全解压未知归档。可单独使用 python -m scripts.core.product_refs --project <项目> --package <成品>。外部上传绕过命令不会被自动拦截。
+
+## 候选修正：新交付的文档身份与来源（2026-10-20，尚未启用生产）
+
+沿用同一视频业务 JSON，不建立 production_plan 或额外账本。新交付使用 `schemas/video-prompt-identity.schema.json` 的窄身份合同：`schema_version: video-prompt-1.0`、`document_type: video.prompt`、`stage: voiceover-to-video-script`、现有 `project_id` 与准确 `revision`。`source_storyboard`、`source_narrative` 各自列实际 artifact_id、logical_id、revision、path、sha256；drafts 每项保留正文，并明确 `source_shot_ids`。来源的 ID、类型、路径、修订和字节须与本项目既有 manifest、当前确认和上游业务 JSON 同时一致。项目身份取既有叙事包 project_id，并与导演包核对；不得另起编号系统或按目录名猜填。
+
+检查实际导演/叙事包 schema；导演包指向的叙事来源必须与本次提示词声明的是同一已登记版本。不得只改文件名、顶层类型或 revision 冒充另一阶段；携带导演 scenes 等结构的重标文件明确拒绝。每段引用的镜头必须真实存在于所选导演包并保持其内部顺序。测试候选来源只从该 run 的明确选择解析，结果始终 unreviewed/production_blocked；生产入口不接受测试来源。
+
+- JSON 文档交付身份核对：`python scripts/check_video_prompt_focal_intent.py <本修订JSON> --project <项目>`。明确的候选试写另加 `--candidate-test`，不会取得生成或采用授权。
+- 画布交付继续运行现有 `canvas_readback.py --delivery`；回读的文档身份/来源关联也须与冻结快照一致，连同正文、参数和原生素材引用一起检查。
+- 每段回读的 `source_shot_ids` 以及重复来源清单必须与冻结稿一致；重复清单若提供 logical_id/type/project_id/path/path_or_url，不得与准确来源冲突。来源 JSON 在同一字节快照上计算 SHA-256 并解析，返回前再核对文件未改变；这不是对后续编辑的永久锁定。
+- 历史快照只读比较必须显式使用 `--legacy-read-only`，不得同时传 `--delivery`、`--preflight` 或 `--project`。结果保留 `submission_checks: not_checked`、`production_blocked: true`，不得拿来批准新交付。旧版本本身不改、不删；需要新交付时按实际来源建立新候选版本，缺失元数据须核对后补，不由程序推断或自动迁移。
+- TXT/Markdown 焦段辅助检查仍只检查已知文字问题；其 PASS 不是文件类型、项目或来源合格证据。正式业务稿仍须通过上述 JSON 身份核对，TXT 仅是经核对业务稿的提交副本。
+
+该合同不判断自由正文是否真正完成导演稿到提示词的转译，不证明已人工看图、对白完整、动作成立或生成质量。身份合格结果明确返回 `semantic_translation: requires_manual_review` 与 `generation_authorization: not_granted`。写有“导演稿”的合法对白不能靠关键词封禁；把导演文字装入合法视频外壳仍须人工发现并拒绝。manifest/确认记录是现有本地可信边界，不是密码学签名；本检查防普通重标、错项目、错版本与错链，不声称可抵御能修改全部文件及确认记录的人。
+
+迁移影响：旧视频 JSON 即使引用/时长曾通过，只要缺少身份字段，新交付检查就会拒绝。只读历史比较不回填字段、不改旧确认；新候选登记、复核、用户确认及生产采用仍走现有流程。本修改当前只存在隔离测试副本，需独立复核和明确生产应用范围后才可接入默认入口。

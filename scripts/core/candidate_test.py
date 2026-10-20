@@ -112,6 +112,9 @@ def resolve_inputs(project, ids=None):
         payload = json.loads(path.read_text(encoding="utf-8-sig")) if path.suffix.lower() == '.json' else {}
         if not isinstance(payload, dict):
             raise ValueError("候选 JSON 须为对象")
+        if item.get("logical_id") == "video.prompt":
+            from .schema_contracts import validate_video_prompt_identity
+            validate_video_prompt_identity(payload, project, candidate_mode=True, artifact=item)
         if item.get("type") == "visual-supplement-request":
             from .schema_contracts import validate_visual_supplement_request
             report = validate_visual_supplement_request(payload, project_root=project, candidate_test=True)

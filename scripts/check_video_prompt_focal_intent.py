@@ -113,7 +113,26 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("prompt_file", type=Path)
     parser.add_argument("--require-focal-intent", action="store_true",
                         help="仅当已核对上游确有关键光学要求时启用；脚本不替代适用性判断")
+    parser.add_argument("--project", type=Path, help="Required for JSON identity/source checks; TXT/MD remain narrow text checks")
+    parser.add_argument("--candidate-test", action="store_true", help="Only validate explicitly selected isolated candidates; never authorizes production")
     args = parser.parse_args(argv)
+    if args.prompt_file.suffix.lower() == ".json":
+        if args.project is None:
+            print("UNCHECKED JSON delivery identity requires --project; legacy metadata is not inferred")
+            return 2
+        try:
+            import json
+            try:
+                from .core.schema_contracts import validate_video_prompt_identity
+            except ImportError:
+                from core.schema_contracts import validate_video_prompt_identity
+            report = validate_video_prompt_identity(json.loads(args.prompt_file.read_text(encoding="utf-8-sig")),
+                args.project, candidate_mode=args.candidate_test)
+            print(json.dumps(report, ensure_ascii=False))
+            return 0
+        except (ValueError, OSError) as exc:
+            print("FAIL video prompt identity: " + str(exc))
+            return 1
     count, errors = inspect_document(args.prompt_file, require_focal_intent=args.require_focal_intent)
     if not count:
         print(f"UNCHECKED {args.prompt_file}: " + "; ".join(errors))

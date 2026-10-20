@@ -61,10 +61,10 @@ def setup_pipeline(root):
     director.pop('upload_bindings', None)
     frame = next(a for a in manifest['artifacts'] if a['artifact_id'] == 'FRAME')
     frame['path_or_url'] = mapped('frame.png')
+    narrative_entry = next(a for a in manifest['artifacts'] if a['artifact_id'] == 'NARRATIVE')
+    narrative_entry.update(type='narrative.package', revision=story['revision'],
+        path_or_url=mapped('02_编导/story.json'), checksum=artifacts.digest(story_path))
     manifest['artifacts'] += [
-        {'artifact_id': 'NARRATIVE', 'logical_id': 'narrative.package', 'revision': story['revision'],
-         'status': 'current', 'user_approved': True, 'path_or_url': mapped('02_编导/story.json'),
-         'checksum': artifacts.digest(story_path)},
         {'artifact_id': 'PRODUCT-REF', 'logical_id': 'visual.product', 'revision': 'R01',
          'status': 'current', 'user_approved': True, 'path_or_url': mapped('assets/product-references/bowl.png'),
          'checksum': artifacts.digest(image), 'upload_bindings': [{
@@ -81,6 +81,8 @@ def setup_pipeline(root):
         item = next(a for a in manifest['artifacts'] if a['artifact_id'] == ident)
         return {k: item[k] for k in ['artifact_id','revision']} | {'sha256': item['checksum']}
     frozen['source_artifacts'] = [ref('NARRATIVE'), ref('DIRECTOR')]
+    frozen['source_storyboard'] = {**ref('DIRECTOR'), 'logical_id': 'storyboard.package', 'path': mapped('director.json')}
+    frozen['source_narrative'] = {**ref('NARRATIVE'), 'logical_id': 'narrative.package', 'path': mapped('02_编导/story.json')}
     frozen['drafts'] = frozen['drafts'][:1]
     row = frozen['drafts'][0]
     shot = board['scenes'][0]['shots'][0]

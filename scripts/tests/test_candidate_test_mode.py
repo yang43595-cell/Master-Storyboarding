@@ -85,8 +85,12 @@ def test_candidate_text_chain_never_becomes_production(tmp_path):
     cli.handoff(argparse.Namespace(project=str(project), to_skill='voiceover-to-video-script', candidate_test=True))
     # Video directly consumes sources, never revives its retired preparation workflow.
     add(project, 'P', 'video.prompt', {'status': 'candidate', 'revision': 'R01',
-        'source_storyboard': {'revision': 'R02', 'path': 'B.json'},
-        'text': 'synthetic prompt candidate', 'open_questions': ['no reviewed image; generation blocked']}, ['storyboard.package'])
+        'schema_version': 'video-prompt-1.0', 'document_type': 'video.prompt',
+        'stage': 'voiceover-to-video-script', 'project_id': n['project_id'],
+        'source_storyboard': {'artifact_id': 'B', 'logical_id': 'storyboard.package', 'revision': 'R02', 'path': 'B.json', 'sha256': artifacts.digest(project/'B.json')},
+        'source_narrative': {'artifact_id': 'N', 'logical_id': 'narrative.package', 'revision': 'R01', 'path': 'N.json', 'sha256': artifacts.digest(project/'N.json')},
+        'drafts': [{'node_id': 'P01', 'prompt': 'synthetic prompt candidate', 'source_shot_ids': ['S01-010']}],
+        'open_questions': ['no reviewed image; generation blocked']}, ['storyboard.package'])
     assert [a['artifact_id'] for a in mode.resolve_inputs(project)] == ['N', 'B', 'P']
     state = load_project_state(project)
     assert state['current_artifacts'] == state['user_confirmations'] == []
