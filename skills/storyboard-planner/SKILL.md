@@ -38,7 +38,7 @@ description: 承接已确认故事与对白，创作供用户审定整段拍法�
 
 ## 交付合同
 
-交付顺序按[JSON 交付与按需导出](../../PROJECT_RULES.md#json-交付与按需导出)。完善、自查并送审 `<revision>_storyboard-package.json`（v4），保存完整视听展开、场景、逐镜拍法、对白承载、时间依据与衔接，只引用已确认叙事修订及稳定 ID。新包省略 human_readable_path，不要求同义导演 Markdown。用户确认准确修订后才登记采用；阅读稿按需导出，不登记为业务依赖。`storyboard-package-v1.schema.json`、`storyboard-package-v2.schema.json` 与 `storyboard-package-v3.schema.json` 仅用于旧项目的只读兼容。
+交付顺序按[JSON 交付与按需导出](../../PROJECT_RULES.md#json-交付与按需导出)。完善、自查并送审 `<revision>_storyboard-package.json`（v4），保存完整视听展开、场景、逐镜拍法、对白承载、时间依据与衔接，只引用已确认叙事修订及稳定 ID。新包省略 human_readable_path，不要求同义导演 Markdown。正常顺序为候选 JSON → 自查校验 → 现有审核网页审查 → 用户确认准确 JSON 版本及范围；网页按项目根规则使用既有入口，不虚构 URL，离线校验不代表已发布。仅用户明确要求 Markdown 检查稿时才从同一 JSON 版本导出，不作为前置、不新建业务权威、不反向覆盖 JSON、不登记为业务依赖。用户确认准确修订后才登记采用，正式交接仍须相应确认及明确继续授权。`storyboard-package-v1.schema.json`、`storyboard-package-v2.schema.json` 与 `storyboard-package-v3.schema.json` 仅用于旧项目的只读兼容。
 
 ## 硬禁区
 
