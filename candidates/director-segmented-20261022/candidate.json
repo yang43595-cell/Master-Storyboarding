@@ -1,0 +1,32 @@
+{
+  "status": "candidate_pending_integration",
+  "baseline_commit": "1a57efeb729a95a6df2aac69a04fe5f723d1bb6d",
+  "enabled_by_default": false,
+  "runtime_wiring": "none",
+  "workflow": "WORKFLOW.md",
+  "artistic_benefit": "unverified",
+  "creative_experiments": "paused",
+  "integration_dependency": "Separate A JSON/web contract correction; neither branch merges main.",
+  "schema_field_paths": [
+    "director_rules.editing_rhythm",
+    "director_rules.narrative_viewpoint",
+    "scenes[].dramatic_goal",
+    "scenes[].change",
+    "scenes[].audiovisual_flow",
+    "scenes[].start_state",
+    "scenes[].end_state",
+    "scenes[].shots[].take.start",
+    "scenes[].shots[].take.end",
+    "scenes[].shots[].cut.information_handoff",
+    "scenes[].shots[].audio.dialogue",
+    "timing_basis"
+  ],
+  "unchanged_baseline_blobs": {
+    "PROJECT_RULES.md": "cd1dd7432ebd336839b1facbdf5e79a55f5a55c6",
+    "skills/storyboard-planner/SKILL.md": "c9ffb8d6a60af9c4934a592d4084617fea237ad3",
+    "skills/storyboard-planner/modules/shot-planning.md": "8613fa2425a87e87d16d1c1110cfb1d586e6cddd",
+    "skills/storyboard-planner/review-profile.json": "90429edc10eeaa04e207eb19342e877c2c60780b",
+    "skills/storyboard-planner/knowledge-profile.json": "c4987f9f2715cde3a04afb3b02f4473ac9a2df7a",
+    "schemas/storyboard-package.schema.json": "38c1eff9bba641c61d6cc940ced0b6f802607f9a"
+  }
+}
