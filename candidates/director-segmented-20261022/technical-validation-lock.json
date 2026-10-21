@@ -1,0 +1,29 @@
+{
+  "base_combination_commit": "5da6d80bd33008ebe4404a874de464eaed825f70",
+  "a_commit": "1b4959656f20e7b9796ccacbb3620a3908552b27",
+  "b_origin_commit": "6cf4e382a46101fc2a72e4e5139e33165c67752c",
+  "original_combination_lock_blob": "1a65f5ad3b7cfade9b92bd8862529ffdd0b57298",
+  "a_runtime_blobs": {
+    "PROJECT_RULES.md": "a1f20eadb8965f33a2a4bf01934614f44e66826c",
+    "schemas/storyboard-package.schema.json": "38c1eff9bba641c61d6cc940ced0b6f802607f9a",
+    "skills/storyboard-planner/SKILL.md": "dbb4274e4f2fb52712c4dd3d57d7c0eaaa260661",
+    "skills/storyboard-planner/knowledge-profile.json": "c4987f9f2715cde3a04afb3b02f4473ac9a2df7a",
+    "skills/storyboard-planner/modules/shot-planning.md": "8613fa2425a87e87d16d1c1110cfb1d586e6cddd",
+    "skills/storyboard-planner/review-profile.json": "a715caa4e4128b8cd5bce8b34a62baeb5d31e555"
+  },
+  "candidate_blobs": {
+    "candidates/director-segmented-20261022/FOLLOWUP.md": "562a034d1f1835d54e349f1ee7e0f1e3a0a498a5",
+    "candidates/director-segmented-20261022/TASK_ENTRY.md": "1be5db85be44eb8d012b82c21d2b6a2ecf410910",
+    "candidates/director-segmented-20261022/VALIDATION.md": "cc6e8d4d9aefca137a3d0de025799dda6c533f9d",
+    "candidates/director-segmented-20261022/WORKFLOW.md": "e6141ca7a2765e96af02ca82736d0ddc519f9fd0",
+    "candidates/director-segmented-20261022/candidate.json": "df75a43e39c3ab9e7a453d8c6eeedb6ddce3ef49",
+    "candidates/director-segmented-20261022/segment_tasks.py": "dda2ac4937f7272dc651bd5caab408ff6ce2ceb2",
+    "candidates/director-segmented-20261022/test_segment_tasks.py": "95f1a52de8b9da036dc0ecc853caa767fde4276f",
+    "candidates/director-segmented-20261022/validate_candidate.py": "551d4956cd8aa2e95da7643b7bf3fc0e41bd5f21"
+  },
+  "allowed_candidate_changes": [
+    "candidates/director-segmented-20261022/segment_tasks.py",
+    "candidates/director-segmented-20261022/test_segment_tasks.py"
+  ],
+  "production_enabled": false
+}

@@ -76,6 +76,7 @@ def init(run, source_path, plan_path, base_path):
         check(isinstance(plan[field], str) and plan[field].strip(), "missing global plan: " + field)
     paragraphs = [p["paragraph_id"] for p in source["story_paragraphs"]]
     dialogues = [d["dialogue_id"] for d in source["dialogues"]]
+    check(len(paragraphs) == len(set(paragraphs)) and len(dialogues) == len(set(dialogues)), "duplicate source IDs")
     check(base["source_paragraph_ids"] == paragraphs and base["source_dialogue_ids"] == dialogues, "base source coverage/order differs")
     segments = plan["segments"]
     check(bool(segments), "no segments")
@@ -89,6 +90,11 @@ def init(run, source_path, plan_path, base_path):
         check(bool(segment["source_paragraph_ids"]), "empty segment source")
         check(set(segment["source_paragraph_ids"]) <= set(paragraphs), "unknown paragraph")
         check(set(segment["source_dialogue_ids"]) <= set(dialogues), "unknown dialogue")
+        indexes = [paragraphs.index(p) for p in segment["source_paragraph_ids"]]
+        check(indexes == sorted(set(indexes)), "segment source IDs duplicate/reordered")
+        for dialogue in source["dialogues"]:
+            if dialogue["dialogue_id"] in segment["source_dialogue_ids"]:
+                check(dialogue["source_paragraph_id"] in segment["source_paragraph_ids"], "dialogue source paragraph outside segment")
         first = min(paragraphs.index(p) for p in segment["source_paragraph_ids"])
         check(first >= last_first, "segments reorder source")
         last_first = first
@@ -99,6 +105,9 @@ def init(run, source_path, plan_path, base_path):
         state(segment["target_state"])
     check(covered == set(paragraphs) and covered_dialogue == set(dialogues), "plan omits source IDs")
     check(scene_order == [s["scene_id"] for s in base["scenes"]], "scene order differs from base")
+    for scene in base["scenes"]:
+        planned = {p for s in segments if s["scene_id"] == scene["scene_id"] for p in s["source_paragraph_ids"]}
+        check(planned == set(scene["source_paragraph_ids"]), "planned/base scene source coverage differs")
     state(plan["initial_state"])
     manifest = {"production_blocked": True, "source_path": str(Path(source_path).resolve()),
                 "source_sha256": digest(source_path), "inputs": {}, "tasks": {}, "results": {}, "history": []}
@@ -158,6 +167,7 @@ def task(run, segment_id, reason):
              "reason": reason,
              "instruction": "Read full frozen source and WORKFLOW.md. Author only this segment; no changed dialogue/facts. Record few real options only at substantive forks; score is auxiliary. No model is called by this tool."}
     number = len(manifest["history"]) + 1
+    value["task_revision"] = number
     path = "tasks/" + segment_id + "-" + str(number) + ".json"
     write_new(run / path, value)
     ref = {"path": path, "sha256": digest(run / path)}
@@ -205,7 +215,12 @@ def record(run, segment_id, result_path):
         check(set(shot["source_dialogue_ids"]) <= set(work["segment"]["source_dialogue_ids"]), "shot dialogue outside segment")
         check(set(shot["source_dialogue_ids"]) == {d["dialogue_id"] for d in shot["audio"]["dialogue"]}, "shot dialogue references disagree")
         check(set(shot["source_asset_requirement_ids"]) <= set(read(run / "inputs/base.json")["source_asset_requirement_ids"]), "unknown asset reference")
-    path = "results/" + segment_id + "-" + str(len(manifest["history"]) + 1) + ".json"
+        for fragment in shot["audio"]["dialogue"]:
+            original = next(d for d in source["dialogues"] if d["dialogue_id"] == fragment["dialogue_id"])
+            check(original["source_paragraph_id"] in shot["source_paragraph_ids"], "dialogue source paragraph outside shot")
+    number = len(manifest["history"]) + 1
+    value["result_revision"] = number
+    path = "results/" + segment_id + "-" + str(number) + ".json"
     write_new(run / path, value)
     ref = {"path": path, "sha256": digest(run / path)}
     manifest["results"][segment_id] = ref
@@ -236,6 +251,7 @@ def assemble(run):
     for scene in base["scenes"]:
         selected = [r for r in results if r["scene_id"] == scene["scene_id"]]
         scene["shots"] = [s for r in selected for s in r["shots"]]
+        check(set(scene["source_paragraph_ids"]) == {p for s in scene["shots"] for p in s["source_paragraph_ids"]}, "assembled scene source coverage differs")
         scene["audiovisual_flow"] = "\n\n".join(r["audiovisual_flow"] for r in selected)
         scene["start_state"] = json.dumps(selected[0]["start_state"], ensure_ascii=False)
         scene["end_state"] = json.dumps(selected[-1]["end_state"], ensure_ascii=False)

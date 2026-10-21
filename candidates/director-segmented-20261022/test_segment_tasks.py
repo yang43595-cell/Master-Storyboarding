@@ -22,15 +22,24 @@ class SegmentTaskTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.run = self.root / "run"
         self.state = {key: "synthetic boundary" for key in tool.STATE_KEYS}
-        self.source = {"project_id": "SYNTHETIC", "revision": "R01", "story_paragraphs": [
+        self.source = {"schema_version": "2.0", "project_id": "SYNTHETIC", "revision": "R01", "status": "candidate",
+                       "objective": "synthetic technical fixture only", "locked_facts": [], "asset_requirements": [],
+                       "change_summary": [], "open_questions": [], "story_paragraphs": [
             {"paragraph_id": "STP-01", "text": "synthetic A"},
             {"paragraph_id": "STP-02", "text": "synthetic B"}],
-            "dialogues": [{"dialogue_id": "DLG-01", "speaker_id": "CHAR-A", "text": "fixture"}]}
+            "dialogues": [{"dialogue_id": "DLG-01", "speaker_id": "CHAR-A", "text": "fixture", "source_paragraph_id": "STP-01", "status": "draft", "source_ref": "synthetic technical fixture"}]}
         self.base = {"schema_version": "4.0", "project_id": "SYNTHETIC", "revision": "R02", "status": "candidate",
                      "source_narrative": {"artifact_id": "ART-01", "logical_id": "narrative.package", "revision": "R01", "path": "source.json"},
                      "source_paragraph_ids": ["STP-01", "STP-02"], "source_dialogue_ids": ["DLG-01"],
-                     "source_asset_requirement_ids": [], "director_rules": {"editing_rhythm": "synthetic"},
-                     "scenes": [{"scene_id": "S01", "shots": [], "audiovisual_flow": "fixture"}],
+                     "source_asset_requirement_ids": [], "director_rules": {
+                         "aspect_and_exhibition": "synthetic", "narrative_viewpoint": "synthetic",
+                         "camera_principle": "synthetic", "editing_rhythm": "synthetic", "light_color_intent": "synthetic",
+                         "sound_principle": "synthetic", "technical_constraint_status": "unknown_director_intent_only"},
+                     "scenes": [{"scene_id": "S01", "source_paragraph_ids": ["STP-01", "STP-02"],
+                                 "dramatic_goal": "synthetic", "start_state": "synthetic", "change": "synthetic", "end_state": "synthetic",
+                                 "space_rules": {k: "synthetic" for k in ("axis", "screen_direction", "subject_positions", "key_objects", "directional_anchors", "light_source", "sound_base")},
+                                 "defaults": {"light_color_intent": "synthetic", "ambience": [], "music": []},
+                                 "shots": [], "audiovisual_flow": "fixture"}],
                      "asset_gaps": [], "open_questions": [],
                      "timing_basis": {"status": "not_evaluable", "source_type": None, "source_path": None, "source_field": None}}
         self.plan = {"source_revision": "R01", "source_artifact_id": "ART-01", "director_rules": self.base["director_rules"],
@@ -64,7 +73,11 @@ class SegmentTaskTests(unittest.TestCase):
                 "options": [{"id": "only-route", "hard_conflicts": [], "evidence": "synthetic evidence", "tradeoffs": "not measured"}],
                 "shots": [{"shot_id": "S01-001" if first else "S01-002", "source_paragraph_ids": ["STP-01" if first else "STP-02"],
                            "source_dialogue_ids": ["DLG-01"] if first else [], "source_asset_requirement_ids": [],
-                           "audio": {"dialogue": dialogue, "sfx": []}}]}
+                           "audio": {"dialogue": dialogue, "sfx": []}, "purpose": "synthetic structural fixture",
+                           "camera": {"framing": "synthetic", "movement": "synthetic", "focus": "synthetic"},
+                           "take": {"start": "synthetic", "process": "synthetic", "end": "synthetic"},
+                           "cut": {"entry": "synthetic", "exit": "synthetic", "trigger": "synthetic", "information_handoff": "synthetic"},
+                           "rhythm": "synthetic estimate"}]}
 
     def record(self, sid, value=None):
         path = self.root / (sid + "-input.json")
@@ -156,9 +169,8 @@ class SegmentTaskTests(unittest.TestCase):
 
     def test_assemble_never_claims_schema_or_semantic_success(self):
         self.complete()
-        # Synthetic fixture intentionally lacks full shot fields. A real schema
-        # validator must reject it; simulate the unavailable-dependency branch
-        # solely to exercise composition, never to assert business-schema PASS.
+        # Exercise unavailable-dependency reporting explicitly, independent of
+        # installed dependencies; actual schema validation has separate tests.
         import builtins
         original = builtins.__import__
         def without_schema(name, *args, **kwargs):
@@ -191,6 +203,101 @@ class SegmentTaskTests(unittest.TestCase):
         self.record("SEG-02")
         with self.assertRaisesRegex(ValueError, "dialogue text changed"):
             tool.assemble(self.run)
+
+    def test_identical_output_new_revision_invalidates_downstream(self):
+        self.complete()
+        before = tool.read(self.run / "manifest.json")["results"]["SEG-01"]
+        self.record("SEG-01")  # same authored content, explicit new result revision
+        after = tool.read(self.run / "manifest.json")["results"]["SEG-01"]
+        self.assertNotEqual(before["sha256"], after["sha256"])
+        self.assertEqual(tool.digest(self.run / before["path"]), before["sha256"])
+        self.assertFalse(tool.progress(self.run)["segments"][1]["current"])
+        with self.assertRaisesRegex(ValueError, "missing/stale"):
+            tool.assemble(self.run)
+        tool.task(self.run, "SEG-02", "explicit adjacent recheck, no author call")
+        self.record("SEG-02")
+        self.assertTrue(tool.progress(self.run)["all_current"])
+
+    def test_changed_output_and_same_reason_task_revision_invalidate(self):
+        self.complete()
+        changed = self.result("SEG-01")
+        changed["end_state"]["props"] = "changed synthetic state"
+        self.record("SEG-01", changed)
+        self.assertFalse(tool.progress(self.run)["segments"][1]["current"])
+        ref = tool.task(self.run, "SEG-02", "same reason")
+        self.assertEqual(tool.read(self.run / ref["path"])["start_state"], changed["end_state"])
+        newer = tool.task(self.run, "SEG-02", "same reason")
+        self.assertNotEqual(ref["sha256"], newer["sha256"])
+
+    def test_duplicate_segments_reordered_ids_and_dialogue_source_rejected(self):
+        bad = deepcopy(self.plan)
+        bad["segments"][1]["segment_id"] = "SEG-01"
+        self.plan_path.write_text(json.dumps(bad))
+        with self.assertRaisesRegex(ValueError, "duplicate segment"):
+            self.init()
+        bad = deepcopy(self.plan)
+        bad["segments"][0]["source_paragraph_ids"] = ["STP-02", "STP-01"]
+        self.plan_path.write_text(json.dumps(bad))
+        with self.assertRaisesRegex(ValueError, "duplicate/reordered"):
+            self.init()
+        self.prepare()
+        self.source["dialogues"][0]["source_paragraph_id"] = "STP-02"
+        self.prepare()
+        with self.assertRaisesRegex(ValueError, "dialogue source paragraph"):
+            self.init()
+
+    def test_scene_source_fields_checked_at_init_and_assembly(self):
+        self.base["scenes"][0]["source_paragraph_ids"] = ["STP-01"]
+        self.prepare()
+        with self.assertRaisesRegex(ValueError, "base scene source coverage"):
+            self.init()
+        self.base["scenes"][0]["source_paragraph_ids"] = ["STP-01", "STP-02"]
+        second = deepcopy(self.base["scenes"][0])
+        second["scene_id"] = "S02"
+        second["source_paragraph_ids"] = ["STP-02"]
+        self.base["scenes"].append(second)
+        self.plan["segments"][0]["source_paragraph_ids"] = ["STP-01", "STP-02"]
+        self.plan["segments"][1]["scene_id"] = "S02"
+        self.prepare()
+        self.init()
+        tool.task(self.run, "SEG-01", "synthetic")
+        self.record("SEG-01")
+        tool.task(self.run, "SEG-02", "synthetic")
+        value = self.result("SEG-02")
+        value["scene_id"] = "S02"
+        value["shots"][0]["shot_id"] = "S02-001"
+        self.record("SEG-02", value)
+        with self.assertRaisesRegex(ValueError, "assembled scene source coverage"):
+            tool.assemble(self.run)
+
+    def test_actual_narrative_and_assembled_v4_schema_validation(self):
+        from scripts.core.runtime_deps import require_runtime_deps
+        require_runtime_deps(tool.ROOT)
+        from scripts.core.schema_contracts import require_schema
+        require_schema(self.source, "narrative-package.schema.json", label="synthetic source")
+        self.complete()
+        receipt = tool.assemble(self.run)
+        self.assertEqual(receipt["schema_check"], "passed")
+        output = tool.read(self.run / receipt["output"])
+        require_schema(output, "storyboard-package.schema.json", label="synthetic assembled v4")
+        self.assertNotIn("result_revision", json.dumps(output))
+        self.assertFalse(receipt["semantic_continuity_verified"])
+        self.assertTrue(receipt["production_blocked"])
+
+    def test_actual_schema_failure_prevents_export(self):
+        from scripts.core.runtime_deps import require_runtime_deps
+        require_runtime_deps(tool.ROOT)
+        from scripts.core.schema_contracts import SchemaContractError
+        self.init()
+        tool.task(self.run, "SEG-01", "synthetic invalid schema")
+        value = self.result("SEG-01")
+        del value["shots"][0]["camera"]["focus"]
+        self.record("SEG-01", value)
+        tool.task(self.run, "SEG-02", "synthetic")
+        self.record("SEG-02")
+        with self.assertRaises(SchemaContractError):
+            tool.assemble(self.run)
+        self.assertFalse((self.run / "exports").exists())
 
 
 if __name__ == "__main__":
