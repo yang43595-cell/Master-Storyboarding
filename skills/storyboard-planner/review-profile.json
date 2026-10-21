@@ -15,9 +15,9 @@
     {"id": "PLAN-DIALOGUE", "text": "对白及其说话者未被新增、删减或改写；已选定的声音表演在对应片段 delivery 中保留，跨镜语气延续，不混入 text"},
     {"id": "PLAN-CONTINUITY", "text": "空间、动作、视线、道具、产品、光线、声音与状态连续性可执行"},
     {"id": "PLAN-GAPS", "text": "资产缺口绑定来源段落和受影响镜头，只报告且未生成新 AST"},
-    {"id": "PLAN-PACKAGE", "text": "Markdown 自查核对正文内部一致及已确认上游叙事包 artifact/revision；用户确认该导演稿后才生成并核对 storyboard-package v4，不把缺少产物 JSON 作为 Markdown 审查失败"},
+    {"id": "PLAN-PACKAGE", "text": "候选 storyboard-package v4 JSON 自查核对完整视听展开、场景、逐镜拍法、对白承载、时间依据与衔接的内部一致性，以及已确认上游叙事包 artifact/revision；JSON 为业务权威，新包省略 human_readable_path，校验后按需派生 Markdown 阅读副本，不反向覆盖 JSON、不登记为新业务依赖；历史带 human_readable_path 的包仍按原双文件一致性检查只读兼容，不删除字段绕过差异、不改写历史采用与确认记录"},
     {"id": "PLAN-BOUNDARY", "text": "未自行新增资产需求，用户确认调整按项目规则核对；未决定 Blender、视频模型、生成分段、提示词或正式分镜图"},
     {"id": "KB-COMPLIANCE", "text": "产物命中对应知识：分镜方案须遵循 PROJECT_RULES、当前知识包、STORYBOARD-PLANNING-METHOD 全文快照与本地执行合同；景别/基础连续性剪辑属模型通用能力，不作动态知识包命中要求。只止于可执行导演合同，不越权写 Blender/模型/提示词。产出前已 prepare 并核对上述规范，非自行发挥"},
-    {"id": "SERIAL-DELIVERY", "text": "按 PROJECT_RULES 的串行交付阶段判断：问题在对话集中提出并等待；答疑不是稿件确认；自查后的完整 Markdown 经用户明确确认才生成交付 JSON"}
+    {"id": "SERIAL-DELIVERY", "text": "按 PROJECT_RULES 的 JSON 交付与逐场创作确认规则判断：确需用户决定的事实缺口在对话集中提出并等待；答疑不是稿件确认；先完善、自查并送审本轮范围完整的候选 JSON，由用户审定准确修订及范围；段落确认不代表全片确认，全片完成并复核完整 JSON、用户确认准确修订后才登记采用，只有用户确认并明确要求继续后才在授权范围内正式交接或进入下一阶段"}
   ]
 }
