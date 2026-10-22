@@ -89,6 +89,32 @@ def test_delivery_survives_cross_shot_roundtrip_without_changing_text(tmp_path):
         validate_story_sources(narrative(tmp_path), p, project_root=tmp_path)
 
 
+@pytest.mark.parametrize('mutation', [None, 'delivery', 'speaker', 'text', 'missing', 'duplicate'])
+def test_on_screen_text_keeps_silent_contract_and_source_coverage(tmp_path, mutation):
+    p = compact_package()
+    shot = p['scenes'][0]['shots'][0]
+    placement = shot['audio']['dialogue'][0]
+    placement['presentation'] = 'ON_SCREEN_TEXT'
+    shot['take'] = {'start': '画面留白', 'process': '显示原文：不。', 'end': '文字保持可读'}
+    shot['rhythm'] = '按阅读停留，不发声'
+    if mutation == 'delivery':
+        placement['delivery'] = '仅文字，不发声'
+    elif mutation == 'speaker':
+        placement['speaker_id'] = 'OTHER'
+    elif mutation == 'text':
+        placement['text'] = '改字'
+    elif mutation == 'missing':
+        shot['audio']['dialogue'] = []
+    elif mutation == 'duplicate':
+        shot['audio']['dialogue'].append(copy.deepcopy(placement))
+    source = narrative(tmp_path)
+    if mutation is None:
+        validate_story_sources(source, p, project_root=tmp_path)
+    else:
+        with pytest.raises(ValueError):
+            validate_story_sources(source, p, project_root=tmp_path)
+
+
 def write_asset_choices(tmp_path, n, *, confirmed=True, revision='R01', refs=None, excluded=None):
     from visual_asset_choices import RELATIVE
     added = copy.deepcopy(n['asset_requirements'][0])

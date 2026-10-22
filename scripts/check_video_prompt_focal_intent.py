@@ -6,6 +6,7 @@ This is a text check, not an assessment of staging or generated video quality.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -14,10 +15,13 @@ from pathlib import Path
 HEADING_RE = re.compile(r"^##[ \t]+[^\n]+", re.MULTILINE)
 SEGMENT_RE = re.compile(
     r"^##[ \t]+(?:第[ \t]*(?P<legacy>\d+)[ \t]*段|"
-    r"生成段[ \t]*(?P<current>\d+(?:[ \t]*[–—\-~至][ \t]*\d+)?))"
+    r"生成段[ \t]*(?P<current>\d+(?:[ \t]*[–—\-~至][ \t]*\d+)?)|"
+    r"提示词[ \t]*(?P<prompt>\d+|[一二三四五六七八九十百零〇两]+))"
     r"(?=[ \t：:｜|（(]|$)"
 )
 BODY_HEADING_RE = re.compile(r"^###[ \t]+(?:提交正文|提示词|模型正文)(?:[ \t]*[（(][^\n]*)?[ \t]*$", re.MULTILINE)
+SUBHEADING_RE = re.compile(r"^###[ \t]+(?P<title>[^\n]+)", re.MULTILINE)
+MODEL_PARTS = {"素材职责", "公共条件", "连续视听正文"}
 CODE_BLOCK_RE = re.compile(r"^```(?:text|txt)?[ \t]*\n(.*?)^```[ \t]*$", re.MULTILINE | re.DOTALL)
 FOCAL_RE = re.compile(r"广角|中长焦|长焦|标准(?:焦段|镜头|倾向)|焦段倾向[：:][ \t]*标准")
 PURPOSE_LABEL_RE = re.compile(r"光学目的[：:][ \t]*\S[^\n]*")
@@ -30,29 +34,101 @@ PATH_RE = re.compile(r"[A-Za-z]:[\\/]|/(?:Users|home|tmp)/")
 CHECKLIST_RE = re.compile(r"(?:^|\n)[^\n]{0,20}(?:完成条件|自查结论|验收清单)[：:]")
 
 
+def _body_text(text: str) -> str:
+    text = text.strip()
+    if text.startswith("```"):
+        block = CODE_BLOCK_RE.match(text)
+        return block.group(1).strip() if block else ""
+    return re.split(r"^(?:制作备注|后期小字|自查结论)[：:]", text,
+                    maxsplit=1, flags=re.MULTILINE)[0].strip()
+
+
 def _segments(text: str) -> list[tuple[str, str, str]]:
-    """Return label, model body, and source section; keep missing bodies visible."""
+    """Read known prose layouts, without making their headings mandatory."""
     headings = list(HEADING_RE.finditer(text))
     segments: list[tuple[str, str, str]] = []
     for index, heading in enumerate(headings):
         match = SEGMENT_RE.match(heading.group())
         if not match:
             continue
-        label = match.group("legacy") or match.group("current")
+        label = match.group("legacy") or match.group("current") or match.group("prompt")
         end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
         section = text[heading.end():end]
-        marker = BODY_HEADING_RE.search(section)
+        subheadings = list(SUBHEADING_RE.finditer(section))
         body = ""
-        if marker:
-            after_marker = section[marker.end():].lstrip()
-            if after_marker.startswith("```"):
-                block = CODE_BLOCK_RE.match(after_marker)
-                body = block.group(1).strip() if block else ""
-            else:
-                body = re.split(r"^###[ \t]+|^(?:制作备注|后期小字|自查结论)[：:]", after_marker,
-                                maxsplit=1, flags=re.MULTILINE)[0].strip()
+        for part_index, part in enumerate(subheadings):
+            if part.group("title").strip() in MODEL_PARTS:
+                # The three sibling sections all go to the model. Stop before
+                # production notes; references alone cannot replace the action body.
+                parts = []
+                has_action = False
+                for j in range(part_index, len(subheadings)):
+                    current = subheadings[j]
+                    title = current.group("title").strip()
+                    if title not in MODEL_PARTS:
+                        break
+                    stop = subheadings[j + 1].start() if j + 1 < len(subheadings) else len(section)
+                    content = _body_text(section[current.end():stop])
+                    if title == "连续视听正文":
+                        has_action = bool(content)
+                    parts.append(content)
+                body = "\n\n".join(parts).strip() if has_action else ""
+                break
+            if BODY_HEADING_RE.fullmatch(part.group()):
+                stop = subheadings[part_index + 1].start() if part_index + 1 < len(subheadings) else len(section)
+                body = _body_text(section[part.end():stop])
+                # A legacy wrapper may directly contain the new sibling layout.
+                if body or part_index + 1 == len(subheadings):
+                    break
         segments.append((label, body, section))
     return segments
+
+
+def _json_segments(text: str) -> list[tuple[str, str, str]]:
+    """Extract existing business fields only; not a schema or submission check."""
+    data = json.loads(text)
+    if not isinstance(data, dict):
+        raise ValueError("JSON 顶层不是对象")
+    if "drafts" in data and ("generation_segments" in data or "creative_sections" in data):
+        raise ValueError("JSON 同时存在 drafts 与生成段，不猜权威正文")
+    body_key = "prompt_text"
+    if "generation_segments" in data:
+        rows = data["generation_segments"]
+    elif "creative_sections" in data:
+        sections = data["creative_sections"]
+        if not isinstance(sections, list) or any(
+                not isinstance(s, dict) or not isinstance(s.get("generation_segments"), list)
+                for s in sections):
+            raise ValueError("创作段 generation_segments 格式无法识别")
+        rows = [row for section in sections for row in section["generation_segments"]]
+    elif "drafts" in data:
+        rows, body_key = data["drafts"], "prompt"
+    else:
+        return []
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+        raise ValueError("生成段列表格式无法识别")
+    if "generation_segments" in data and "creative_sections" in data:
+        sections = data["creative_sections"]
+        if not isinstance(sections, list) or any(
+                not isinstance(s, dict) or not isinstance(s.get("generation_segments"), list)
+                for s in sections):
+            raise ValueError("创作段生成段引用列表格式无法识别")
+        links = [ident for section in sections for ident in section["generation_segments"]]
+        ids = [row.get("segment_id") for row in rows]
+        if (any(not isinstance(ident, str) for ident in links + ids)
+                or set(links) != set(ids)):
+            raise ValueError("顶层生成段与创作段引用不一致，不猜权威正文")
+
+    def source_strings(value):
+        if isinstance(value, dict):
+            return "\n".join(f"{key}：{source_strings(item)}" for key, item in value.items())
+        if isinstance(value, list):
+            return "\n".join(source_strings(item) for item in value)
+        return value if isinstance(value, str) else ""
+
+    return [(str(row.get("segment_id", row.get("node_id", index))),
+             row[body_key].strip() if isinstance(row.get(body_key), str) else "",
+             source_strings(row)) for index, row in enumerate(rows, 1)]
 
 
 def _has_optical_purpose(body: str) -> bool:
@@ -79,10 +155,18 @@ def _focal_measurements(body: str) -> list[re.Match]:
 
 def inspect_document(path: Path, *, require_focal_intent: bool = False) -> tuple[int, list[str]]:
     text = path.read_text(encoding="utf-8-sig").replace("\r\n", "\n")
-    segments = [(path.stem, text.strip(), text)] if path.suffix.lower() == ".txt" else _segments(text)
+    try:
+        if path.suffix.lower() == ".txt":
+            segments = [(path.stem, text.strip(), text)]
+        elif path.suffix.lower() == ".json":
+            segments = _json_segments(text)
+        else:
+            segments = _segments(text)
+    except ValueError as error:
+        return 0, [f"无法检查：{error}；不按0段通过"]
     errors: list[str] = []
     if not segments:
-        return 0, ["无法检查：当前 Markdown 格式未识别提交正文；可检查实际提交 TXT。此结果不是内容不合格，也不按0段通过"]
+        return 0, ["无法检查：当前格式未识别提交正文；可检查实际提交 TXT。此结果不是内容不合格，也不按0段通过"]
     for number, body, section in segments:
         if not body:
             errors.append(f"第 {number} 段缺少非空、完整的提交正文")

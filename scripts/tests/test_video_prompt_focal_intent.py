@@ -169,3 +169,102 @@ def test_lens_accessory_dimensions_are_not_focal_lengths(tmp_path, body):
     p = tmp_path / 'lens-cap.txt'
     p.write_text(body, encoding='utf-8')
     assert inspect_document(p) == (1, [])
+
+
+# Representative R18/candidate layout: these are sibling model-visible sections,
+# not a new required production schema or a dependency on external deliverables.
+MODERN_PROMPT = """## 提示词一 金额质问
+### 素材职责
+@丈夫人物板用于身份与服装，不继承白底。
+### 公共条件
+厨房灶台在左，入口在右；持续煎炒声，没有音乐。
+### 连续视听正文
+丈夫肩上近景，中长焦倾向，双眼清楚，旧门框仍可辨。
+他抬眼问：“1000多？！”随后切到妻子。
+### 制作备注
+视频模型没有上下文。C:/Users/example/face.png；DLG-001。
+## 提示词二 反问后继续劳动
+### 公共条件
+妻子仍站在灶前。
+### 连续视听正文
+她低头翻炒，锅铲声停后切下一场。
+"""
+
+
+def test_three_sibling_model_sections_and_notes_remain_separate(tmp_path):
+    from scripts.check_video_prompt_focal_intent import _segments
+    p = tmp_path / 'r18.md'
+    p.write_text(MODERN_PROMPT, encoding='utf-8')
+    segments = _segments(MODERN_PROMPT)
+    assert len(segments) == 2
+    assert all(part in segments[0][1] for part in ('@丈夫人物板', '持续煎炒声', '随后切到妻子'))
+    assert 'DLG-001' not in segments[0][1]
+    assert inspect_document(p) == (2, [])
+    p.write_text(MODERN_PROMPT.replace('### 素材职责', '### 提交正文\n### 素材职责'), encoding='utf-8')
+    assert inspect_document(p) == (2, [])
+
+
+@pytest.mark.parametrize('target', ['@丈夫人物板', '持续煎炒声', '随后切到妻子'])
+def test_leaks_anywhere_in_three_sections_are_checked(tmp_path, target):
+    p = tmp_path / 'r18.md'
+    p.write_text(MODERN_PROMPT.replace(target, target + '。DLG-012'), encoding='utf-8')
+    count, errors = inspect_document(p)
+    assert count == 2
+    assert any('内部对白' in e for e in errors)
+
+
+@pytest.mark.parametrize('action', ['', '### 连续视听正文\n', '### 连续视听正文\n```text\n未闭合正文'])
+def test_new_layout_missing_action_body_still_fails(tmp_path, action):
+    p = tmp_path / 'empty.md'
+    p.write_text('## 提示词一 缺正文\n### 公共条件\n标准焦段保持自然比例。\n' + action, encoding='utf-8')
+    count, errors = inspect_document(p)
+    assert count == 1
+    assert any('提交正文' in e for e in errors)
+
+
+@pytest.mark.parametrize('layout', ['top', 'nested', 'linked', 'legacy'])
+def test_json_existing_business_body_layouts(tmp_path, layout):
+    import json
+    row = {'segment_id': 'OPEN-001', 'prompt_text': '中长焦突出人物，与背景分离。',
+           'notes': '视频模型没有上下文。DLG-001。C:/Users/example/ref.png'}
+    if layout == 'nested':
+        data = {'creative_sections': [{'generation_segments': [row]}]}
+    elif layout == 'legacy':
+        data = {'drafts': [{'node_id': 'OPEN-001', 'prompt': row['prompt_text'], 'notes': row['notes']}]}
+    else:
+        data = {'generation_segments': [row]}
+        if layout == 'linked':
+            data['creative_sections'] = [{'generation_segments': ['OPEN-001']}]
+    p = tmp_path / 'prompts.json'
+    p.write_text(json.dumps(data, ensure_ascii=False), encoding='utf-8')
+    assert inspect_document(p) == (1, [])
+
+
+def test_json_body_not_notes_supplies_optics_and_leak_checks(tmp_path):
+    import json
+    p = tmp_path / 'prompts.json'
+    row = {'segment_id': 'OPEN-001', 'prompt_text': '她转身。DLG-001。',
+           '摄影表达': '中长焦突出表情。'}
+    p.write_text(json.dumps({'generation_segments': [row]}, ensure_ascii=False), encoding='utf-8')
+    count, errors = inspect_document(p)
+    assert count == 1
+    assert any('定性焦段倾向' in e for e in errors)
+    assert any('光学目的' in e for e in errors)
+    assert any('内部对白' in e for e in errors)
+    row['prompt_text'] = ''
+    p.write_text(json.dumps({'generation_segments': [row]}), encoding='utf-8')
+    assert any('提交正文' in e for e in inspect_document(p)[1])
+
+
+@pytest.mark.parametrize('data', [
+    '{', '{}', '{"generation_segments": []}',
+    '{"drafts": [], "generation_segments": []}',
+    '{"generation_segments": [{"segment_id": "A", "prompt_text": "ok"}], "creative_sections": [{"generation_segments": ["B"]}]}',
+    '{"creative_sections": [{"generation_segments": ["OPEN-001"]}]}',
+])
+def test_unknown_invalid_or_ambiguous_json_is_unchecked(tmp_path, data, capsys):
+    from scripts.check_video_prompt_focal_intent import main
+    p = tmp_path / 'unknown.json'
+    p.write_text(data, encoding='utf-8')
+    assert main([str(p)]) == 2
+    assert 'UNCHECKED' in capsys.readouterr().out

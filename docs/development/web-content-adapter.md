@@ -53,3 +53,11 @@ stdin 包含 sourcePath（现有 JSON）、stage、caseId、scope、sourceScript
 31 项定向测试，案例 01/05/06 × script/director/assets/prompts 共 12 份固定 golden version，全部通过原执行 schema；另外检查参考视图边界、缺 benchmark/布局/媒体凭据、MIME/hash/URL 反例、显式 expectedVersion、stdin 只读入口及当前反馈有效性。补充实际阅读器主 scenes 全文/对白、合法混合编号、源文件字节替换、空原生身份、锚点重排/重复、双缺媒体身份、旧版解释性错误及 Windows 映射回归。测试只解码固定的微型合成字节，不接站点、不生成生产媒体。未运行网页全部媒体保全套件或 hosted QA，未重跑 Windows111。
 
 长来源视图按原 schema 的 UTF-16 字符上限在内存分块，拼接可完整还原同一 JSON；不截断、摘要或要求用户另建文档。请求总量及 block/media 上限仍由原执行契约验证。
+
+## 2026-10-22 阅读层修复（离线候选，未部署）
+
+导演编译保留原 scene_id 与同一 canonical-source/source-binding，场景正文先呈现空间与共用声光、原样 audiovisual_flow，再以 `【逐镜执行附录】` 分隔完整可读逐镜字段。`scripts/core/director_reading.py` 由网页与按需 Markdown 导出共用；导出不改业务 JSON、不登记依赖，已存在目标仍拒绝覆盖，完整 JSON 技术附录仍可还原所有字段。历史包没有完整连续正文时不自动拼写新戏，也不补造台词。
+
+`scripts/review/script-template.js` 是供后续真实前端集成的离线阅读器候选，源于 v78 快照但不修改快照；不是当前线上源码或已部署版本。它沿用 page/story/fromPackage/fromArtifact 接口，导演主 scenes 不含 canonical-source，逐镜附录用 details 展开；正文缺逐镜编号或对白片段时附录默认展开并给阅读提示。该覆盖检查只决定展开方式，不证明导演质量或用户确认。未识别的历史内容仍保留完整文字，不按摘要隐藏执行卡；过长分块未满足单场投影条件时保守保留通用阅读。
+
+新旧内容 hash 必然不同，原业务 ID、sourceScriptVersion 与 expectedVersion 的来源要求不变。只有实际源码合并、真实 head/CAS 核对、部署与准确内容回读后，才能称线上修复完成。当前仅确认 Sites 是 v81；官方源码 helper open 返回 `Unable to prepare the Site.`，未生成 checkout。已有 v81 验收包只有导航补丁/回读，另一 restored-site-source 是旧 v66 内容交付，不当作完整现行前端。未尝试部署、未改分享、未提交新业务稿。

@@ -622,16 +622,16 @@ def _local_standard_documents(skill_dir: Path, request: dict[str, Any] | None = 
         # Root-wide links describe other stages, not this task's contracts.
         # Follow explicit module/reference links from the selected contracts.
         if document != (ROOT / "PROJECT_RULES.md").resolve():
-            refs = re.findall(r"(?:`|\]\()((?:\.\./|\./|skills/|references/|modules/|schemas/)[^`\s)#]+\.(?:md|json))", text)
+            refs = re.findall(r"(?:`|\]\()((?:\.\./|\./|skills/|references/|modules/|templates/|schemas/)[^`\s)#]+\.(?:md|json))", text)
             for reference in refs:
                 choices = [(document.parent / reference).resolve(),
                            (skill_dir / reference).resolve(), (ROOT / reference).resolve()]
                 target = next((path for path in choices if path.is_relative_to(ROOT.resolve()) and path.is_file()), None)
                 if (target is None and not any(path in excluded for path in choices)
-                        and {"references", "modules", "schemas"}.intersection(Path(reference).parts)):
+                        and {"references", "modules", "templates", "schemas"}.intersection(Path(reference).parts)):
                     raise StageContextError(f"明确引用的本地规范缺失：{document}: {reference}")
                 if target and target not in excluded and (target.parent == shared_root
-                        or "references" in target.parts or "modules" in target.parts or "schemas" in target.parts):
+                        or "references" in target.parts or "modules" in target.parts or "templates" in target.parts or "schemas" in target.parts):
                     dependencies.append(target)
         for path in dependencies:
             if path not in seen:
@@ -1031,8 +1031,9 @@ def handoff(args: argparse.Namespace) -> dict[str, Any]:
         "# 下一阶段交接卡", "",
         f"- 来源阶段：`{current_stage}`",
         f"- 目标 Skill：`{target_skill}`",
-        ("- execution_mode: candidate_test；review_status: unreviewed；production_blocked: true。只试写，不生成、不发布、不采用。" if testing else "- 交接状态：上游候选已审核通过且已获用户确认；本卡不启动、路由或批准下一阶段。"), "",
+        ("- execution_mode: candidate_test；review_status: unreviewed；production_blocked: true。只试写，不生成、不发布、不采用。" if testing else "- 交接状态：上游当前输入的用户确认与依赖已核对；本卡不证明语义审核通过，不启动、路由或批准下一阶段。"), "",
         ("## 本轮未确认候选输入" if testing else "## 当前有效上游产物"), "",
+        "- 语义自查：本卡未读取结论；执行者须核当前修订的实际自查、未决问题及适用的独立审核，不能从用户确认推定通过。", "",
     ]
     for item in inputs:
         lines.extend([
@@ -1053,6 +1054,7 @@ def handoff(args: argparse.Namespace) -> dict[str, Any]:
     lines.extend([
         "", "## 接收约束", "",
         ("- 仅按独立测试授权继续候选试写；保留所有未核对事实和素材阻塞。视频 Skill 仍直接读取，不重建准备包。" if testing else startup_requirement),
+        "- 编导交接须实际读准确正文、核来源和本轮自查结论；关键发现及未核范围复用现有任务记录，程序 ok 不代表叙事充分。",
         "- 默认在当前对话完成制作、自查和修正；仅用户明确要求独立审核或明确委派时才交接，并核对执行仓库与当前规则。",
         ("- 只消费以上未确认候选及准确稳定 ID；不得读取旧案例答案，不得写入确认记录。" if testing else "- 只消费以上已确认产物及其稳定 ID；不得读取旧生产对话或未列入启动包的历史内容。"),
         "- 本交接不等于下一阶段已启动，也不替代下一阶段的输入门禁。", "",

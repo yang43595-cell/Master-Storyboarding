@@ -57,7 +57,7 @@ class CreativeDirectorContractTests(unittest.TestCase):
         ):
             self.assertNotIn(legacy, skill)
 
-    def test_schema_models_stable_events_dialogues_and_assets(self) -> None:
+    def test_v2_schema_models_stable_paragraphs_dialogues_and_assets(self) -> None:
         schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
         self.assertEqual(schema["$schema"], "https://json-schema.org/draft/2020-12/schema")
         self.assertTrue({"story_paragraphs", "dialogues", "asset_requirements"}.issubset(schema["required"]))
@@ -82,7 +82,7 @@ class CreativeDirectorContractTests(unittest.TestCase):
             }.issubset(terms)
         )
 
-    def test_sample_package_has_valid_identity_and_references(self) -> None:
+    def test_legacy_v1_sample_has_valid_identity_and_references(self) -> None:
         package = {
             "schema_version": "1.0",
             "project_id": "MSB-TEST",
@@ -138,7 +138,7 @@ class CreativeDirectorContractTests(unittest.TestCase):
 
     def test_pressure_suite_covers_locked_dialogue_and_boundary_attacks(self) -> None:
         text = (SKILL_DIR / "tests" / "cinematic-pressure-tests.md").read_text(encoding="utf-8")
-        for marker in ("对白原样提取", "产品参考不足", "用户同时要求不同景别", "表外资产诱导", "双文件一致性", "普通候选要求哈希"):
+        for marker in ("对白原样提取", "产品参考不足", "用户同时要求不同景别", "表外资产诱导", "JSON 原文保全与按需导出", "普通候选要求哈希"):
             self.assertIn(marker, text)
 
 

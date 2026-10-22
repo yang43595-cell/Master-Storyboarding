@@ -1,6 +1,6 @@
 # 提示词正文、生产约束与模型负面通道硬规则
 
-本规则适用于 `asset-image-assistant`、`storyboard-preview`、`storyboard-formal` 与 `voiceover-to-video-script`（原 `video-plan`）。目标不是删除所有否定表达，而是把不同职责放回正确通道，避免通用负面词包污染正文或误伤必要控制。
+本规则适用于当前 `asset-image-assistant`、`storyboard-director` 与 `voiceover-to-video-script`；`storyboard-preview`、`storyboard-formal`、`video-plan` 仅为历史名称。目标不是删除所有否定表达，而是把不同职责放回正确通道，避免通用负面词包污染正文或误伤必要控制。
 
 ## 一、三通道职责
 

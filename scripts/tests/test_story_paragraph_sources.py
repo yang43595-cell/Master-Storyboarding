@@ -232,3 +232,14 @@ def test_story_body_uses_shared_relocated_root(tmp_path, monkeypatch):
     for value in [r'02_编导\script.md', old_root + r'\02_编导\script.md']:
         n['human_readable_path'] = value
         validate_story_sources(n, project_root=tmp_path)
+
+
+@pytest.mark.parametrize("name, text", [
+    ("director.json", '{"source_asset_requirement_ids": ["AST-UNKNOWN"]}'),
+    ("new-reading.md", "# 连续视听正文\n女主走向门口。"),
+])
+def test_legacy_shot_plan_cannot_pass_unrecognized_format(tmp_path, name, text):
+    path = tmp_path / name
+    path.write_text(text, encoding="utf-8")
+    with pytest.raises(ValueError, match="仅检查历史|不按零行通过"):
+        validate_shot_plan(path, tmp_path)

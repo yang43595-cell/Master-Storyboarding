@@ -9,6 +9,24 @@ from scripts.core.web_content import WebContentError, CONTRACT, compile_content,
 from test_web_content_adapter import registry, sources, compile_fixture, PNG
 
 
+@pytest.mark.parametrize('presentation', ['SYNC', 'ON_SCREEN_TEXT'])
+def test_director_text_label_preserves_original_content(tmp_path, presentation):
+    media = registry(tmp_path)
+    source = sources(tmp_path)['director']
+    shot = source['scenes'][0]['shots'][0]
+    shot['audio']['dialogue'][0]['presentation'] = presentation
+    content = compile_fixture('director', source, media)['request']['content']
+    body = next(b['text'] for b in content['blocks'] if b['id'] == source['scenes'][0]['scene_id'])
+    # Readable labels replace the old minified audio JSON card; exact native
+    # audio and all fields are still recoverable from canonical-source below.
+    assert '声音与画面文字：' in body and '呈现方式：' + presentation in body
+    for dialogue in shot['audio']['dialogue']:
+        assert dialogue['text'] in body and dialogue['dialogue_id'] in body
+    for sound in shot['audio']['sfx']:
+        assert sound in body
+    assert json.loads(next(b['text'] for b in content['blocks'] if b['id'] == 'canonical-source')) == source
+
+
 def test_asset_registry_cannot_replace_canonical_output_bytes(tmp_path):
     media=registry(tmp_path); source=sources(tmp_path)['assets']
     original=tmp_path/'fixture/face.png';original.parent.mkdir(exist_ok=True);original.write_bytes(b'other actual original')

@@ -400,7 +400,8 @@ def test_review_pack_marks_same_candidate_recheck_as_revision_mode(tmp_path: Pat
     assert "method_reading_evidence.json" not in text
 
 
-def test_handoff_uses_only_confirmed_current_artifacts_and_prepare_embeds_it(tmp_path: Path) -> None:
+@pytest.mark.parametrize("semantic_review", [None, {"verdict": "fail", "revision": "R01"}, {"verdict": "pass", "revision": "R00"}, {"verdict": "pass", "revision": "R01"}])
+def test_handoff_uses_only_confirmed_current_artifacts_and_prepare_embeds_it(tmp_path: Path, semantic_review) -> None:
     project = _project(tmp_path)
     artifact = project / "R01_叙事包.json"
     artifact.write_text('{"confirmed":true}', encoding="utf-8")
@@ -416,8 +417,19 @@ def test_handoff_uses_only_confirmed_current_artifacts_and_prepare_embeds_it(tmp
         }],
     }, ensure_ascii=False), encoding="utf-8")
 
+    state_path = project / "00_项目管理" / "project_state.json"
+    state = json.loads(state_path.read_text())
+    if semantic_review is None:
+        state.pop("review_report", None)
+    else:
+        state["review_report"] = semantic_review
+    state_path.write_text(json.dumps(state), encoding="utf-8")
     report = cli.handoff(argparse.Namespace(project=str(project), to_skill="storyboard-planner"))
     handoff = Path(report["path"])
+    text = handoff.read_text(encoding="utf-8")
+    assert "上游候选已审核通过" not in text
+    assert "语义自查：本卡未读取结论" in text
+    assert "用户确认与依赖已核对" in text
     assert report["artifact_ids"] == ["ART-NARRATIVE-R01"]
     assert "`ART-NARRATIVE-R01`" in handoff.read_text(encoding="utf-8")
 
@@ -933,3 +945,30 @@ def test_creative_selected_method_missing_is_not_silently_skipped(tmp_path):
         request_json=str(request), vault=str(vault), actor_id="test-agent", task_id="test-method-binding")
     with pytest.raises(cli.StageContextError):
         cli.prepare(args)
+
+
+def test_explicit_template_dependency_is_frozen_and_missing_is_reported(tmp_path, monkeypatch):
+    root = tmp_path / "repo"
+    skill = root / "skills" / "storyboard-planner"
+    (skill / "templates").mkdir(parents=True)
+    (root / "PROJECT_RULES.md").write_text("# Rules", encoding="utf-8")
+    (skill / "SKILL.md").write_text("[模板](templates/current.md)", encoding="utf-8")
+    template = skill / "templates/current.md"
+    template.write_text("first", encoding="utf-8")
+    unrelated = skill / "templates/historical.md"
+    unrelated.write_text("historical", encoding="utf-8")
+    monkeypatch.setattr(cli, "ROOT", root)
+    paths = cli._local_standard_documents(skill)
+    assert template.resolve() in paths
+    assert unrelated.resolve() not in paths
+    before = cli.fingerprint(template)
+    template.write_text("changed", encoding="utf-8")
+    assert cli.fingerprint(template) != before
+    template.unlink()
+    with pytest.raises(cli.StageContextError, match="本地规范缺失"):
+        cli._local_standard_documents(skill)
+
+
+def test_current_director_template_is_in_local_contracts():
+    skill = cli.ROOT / "skills/storyboard-planner"
+    assert (skill / "templates/专业影视分镜输出模板.md").resolve() in cli._local_standard_documents(skill)

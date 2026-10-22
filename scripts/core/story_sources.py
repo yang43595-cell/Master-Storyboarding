@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .schema_contracts import require_schema
 from .artifacts import project_path
+from .director_reading import director_scene_reading, readable_fields
 
 
 def _dialogue_comparison_text(text):
@@ -550,6 +551,11 @@ def validate_shot_plan(path: Path, project_root: Path, strict: bool = False) -> 
     默认只对“当前任何集合都没有的编号”报错；已取消／已拆分的引用按告警输出，
     `strict=True` 时一并报错。
     """
+    text = path.read_text(encoding="utf-8-sig")
+    if path.suffix.lower() == ".json":
+        raise ValueError("--shot-plan 仅检查历史 Markdown 来源行；JSON 请用 --narrative 与 --storyboard")
+    if not any(line.lstrip().startswith("| 来源") for line in text.splitlines()):
+        raise ValueError("无法检查：未识别历史 Markdown 来源行，不按零行通过；新导演稿请检查原始 JSON")
     from .asset_refs import current_narrative
     if __package__ == 'scripts.core':
         from ..visual_asset_choices import read_choices, effective
@@ -559,7 +565,6 @@ def validate_shot_plan(path: Path, project_root: Path, strict: bool = False) -> 
     narrative = current_narrative(project_root)
     known = {a['asset_id'] for a in narrative['asset_requirements']}
     known |= {a['asset_id'] for a in effective(narrative, choices)}
-    text = path.read_text(encoding='utf-8-sig')
     errors, warnings = [], []
     for number, line in enumerate(text.splitlines(), start=1):
         if not line.lstrip().startswith('| 来源'):
@@ -606,12 +611,27 @@ def export_markdown(package: dict, destination: Path) -> None:
     schema = ('narrative-package.schema.json' if 'story_paragraphs' in package
               else 'storyboard-package.schema.json')
     require_schema(package, schema, label='导出源')
+    # Readable projection first; retain every original field in the technical appendix.
+    reading = []
+    if 'story_paragraphs' in package:
+        for paragraph in package['story_paragraphs']:
+            reading += ['## ' + paragraph['paragraph_id'], paragraph['text']]
+    elif 'scenes' in package:
+        for scene in package['scenes']:
+            view = director_scene_reading(scene)
+            reading += ['## ' + scene['scene_id'], view['body'],
+                        '<details' + (' open' if view['technical_open'] else '') + '>',
+                        '<summary>逐镜执行附录（同一 JSON）</summary>', '', view['technical'], '', '</details>']
+    else:
+        reading += ['旧版逐镜阅读（未生成连续正文）', '\n'.join(readable_fields(package))]
     # Fenced JSON retains every field without a second editable business model.
     payload = json.dumps(package, ensure_ascii=False, indent=2)
     fence = '`' * max(3, max((len(m[0]) + 1 for m in re.finditer(r'`+', payload)), default=3))
     text = (f"# {package['project_id']} · {package['revision']}\n\n"
             "本文件是 JSON 的只读阅读导出；修改业务内容请另建 JSON 修订并重新审核确认。\n\n"
-            f"{fence}json\n{payload}\n{fence}\n")
+            + '\n\n'.join(reading) + '\n\n'
+            + '## 完整结构化来源（只读技术附录）\n\n'
+            + f"{fence}json\n{payload}\n{fence}\n")
     destination.parent.mkdir(parents=True, exist_ok=True)
     with destination.open('x', encoding='utf-8') as output:
         output.write(text)

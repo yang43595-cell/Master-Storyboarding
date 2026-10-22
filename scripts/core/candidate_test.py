@@ -118,12 +118,17 @@ def resolve_inputs(project, ids=None):
             # Return diagnostics, never mutate manifest status or the business JSON.
             item = {**item, "business_status": report["business_status"],
                     "return_upstream": payload["return_upstream"]}
-        elif "status" in payload and payload["status"] != "candidate":
+        elif "status" in payload and payload["status"] not in (
+                {"candidate", "candidate_unreviewed"} if item.get("type") == "source.evidence"
+                else {"candidate"}):
             raise ValueError("测试候选正文不可宣称确认：" + str(ident))
         if "revision" in payload and payload["revision"] != item.get("revision"):
             raise ValueError("候选正文 revision 与登记不一致")
         visiting.add(ident)
-        named = {"narrative.package": "source_narrative", "storyboard.package": "source_storyboard"}
+        # Evidence locators describe historical sources, not candidate package dependencies.
+        # Only the manifest type selects this exception; explicit depends_on still resolves.
+        named = ({} if item.get("type") == "source.evidence" else
+                 {"narrative.package": "source_narrative", "storyboard.package": "source_storyboard"})
         deps = item.get("depends_on") or []
         if not isinstance(deps, list) or any(not isinstance(d, str) for d in deps):
             raise ValueError("候选 depends_on 必须是 logical_id 列表")

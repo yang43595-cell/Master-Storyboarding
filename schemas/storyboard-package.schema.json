@@ -368,6 +368,15 @@
     "dialoguePlacement": {
       "type": "object",
       "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {"presentation": {"const": "ON_SCREEN_TEXT"}},
+            "required": ["presentation"]
+          },
+          "then": {"not": {"required": ["delivery"]}}
+        }
+      ],
       "required": [
         "dialogue_id",
         "speaker_id",
@@ -383,11 +392,13 @@
           "$ref": "#/$defs/dialogueId"
         },
         "presentation": {
+          "description": "ON_SCREEN_TEXT 只显示原文，不发声、不配旁白、不做口型；speaker_id 仅保留上游归属，显示时机与阅读停留写在 take/rhythm，仍参与全部 DLG 原文与顺序覆盖。",
           "enum": [
             "SYNC",
             "OFFSCREEN",
             "NARRATION",
-            "PLAYBACK"
+            "PLAYBACK",
+            "ON_SCREEN_TEXT"
           ]
         },
         "timing_basis": {

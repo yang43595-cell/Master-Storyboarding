@@ -9,6 +9,7 @@ from pathlib import Path, PureWindowsPath
 from .schema_contracts import require_schema
 from .story_sources import validate_body_dialogues
 from .artifacts import project_path
+from .director_reading import director_scene_reading, TECHNICAL_MARKER
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / 'references/web-contract-v78'
@@ -27,6 +28,122 @@ def canonical(value):
 
 def stable_id(value, prefix):
     return value if re.fullmatch(r'[A-Za-z0-9_-]{1,120}', value) else prefix + '-' + hashlib.sha256(value.encode()).hexdigest()[:24]
+
+
+def prompt_segment_views(business, *, source_sha256, transport_evidence):
+    """Read current segment JSON and supplied native readback without mutating either.
+
+    This checks transport identity, not media bytes, website publication or approval.
+    Labels that differ from source IDs must be explicitly supplied, never guessed.
+    """
+    def fail(reason):
+        raise WebContentError('视频分段适配：' + reason)
+    def nonempty(value):
+        return isinstance(value, str) and bool(value.strip())
+    sections = business.get('creative_sections')
+    links = None
+    if 'generation_segments' in business:
+        segments = business['generation_segments']
+        if isinstance(sections, list):
+            if any(not isinstance(s, dict) or not isinstance(s.get('generation_segments'), list) for s in sections):
+                fail('创作段生成段引用列表不完整')
+            links = [ident for section in sections for ident in section.get('generation_segments', [])]
+    elif isinstance(sections, list) and sections:
+        if any(not isinstance(s, dict) or not isinstance(s.get('generation_segments'), list)
+               or not s['generation_segments'] for s in sections):
+            fail('创作段缺少完整 generation_segments')
+        segments = [segment for section in sections for segment in section['generation_segments']]
+    else:
+        fail('缺少现行完整 drafts / generation_segments；不恢复退役 production_plan')
+    if (not isinstance(segments, list) or not segments
+            or any(not isinstance(s, dict) or not nonempty(s.get('segment_id')) for s in segments)):
+        fail('生成段列表或 segment_id 不完整')
+    ids = [s['segment_id'] for s in segments]
+    if len(set(ids)) != len(ids):
+        fail('segment_id 重复')
+    if links is not None and (any(not isinstance(ident, str) for ident in links) or set(links) != set(ids)):
+        fail('顶层生成段与创作段引用不一致，不猜哪份为准')
+    if not isinstance(transport_evidence, dict) or transport_evidence.get('source_sha256') != source_sha256:
+        fail('缺少绑定准确源字节的 transport_evidence；不补造 native node_id/media_id')
+    rows = transport_evidence.get('native_readback')
+    if (not isinstance(rows, list) or any(not isinstance(r, dict) for r in rows)
+            or [r.get('segment_id') for r in rows] != ids):
+        fail('原生读回须按源 segment_id 顺序完整覆盖，不遗漏或重用其他段')
+    labels = transport_evidence.get('input_labels', {})
+    if not isinstance(labels, dict) or any(not nonempty(k) or not nonempty(v) for k, v in labels.items()):
+        fail('input_labels 必须是准确源输入 ID 到实际原生标签的映射')
+    platform = business.get('platform', {})
+    if not isinstance(platform, dict):
+        fail('platform 参数必须是对象')
+    views, used_labels = [], set()
+    for segment, row in zip(segments, rows):
+        ident = segment['segment_id']
+        prompt = segment.get('prompt_text')
+        if not nonempty(prompt) or not nonempty(row.get('prompt')):
+            fail(ident + ' 缺完整提示词正文')
+        # Canvas readback changes whitespace around paragraphs/chips, not words.
+        if ''.join(prompt.split()) not in ''.join(row['prompt'].split()):
+            fail(ident + ' 原生读回不含完整源正文（仅忽略空白排版）')
+        if row.get('refreshed') is not True or row.get('model_visible') is not True:
+            fail(ident + ' 缺刷新后原生读回/模型控件证据')
+        nodes = row.get('nodes')
+        pattern = r'(?<![A-Za-z0-9_-])' + re.escape(ident) + r'(?![A-Za-z0-9_-])'
+        node_ids = {n.get('id') for n in nodes if isinstance(n, dict)
+                    and nonempty(n.get('id')) and isinstance(n.get('text'), str)
+                    and re.search(pattern, n['text'])} if isinstance(nodes, list) else set()
+        if len(node_ids) != 1:
+            fail(ident + ' 缺少唯一原生草稿节点证据，不合成 ID')
+        parameters = segment.get('parameters')
+        if parameters is None:
+            parameters = {'model': platform.get('model'),
+                          'reference_mode': platform.get('reference_mode', platform.get('mode')),
+                          'ratio': platform.get('aspect_ratio'), 'resolution': platform.get('resolution'),
+                          'duration_seconds': segment.get('duration_seconds')}
+        if (not isinstance(parameters, dict)
+                or any(not nonempty(parameters.get(k)) for k in ('model', 'reference_mode', 'ratio', 'resolution'))
+                or type(parameters.get('duration_seconds')) is not int or parameters['duration_seconds'] <= 0):
+            fail(ident + ' 缺准确源参数')
+        if any(segment[k] != parameters['duration_seconds'] for k in ('duration_seconds', 'generation_seconds') if k in segment):
+            fail(ident + ' 源生成时长与参数不一致')
+        controls = row.get('parameter_controls')
+        texts = [c.get('text') for c in controls if isinstance(c, dict)] if isinstance(controls, list) else []
+        if (len(texts) != 4 or not isinstance(texts[0], str)
+                or texts[0].split('（', 1)[0] != parameters['ratio']
+                or texts[1:] != [parameters['resolution'], str(parameters['duration_seconds']) + 's', parameters['reference_mode']]):
+            fail(ident + ' 原生比例/分辨率/时长/参考方式与源参数不一致')
+        materials = segment.get('materials', segment.get('candidate_upload_order'))
+        if segment.get('actual_uploaded_materials'):
+            fail(ident + ' actual_uploaded_materials 非空，须核对实际输入而非忽略')
+        refs = row.get('references')
+        if (not isinstance(materials, list) or not isinstance(refs, list) or len(materials) != len(refs)
+                or any(not isinstance(m, dict) for m in materials)
+                or any(not isinstance(r, dict) or any(not nonempty(r.get(k)) for k in ('id', 'material_id', 'label')) for r in refs)
+                or row.get('chip_order') != [r['id'] for r in refs]):
+            fail(ident + ' 实际输入、原生媒体身份或 chip 顺序不完整')
+        inputs = []
+        for index, (material, ref) in enumerate(zip(materials, refs), 1):
+            key = material.get('reference_id', material.get('material_id'))
+            path = material.get('path', material.get('file'))
+            sha = material.get('sha256')
+            role = material.get('responsibility', material.get('primary_role'))
+            order = material.get('order', material.get('upload_index'))
+            if (not nonempty(key) or not nonempty(path) or not nonempty(role)
+                    or not isinstance(sha, str) or not HASH.fullmatch(sha)
+                    or type(order) is not int or order != index):
+                fail(ident + ' 素材来源、职责、hash 或输入顺序不完整')
+            if ref['label'] != labels.get(key, key):
+                fail(ident + ' 第' + str(index) + '项原生标签与源输入不一致')
+            if key in labels:
+                used_labels.add(key)
+            inputs.append({'key': key + '@' + sha, 'path': path, 'sha256': sha,
+                           'source': material, 'native': {'node_id': ref['id'], 'media_id': ref['material_id']}})
+        views.append({'segment': segment, 'parameters': parameters, 'inputs': inputs,
+                      'node_id': next(iter(node_ids))})
+    if set(labels) != used_labels:
+        fail('input_labels 含未使用或其他源输入的对应')
+    if len({v['node_id'] for v in views}) != len(views):
+        fail('不同生成段指向同一原生草稿节点')
+    return views
 
 
 def validate_web_request(request, *, contract_root=CONTRACT):
@@ -48,7 +165,8 @@ def validate_web_request(request, *, contract_root=CONTRACT):
 def compile_content(raw: bytes, *, stage: str, case_id: str, source_script_version: str,
                     expected_version: str | None, scope: str, media_registry: dict,
                     benchmark: dict | None = None, title: str | None = None,
-                    reviewable: bool = False, contract_root=CONTRACT, project_root: Path | None = None):
+                    reviewable: bool = False, contract_root=CONTRACT, project_root: Path | None = None,
+                    transport_evidence: dict | None = None):
     """Compile from one source plus explicit transport/readback evidence.
 
     media_registry contains existing media descriptors/local paths and the actual
@@ -163,16 +281,11 @@ def compile_content(raw: bytes, *, stage: str, case_id: str, source_script_versi
         if business['schema_version'] != '4.0':
             raise WebContentError('当前导演适配只支持已核 v4 JSON，旧格式不猜拍法')
         for scene in business['scenes']:
-            lines = [scene['audiovisual_flow']]
-            for shot in scene['shots']:
-                # Original IDs stay unchanged. Case-specific DR05 card aliases are
-                # deliberately not fabricated; the fixed renderer retains generic text.
-                lines += ['\n镜头：' + shot['shot_id'], '观看目的：' + shot['purpose'],
-                          '机位：' + canonical(shot['camera']),
-                          '起态：' + shot['take']['start'], '镜内过程：' + shot['take']['process'],
-                          '末态：' + shot['take']['end'], '节奏：' + shot['rhythm'],
-                          '对白与声音：' + canonical(shot['audio']), '切出：' + canonical(shot['cut'])]
-            block(scene['scene_id'], scene['scene_id'] + ' 导演视听展开', '\n\n'.join(lines))
+            view = director_scene_reading(scene)
+            # Preserve scene IDs and the full canonical source. The paired reading
+            # renderer folds only this explicitly delimited technical appendix.
+            block(scene['scene_id'], scene['scene_id'] + ' 导演视听展开',
+                  view['body'] + '\n\n' + TECHNICAL_MARKER + '\n\n' + view['technical'])
     elif stage == 'assets':
         require_schema(business, 'visual-asset-manifest.schema.json', label='网页资产源')
         groups = []
@@ -198,9 +311,30 @@ def compile_content(raw: bytes, *, stage: str, case_id: str, source_script_versi
         if benchmark:
             add_benchmark()
     elif stage == 'prompts':
-        if not isinstance(business.get('drafts'), list) or not business['drafts']:
+        if 'drafts' in business and ('generation_segments' in business or 'creative_sections' in business):
+            raise WebContentError('视频 JSON 同时存在 drafts 与生成段，不猜权威正文')
+        if 'drafts' not in business:
+            views = prompt_segment_views(business, source_sha256=hashlib.sha256(raw).hexdigest(),
+                                         transport_evidence=transport_evidence)
+            if reviewable and (business.get('production_blocked') is True
+                    or business.get('user_approved') is False or business.get('status') == 'candidate'
+                    or business.get('review_status') == 'unreviewed'
+                    or any(v['segment'].get('submit_ready') is False or v['segment'].get('production_blocked') is True
+                           or v['segment'].get('status') == 'candidate' or v['segment'].get('review_status') == 'unreviewed'
+                           or v['segment'].get('user_approved') is False
+                           or v['segment'].get('blockers') or v['segment'].get('open_gaps') for v in views)):
+                raise WebContentError('候选/生产阻塞或未决事实尚在，不能设为可通过')
+            for view in views:
+                segment = view['segment']
+                refs = [media(ref['key'], reference_anchor(segment['segment_id'],
+                              {'source': ref['key'], 'native': ref['native']}),
+                              ref['sha256'], expected_path=ref['path']) for ref in view['inputs']]
+                block(segment['segment_id'], '视频段：' + segment['segment_id'],
+                      segment['prompt_text'] + '\n\n参数：' + canonical(view['parameters'])
+                      + '\n\n素材职责与候选状态（源字段，只读）：' + canonical(segment), refs)
+        elif not isinstance(business['drafts'], list) or not business['drafts']:
             raise WebContentError('缺少现行完整视频 drafts JSON；不恢复退役 production_plan')
-        for draft in business['drafts']:
+        for draft in business.get('drafts', []):
             ordered, checks = draft.get('ordered_media'), draft.get('reference_checks')
             if not isinstance(ordered, list) or not isinstance(checks, list) or len(ordered) != len(checks):
                 raise WebContentError('视频素材职责不能遗漏实际输入')
@@ -232,6 +366,11 @@ def compile_content(raw: bytes, *, stage: str, case_id: str, source_script_versi
     validated['mediaMap'] = compiled_media_map
     validated['remoteReadbackPerformed'] = False
     validated['published'] = False
+    if stage == 'prompts' and 'drafts' not in business:
+        validated['transportEvidence'] = {'source_sha256': hashlib.sha256(raw).hexdigest(),
+            'native_readback_canonical_sha256': hashlib.sha256(canonical(transport_evidence['native_readback']).encode()).hexdigest(),
+            'segmentCount': len(views), 'inputCount': sum(len(v['inputs']) for v in views),
+            'modelSelectionVerified': False}
     return validated
 
 
@@ -288,7 +427,8 @@ def main():
             case_id=job['caseId'], source_script_version=job['sourceScriptVersion'],
             expected_version=job['expectedVersion'], scope=job['scope'], media_registry=job['mediaRegistry'],
             benchmark=job.get('benchmark'), title=job.get('title'), reviewable=job.get('reviewable', False),
-            contract_root=job.get('contractRoot', CONTRACT), project_root=job.get('projectRoot'))
+            contract_root=job.get('contractRoot', CONTRACT), project_root=job.get('projectRoot'),
+            transport_evidence=job.get('transportEvidence'))
         print(canonical(result))
         return 0
     except (ValueError, KeyError, TypeError, OSError, subprocess.SubprocessError) as exc:
