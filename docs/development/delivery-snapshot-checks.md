@@ -142,3 +142,5 @@ python scripts/canvas_readback.py --private-preview --project <准确候选项�
 预览时，`state_reference` 是可用的图片职责，必须写准确 state_id。连续两段若只共享物理状态、不采用平台硬首尾帧，后一段 continuity 可加 mode="state_reference" 与 boundary：claim="shared_state_only_not_hard_frames"、state_id、description、previous_node_id、current_node_id、previous_sha256s、current_sha256s。两侧哈希须精确等于对应段实际 state_reference 的文件哈希，且 state_id 相同；前驱链仍不得漏段、成环或跨事件。不同机位不冒充像素相同，也不虚造确认组；真实已有采用记录保留其原有范围。正式模式不接受 state_reference 替代原首尾帧门禁。
 
 源稿只有整段生成秒数、未分配逐镜时间时，预览可明确 `timing_scope="segment_total_only"` 并将 shot_durations 写为该实际整段秒数的单项数组；只核对段总秒数和本轮平台上下限，不宣称已编排逐镜秒数。正式交付不接受这个预览标记。
+
+候选输入切换与专用展示登记：`candidate_test.configure` 可保留本轮已登记的 `preview-reference`，只读核验实际媒体字节、历史证据哈希及证据中的精确路径/哈希绑定，不把其项目外路径扩成普通输入根。专用展示条目不得列入普通业务输入或依赖；正式生产仍拒绝。该核验不替代私有预览提交时的明确授权范围、原生绑定和刷新回读，也不自行新增生成许可或否认原记录中的历史候选生成使用。

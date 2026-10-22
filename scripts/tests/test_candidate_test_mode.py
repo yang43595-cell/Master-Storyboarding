@@ -226,3 +226,80 @@ def test_handoff_candidate_bytes_are_bound_without_confirmation_checksum(tmp_pat
     write_json(project/'N.json', {'status': 'candidate', 'revision': 'R01', 'text': 'changed'})
     with pytest.raises(ValueError, match='字节'):
         cli._current_handoff_text(project, 'storyboard-planner')
+
+
+def external_preview(project, parent):
+    media = parent/'restored.png'
+    media.write_bytes(b'synthetic display-only bytes')
+    checksum = artifacts.digest(media)
+    evidence = project/'display-source.json'
+    write_json(evidence, {'path':str(media.resolve()), 'sha256':checksum})
+    artifacts.register_workspace_artifact(project, dict(
+        artifact_id='DISPLAY', logical_id='preview.reference.test', type='preview-reference',
+        path_or_url=str(media), revision='R01', checksum=checksum,
+        preview_origin={'purpose':'private_preview_only_not_generation_baseline',
+            'source_sha256':checksum, 'history_gaps':['historical source retained'],
+            'historical_evidence':[{'location':str(evidence), 'sha256':artifacts.digest(evidence)}]}))
+    return media, evidence
+
+
+def test_external_preview_does_not_block_new_business_candidate(tmp_path):
+    project = setup(tmp_path/'isolated')
+    media, evidence = external_preview(project, tmp_path)
+    before = copy.deepcopy(artifacts.load_manifest(project)['artifacts'][0])
+    add(project, 'R02', 'video-prompts', {'revision':'R02', 'status':'candidate'})
+    assert [a['artifact_id'] for a in mode.resolve_inputs(project)] == ['R02']
+    assert artifacts.load_manifest(project)['artifacts'][0] == before
+    assert load_project_state(project)['current_artifacts'] == []
+    assert media.read_bytes() == b'synthetic display-only bytes'
+
+
+def test_external_ordinary_artifact_still_rejected(tmp_path):
+    project = setup(tmp_path/'isolated')
+    source = tmp_path/'ordinary.json'
+    write_json(source, {'revision':'R01','status':'candidate'})
+    artifacts.register_workspace_artifact(project, dict(artifact_id='OUT',logical_id='narrative.package',
+        type='narrative.package',path_or_url=str(source),revision='R01'))
+    with pytest.raises(ValueError, match='越出隔离项目'):
+        mode.configure(project, 'synthetic-run', 'synthetic user: candidate text test only', [])
+
+
+def test_preview_cannot_be_business_input_dependency_or_production(tmp_path):
+    project = setup(tmp_path/'isolated')
+    external_preview(project, tmp_path)
+    with pytest.raises(ValueError, match='不能成为普通业务输入'):
+        mode.configure(project, 'synthetic-run', 'synthetic user: candidate text test only', ['DISPLAY'])
+    add(project, 'R02', 'video-prompts', {'revision':'R02','status':'candidate'}, ['preview.reference.test'])
+    # Corrupt selection directly to exercise resolver independently of configure.
+    state = load_project_state(project)
+    state['candidate_test']['input_artifact_ids'] = ['R02','DISPLAY']
+    write_project_state(project,state)
+    for selected in [['DISPLAY'], ['R02']]:
+        with pytest.raises(ValueError, match='不能成为普通业务输入或依赖'):
+            mode.resolve_inputs(project,selected)
+    state.pop('candidate_test')
+    write_project_state(project,state)
+    manifest = artifacts.load_manifest(project)
+    for entry in manifest['artifacts']:
+        entry.pop('candidate_test',None)
+        entry.pop('production_blocked',None)
+    artifacts.save_manifest(project,manifest)
+    with pytest.raises(ValueError, match='禁止正式'):
+        mode.require_production(project)
+
+
+@pytest.mark.parametrize('corrupt', ['media','evidence','path_scope'])
+def test_external_preview_bookkeeping_requires_exact_bytes_and_scope(tmp_path, corrupt):
+    project = setup(tmp_path/'isolated')
+    media,evidence = external_preview(project,tmp_path)
+    if corrupt == 'media':
+        media.write_bytes(b'changed')
+    elif corrupt == 'evidence':
+        evidence.write_text('{}')
+    else:
+        write_json(evidence,{'path':str(tmp_path/'different.png'),'sha256':artifacts.digest(media)})
+        manifest=artifacts.load_manifest(project)
+        manifest['artifacts'][0]['preview_origin']['historical_evidence'][0]['sha256']=artifacts.digest(evidence)
+        artifacts.save_manifest(project,manifest)
+    with pytest.raises(ValueError, match='preview-reference'):
+        mode.configure(project,'synthetic-run','synthetic user: candidate text test only',[])

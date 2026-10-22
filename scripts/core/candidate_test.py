@@ -42,8 +42,52 @@ def require_production(project):
     """Guard supported adoption/submission endpoints, including removed mode state."""
     from .artifacts import load_manifest
     if context(project) or any(a.get("candidate_test") or a.get("production_blocked")
+                               or a.get("type") == "preview-reference"
                                for a in load_manifest(Path(project))["artifacts"]):
         raise ValueError("候选测试禁止正式采用、生成提交或发布；仍为 unreviewed")
+
+
+def validate_preview_registration(project, item, run_id):
+    """Read-only bookkeeping check, NOT permission to consume or upload media.
+
+    Exact evidence binds an external display file, not an external business-input
+    root. Canvas submission still needs its own explicit scoped authorization.
+    """
+    import json
+    from .artifacts import project_path, digest
+    path = project_path(project, item.get("path_or_url", ""))
+    origin = item.get("preview_origin", {})
+    if (item.get("candidate_test") != run_id or item.get("review_status") != "unreviewed"
+            or item.get("production_blocked") is not True
+            or not item.get("logical_id", "").startswith("preview.reference.")
+            or item.get("depends_on")
+            or path.suffix.lower() not in {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.mp4', '.mov', '.webm'}
+            or not path.is_file() or not path.stat().st_size
+            or not item.get("checksum") or digest(path) != item["checksum"]
+            or origin.get("purpose") != "private_preview_only_not_generation_baseline"
+            or origin.get("source_sha256") != item["checksum"]
+            or not isinstance(origin.get("history_gaps"), list)):
+        raise ValueError("preview-reference 登记身份、用途或真实字节无效")
+    evidence = origin.get("historical_evidence")
+    if not isinstance(evidence, list) or not evidence:
+        raise ValueError("preview-reference 缺少精确来源范围")
+    def binds(value):
+        if isinstance(value, dict):
+            if (value.get('sha256') == item['checksum']
+                    and any(value.get(k) == str(path) for k in ('path', 'resolved_path'))):
+                return True
+            return any(binds(v) for v in value.values())
+        return isinstance(value, list) and any(binds(v) for v in value)
+    bound = False
+    for record in evidence:
+        location = record.get('location', '') if isinstance(record, dict) else ''
+        p = Path(location).resolve()
+        if (not location or str(p) != location or not p.is_file()
+                or digest(p) != record.get('sha256')):
+            raise ValueError("preview-reference 来源证据缺失或哈希不符")
+        bound |= binds(json.loads(p.read_text(encoding='utf-8-sig')))
+    if not bound:
+        raise ValueError("preview-reference 来源未绑定准确文件路径与哈希")
 
 
 def configure(project, run_id, authorization_ref, input_artifact_ids):
@@ -66,6 +110,11 @@ def configure(project, run_id, authorization_ref, input_artifact_ids):
             raise ValueError("隔离候选测试不能包含生产或历史正式产物")
         if item.get("candidate_test") not in (None, run_id):
             raise ValueError("不能混入另一测试运行产物")
+        if item.get("type") == "preview-reference":
+            if not previous or item['artifact_id'] in input_artifact_ids:
+                raise ValueError("preview-reference 仅供专用预览，不能成为普通业务输入")
+            validate_preview_registration(project, item, run_id)
+            continue
         path = project_path(project, item.get("path_or_url", ""))
         if not path.is_relative_to(project) or not path.is_file():
             raise ValueError("测试候选文件不存在或越出隔离项目")
@@ -100,6 +149,8 @@ def resolve_inputs(project, ids=None):
         if ident in checked:
             return
         item = indexed.get(ident)
+        if item and item.get("type") == "preview-reference":
+            raise ValueError("preview-reference 仅供专用预览，不能成为普通业务输入或依赖")
         if (not item or item.get("status") != "candidate" or item.get("user_approved", False) is not False
                 or item.get("candidate_test") != testing["run_id"]
                 or item.get("review_status") != "unreviewed" or item.get("production_blocked") is not True):
