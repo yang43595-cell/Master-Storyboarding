@@ -1,0 +1,75 @@
+{
+  "schema_version": "1.0",
+  "skill": "asset-image-assistant",
+  "topics": [
+    "character-consistency",
+    "image-continuity",
+    "spatial-continuity",
+    "product-reference",
+    "asset-driven-video",
+    "image-prompt",
+    "prompt-pollution"
+  ],
+  "professional_methods": [
+    {
+      "id": "IMAGE-CONTINUITY-METHOD",
+      "path": "projects/Master-Storyboarding/应用知识/图片资产/图片连续性方法.md",
+      "binding_status": "user_confirmed",
+      "applies_when": "本 Skill 处理资产或视觉补充参考的连续性时",
+      "requires": {
+        "skill": "asset-image-assistant"
+      }
+    },
+    {
+      "id": "ASSET-STYLE-METHOD",
+      "path": "projects/Master-Storyboarding/应用知识/图片资产/风格资产方法.md",
+      "binding_status": "user_confirmed",
+      "applies_when": "当前资产制作项需要风格资产方法时；只实现本次需求",
+      "requires": {
+        "skill": "asset-image-assistant",
+        "request.asset_method_scopes.style": true
+      }
+    },
+    {
+      "id": "ASSET-CHARACTER-METHOD",
+      "path": "projects/Master-Storyboarding/应用知识/图片资产/人物资产方法.md",
+      "binding_status": "user_confirmed",
+      "applies_when": "当前资产制作项需要人物资产方法时；只实现本次需求",
+      "requires": {
+        "skill": "asset-image-assistant",
+        "request.asset_method_scopes.character": true
+      }
+    },
+    {
+      "id": "ASSET-SCENE-METHOD",
+      "path": "projects/Master-Storyboarding/应用知识/图片资产/场景资产方法.md",
+      "binding_status": "user_confirmed",
+      "applies_when": "当前资产制作项需要场景资产方法时；只实现本次需求",
+      "requires": {
+        "skill": "asset-image-assistant",
+        "request.asset_method_scopes.scene": true
+      }
+    },
+    {
+      "id": "ASSET-OBJECT-METHOD",
+      "path": "projects/Master-Storyboarding/应用知识/图片资产/道具与产品资产方法.md",
+      "binding_status": "user_confirmed",
+      "applies_when": "当前资产制作项需要道具与产品资产方法时；只实现本次需求",
+      "requires": {
+        "skill": "asset-image-assistant",
+        "request.asset_method_scopes.object": true
+      }
+    },
+    {
+      "id": "VGEN-CREATOR-POLISHING-MASK-USE",
+      "path": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/方法.md",
+      "binding_status": "user_confirmed",
+      "applies_when": "本轮明确为造物者抛光面膜真人上脸效果的制作、返修或参考检查；不因只有碗内搅拌或产品展示而触发",
+      "requires": {
+        "skill": "asset-image-assistant",
+        "request.creator_mask_face_effect": true
+      },
+      "template_path": "wiki/concepts/08-模板/造物者抛光面膜_真人上脸半透明胶膜生图模板.md"
+    }
+  ]
+}

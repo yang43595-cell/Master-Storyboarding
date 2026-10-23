@@ -1,0 +1,12 @@
+{
+  "library_file_id": "libfile_50d8ae386fac8191a9723472939b35ef",
+  "archive_sha256": "607421269da75dd3e9ee877690cbd48f7a28780b26aba8eb37ed2526f83a0977",
+  "purpose": "Exact executable validation snapshot from v78; not a claim about the current hosted deployment. No customer packages/media included.",
+  "files": {
+    "lib/content-contract.ts": "ffab2539dbe6f06daefd6fa297d6b60b404303dcc6edcda00bdb6f4da9336dae",
+    "lib/package-metadata.cjs": "2fc4f97a43b87c579a45ae6697164554fd5876d725b4df89e49281b3c9d3837a"
+  },
+  "presentationFiles": {
+    "review-static/script-template.js": "5a7f8aff00f14f867fc83263095dcba3c4562e0d183ee19903a2744f02c8b46f"
+  }
+}

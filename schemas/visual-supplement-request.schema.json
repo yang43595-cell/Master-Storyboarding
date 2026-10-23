@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://master-storyboarding.local/schemas/visual-supplement-request.schema.json",
+  "title": "Visual Supplement Request",
+  "description": "绑定已确认导演镜头、证据、唯一静态目标和最小图片上限的按需视觉补充合同。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "project_id", "request_id", "status", "source_storyboard",
+    "source_shot_ids", "target_state", "must_appear", "must_not_appear",
+    "preserve", "existing_references", "decision", "max_images", "return_upstream"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "project_id": {"$ref": "#/$defs/nonEmptyString"},
+    "request_id": {"type": "string", "pattern": "^VS-[A-Z0-9-]+$"},
+    "status": {"enum": ["candidate", "ready", "not_needed", "blocked", "confirmed", "superseded", "rejected"]},
+    "source_storyboard": {"$ref": "#/$defs/storyboardRef"},
+    "source_shot_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/shotId"}},
+    "gap": {"$ref": "#/$defs/gap"},
+    "target_state": {"$ref": "#/$defs/nonEmptyString"},
+    "must_appear": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/nonEmptyString"}},
+    "must_not_appear": {"type": "array", "items": {"$ref": "#/$defs/nonEmptyString"}},
+    "preserve": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/nonEmptyString"}},
+    "existing_references": {"type": "array", "items": {"$ref": "#/$defs/reference"}},
+    "decision": {"enum": ["reuse_existing", "request_supplement", "return_upstream"]},
+    "max_images": {"type": "integer", "minimum": 0, "maximum": 4},
+    "return_upstream": {"$ref": "#/$defs/returnUpstream"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"decision": {"const": "reuse_existing"}}, "required": ["decision"]},
+      "then": {"properties": {"existing_references": {"minItems": 1}, "max_images": {"const": 0}, "status": {"const": "not_needed"}, "return_upstream": {"properties": {"required": {"const": false}}}}}
+    },
+    {
+      "if": {"properties": {"decision": {"const": "request_supplement"}}, "required": ["decision"]},
+      "then": {"required": ["gap"], "properties": {"max_images": {"minimum": 1, "maximum": 4}, "return_upstream": {"properties": {"required": {"const": false}}}}}
+    },
+    {
+      "if": {"properties": {"decision": {"const": "return_upstream"}}, "required": ["decision"]},
+      "then": {"properties": {"max_images": {"const": 0}, "status": {"const": "blocked"}, "return_upstream": {"properties": {"required": {"const": true}, "reason": {"minLength": 1}, "target": {"enum": ["creative-director", "storyboard-planner", "asset-image-assistant", "blender-previs"]}}}}}
+    }
+  ],
+  "$defs": {
+    "nonEmptyString": {"type": "string", "minLength": 1},
+    "pathString": {"type": "string", "minLength": 3},
+    "shotId": {"type": "string", "pattern": "^S[0-9]{2,}[A-Z]?-[0-9]{3,}$"},
+    "storyboardRef": {
+      "type": "object", "additionalProperties": false,
+      "required": ["artifact_id", "logical_id", "revision", "path", "status"],
+      "properties": {
+        "artifact_id": {"$ref": "#/$defs/nonEmptyString"},
+        "logical_id": {"const": "storyboard.package"},
+        "revision": {"type": "string", "pattern": "^R[0-9]{2,}$"},
+        "path": {"$ref": "#/$defs/pathString"},
+        "status": {"const": "confirmed"}
+      }
+    },
+    "gap": {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "observed_evidence", "why_existing_is_insufficient", "downstream_consequence"],
+      "properties": {
+        "type": {"enum": ["identity", "space", "real_product", "critical_state", "model_reliability"]},
+        "observed_evidence": {"$ref": "#/$defs/nonEmptyString"},
+        "why_existing_is_insufficient": {"$ref": "#/$defs/nonEmptyString"},
+        "downstream_consequence": {"$ref": "#/$defs/nonEmptyString"}
+      }
+    },
+    "reference": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "ref_id", "path", "coverage"],
+      "properties": {
+        "kind": {"enum": ["confirmed_asset", "action_reference", "product_photo", "confirmed_supplement", "other"]},
+        "ref_id": {"$ref": "#/$defs/nonEmptyString"},
+        "path": {"$ref": "#/$defs/pathString"},
+        "coverage": {"$ref": "#/$defs/nonEmptyString"}
+      }
+    },
+    "returnUpstream": {
+      "type": "object", "additionalProperties": false,
+      "required": ["required", "target", "reason"],
+      "properties": {
+        "required": {"type": "boolean"},
+        "target": {"enum": ["none", "creative-director", "storyboard-planner", "asset-image-assistant", "blender-previs"]},
+        "reason": {"type": "string"}
+      }
+    }
+  }
+}

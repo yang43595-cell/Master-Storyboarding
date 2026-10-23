@@ -1,0 +1,524 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://master-storyboarding.local/schemas/visual-asset-manifest-v1.schema.json",
+  "title": "Visual Asset Manifest",
+  "description": "以已确认叙事包 AST 需求为唯一白名单的视觉资产候选与确认登记。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project_id",
+    "revision",
+    "source_narrative",
+    "source_asset_requirement_ids",
+    "assets",
+    "scope_gaps"
+  ],
+  "properties": {
+    "schema_version": {
+      "enum": [
+        "1.0",
+        "1.1"
+      ]
+    },
+    "project_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "revision": {
+      "type": "string",
+      "pattern": "^R[0-9]{2,}$"
+    },
+    "source_narrative": {
+      "$ref": "#/$defs/artifactRef"
+    },
+    "source_asset_requirement_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/assetId"
+      }
+    },
+    "assets": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/asset"
+      }
+    },
+    "scope_gaps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/scopeGap"
+      }
+    },
+    "asset_requirement_decisions": {
+      "type": "object",
+      "description": "用户确认的资产图需求调整；excluded表示明确不需要，added及replaced定义新增与拆分。下游应按此约束准备图片，不擅自补回。",
+      "required": [
+        "revision",
+        "added",
+        "excluded",
+        "replaced",
+        "history",
+        "path"
+      ],
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "added": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "excluded": {
+          "type": "object"
+        },
+        "replaced": {
+          "type": "object"
+        },
+        "history": {
+          "type": "array"
+        },
+        "path": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "pathString": {
+      "type": "string",
+      "minLength": 3
+    },
+    "assetId": {
+      "type": "string",
+      "pattern": "^AST-[A-Z0-9-]+$"
+    },
+    "eventId": {
+      "type": "string",
+      "pattern": "^EVT-[A-Z0-9-]+$"
+    },
+    "shotId": {
+      "type": "string",
+      "pattern": "^S[0-9]{2,}[A-Z]?-[0-9]{3,}$"
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifact_id",
+        "logical_id",
+        "revision",
+        "path"
+      ],
+      "properties": {
+        "artifact_id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "logical_id": {
+          "const": "narrative.package"
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^R[0-9]{2,}$"
+        },
+        "path": {
+          "$ref": "#/$defs/pathString"
+        }
+      }
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "asset_id",
+        "category",
+        "name",
+        "status",
+        "event_scope",
+        "shot_scope",
+        "interactions",
+        "display_surfaces",
+        "orientations",
+        "required_states",
+        "must_inherit",
+        "must_not_inherit",
+        "reference_paths",
+        "candidates",
+        "confirmed_asset"
+      ],
+      "properties": {
+        "asset_id": {
+          "$ref": "#/$defs/assetId"
+        },
+        "category": {
+          "enum": [
+            "CHARACTER",
+            "LOCATION",
+            "PROP",
+            "REAL_PRODUCT",
+            "WARDROBE",
+            "STYLE_REFERENCE",
+            "OTHER"
+          ]
+        },
+        "name": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "status": {
+          "enum": [
+            "missing",
+            "candidate",
+            "awaiting_user_review",
+            "confirmed",
+            "stale",
+            "rejected",
+            "blocked"
+          ]
+        },
+        "event_scope": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/eventId"
+          }
+        },
+        "shot_scope": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/shotId"
+          }
+        },
+        "interactions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "display_surfaces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "orientations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "required_states": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "must_inherit": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "must_not_inherit": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "reference_paths": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pathString"
+          }
+        },
+        "candidates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/candidate"
+          }
+        },
+        "confirmed_asset": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/confirmedAsset"
+            }
+          ]
+        },
+        "confirmed_outputs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/confirmedOutput"
+          }
+        },
+        "character_type": {
+          "enum": [
+            "HUMAN",
+            "HUMANOID",
+            "ANIMAL",
+            "NON_HUMANOID",
+            "PET"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "confirmed"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "confirmed_asset": {
+                "$ref": "#/$defs/confirmedAsset"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "missing",
+                  "candidate",
+                  "awaiting_user_review",
+                  "rejected",
+                  "blocked"
+                ]
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "confirmed_asset": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_id",
+        "path",
+        "status",
+        "source_references",
+        "technical_qc"
+      ],
+      "properties": {
+        "candidate_id": {
+          "type": "string",
+          "pattern": "^AST-[A-Z0-9-]+-C[0-9]{2,}$"
+        },
+        "path": {
+          "$ref": "#/$defs/pathString"
+        },
+        "status": {
+          "enum": [
+            "candidate",
+            "awaiting_user_review",
+            "rejected",
+            "superseded"
+          ]
+        },
+        "source_references": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pathString"
+          }
+        },
+        "technical_qc": {
+          "$ref": "#/$defs/technicalQc"
+        },
+        "generation_record": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/generationRecord"
+            }
+          ]
+        }
+      }
+    },
+    "technicalQc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path_exists",
+        "format",
+        "width",
+        "height",
+        "naming_valid",
+        "reference_traceable"
+      ],
+      "properties": {
+        "path_exists": {
+          "const": true
+        },
+        "format": {
+          "enum": [
+            "png",
+            "jpg",
+            "jpeg",
+            "webp"
+          ]
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "naming_valid": {
+          "type": "boolean"
+        },
+        "reference_traceable": {
+          "type": "boolean"
+        },
+        "product_fact_check": {
+          "enum": [
+            "not_applicable",
+            "passed",
+            "blocked"
+          ]
+        }
+      }
+    },
+    "generationRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tool",
+        "model",
+        "user_authorization_ref"
+      ],
+      "properties": {
+        "tool": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "model": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "user_authorization_ref": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "confirmedAsset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_id",
+        "path",
+        "user_confirmation_ref"
+      ],
+      "properties": {
+        "candidate_id": {
+          "type": "string",
+          "pattern": "^AST-[A-Z0-9-]+-C[0-9]{2,}$"
+        },
+        "path": {
+          "$ref": "#/$defs/pathString"
+        },
+        "user_confirmation_ref": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "confirmedOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "output_id",
+        "purpose",
+        "view",
+        "state",
+        "candidate_id",
+        "path",
+        "user_confirmation_ref"
+      ],
+      "properties": {
+        "output_id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "purpose": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "view": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "state": {
+          "type": "string"
+        },
+        "candidate_id": {
+          "type": "string",
+          "pattern": "^AST-[A-Z0-9-]+-C[0-9]{2,}$"
+        },
+        "path": {
+          "$ref": "#/$defs/pathString"
+        },
+        "user_confirmation_ref": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "scopeGap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gap_id",
+        "requested_item",
+        "reason",
+        "source_ref",
+        "production_stopped"
+      ],
+      "properties": {
+        "gap_id": {
+          "type": "string",
+          "pattern": "^GAP-AST-[A-Z0-9-]+$"
+        },
+        "requested_item": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "reason": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "source_ref": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "production_stopped": {
+          "const": true
+        }
+      }
+    }
+  }
+}

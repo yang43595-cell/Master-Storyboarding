@@ -1,0 +1,169 @@
+{
+  "independent_branches": true,
+  "source_file_overlap": [],
+  "integrated_candidate_created": false,
+  "creative": {
+    "branch": "candidate/creative-r2-20261013",
+    "changed_files": [
+      {
+        "path": "scripts/tests/test_method_documents.py",
+        "before_sha256": "1ff083ef44c4740800d782e9528dc941e968e2d91ba6e7a9e9aa075d86af7438",
+        "after_sha256": "3802456096624568bdcdf38c686cc32f94b2c31bde6795c28b9ec899ce482c1f",
+        "before_chars": 5975,
+        "after_chars": 6288
+      },
+      {
+        "path": "scripts/tests/test_review_identity.py",
+        "before_sha256": "b1f826133aec7a352a425e31a5b2b2778923713524d5e84204690ea231c1c763",
+        "after_sha256": "146a64894ebe2fffb457e6361ff1ff198fd2c27cf065fa873239c44f5d525bcc",
+        "before_chars": 16771,
+        "after_chars": 16797
+      },
+      {
+        "path": "scripts/tests/test_stage_context_cli.py",
+        "before_sha256": "e412c52b2e82be3a9bc5559c2e472ee8567e599762545d9b2d24d821821d9603",
+        "after_sha256": "2f108c3d9f333a1155cfcbad9be539e03ef9c0ff9fdc4004df50860c06009abf",
+        "before_chars": 45938,
+        "after_chars": 47605
+      },
+      {
+        "path": "skills/creative-director/SKILL.md",
+        "before_sha256": "3eb7086ab97e0210a11314901ecab2bc80d3691a96473d81c13bddf0c26e0f16",
+        "after_sha256": "ee72cda057ba07aaa8ab5b5a774d4ee6a689aa2b29a6006bd9a23f41633507d1",
+        "before_chars": 2533,
+        "after_chars": 1602
+      },
+      {
+        "path": "skills/creative-director/knowledge-profile.json",
+        "before_sha256": "8f702e75c39428161b5928c2da8cf289ceb20e91d3a5ca0f3f8d8d8b0093cfe2",
+        "after_sha256": "e4aedc7d1af4f302cc87839ca2a23f770af0676bb800f5ddcfae5772253ad5db",
+        "before_chars": 713,
+        "after_chars": 729
+      },
+      {
+        "path": "skills/creative-director/modules/story-method.md",
+        "before_sha256": "8f812b94b9a6083bbeea6997a8a04a8c1729bc765d3bd98b5a5597af5feac34a",
+        "after_sha256": "c06224a836c7802ce9984ced3ac195240cbba0a49ccc10b7986c0de5384c3962",
+        "before_chars": 3281,
+        "after_chars": 2755
+      },
+      {
+        "path": "skills/creative-director/review-profile.json",
+        "before_sha256": "b6c4cffc6d6bba74beaa2db5b8278fb32cae61f019409d1e6cd4aebdcf94ef98",
+        "after_sha256": "c553d41b30ea868162e396789113e4627dd8d1ec37796e1de13e71a1c7f8853a",
+        "before_chars": 1712,
+        "after_chars": 1710
+      },
+      {
+        "path": "skills/creative-director/templates/narrative-package-template.md",
+        "before_sha256": "6dd1a632e3839eaa78d38f3fba97c6c8698c28343f928f85b9b91e5de8464ee5",
+        "after_sha256": "fbad40a713e7a8cb6f06687ca592f80e211c35612c77ba09fae2f98597b42261",
+        "before_chars": 1958,
+        "after_chars": 1905
+      },
+      {
+        "path": "skills/creative-director/tests/cinematic-pressure-tests.md",
+        "before_sha256": "03895b7ef6a3ddb078208a2afe4d035c053041926a8f1f8a31da31b0dfbec9c1",
+        "after_sha256": "82bb4e127979e39a86b9fff1ced61595bb37b2a1e684fd4308314e57bcd6b998",
+        "before_chars": 1999,
+        "after_chars": 2013
+      }
+    ],
+    "required_base_dependencies": [
+      {
+        "path": "PROJECT_RULES.md",
+        "sha256": "b54cb78f4176d8b5137a34e451be912793067635ea1c86240e16b7812719714d"
+      },
+      {
+        "path": "skills/_shared/knowledge-access.md",
+        "sha256": "3d38692042de4d008cf8359ce4b9c48eac005562ac825a52fb75dd3863aa64b2"
+      },
+      {
+        "path": "skills/_shared/product-usage-contract.md",
+        "sha256": "543e8a3b70dffbe056e0ca465f4abed71cf2ec3e8ece432fb30b7db927a20179"
+      },
+      {
+        "path": "skills/creative-director/references/asset-image-necessity.md",
+        "sha256": "ed3b54ecd882d920c2dc723cb16584dd4cba705b672e04636f094869f98fee14"
+      },
+      {
+        "path": "skills/creative-director/references/dialogue-lineage-contract.md",
+        "sha256": "610f8b4c7cd14fdd2464f2cc674784cad22021f7d799dbf173129b48a6afc4b7"
+      },
+      {
+        "path": "schemas/narrative-package.schema.json",
+        "sha256": "770077c1382713ab80725a8485b690819294e45f8affdbd1944d36bd8571d797"
+      },
+      {
+        "path": "scripts/stage_context_cli.py",
+        "sha256": "e4477d4e1a82d66aa67adb4aaae42075cb6e2872fc32e4baf1c36d33560f2112"
+      },
+      {
+        "path": "scripts/core/method_documents.py",
+        "sha256": "9845a6c2e26be942eb88b4e52dcf1f88bd05a2669f9af5e67f5670c636e986c6"
+      },
+      {
+        "path": "scripts/core/story_sources.py",
+        "sha256": "13cf00a5502e7d09640d91b10030ebf77db14c0f587dc37b52900f28b8da1782"
+      },
+      {
+        "path": "scripts/core/review_delta.py",
+        "sha256": "0120463cad79b8e751396155bfda8eda3a3a445d1a3fa3dce56fab82a550cda4"
+      },
+      {
+        "path": "scripts/core/knowledge_selector.py",
+        "sha256": "1534757201f8610e86bf6c6bfb56a8fcc1f8fc0a980bd64ad4bc30dad159f3d4"
+      }
+    ],
+    "reported_tests": {
+      "targeted_passed": 253,
+      "full_passed": 786,
+      "skipped": 1
+    }
+  },
+  "director": {
+    "branch": "candidate/director-choice-20261013",
+    "changed_files": [
+      {
+        "path": "scripts/tests/test_storyboard_planner_contract.py",
+        "before_sha256": "d4723c337bd10c3ab0f357a96b7aed3bb21a60ce979dca90ac001e929b1817c9",
+        "after_sha256": "dd28575a772150d93ca9e1f4de8832ba84359d4eb3cb0fcb26cd572c2fd1a1fc",
+        "before_chars": 9289,
+        "after_chars": 10251
+      },
+      {
+        "path": "skills/storyboard-planner/SKILL.md",
+        "before_sha256": "f3983446d37c5833c70265b05abf143693fbf019c5a157bf90ed4daa950cbd31",
+        "after_sha256": "9520df9ad7fc29eef5777b02190a07722f4856a775c9d2a17c73185f8b6bb3d2",
+        "before_chars": 3396,
+        "after_chars": 3273
+      },
+      {
+        "path": "skills/storyboard-planner/review-profile.json",
+        "before_sha256": "7be05151c7e92fcdc5a151788a80403a31dc23d33599d33d311fbb10a95b1aa6",
+        "after_sha256": "e5ef272ec7fe3c4c146d8b1d9fbd57aaac9793f653f0e717463ce72ee97603ee",
+        "before_chars": 1906,
+        "after_chars": 1989
+      },
+      {
+        "path": "skills/storyboard-planner/templates/专业影视分镜输出模板.md",
+        "before_sha256": "bc8167b72eadd4a7c70fec4afe0339a5dd9692048ad427cfc1c1c5ccd3dae44a",
+        "after_sha256": "1a70ada2208a41c27269b80531180c2ed760b128a970dbecb5e8963bef1a221d",
+        "before_chars": 1889,
+        "after_chars": 1988
+      },
+      {
+        "path": "skills/storyboard-planner/tests/pressure-tests.md",
+        "before_sha256": "79f8877719977046b943c9091ef87e1dea2b7a21187bb2d2da0f4369ae03101c",
+        "after_sha256": "5eb6dc21e5d085fc83ccd2d9d3c175a0a9507d12d550c44fa0a22a4b44eb8858",
+        "before_chars": 1714,
+        "after_chars": 2187
+      }
+    ],
+    "reported_tests": {
+      "targeted_passed": 173,
+      "full_passed": 784,
+      "skipped": 1
+    }
+  }
+}

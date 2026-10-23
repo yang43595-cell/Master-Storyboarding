@@ -1,0 +1,431 @@
+{
+  "schema_version": "2.0",
+  "description": "Master-Storyboarding 仓库权威规则与本地载体登记。动态 Wiki 规则由 Skill profile 和 knowledge-policy.json 选择；本文件不保存阶段路由或知识正文。",
+  "repo_rules": {
+    "lighting.prompt-physical-logic": {
+      "rule_id": "MSB-KB-LIGHT-001",
+      "carriers": [
+        {
+          "path": "skills/storyboard-planner/references/lighting-prompt-standard.md",
+          "skills": [
+            "asset-image-assistant",
+            "storyboard-director",
+            "voiceover-to-video-script"
+          ],
+          "required_terms": [
+            "灯光目的",
+            "可解释光源或方向",
+            "作用对象或可见结果",
+            "继承或变化逻辑",
+            "触发、变化路径和结束状态",
+            "体积光或丁达尔光必须有"
+          ]
+        }
+      ]
+    },
+    "prompt.constraints.positive-first-model-aware": {
+      "rule_id": "MSB-KB-PROMPT-001",
+      "carriers": [
+        {
+          "path": "skills/voiceover-to-video-script/references/prompt-language-hard-rules.md",
+          "skills": [
+            "asset-image-assistant",
+            "storyboard-director",
+            "voiceover-to-video-script"
+          ],
+          "required_terms": [
+            "内容与动作正文",
+            "生产约束",
+            "模型专用负面通道",
+            "不得把同一组",
+            "没有独立 Negative Prompt 参数"
+          ]
+        }
+      ]
+    },
+    "artifact.unconfirmed-draft-lifecycle": {
+      "rule_id": "MSB-KB-ARTIFACT-001",
+      "carriers": [
+        {
+          "path": "skills/_shared/draft-lifecycle.md",
+          "skills": [
+            "asset-image-assistant",
+            "creative-director",
+            "storyboard-director",
+            "storyboard-planner",
+            "voiceover-to-video-script"
+          ],
+          "required_terms": [
+            "先改原稿",
+            "无价值就删除",
+            "有理由才保留",
+            "不保留正文副本"
+          ]
+        }
+      ]
+    },
+    "storyboard.scene-beat-shot-panel": {
+      "rule_id": "MSB-KB-BOARD-001",
+      "carriers": [
+        {
+          "path": "skills/storyboard-planner/references/专业影视分镜执行规范.md",
+          "skills": [
+            "storyboard-planner"
+          ],
+          "required_terms": [
+            "Scene、Shot 保留稳定来源引用",
+            "不新增 Beat 或 Panel 编号层",
+            "一次连续摄影",
+            "起／过程／止"
+          ]
+        }
+      ]
+    },
+    "storyboard.decision-chain-shot-test": {
+      "rule_id": "MSB-KB-BOARD-002",
+      "carriers": [
+        {
+          "path": "skills/storyboard-planner/references/专业影视分镜执行规范.md",
+          "skills": [
+            "storyboard-planner"
+          ],
+          "required_terms": [
+            "STORYBOARD-PLANNING-METHOD",
+            "情绪推进和删除测试仍用于创作、自检"
+          ]
+        }
+      ]
+    },
+    "storyboard.staging-continuity": {
+      "rule_id": "MSB-KB-BOARD-003",
+      "carriers": [
+        {
+          "path": "skills/storyboard-planner/references/专业影视分镜执行规范.md",
+          "skills": [
+            "storyboard-planner"
+          ],
+          "required_terms": [
+            "STORYBOARD-PLANNING-METHOD",
+            "空间规则",
+            "take.start、process、end",
+            "状态变化结果明确"
+          ]
+        }
+      ]
+    },
+    "storyboard.asset-reverse-planning": {
+      "rule_id": "MSB-KB-BOARD-004",
+      "carriers": [
+        {
+          "path": "skills/storyboard-planner/references/专业影视分镜执行规范.md",
+          "skills": [
+            "storyboard-planner"
+          ],
+          "required_terms": [
+            "不得新增或修改资产需求",
+            "受影响镜头和关联 AST",
+            "不创建替代资产",
+            "无资产缺口写无"
+          ]
+        },
+        {
+          "path": "skills/asset-image-assistant/references/00a-asset-complexity-routing-guide.md",
+          "skills": [
+            "asset-image-assistant"
+          ],
+          "required_terms": [
+            "只生成能解决一致性风险的资产",
+            "只生产当前有效资产表中的 AST",
+            "命中条件只改变实现模块"
+          ]
+        }
+      ]
+    },
+    "storyboard.observable-execution": {
+      "rule_id": "MSB-KB-BOARD-011",
+      "carriers": [
+        {
+          "path": "skills/storyboard-planner/references/专业影视分镜执行规范.md",
+          "skills": [
+            "storyboard-planner"
+          ],
+          "required_terms": [
+            "STORYBOARD-PLANNING-METHOD",
+            "程序检查不代替连续摄影与情绪可读性判断"
+          ]
+        }
+      ]
+    },
+    "storyboard.source-dialogue-time-lineage": {
+      "rule_id": "MSB-KB-BOARD-012",
+      "carriers": [
+        {
+          "path": "skills/creative-director/references/dialogue-lineage-contract.md",
+          "skills": [
+            "creative-director",
+            "storyboard-planner"
+          ],
+          "required_terms": [
+            "dialogue_id",
+            "来源段落",
+            "逐字保留"
+          ]
+        },
+        {
+          "path": "skills/storyboard-planner/templates/专业影视分镜输出模板.md",
+          "skills": [
+            "storyboard-planner"
+          ],
+          "required_terms": [
+            "本镜实际承载的原文片段",
+            "实际片段、说话人和呈现方式",
+            "按播放顺序拼接逐字还原上游对白"
+          ]
+        },
+        {
+          "path": "skills/storyboard-planner/references/专业影视分镜执行规范.md",
+          "skills": [
+            "storyboard-planner"
+          ],
+          "required_terms": [
+            "timing_basis",
+            "not_evaluable",
+            "未知时间窗不视为零时长"
+          ]
+        }
+      ]
+    },
+    "storyboard.validation-layer-separation": {
+      "rule_id": "MSB-KB-BOARD-013",
+      "carriers": [
+        {
+          "path": "skills/storyboard-planner/references/专业影视分镜执行规范.md",
+          "skills": [
+            "storyboard-planner"
+          ],
+          "required_terms": [
+            "新稿直接维护和审定 JSON，Markdown 仅按需导出；历史带 human_readable_path 的包继续双文件检查",
+            "机器检查、自查、用户确认分开记录"
+          ]
+        }
+      ]
+    },
+    "image-continuity.true-opening-state": {
+      "rule_id": "MSB-KB-IMGCONT-001",
+      "carriers": [
+        {
+          "path": "skills/storyboard-director/references/image-continuity-hard-rules.md",
+          "skills": [
+            "storyboard-director",
+            "voiceover-to-video-script"
+          ],
+          "required_terms": [
+            "动作发生前状态",
+            "双职责静止帧",
+            "停止视频提交"
+          ]
+        }
+      ]
+    },
+    "image-continuity.background-master": {
+      "rule_id": "MSB-KB-IMGCONT-002",
+      "carriers": [
+        {
+          "path": "skills/storyboard-director/references/image-continuity-hard-rules.md",
+          "skills": [
+            "asset-image-assistant",
+            "storyboard-director"
+          ],
+          "required_terms": [
+            "背景母版",
+            "锁定固定层",
+            "每次只改变一个动作层"
+          ]
+        }
+      ]
+    },
+    "image-continuity.multi-angle-reference-set": {
+      "rule_id": "MSB-KB-IMGCONT-003",
+      "carriers": [
+        {
+          "path": "skills/storyboard-director/references/image-continuity-hard-rules.md",
+          "skills": [
+            "asset-image-assistant",
+            "storyboard-director"
+          ],
+          "required_terms": [
+            "反向平视回望",
+            "45°俯视斜角全景",
+            "90°垂直正俯空间总纲"
+          ]
+        }
+      ]
+    },
+    "image-continuity.character-face-source": {
+      "rule_id": "MSB-KB-IMGCONT-004",
+      "carriers": [
+        {
+          "path": "skills/storyboard-director/references/image-continuity-hard-rules.md",
+          "skills": [
+            "asset-image-assistant",
+            "storyboard-director"
+          ],
+          "required_terms": [
+            "唯一可信的面部来源",
+            "16:9",
+            "1×4 只表示画布内单行等宽四格排布",
+            "不得出现胸口、上半身、手臂或半身构图",
+            "颈部以上留空",
+            "不得用遮挡、模糊或低清小脸"
+          ]
+        }
+      ]
+    }
+  },
+  "reviewed_rule_pages": {
+    "wiki/concepts/06-系统与决策/未确认稿与废弃产物生命周期规则.md": {
+      "classification": "project_method_page",
+      "non_rule_sha256": "0b0b4119de9999403d83788751c8f4b5b14dd0d72f39fe515ba12cc9c4053f4f",
+      "carriers": [],
+      "review_note": "2026-09-13 核对现行 Skill 共享合同，修复已删除载体路径；原则与确认边界不变。 2026-10-03 对照原登记指纹对应 Git 版本复核：仅 sources 引用由 sources/ 修正为 wiki/sources/，目标存在，块外方法正文未变。"
+    },
+    "wiki/concepts/01-叙事与对白/短剧电影叙事法则.md": {
+      "classification": "project_method_page",
+      "non_rule_sha256": "28227aa82aa08c86daf173da6342777639508e9df58438174952ecd499aa73a0",
+      "carriers": [],
+      "review_note": "2026-09-13 已读块外正文：新增记录解释 NARR-003 重复登记修复，不是第二份执行规则。 2026-10-03 对照原登记指纹对应 Git 版本复核：仅 sources 引用由 sources/ 修正为 wiki/sources/，目标存在，块外方法正文未变。"
+    },
+    "wiki/concepts/01-叙事与对白/短视频对白打磨.md": {
+      "classification": "project_method_page",
+      "non_rule_sha256": "21538d59d97a112a3888042752979502f1ea71162bebc5ab5d4e24f64b0725ae",
+      "carriers": [],
+      "review_note": "2026-10-03 对照原登记指纹对应 Git 版本复核：仅 sources 引用由 sources/ 修正为 wiki/sources/，目标存在，块外方法正文未变。"
+    },
+    "wiki/concepts/01-叙事与对白/第一视角拟人叙事.md": {
+      "classification": "project_method_page",
+      "non_rule_sha256": "6276eda635036b1c3f43717f9a8902af3454b61be4edf8f0933f61a3b29b152c",
+      "carriers": [],
+      "review_note": "2026-09-13 已读块外正文：定义、概念介绍与关联；不是项目授权或事实依据，不自动进入专业方法。 2026-10-03 对照原登记指纹对应 Git 版本复核：仅 sources 引用由 sources/ 修正为 wiki/sources/，目标存在，块外方法正文未变。"
+    },
+    "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md": {
+      "classification": "project_method_page",
+      "non_rule_sha256": "1a3669c71059a4b4d088153378cab6e48e6397af5d6cdcb3283040270c7405c1",
+      "carriers": [],
+      "review_note": "2026-09-13 已读块外正文：重复 LIGHT-001 的迁移记录、通用镜头概念及来源；项目生产以已绑定方法和 v4 本地合同为准。"
+    },
+    "wiki/concepts/动画科普分镜图最小状态帧组.md": {
+      "classification": "project_method_page",
+      "non_rule_sha256": "ae3dbbc64ab5f9ff7dc61a2a70a60d358a2ff7d0b41b9fbad858f680aebcc422",
+      "carriers": []
+    },
+    "wiki/concepts/02-镜头与剪辑/图片连续性规则.md": {
+      "classification": "project_method_page",
+      "non_rule_sha256": "37583b70258f90beccefbe5c1c68dc4ddb8de7b36fac32f98ba49d1700c75af7",
+      "carriers": [
+        {
+          "path": "skills/asset-image-assistant/references/00a-asset-complexity-routing-guide.md",
+          "skills": [
+            "asset-image-assistant"
+          ],
+          "required_terms": [
+            "### 5.1 按预算执行稳定性压力测试",
+            "短视频、单一广告或预算受限项目",
+            "不得默认连续生成十次"
+          ]
+        },
+        {
+          "path": "skills/asset-image-assistant/references/02-character-master-guide.md",
+          "skills": [
+            "asset-image-assistant"
+          ],
+          "required_terms": [
+            "允许剧情状态",
+            "16:9 横向画布",
+            "中性背景",
+            "均匀平光"
+          ]
+        },
+        {
+          "path": "skills/asset-image-assistant/references/03-scene-master-guide.md",
+          "skills": [
+            "asset-image-assistant"
+          ],
+          "required_terms": [
+            "### 状态可变",
+            "### 9.2 侧机位场景图与固定场景锚点",
+            "光向都以该锚点校验"
+          ]
+        },
+        {
+          "path": "skills/asset-image-assistant/references/04-prop-product-master-guide.md",
+          "skills": [
+            "asset-image-assistant"
+          ],
+          "required_terms": [
+            "## 四、状态表",
+            "后续状态图必须引用初始母版"
+          ]
+        }
+      ],
+      "review_note": "2026-10-03 对照原登记指纹对应 Git 版本复核：仅 sources 引用由 sources/ 修正为 wiki/sources/，目标存在，块外方法正文未变。"
+    },
+    "wiki/concepts/02-镜头与剪辑/景别理论.md": {
+      "classification": "project_method_page",
+      "non_rule_sha256": "5e61b7f59b5eeec03768e00d4d97d51deccec48eca53a1f7095664c92271b82e",
+      "carriers": [],
+      "review_note": "2026-10-03 对照原登记指纹对应 Git 版本复核：仅 sources 引用由 sources/ 修正为 wiki/sources/，目标存在，块外方法正文未变。"
+    },
+    "wiki/concepts/02-镜头与剪辑/超时连续事件的强制拆段衔接.md": {
+      "classification": "project_method_page",
+      "non_rule_sha256": "ef30f7902425e0b74fe5fb170f8145e0b34fdd73f317fe14b30d469eafbb7146",
+      "carriers": []
+    },
+    "wiki/concepts/02-镜头与剪辑/连续性剪辑.md": {
+      "classification": "project_method_page",
+      "non_rule_sha256": "aa950cf8064c7b81195e4487fc0b59d53b1f61c2f96db20028a2c55dd685f5ce",
+      "carriers": [],
+      "review_note": "2026-10-03 对照原登记指纹对应 Git 版本复核：仅 sources 引用由 sources/ 修正为 wiki/sources/，目标存在，块外方法正文未变。"
+    },
+    "wiki/concepts/03-AI生成与视频/ai人物活人感.md": {
+      "classification": "project_method_page",
+      "non_rule_sha256": "f8f7ff91b327f015a15c38880a13dd8c8841b4c3b858411b36fd483b28c8fa05",
+      "carriers": [],
+      "review_note": "2026-10-03 对照原登记指纹对应 Git 版本复核：仅 sources 引用由 sources/ 修正为 wiki/sources/，目标存在，块外方法正文未变。"
+    },
+    "wiki/concepts/03-AI生成与视频/ai人物反向表演.md": {
+      "classification": "project_method_page",
+      "non_rule_sha256": "8725e08bc471f58711a8239f74bea362158497f5acbf3435c399a40a75c62870",
+      "carriers": [],
+      "review_note": "2026-10-03 对照原登记指纹对应 Git 版本复核：仅 sources 引用由 sources/ 修正为 wiki/sources/，目标存在，块外方法正文未变。"
+    },
+    "wiki/concepts/03-AI生成与视频/ai分镜设计.md": {
+      "classification": "project_method_page",
+      "non_rule_sha256": "2f704d6c8e565270f3c99612ea50446737abd5fa80a4a7dbfba2a8544ee7c962",
+      "carriers": [],
+      "review_note": "2026-10-03 对照原登记指纹对应 Git 版本复核：仅 sources 引用由 sources/ 修正为 wiki/sources/，目标存在，块外方法正文未变。"
+    },
+    "wiki/concepts/03-AI生成与视频/ai视频生成方法论.md": {
+      "classification": "project_method_page",
+      "non_rule_sha256": "57915004b161b2191f14c5e65c2b02bb95505ea2fb291553c3b4712cb17efb02",
+      "carriers": [],
+      "review_note": "2026-09-13 已读块外正文：方法拆分导航、历史 VGEN-002 及教学案例；不作动态视频生产规则，不把模型建议或案例压力测试自动升为项目要求。 2026-10-03 对照原登记指纹对应 Git 版本复核：仅 sources 引用由 sources/ 修正为 wiki/sources/，目标存在，块外方法正文未变。"
+    },
+    "wiki/concepts/03-AI生成与视频/提示词污染.md": {
+      "classification": "project_method_page",
+      "non_rule_sha256": "6ab5d379244afe16c2a7d8da3d3402767d8dcaab16dbda1138abc632e45adeb2",
+      "carriers": [],
+      "review_note": "2026-10-03 对照原登记指纹对应 Git 版本复核：仅 sources 引用由 sources/ 修正为 wiki/sources/，目标存在，块外方法正文未变。"
+    },
+    "wiki/synthesis/抖音台词方法论.md": {
+      "classification": "project_method_page",
+      "non_rule_sha256": "3bdc07f589aba2e6216321e260d6b1f1015b35a806a7d388d2c38bd6063d2cc7",
+      "carriers": [],
+      "review_note": "2026-10-03 对照原登记指纹对应 Git 版本复核：仅 sources 引用由 sources/ 修正为 wiki/sources/，目标存在，块外方法正文未变。"
+    },
+    "wiki/synthesis/抖音热梗速记2026.md": {
+      "classification": "project_method_page",
+      "non_rule_sha256": "f31982491ed4b5ab43a3f4848cdacbf5f38a4e7db8d985dcd084946eee1feb81",
+      "carriers": []
+    }
+  }
+}

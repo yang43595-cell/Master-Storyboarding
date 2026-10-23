@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "skill": "blender-previs",
+  "skill_contract_checks": [
+    {"id": "CONTRACT-TRIGGER", "text": "已确认导演稿之后由用户选择具体镜号启用，默认关闭；核验站位、机位与空间连续性，产出所选镜头的预演图或相机/粗路径参考视频，不自动进入下一阶段"},
+    {"id": "CONTRACT-BOUNDARY", "text": "职责、输入、输出与硬禁区明确；只锁空间、运镜与路径级动作，不锁精细动作、表演、节奏或对白"},
+    {"id": "CONTRACT-REFERENCES", "text": "本地引用、CLI 与配方契约、recipe schema 真实存在，且契约内容与 CLI 实际产物布局一致"},
+    {"id": "CONTRACT-DELIVERY", "text": "空间基座在 05_分镜/预演/空间/ 复用；按准确导演镜号 prepare-shot→stage-shot→shoot→verify，登记逐镜候选，真实用户确认后 confirm-reference，再 handoff-reference；白模确认不等于生图/视频授权或成图确认"}
+  ],
+  "production_artifact_checks": [
+    {"id": "BLENDER-RECIPE", "text": "本镜有效配方明确、可复现、输入已确认：环境来自同一无人物空间基座，人物位姿与镜头来自准确导演镜号；actors:[] 仅用于执行者对照确认正文/场景站位/shot.take及camera核实无在场人物，结构通过不证明无人判断；身高用 height_cm，坐姿优先 chair_id，无椅子时才用 surface_height；verify --recipe 传实际人物配方"},
+    {"id": "BLENDER-SPACE-BASIS", "text": "无人物空间基座的固定房间、家具、道具占位和尺度只建并登记一次，锚点注明确认视图来源；本镜人物状态只写新副本，跨镜按已确认动作核对连续性；完整整场人物时间线的旧白模可直接 shoot，不再 stage 同 ID 人物，新增状态回到无人物基座，不删除旧人物或改房间"},
+    {"id": "BLENDER-SEGMENT-MODE", "text": "按待验证空间问题选最少充分媒体：单态参考 shoot video:false、build preview_video:false；相机运动或粗路径/遮挡确需时序证据时，在本次授权内显式选择关键帧组或视频，固定机位也可适用；不新增渲染授权；俯视默认只图无路径，仅用户明确需要路径辅助图才开启 show_paths"},
+    {"id": "BLENDER-DURATION", "text": "时长、切点与段长继承已确认导演稿；对白/动作/运镜耗时估算仅用于未定实现参数或可行性核对，摇时长=角度÷摇速；不足时返回导演与用户，不自行加秒或拆镜；预演视频的实际覆盖范围注明，不自动当成后续生成时长"},
+    {"id": "BLENDER-OUTPUT", "text": "输出写入项目预演目录且不覆盖非空目录；所选预演图或视频、参考帧与真实渲染/verify 证据齐全，配置需要俯视图时核对实际文件；stage-shot 不渲染、shoot 不自动生成俯视图；保留本镜配方、镜头清单、日志、颜色与机位对应"},
+    {"id": "BLENDER-MEASURE", "text": "机位元数据统一：画幅与成片一致、焦距用等效全画幅焦距、机位高度用米，且机位按坐姿/站姿实际头高换算，写入颜色对照供提示词引用"},
+    {"id": "BLENDER-COLOR", "text": "人物各一色且全片不变，相似却不同的物品各自独立颜色；颜色只作认领标签，对照表与提示词映射一致"},
+    {"id": "BLENDER-MODEL-CLEAN", "text": "白模画面统一无纹理材质，关闭坐标轴与相机锥体等叠加物；show_paths:false，只有用户明确需要的路径辅助图允许路径线；有地面与接触点，final hold 遵循导演稿，画幅与成片一致，9:16 数值仅为项目示例"},
+    {"id": "BLENDER-ACTION-LEVEL", "text": "动作参考级别已标注：默认路径级（只参考走到哪、朝哪、何时切），不得让成片复刻白模精细姿态；仅有用户明确指定的精细动作白模可升级并记录依据"},
+    {"id": "BLENDER-SEATING", "text": "坐姿与椅子对齐：优先用 chair_id 由椅子决定位置朝向与座面；椅型与尺寸来自确认参考，无扶手可用 chair、有扶手可用 armchair 或导入几何，不为通过检查擅改家具/角色比例；贴座面用身体网格最低点（非骨盆骨骼），人与座面/扶手无穿模，净坐宽不足时有告警"},
+    {"id": "BLENDER-TOPDOWN", "text": "需要俯视站位图时 build 的 outputs.topdown 给至少一个时刻，默认 video:false、show_paths:false，图中不被吊灯或切镜相机干扰；核对实际产物，不把配置当文件"},
+    {"id": "BLENDER-QC", "text": "verify 在本镜起止、关键状态及规定采样检查人物接触/比例、相机投影及文件证据；通过不证明所有帧、全程遮挡或表演，仍查看实际产物，不冒充导演或用户视觉终审"},
+    {"id": "BLENDER-HANDOFF", "text": "register-reference 先登记逐镜候选与真实技术证据，实际用户确认后 confirm-reference；handoff-reference 复核确切镜号、导演正文/包、空间基座、文件哈希与确认母图，按已登记 files 携带实际需要的图/视频与 role/哈希，局部媒体包限定覆盖；写明局限，下游按登记包取用；不自动授权生成或确认成图"},
+    {"id": "PROMPT-LANG", "text": "提示词语言合规：无 影视级/8K/4K/唯美/高级 等炫技含糊词；按本 Skill 提示词方法与知识库规范产出"},
+    {"id": "KB-COMPLIANCE", "text": "产物命中对应知识库规范：预演配方须遵循 CLI与配方契约+prompt-language；配方中供 AI 生成参考的描述文本用确定性、可观察措辞。产出前已 prepare 并核对上述规范，非自行发挥"}
+  ]
+}

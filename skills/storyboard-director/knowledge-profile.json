@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0",
+  "skill": "storyboard-director",
+  "topics": [
+    "ai-storyboard",
+    "visual-anchor",
+    "image-continuity",
+    "character-realism",
+    "pov"
+  ],
+  "professional_methods": [
+    {
+      "id": "VISUAL-SUPPLEMENT-METHOD",
+      "path": "projects/Master-Storyboarding/应用知识/图片资产/视觉补充方法.md",
+      "binding_status": "user_confirmed",
+      "applies_when": "本 Skill 判断静态视觉缺口、参考覆盖与状态继承时",
+      "requires": {
+        "skill": "storyboard-director"
+      }
+    },
+    {
+      "id": "IMAGE-CONTINUITY-METHOD",
+      "path": "projects/Master-Storyboarding/应用知识/图片资产/图片连续性方法.md",
+      "binding_status": "user_confirmed",
+      "applies_when": "本 Skill 处理资产或视觉补充参考的连续性时",
+      "requires": {
+        "skill": "storyboard-director"
+      }
+    },
+    {
+      "id": "VGEN-CREATOR-POLISHING-MASK-USE",
+      "path": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/方法.md",
+      "binding_status": "user_confirmed",
+      "applies_when": "本轮明确为造物者抛光面膜真人上脸效果的制作、返修或参考检查；不因只有碗内搅拌或产品展示而触发",
+      "requires": {
+        "skill": "storyboard-director",
+        "request.creator_mask_face_effect": true
+      },
+      "template_path": "wiki/concepts/08-模板/造物者抛光面膜_真人上脸半透明胶膜生图模板.md"
+    }
+  ]
+}

@@ -1,0 +1,154 @@
+{
+  "version": "asset-library-skill-v2",
+  "required_rules": [
+    "MSB-KB-PROMPT-002"
+  ],
+  "required_methods": [
+    "IMAGE-CONTINUITY-METHOD"
+  ],
+  "category_kinds": {
+    "LOCATION": "环境",
+    "OTHER": "物品",
+    "PROP": "物品",
+    "STYLE_REFERENCE": "风格",
+    "WARDROBE": "服装",
+    "CHARACTER": "大头照",
+    "REAL_PRODUCT": "产品"
+  },
+  "recipes": {
+    "大头照": {
+      "label": "大头照 · 3:4 头顶至锁骨",
+      "category": "大头照",
+      "ratio": "3:4",
+      "guide": "02-character-master-guide.md",
+      "steps": [
+        "大头照"
+      ],
+      "template": "1x4三视图模板提示词.md",
+      "blocks": [
+        1
+      ],
+      "description": "保留身份、头顶和锁骨，画面内不出现衣服。",
+      "method_scope": "character"
+    },
+    "服装": {
+      "label": "服装三视图 · 正侧背三格",
+      "category": "服装三视图",
+      "ratio": "16:9",
+      "guide": "02-character-master-guide.md",
+      "steps": [
+        "服装三视图"
+      ],
+      "template": "1x4三视图模板提示词.md",
+      "blocks": [
+        2
+      ],
+      "description": "同一套服装，使用无头无脸人台，正面、左侧、背面三格。",
+      "method_scope": "character"
+    },
+    "人物1x4": {
+      "label": "人物1×4 · 已确认脸部＋服装",
+      "category": "人物1x4",
+      "ratio": "16:9",
+      "guide": "02-character-master-guide.md",
+      "steps": [
+        "人物1×4身份资产板"
+      ],
+      "template": "1x4三视图模板提示词.md",
+      "blocks": [
+        3
+      ],
+      "description": "选择已确认服装图与大头照；左格唯一面部，后三格无头身体。",
+      "secondary_role": "已确认大头照",
+      "primary_role": "已确认服装三视图",
+      "method_scope": "character"
+    },
+    "环境": {
+      "label": "场景 · 四步视图",
+      "category": "场景",
+      "ratio": "16:9",
+      "guide": "03-scene-master-guide.md",
+      "steps": [
+        "45°斜俯视",
+        "正面",
+        "反面",
+        "90°俯瞰"
+      ],
+      "template": "环境一致性模板提示词.md",
+      "blocks": [
+        3,
+        1,
+        2,
+        4
+      ],
+      "description": "45°封面→正面→反面→俯视；每步确认后再派生。",
+      "method_scope": "scene"
+    },
+    "物品": {
+      "label": "物品 · 正侧背俯四视图",
+      "category": "物品",
+      "ratio": "16:9",
+      "guide": "04-prop-product-master-guide.md",
+      "steps": [
+        "物品四视图"
+      ],
+      "description": "一张16:9横图，2×2四格：左上正面、右上左侧、左下背面、右下俯视，同一物品大小一致。",
+      "method_scope": "object"
+    },
+    "产品": {
+      "label": "广告产品 · 真实参考母图",
+      "category": "产品",
+      "ratio": "3:4",
+      "guide": "04-prop-product-master-guide.md",
+      "steps": [
+        "产品母图"
+      ],
+      "description": "广告产品及配套用具，以真实包装、结构和标签为准；未知信息必须报告。",
+      "method_scope": "object"
+    },
+    "风格": {
+      "label": "风格 · 表现母版",
+      "category": "风格",
+      "ratio": "16:9",
+      "guide": "01-style-master-guide.md",
+      "steps": [
+        "风格母版"
+      ],
+      "description": "从参考图提取媒介、线条、光线、材质与配色，形成可复用表现参考。",
+      "method_scope": "style"
+    },
+    "色卡": {
+      "label": "风格色卡 · 13个色块",
+      "category": "风格",
+      "ratio": "16:9",
+      "guide": "01-style-master-guide.md",
+      "steps": [
+        "平面色卡"
+      ],
+      "description": "提取参考图主色、阴影与强调色，生成13个平面纯色色块、近似HEX与功能标签。",
+      "method_scope": "style"
+    },
+    "角色外观": {
+      "label": "宠物三视图 · 动物与幻想伙伴",
+      "category": "宠物",
+      "ratio": "16:9",
+      "guide": "02a-body-character-master-guide.md",
+      "steps": [
+        "宠物三视图"
+      ],
+      "description": "一张16:9横图并排三格：正面、左侧、背面。每格呈现同一角色完整身体，毛色、体型、头部、肢体、尾巴、翅膀、固定服饰与配件一致。幻想伙伴可为人形，但不拆成人类脸部、无头服装或人物1×4。",
+      "method_scope": "body"
+    },
+    "人物单图": {
+      "label": "人物单图 · 已选用途综合参考",
+      "category": "人物单图",
+      "ratio": "3:4",
+      "guide": "02-character-master-guide.md",
+      "steps": [
+        "人物综合母图"
+      ],
+      "description": "按本次用途固定人物身份、体型与服装；不强制拆分头照、服装或1×4。",
+      "method_scope": "character"
+    }
+  }
+}

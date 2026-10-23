@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0",
+  "cache_root": ".master-storyboarding/blender-assets",
+  "assets": [
+    {
+      "id": "quaternius.ual1-standard",
+      "kind": "character_animation_library",
+      "filename": "quaternius-universal-animation-library/extracted/Universal Animation Library[Standard]/Unreal-Godot/UAL1_Standard.glb",
+      "url": "https://quaternius.itch.io/universal-animation-library",
+      "download_mode": "manual_archive",
+      "license": "CC0-1.0",
+      "attribution": "Quaternius Universal Animation Library, Standard edition",
+      "source": "https://quaternius.com/packs/universalanimationlibrary.html"
+    },
+    {
+      "id": "polyhaven.studio-small-09",
+      "kind": "lighting_template",
+      "filename": "lighting/studio_small_09_1k.hdr",
+      "url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_09_1k.hdr",
+      "license": "CC0-1.0",
+      "attribution": "Poly Haven",
+      "source": "https://polyhaven.com/a/studio_small_09"
+    },
+    {
+      "id": "midas.v21-small-onnx",
+      "kind": "depth_model",
+      "filename": "models/model-small.onnx",
+      "url": "https://github.com/isl-org/MiDaS/releases/download/v2_1/model-small.onnx",
+      "license": "MIT",
+      "attribution": "Intel ISL MiDaS",
+      "source": "https://github.com/isl-org/MiDaS"
+    },
+    {
+      "id": "previs.human.neutral",
+      "kind": "character_module",
+      "filename": "generated/mpfb-neutral-human/mpfb-neutral-human.glb",
+      "download_mode": "generated_locally",
+      "generated_by": "python scripts/blender_previs_cli.py bootstrap-human",
+      "license": "CC0-1.0",
+      "attribution": "Generated locally with MPFB / MakeHuman Community",
+      "source": "https://extensions.blender.org/add-ons/mpfb/",
+      "role": "全片标准人物模块：白模人物统一用它（配方 human_template=mpfb_neutral）",
+      "basic_actions": ["stand", "sit", "crouch", "bend_over", "walk"],
+      "simplified": "默认删除头发/裙子/紧身衣/睫毛/牙齿舌头/JointCubes 与手指脚趾，保留躯干四肢手掌脚掌"
+    }
+  ]
+}

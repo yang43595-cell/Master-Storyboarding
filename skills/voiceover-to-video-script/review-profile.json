@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.0",
+  "skill": "voiceover-to-video-script",
+  "skill_contract_checks": [
+    {
+      "id": "CONTRACT-TRIGGER",
+      "text": "根据导演包、原文对白和真实素材交付完整分段提示词；默认由当前对话自查"
+    },
+    {
+      "id": "CONTRACT-BOUNDARY",
+      "text": "职责、输入、输出与硬禁区明确，不重新决定导演镜头契约"
+    },
+    {
+      "id": "CONTRACT-REFERENCES",
+      "text": "只读取实际适用的方法与本地规范，不依赖旧协议或机器计划"
+    },
+    {
+      "id": "CONTRACT-AUTH",
+      "text": "模型选择、上传、付费生成和提交保留用户明确授权门槛"
+    }
+  ],
+  "production_artifact_checks": [
+    {
+      "id": "VIDEO-SOURCE",
+      "text": "提示词引用正确的导演版本、真实素材和最终对白；局部返修核对其直接来源"
+    },
+    {
+      "id": "VIDEO-CONTINUITY",
+      "text": "按连续事件合理分段，保持原镜头顺序、对白播放和跨段状态；不机械一镜一段或改导演决定"
+    },
+    {
+      "id": "VIDEO-MATERIALS",
+      "text": "素材引用、段内 @图片 顺序、主要职责及相容的允许继承范围与实际上传清单一致；未授权时不称已上传或已生成"
+    },
+    {
+      "id": "VIDEO-PROMPT-NOISE",
+      "text": "模型正文不混入内部路径、业务编号、验收清单或模板占位；制作信息与实际声画内容分开，必要素材职责与状态不得因精简丢失"
+    },
+    {
+      "id": "PROMPT-LANG",
+      "text": "提示词语言合规：无 影视级/8K/4K/唯美/高级 等炫技含糊词；按本 Skill 提示词方法与知识库规范产出"
+    },
+    {
+      "id": "VIDEO-AUTH",
+      "text": "模型选择、上传、付费生成和提交均有用户明确授权；Blender、白模和正式分镜图不是普遍前置条件"
+    }
+  ]
+}

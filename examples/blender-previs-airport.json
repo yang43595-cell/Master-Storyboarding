@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0",
+  "project": {
+    "name": "候车厅·量图重建·真3D可浏览",
+    "fps": 24,
+    "duration_seconds": 6,
+    "resolution": [1600, 900]
+  },
+  "environment": {
+    "preset": "natural_proxy",
+    "source_image": "C:/Users/LIUYANG/Desktop/测试_爱不是牺牲_creative-director_空白流程_20260901/06_参考帧与临时素材/资产母版/02_场景母版/ENV-01_S01候车厅.png",
+    "objects": [
+      { "id": "hall.floor", "kind": "proxy_box", "position": [0, 24, 0.05], "size": [24, 52, 0.10], "color": "#B4AB9A", "anchor_label": "大厅地面", "provenance": "visible", "confidence": 1.0 },
+      { "id": "hall.ceiling", "kind": "proxy_box", "position": [0, 24, 7.6], "size": [24, 52, 0.4], "color": "#C6CDD3", "anchor_label": "弧形吊顶", "provenance": "inferred", "confidence": 0.8 },
+      { "id": "ceil.skylight", "kind": "proxy_box", "position": [1, 24, 7.75], "size": [2.6, 48, 0.2], "emissive": "#EAF4F7", "emissive_strength": 1.6, "anchor_label": "纵向天窗", "provenance": "inferred", "confidence": 0.75 },
+      { "id": "hall.wall.far", "kind": "proxy_box", "position": [0, 52, 4.0], "size": [24, 0.4, 8.0], "color": "#3E444C", "anchor_label": "远端背板墙", "provenance": "partially_visible", "confidence": 0.85 },
+      { "id": "hall.passage", "kind": "proxy_box", "position": [1, 52, 2.0], "size": [5, 0.5, 3.6], "color": "#1F2328", "anchor_label": "远端出口通道", "provenance": "partially_visible", "confidence": 0.8 },
+      { "id": "hall.wall.left", "kind": "proxy_box", "position": [-12, 24, 4.0], "size": [0.3, 52, 8.0], "emissive": "#FFF3E0", "emissive_strength": 2.6, "anchor_label": "左侧落地玻璃幕墙", "provenance": "visible", "confidence": 1.0 },
+      { "id": "hall.wall.right", "kind": "proxy_box", "position": [12, 24, 4.0], "size": [0.3, 52, 8.0], "color": "#9AA0A8", "anchor_label": "右侧墙", "provenance": "visible", "confidence": 1.0 },
+      { "id": "hall.wall.near", "kind": "proxy_box", "position": [0, -3.5, 4.0], "size": [24, 0.4, 8.0], "color": "#8A9098", "anchor_label": "近端墙(封闭房间)", "provenance": "inferred", "confidence": 0.8 },
+
+      { "id": "railing.walk.left", "kind": "glass_balustrade", "position": [-0.62, 24, 0.0], "size": [0.45, 41, 1.1], "anchor_label": "玻璃栈道·左护栏(近镜头)", "provenance": "visible", "confidence": 1.0 },
+      { "id": "railing.walk.right", "kind": "glass_balustrade", "position": [2.67, 24.5, 0.0], "size": [0.45, 41, 1.1], "anchor_label": "玻璃栈道·右护栏", "provenance": "visible", "confidence": 1.0 },
+      { "id": "walkway.glass", "kind": "proxy_box", "position": [1.0, 24, 0.06], "size": [3.0, 41, 0.05], "emissive": "#BFD9E2", "emissive_strength": 0.8, "anchor_label": "玻璃栈道(窄走道)", "provenance": "visible", "confidence": 1.0 },
+
+      { "id": "lounge.platform", "kind": "proxy_box", "position": [-4, 7.5, 0.1], "size": [3.2, 9, 0.2], "color": "#6E5038", "anchor_label": "商务区高台", "provenance": "visible", "confidence": 0.95 },
+      { "id": "lounge.sign", "kind": "proxy_box", "position": [-5, 3.5, 1.75], "size": [0.7, 0.7, 3.5], "color": "#2E3138", "anchor_label": "1A 商务标志柱", "provenance": "visible", "confidence": 1.0 },
+      { "id": "lounge.plants", "kind": "proxy_cylinder", "position": [-11, 4, 0.5], "size": [0.8, 0.8, 1.0], "color": "#3E6B3A", "anchor_label": "绿植", "provenance": "visible", "confidence": 0.9 },
+      { "id": "armchair.l.01", "kind": "armchair", "position": [-4, 4.5, 0.2], "size": [1.1, 1.0, 1.0], "color": "#C6A375", "rotation_degrees": -90, "anchor_label": "商务皮椅", "provenance": "visible", "confidence": 0.95 },
+      { "id": "armchair.l.02", "kind": "armchair", "position": [-4, 6.5, 0.2], "size": [1.1, 1.0, 1.0], "color": "#C6A375", "rotation_degrees": -90, "anchor_label": "商务皮椅", "provenance": "visible", "confidence": 0.95 },
+      { "id": "armchair.l.03", "kind": "armchair", "position": [-4, 8.5, 0.2], "size": [1.1, 1.0, 1.0], "color": "#C6A375", "rotation_degrees": -90, "anchor_label": "商务皮椅", "provenance": "visible", "confidence": 0.95 },
+      { "id": "armchair.l.04", "kind": "armchair", "position": [-6, 4.5, 0.2], "size": [1.1, 1.0, 1.0], "color": "#C6A375", "rotation_degrees": -90, "anchor_label": "商务皮椅", "provenance": "visible", "confidence": 0.95 },
+      { "id": "armchair.l.05", "kind": "armchair", "position": [-6, 6.5, 0.2], "size": [1.1, 1.0, 1.0], "color": "#C6A375", "rotation_degrees": -90, "anchor_label": "商务皮椅", "provenance": "visible", "confidence": 0.95 },
+      { "id": "armchair.l.06", "kind": "armchair", "position": [-6, 8.5, 0.2], "size": [1.1, 1.0, 1.0], "color": "#C6A375", "rotation_degrees": -90, "anchor_label": "商务皮椅", "provenance": "visible", "confidence": 0.95 },
+
+      { "id": "sign.2A", "kind": "proxy_box", "position": [9, 8, 4.5], "size": [3.0, 0.3, 1.4], "color": "#17191D", "anchor_label": "2A 二等座候车区悬挂标识", "provenance": "visible", "confidence": 1.0 },
+      { "id": "display.board.01", "kind": "proxy_box", "position": [-2.5, 49, 5.6], "size": [5.5, 0.8, 2.5], "emissive": "#1B3A9E", "emissive_strength": 1.6, "anchor_label": "信息大屏一", "provenance": "partially_visible", "confidence": 0.9 },
+      { "id": "display.board.02", "kind": "proxy_box", "position": [4, 49, 5.6], "size": [5.5, 0.8, 2.5], "emissive": "#1B3A9E", "emissive_strength": 1.6, "anchor_label": "信息大屏二", "provenance": "partially_visible", "confidence": 0.9 },
+
+      { "id": "bench.r.01", "kind": "bench_seat", "position": [9.5, 38, 0.0], "size": [0.9, 0.7, 0.95], "color": "#2E6DB4", "rotation_degrees": 90, "anchor_label": "蓝色联排座", "provenance": "visible", "confidence": 0.95 },
+      { "id": "bench.r.02", "kind": "bench_seat", "position": [9.5, 41, 0.0], "size": [0.9, 0.7, 0.95], "color": "#2E6DB4", "rotation_degrees": 90, "anchor_label": "蓝色联排座", "provenance": "visible", "confidence": 0.95 },
+      { "id": "bench.r.03", "kind": "bench_seat", "position": [9.5, 44, 0.0], "size": [0.9, 0.7, 0.95], "color": "#2E6DB4", "rotation_degrees": 90, "anchor_label": "蓝色联排座", "provenance": "visible", "confidence": 0.95 },
+      { "id": "bench.r.04", "kind": "bench_seat", "position": [11.5, 38, 0.0], "size": [0.9, 0.7, 0.95], "color": "#2E6DB4", "rotation_degrees": 90, "anchor_label": "蓝色联排座", "provenance": "visible", "confidence": 0.95 },
+      { "id": "bench.r.05", "kind": "bench_seat", "position": [11.5, 41, 0.0], "size": [0.9, 0.7, 0.95], "color": "#2E6DB4", "rotation_degrees": 90, "anchor_label": "蓝色联排座", "provenance": "visible", "confidence": 0.95 },
+      { "id": "bench.r.06", "kind": "bench_seat", "position": [11.5, 44, 0.0], "size": [0.9, 0.7, 0.95], "color": "#2E6DB4", "rotation_degrees": 90, "anchor_label": "蓝色联排座", "provenance": "visible", "confidence": 0.95 }
+    ]
+  },
+  "actors": [],
+  "camera": {
+    "lens_mm": 28,
+    "keyframes": [
+      {"time": 0, "position": [0, -2, 1.6], "look_at": [0, 40, 1.6]},
+      {"time": 6, "position": [0, 6, 1.6], "look_at": [0, 44, 1.6]}
+    ]
+  },
+  "lighting": {"preset": "soft_daylight"},
+  "outputs": {
+    "blend": true,
+    "preview_video": true,
+    "still_frames": [0, 3],
+    "topdown": {"enabled": true, "video": false, "still_times": [3.0]},
+    "render_style": "role_colors"
+  }
+}

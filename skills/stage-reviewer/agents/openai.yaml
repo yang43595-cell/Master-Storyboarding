@@ -1,0 +1,4 @@
+interface:
+  display_name: "阶段审核"
+  short_description: "只读核对当前阶段候选产物、证据路径、硬红线与明确问题清单"
+  default_prompt: "只读审核当前阶段候选产物，并列出阻塞问题、可接受问题和结论。"

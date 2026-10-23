@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://master-storyboarding.local/schemas/prompt-intent.schema.json",
+  "title": "Video prompt intent contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["intent_status"],
+  "properties": {
+    "intent_status": {"enum": ["ready", "needs_input", "conflict"]},
+    "goal": {"type": "string", "minLength": 1},
+    "content_mode": {"type": "string", "minLength": 1},
+    "output_spec": {"type": "object", "minProperties": 1},
+    "reference_goal": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "reference_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "learn": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "do_not_copy": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+      }
+    },
+    "preserve": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "allowed_changes": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "forbidden_changes": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "acceptance_criteria": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "open_questions": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "conflicts": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"intent_status": {"const": "ready"}}, "required": ["intent_status"]},
+      "then": {
+        "required": [
+          "goal", "content_mode", "output_spec", "preserve", "allowed_changes",
+          "forbidden_changes", "acceptance_criteria"
+        ],
+        "properties": {
+          "acceptance_criteria": {"minItems": 1},
+          "open_questions": {"maxItems": 0},
+          "conflicts": {"maxItems": 0}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"intent_status": {"const": "needs_input"}}, "required": ["intent_status"]},
+      "then": {"required": ["open_questions"], "properties": {"open_questions": {"minItems": 1}}}
+    },
+    {
+      "if": {"properties": {"intent_status": {"const": "conflict"}}, "required": ["intent_status"]},
+      "then": {"required": ["conflicts"], "properties": {"conflicts": {"minItems": 1}}}
+    }
+  ]
+}
