@@ -11,6 +11,11 @@ import re
 import sys
 from pathlib import Path
 
+if __package__:
+    from .core.prompt_body import submitted_prompt_body, generated_overlay_issues
+else:
+    from core.prompt_body import submitted_prompt_body, generated_overlay_issues
+
 
 HEADING_RE = re.compile(r"^##[ \t]+[^\n]+", re.MULTILINE)
 SEGMENT_RE = re.compile(
@@ -91,7 +96,7 @@ def _json_segments(text: str) -> list[tuple[str, str, str]]:
         raise ValueError("JSON 顶层不是对象")
     if "drafts" in data and ("generation_segments" in data or "creative_sections" in data):
         raise ValueError("JSON 同时存在 drafts 与生成段，不猜权威正文")
-    body_key = "prompt_text"
+    legacy_drafts = False
     if "generation_segments" in data:
         rows = data["generation_segments"]
     elif "creative_sections" in data:
@@ -102,7 +107,7 @@ def _json_segments(text: str) -> list[tuple[str, str, str]]:
             raise ValueError("创作段 generation_segments 格式无法识别")
         rows = [row for section in sections for row in section["generation_segments"]]
     elif "drafts" in data:
-        rows, body_key = data["drafts"], "prompt"
+        rows, legacy_drafts = data["drafts"], True
     else:
         return []
     if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
@@ -127,7 +132,7 @@ def _json_segments(text: str) -> list[tuple[str, str, str]]:
         return value if isinstance(value, str) else ""
 
     return [(str(row.get("segment_id", row.get("node_id", index))),
-             row[body_key].strip() if isinstance(row.get(body_key), str) else "",
+             submitted_prompt_body({"prompt": row.get("prompt")} if legacy_drafts else row).strip(),
              source_strings(row)) for index, row in enumerate(rows, 1)]
 
 
@@ -189,6 +194,7 @@ def inspect_document(path: Path, *, require_focal_intent: bool = False) -> tuple
             errors.append(f"第 {number} 段混入本地文件路径；改用实际上传引用标记")
         if CHECKLIST_RE.search(body):
             errors.append(f"第 {number} 段混入内部完成条件或自查清单；移到制作备注")
+        errors.extend(f"第 {number} 段{issue}" for issue in generated_overlay_issues(body))
     return len(segments), errors
 
 

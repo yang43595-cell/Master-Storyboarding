@@ -6,6 +6,7 @@ import json
 import re
 import subprocess
 from pathlib import Path, PureWindowsPath
+from .prompt_body import submitted_prompt_body
 from .schema_contracts import require_schema
 from .story_sources import validate_body_dialogues
 from .artifacts import project_path
@@ -78,7 +79,10 @@ def prompt_segment_views(business, *, source_sha256, transport_evidence):
     views, used_labels = [], set()
     for segment, row in zip(segments, rows):
         ident = segment['segment_id']
-        prompt = segment.get('prompt_text')
+        try:
+            prompt = submitted_prompt_body(segment)
+        except ValueError as error:
+            fail(ident + ' ' + str(error))
         if not nonempty(prompt) or not nonempty(row.get('prompt')):
             fail(ident + ' 缺完整提示词正文')
         # Canvas readback changes whitespace around paragraphs/chips, not words.
@@ -137,13 +141,42 @@ def prompt_segment_views(business, *, source_sha256, transport_evidence):
                 used_labels.add(key)
             inputs.append({'key': key + '@' + sha, 'path': path, 'sha256': sha,
                            'source': material, 'native': {'node_id': ref['id'], 'media_id': ref['material_id']}})
-        views.append({'segment': segment, 'parameters': parameters, 'inputs': inputs,
+        views.append({'segment': segment, 'prompt': prompt, 'parameters': parameters, 'inputs': inputs,
                       'node_id': next(iter(node_ids))})
     if set(labels) != used_labels:
         fail('input_labels 含未使用或其他源输入的对应')
     if len({v['node_id'] for v in views}) != len(views):
         fail('不同生成段指向同一原生草稿节点')
     return views
+
+
+def source_review_segments(business):
+    """Read existing source layouts only; do not infer execution or approval."""
+    if 'drafts' in business:
+        raise WebContentError('源稿审阅须输入原业务生成段，不以 drafts 传输快照替代')
+    sections = business.get('creative_sections')
+    if 'generation_segments' in business:
+        segments = business['generation_segments']
+    elif isinstance(sections, list) and sections and all(
+            isinstance(s, dict) and isinstance(s.get('generation_segments'), list) for s in sections):
+        segments = [row for section in sections for row in section['generation_segments']]
+    else:
+        raise WebContentError('源稿审阅缺少完整 generation_segments')
+    if not isinstance(segments, list) or not segments or any(
+            not isinstance(row, dict) or not isinstance(row.get('segment_id'), str)
+            or not row['segment_id'].strip() for row in segments):
+        raise WebContentError('源稿审阅生成段或 segment_id 不完整')
+    ids = [row['segment_id'] for row in segments]
+    if len(set(ids)) != len(ids):
+        raise WebContentError('源稿审阅 segment_id 重复')
+    if 'generation_segments' in business and sections is not None:
+        if (not isinstance(sections, list) or any(not isinstance(s, dict)
+                or not isinstance(s.get('generation_segments'), list) for s in sections)):
+            raise WebContentError('源稿审阅创作段引用格式不完整')
+        links = [ident for section in sections for ident in section['generation_segments']]
+        if any(not isinstance(ident, str) for ident in links) or set(links) != set(ids):
+            raise WebContentError('源稿审阅顶层生成段与创作段引用不一致')
+    return segments
 
 
 def validate_web_request(request, *, contract_root=CONTRACT):
@@ -163,16 +196,23 @@ def validate_web_request(request, *, contract_root=CONTRACT):
 
 
 def compile_content(raw: bytes, *, stage: str, case_id: str, source_script_version: str,
-                    expected_version: str | None, scope: str, media_registry: dict,
+                    expected_version: str | None, scope: str, media_registry: dict | None = None,
                     benchmark: dict | None = None, title: str | None = None,
                     reviewable: bool = False, contract_root=CONTRACT, project_root: Path | None = None,
-                    transport_evidence: dict | None = None):
+                    transport_evidence: dict | None = None, prompt_mode: str = "executed"):
     """Compile from one source plus explicit transport/readback evidence.
 
     media_registry contains existing media descriptors/local paths and the actual
     publish helper's per-media readback receipt; it is not another business draft.
     Synthetic receipts belong only in tests. No URL/hash/source basis is guessed.
     """
+    media_registry = {} if media_registry is None else media_registry
+    if not isinstance(media_registry, dict):
+        raise WebContentError('media_registry 必须是对象')
+    if prompt_mode not in ('executed', 'source_review'):
+        raise WebContentError('未知 prompt_mode')
+    if prompt_mode == 'source_review' and (stage != 'prompts' or reviewable or transport_evidence is not None):
+        raise WebContentError('source_review 仅供 prompts 未确认只读审阅；不得设为可通过或附已执行传输证据')
     if (not isinstance(source_script_version, str) or not HASH.fullmatch(source_script_version)
             or (expected_version is not None and (not isinstance(expected_version, str) or not HASH.fullmatch(expected_version)))):
         raise WebContentError('必须显式提供真实 sourceScriptVersion 与 expectedVersion（首包才用 null）')
@@ -310,6 +350,45 @@ def compile_content(raw: bytes, *, stage: str, case_id: str, source_script_versi
         block('asset-layout', '资产展示分组', canonical({'schemaVersion':1,'groups':groups,'blockers':blockers}))
         if benchmark:
             add_benchmark()
+    elif stage == 'prompts' and prompt_mode == 'source_review':
+        notice = '候选源稿只读审阅，不构成用户确认。画布绑定、生成及网页媒体挂接未验证；不代表已执行或可提交。'
+        block('source-review-status', '源稿审阅状态', notice)
+        missing_media = []
+        segments = source_review_segments(business)
+        for segment in segments:
+            ident = segment['segment_id']
+            try:
+                prompt = submitted_prompt_body(segment)
+            except ValueError as error:
+                raise WebContentError(ident + ' ' + str(error)) from error
+            if not prompt:
+                raise WebContentError(ident + ' 缺完整提示词正文')
+            materials = segment.get('materials', segment.get('candidate_upload_order'))
+            if materials is not None and (not isinstance(materials, list)
+                    or any(not isinstance(m, dict) for m in materials)):
+                raise WebContentError(ident + ' 素材清单格式无法识别')
+            refs, missing = [], []
+            for index, material in enumerate(materials or [], 1):
+                key = material.get('reference_id', material.get('material_id', material.get('key')))
+                sha = material.get('sha256')
+                registry_key = key + '@' + sha if isinstance(key, str) and isinstance(sha, str) else None
+                if registry_key is not None and registry_key in media_registry:
+                    path = material.get('path', material.get('file'))
+                    if not isinstance(path, str) or not path or not HASH.fullmatch(sha):
+                        raise WebContentError(ident + ' 网页素材缺准确源路径或 hash')
+                    refs.append(media(registry_key, reference_anchor(ident, {'source': registry_key}),
+                                      sha, expected_path=path))
+                else:
+                    missing.append(str(index) + '：' + (key if isinstance(key, str) else '源标识缺失'))
+            missing_media.append({'segment_id': ident, 'items': missing,
+                                  'source_materials_missing': materials is None})
+            status = ('素材清单缺失；未挂图' if materials is None else
+                      '未挂图素材：' + '、'.join(missing) if missing else
+                      '素材清单为空；无挂图' if not materials else '所列网页媒体已有字节及回执校验；不证明画布绑定或生成')
+            block(ident, '候选源稿：' + ident,
+                  prompt + '\n\n原稿参数（未补默认值）：' + canonical(segment.get('parameters'))
+                  + '\n\n原稿素材及完整职责：' + canonical(materials)
+                  + '\n\n媒体状态：' + status + '\n' + notice, refs)
     elif stage == 'prompts':
         if 'drafts' in business and ('generation_segments' in business or 'creative_sections' in business):
             raise WebContentError('视频 JSON 同时存在 drafts 与生成段，不猜权威正文')
@@ -330,7 +409,7 @@ def compile_content(raw: bytes, *, stage: str, case_id: str, source_script_versi
                               {'source': ref['key'], 'native': ref['native']}),
                               ref['sha256'], expected_path=ref['path']) for ref in view['inputs']]
                 block(segment['segment_id'], '视频段：' + segment['segment_id'],
-                      segment['prompt_text'] + '\n\n参数：' + canonical(view['parameters'])
+                      view['prompt'] + '\n\n参数：' + canonical(view['parameters'])
                       + '\n\n素材职责与候选状态（源字段，只读）：' + canonical(segment), refs)
         elif not isinstance(business['drafts'], list) or not business['drafts']:
             raise WebContentError('缺少现行完整视频 drafts JSON；不恢复退役 production_plan')
@@ -366,11 +445,16 @@ def compile_content(raw: bytes, *, stage: str, case_id: str, source_script_versi
     validated['mediaMap'] = compiled_media_map
     validated['remoteReadbackPerformed'] = False
     validated['published'] = False
-    if stage == 'prompts' and 'drafts' not in business:
+    if stage == 'prompts' and prompt_mode == 'executed' and 'drafts' not in business:
         validated['transportEvidence'] = {'source_sha256': hashlib.sha256(raw).hexdigest(),
             'native_readback_canonical_sha256': hashlib.sha256(canonical(transport_evidence['native_readback']).encode()).hexdigest(),
             'segmentCount': len(views), 'inputCount': sum(len(v['inputs']) for v in views),
             'modelSelectionVerified': False}
+    if prompt_mode == 'source_review':
+        validated['sourceReview'] = {'mode': 'source_review', 'userConfirmation': 'not_established',
+            'productionBlocked': True,
+            'canvasBindingVerified': False, 'generationVerified': False,
+            'segmentCount': len(segments), 'unattachedMedia': missing_media}
     return validated
 
 
@@ -425,10 +509,10 @@ def main():
         job = json.load(sys.stdin)
         result = compile_content(Path(job['sourcePath']).read_bytes(), stage=job['stage'],
             case_id=job['caseId'], source_script_version=job['sourceScriptVersion'],
-            expected_version=job['expectedVersion'], scope=job['scope'], media_registry=job['mediaRegistry'],
+            expected_version=job['expectedVersion'], scope=job['scope'], media_registry=job.get('mediaRegistry'),
             benchmark=job.get('benchmark'), title=job.get('title'), reviewable=job.get('reviewable', False),
             contract_root=job.get('contractRoot', CONTRACT), project_root=job.get('projectRoot'),
-            transport_evidence=job.get('transportEvidence'))
+            transport_evidence=job.get('transportEvidence'), prompt_mode=job.get('promptMode', 'executed'))
         print(canonical(result))
         return 0
     except (ValueError, KeyError, TypeError, OSError, subprocess.SubprocessError) as exc:

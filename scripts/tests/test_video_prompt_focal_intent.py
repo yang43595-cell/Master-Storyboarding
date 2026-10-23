@@ -268,3 +268,56 @@ def test_unknown_invalid_or_ambiguous_json_is_unchecked(tmp_path, data, capsys):
     p.write_text(data, encoding='utf-8')
     assert main([str(p)]) == 2
     assert 'UNCHECKED' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize('layout', ['top', 'nested', 'linked'])
+@pytest.mark.parametrize('fields', [
+    {'prompt': '中长焦突出人物，与背景分离。'},
+    {'prompt_text': '中长焦突出人物，与背景分离。'},
+    {'prompt': '中长焦突出人物，与背景分离。', 'prompt_text': '中长焦突出人物，与背景分离。'},
+])
+def test_json_prompt_aliases_read_actual_body(tmp_path, layout, fields):
+    import json
+    from scripts.check_video_prompt_focal_intent import _json_segments, main
+    row = {'segment_id': 'P01', **fields, 'notes': 'DLG-001。视频模型没有上下文。'}
+    data = {'generation_segments': [row]}
+    if layout == 'nested':
+        data = {'creative_sections': [{'generation_segments': [row]}]}
+    elif layout == 'linked':
+        data['creative_sections'] = [{'generation_segments': ['P01']}]
+    text = json.dumps(data, ensure_ascii=False)
+    assert _json_segments(text)[0][1] == next(iter(fields.values()))
+    p = tmp_path / 'aliases.json'; p.write_text(text, encoding='utf-8')
+    assert inspect_document(p) == (1, [])
+    assert main([str(p)]) == 0
+
+
+@pytest.mark.parametrize('fields', [
+    {}, {'prompt': ''}, {'prompt_text': '  '}, {'prompt': None}, {'prompt_text': 42},
+    {'prompt': {'body': '中长焦突出人物。'}},
+    {'prompt': '中长焦突出人物。', 'prompt_text': None},
+    {'prompt_text': '中长焦突出人物。', 'prompt': ''},
+])
+def test_json_invalid_alias_never_falls_back_to_metadata(tmp_path, fields):
+    import json
+    from scripts.check_video_prompt_focal_intent import main
+    p = tmp_path / 'invalid.json'
+    p.write_text(json.dumps({'generation_segments': [dict(segment_id='P01', **fields,
+        metadata={'prompt': '中长焦突出人物。'}, notes='中长焦突出人物。')]}), encoding='utf-8')
+    count, errors = inspect_document(p)
+    assert count == 1 and errors == ['第 P01 段缺少非空、完整的提交正文']
+    assert main([str(p)]) == 1
+
+
+@pytest.mark.parametrize('other', ['另一份正文。', '正文。 '])
+def test_conflicting_json_aliases_explicitly_unchecked(tmp_path, other, capsys):
+    import json
+    from scripts.check_video_prompt_focal_intent import _json_segments, main
+    text = json.dumps({'generation_segments': [{'segment_id': 'P01', 'prompt': '正文。', 'prompt_text': other}]})
+    with pytest.raises(ValueError, match='不猜权威正文'):
+        _json_segments(text)
+    p = tmp_path / 'conflict.json'; p.write_text(text, encoding='utf-8')
+    count, errors = inspect_document(p)
+    assert count == 0 and '正文不一致' in errors[0]
+    assert main([str(p)]) == 2
+    assert 'UNCHECKED' in capsys.readouterr().out

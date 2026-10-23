@@ -21,6 +21,23 @@
     "timing_basis"
   ],
   "properties": {
+    "rebuild_provenance": {
+      "description": "恢复后候选的可追溯记录，不构成用户确认、生成授权或下游就绪事实。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseline_path", "baseline_sha256", "reason"],
+      "properties": {
+        "baseline_path": {"$ref": "#/$defs/pathString"},
+        "baseline_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "reason": {"$ref": "#/$defs/nonEmptyString"},
+        "completed_scene_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^S[0-9]{2,}[A-Z]?$"}},
+        "unreviewed_scene_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^S[0-9]{2,}[A-Z]?$"}},
+        "video_generation_authorized": {"const": false},
+        "downstream_ready": {"const": false},
+        "pending_checks": {"type": "array", "items": {"$ref": "#/$defs/nonEmptyString"}},
+        "text_review": {"$ref": "#/$defs/nonEmptyString"}
+      }
+    },
     "schema_version": {
       "const": "4.0"
     },
@@ -158,6 +175,10 @@
         "technical_constraint_status"
       ],
       "properties": {
+        "focal_length_basis": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "候选焦段的设计或测量依据说明，不自动升级技术条件确认。"
+        },
         "aspect_and_exhibition": {
           "$ref": "#/$defs/nonEmptyString"
         },
@@ -256,6 +277,10 @@
         "sound_base"
       ],
       "properties": {
+        "care_staging": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "本场护理站位、相对空间与素材职责限制。"
+        },
         "axis": {
           "$ref": "#/$defs/nonEmptyString"
         },
@@ -422,6 +447,11 @@
         "source_field"
       ],
       "properties": {
+        "source_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "既有时长依据来源文件摘要；不改变status或证明实际时长。"
+        },
         "status": {
           "enum": [
             "authoritative",

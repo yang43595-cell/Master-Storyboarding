@@ -281,6 +281,21 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         from core.project_state import load_project_state
         from core.candidate_test import require_production
         from core.delivery_files import discover_dependencies
+    # New submissions use current output policy. Legacy compare without a project
+    # remains an evidence comparison and must not rewrite historical payloads.
+    try:
+        from .core.prompt_body import generated_overlay_issues
+    except ImportError:
+        from core.prompt_body import generated_overlay_issues
+    host = (urlsplit(target_url(frozen['target_url'])).hostname or '').lower()
+    xiaoyunque = host in {'xiaoyunque.com', 'www.xiaoyunque.com', 'xyq.jianying.com'}
+    for row in rows_by_id(frozen['drafts']).values():
+        if xiaoyunque and str(row.get('parameters', {}).get('resolution', '')).lower() != '480p':
+            raise ValueError('小云雀新写入分辨率必须显式为 480p；不沿用 720p，不自动改时长或模型')
+        if isinstance(row.get('prompt'), str):
+            issues = generated_overlay_issues(row['prompt'])
+            if issues:
+                raise ValueError(f"{row['node_id']}: " + '; '.join(issues))
     project = project.resolve()
     if private_preview:
         preview_authority, preview_usage, reports = preview_scope(frozen, project)

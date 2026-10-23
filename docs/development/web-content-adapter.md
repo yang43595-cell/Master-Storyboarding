@@ -6,7 +6,7 @@
 
 ## 最小接口与真实边界
 
-`compile_content(raw_bytes, stage=..., case_id=..., source_script_version=..., expected_version=..., scope=..., media_registry=...)` 从唯一业务 JSON 内存编译，调用原网页 `PublishRequest`（含 `ContentPackage`）验证，返回生成的 request、可由原发布 helper 消费的内存 mediaMap、实际网页 canonical hash、契约指纹及 `published:false`。不会生成 Markdown、第二份可编辑稿、批准事实、网络请求或发布副作用。
+`compile_content(raw_bytes, stage=..., case_id=..., source_script_version=..., expected_version=..., scope=..., media_registry=..., prompt_mode="executed")` 从唯一业务 JSON 内存编译，调用原网页 `PublishRequest`（含 `ContentPackage`）验证，返回生成的 request、可由原发布 helper 消费的内存 mediaMap、实际网页 canonical hash、契约指纹及 `published:false`。不会生成 Markdown、第二份可编辑稿、批准事实、网络请求或发布副作用。
 
 `sourceScriptVersion` 与 `expectedVersion` 必须显式提供。真实值应来自既有站点读取：当前已发布 script head；尚无 script package 时使用已核 legacy script hash；expectedVersion 来自本阶段 current pointer，仅确认首包时使用 null。不能把编译出来但未发布的候选 hash 当作真实 script head，也不能从 R01 等本地修订号猜值。离线 schema 校验不能证明参数仍在线上当前，实际发布仍须原服务端 CAS 和来源重查；本适配器不执行发布。
 
@@ -28,6 +28,12 @@
 
 ## 媒体证据，不造 URL
 
+### 提示词源稿审阅与已执行视图分开
+
+只想先看提示词原稿时，显式选择 `prompt_mode="source_review"`（CLI：`promptMode`），输入仍是唯一业务 JSON，不用冻结传输快照替代。此模式仅用于 `prompts`、强制 `reviewable:false`，拒绝混入 `transport_evidence`；保留原正文、参数、素材职责、未知字段和实际源字节 hash。缺网页媒体映射时明确展示清单及未挂图状态，不补 URL、原生媒体 ID 或参考模式，也不宣称画布绑定、生成或用户确认已成立。已有网页媒体映射仍走下述真实字节和回执核验。
+
+默认 `executed` 仍要求准确原生读回，不因新增源稿审阅模式放松。两者都不执行发布；线上 head/CAS、权限和发布后回读要求不变。现有生成段的 `prompt` 与 `prompt_text` 两种正文键均可读取；两键同时存在时必须逐字相同，空值、非字符串和冲突不能靠另一键掩盖。技术兼容不代表画面、动作或声音检查通过。
+
 media_registry 是现有传输/回读事实，不是另一个内容草稿。键为 `AST-ID@OUTPUT-ID`、视频 `artifact_id@revision` 或已登记预览文件路径。每项提供既有 id、localPath、url、sha256、mime、bytes、caption（可选），以及原发布 helper 实际逐媒体回读行 `readback: {mediaVerified, sha256, bytes}`。编译器不产生这些证据、不构造 URL；要求媒体 id 与 readback.mediaVerified 均为非空字符串；核对本地文件、实际 hash/大小、图片 MIME 和回读摘要后，将已给出的不可变私有 URL 送入原 schema。服务端仍需验证远端对象是否存在；本轮没有取得实际线上媒体回读，golden 的媒体和回读均为明确合成测试夹具。
 
 资产 confirmed_outputs.path 和预览 files.path 的实际本地字节必须与 registry 文件一致，同字节副本允许。相对源路径需显式传 project_root（CLI 为 projectRoot），历史 Windows 绝对路径沿用显式 MSB_PROJECT_PATH_MAP；不按当前目录猜根路径。视频逐实际输入必须有 node_id/media_id，媒体锚点由对应来源身份派生，重排不转指别的素材；重复引用保留独立稳定锚点。旧 narrative v1 明确报告迁移需求，不猜 story_paragraphs。
@@ -44,7 +50,7 @@ NODE_PATH=<隔离依赖目录>/node_modules python -m scripts.core.web_content
 # 由调用进程提供 stdin JSON；无需另建业务稿
 ```
 
-stdin 包含 sourcePath（现有 JSON）、stage、caseId、scope、sourceScriptVersion、expectedVersion、mediaRegistry，以及按需 benchmark/title/reviewable/contractRoot/projectRoot。stdout 只是编译回执，调用者可直接在内存消费 request，无需落成另一份稿件。默认 reviewable:false；schema 通过、项目确认和网页批准均不互换。生成提交仍走现有修订、素材与内容检查。
+stdin 包含 sourcePath（现有 JSON）、stage、caseId、scope、sourceScriptVersion、expectedVersion、mediaRegistry，以及按需 benchmark/title/reviewable/contractRoot/projectRoot/promptMode。源稿审阅可省略 mediaRegistry，但会明确未挂图；其他模式的媒体和传输证据要求不变。stdout 只是编译回执，调用者可直接在内存消费 request，无需落成另一份稿件。默认 reviewable:false；schema 通过、项目确认和网页批准均不互换。生成提交仍走现有修订、素材与内容检查。
 
 `effective_feedback()` 只消费实际已读的 `currentState/currentFeedback`：核对 scope/case/stage/version、current pointer、来源 hash 与 stale 状态，不拿内容 GET 的默认 approval:pending 或历史列表顺序当真实结论。缺 currentState 返回 unknown；旧版本、旧来源或不可审核包分别保持 historical/stale/not_reviewable。读取不会把意见登记为已处理，也不修改项目用户确认。分页未结束会明确 historyComplete:false；全量历史仍由原读取工具按游标取得。
 

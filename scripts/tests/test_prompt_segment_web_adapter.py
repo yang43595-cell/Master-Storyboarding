@@ -175,3 +175,44 @@ def test_ambiguous_or_incomplete_source_is_not_guessed(tmp_path, change):
     elif change == 'unexpected_actual_inputs': s['actual_uploaded_materials'] = [{'id': 'synthetic-extra'}]
     refresh_hash(source, evidence)
     with pytest.raises(WebContentError): run(source, media, evidence)
+
+
+@pytest.mark.parametrize('shape', ['top', 'nested'])
+@pytest.mark.parametrize('field', ['prompt', 'prompt_text', 'both'])
+def test_prompt_aliases_compile_full_body_without_mutation(tmp_path, shape, field):
+    source, media, evidence = fixture(tmp_path, shape)
+    s = segment(source); body = s.pop('prompt_text')
+    s.update({'prompt': body, 'prompt_text': body} if field == 'both' else {field: body})
+    # R12 has a top-level generation_segments list and prompt, without section links.
+    if shape == 'top': source.pop('creative_sections')
+    refresh_hash(source, evidence)
+    before = copy.deepcopy((source, media, evidence))
+    views = prompt_segment_views(source, source_sha256=evidence['source_sha256'], transport_evidence=evidence)
+    assert views[0]['prompt'] == body
+    result = run(source, media, evidence)
+    blocks = result['request']['content']['blocks']
+    assert blocks[0]['text'].startswith(body + '\n\n参数：')
+    assert json.loads(next(b['text'] for b in blocks if b['id'] == 'canonical-source')) == source
+    assert result['published'] is False and result['request']['content']['reviewable'] is False
+    assert (source, media, evidence) == before
+
+
+@pytest.mark.parametrize('fields, reason', [
+    ({}, '缺完整提示词正文'), ({'prompt': ''}, '缺完整提示词正文'),
+    ({'prompt_text': '  '}, '缺完整提示词正文'), ({'prompt': None}, '缺完整提示词正文'),
+    ({'prompt_text': 42}, '缺完整提示词正文'),
+    ({'prompt': {'body': 'not a string'}}, '缺完整提示词正文'),
+    ({'prompt': 'valid', 'prompt_text': None}, '缺完整提示词正文'),
+    ({'prompt_text': 'valid', 'prompt': ''}, '缺完整提示词正文'),
+    ({'prompt': 'one', 'prompt_text': 'two'}, '不猜权威正文'),
+    ({'prompt': 'one', 'prompt_text': 'one '}, '不猜权威正文'),
+])
+def test_prompt_aliases_reject_invalid_or_conflicting_bodies(tmp_path, fields, reason):
+    source, media, evidence = fixture(tmp_path, 'top')
+    s = segment(source); s.pop('prompt_text'); s.update(fields)
+    s['metadata'] = {'prompt': 'Synthetic full prompt.\n对白：不删字。'}
+    refresh_hash(source, evidence)
+    with pytest.raises(WebContentError, match=reason):
+        prompt_segment_views(source, source_sha256=evidence['source_sha256'], transport_evidence=evidence)
+    with pytest.raises(WebContentError, match=reason):
+        run(source, media, evidence)
