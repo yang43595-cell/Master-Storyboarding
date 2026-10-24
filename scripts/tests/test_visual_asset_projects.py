@@ -396,8 +396,8 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(self.lib.projects.export({'project_id': self.p['id'], 'confirm': True}), result)
         self.assertEqual(len(load_manifest(Path(self.p['path']))['artifacts']), 2)
         handoff = self.lib.projects.continue_project(self.p['id'])
-        self.assertIn('storyboard-director', handoff['instruction'])
-        self.assertEqual(handoff['warning'], '')
+        self.assertIn('其他交接条件尚未满足', handoff['warning'])
+        self.assertIn('核对交接条件', handoff['instruction'])
         # Rework a confirmed image keeps the old delivery and resets dependent confirmations.
         self.lib.projects.reopen({'job_id': self.job()['id'], 'index': 0})
         self.assertTrue(Path(result['manifest']).is_file())

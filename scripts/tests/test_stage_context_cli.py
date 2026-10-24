@@ -13,6 +13,26 @@ from scripts.core.io import write_json
 from scripts.core.project_state import load_project_state, new_project_state, normalize_project_state, write_project_state
 
 
+def _current_narrative_package(root: Path, revision: str = "R01") -> dict:
+    from test_story_paragraph_sources import narrative
+    package = narrative(root)
+    package["revision"] = revision
+    package["status"] = "confirmed"
+    return package
+
+
+def _current_storyboard_package(root: Path, narrative_entry: dict, revision: str = "R01") -> dict:
+    from test_director_compact import compact_package
+    package = compact_package()
+    package["revision"] = revision
+    package["source_narrative"] = {"artifact_id": narrative_entry["artifact_id"],
+        "logical_id": "narrative.package", "revision": narrative_entry["revision"],
+        "path": narrative_entry["path_or_url"]}
+    package["human_readable_path"] = "director.md"
+    (root / "director.md").write_text("synthetic reviewed director rendering", encoding="utf-8")
+    return package
+
+
 @pytest.mark.parametrize('command', ['video-reading-index', 'video-reading-scene',
                                    'record-video-scene-output', 'export-video-delivery'])
 def test_retired_video_commands_are_not_executable(command):
@@ -143,7 +163,7 @@ def test_invalid_current_artifact_ids_are_not_silently_dropped(items):
         normalize_project_state({"current_artifacts": items})
 
 
-def test_completed_revision_can_handoff_with_canonical_artifact_ids(tmp_path):
+def test_legacy_markdown_revision_cannot_be_confirmed_or_handed_off(tmp_path):
     project = _project(tmp_path)
     for name in ("old.md", "new.md"):
         (project / name).write_text(name, encoding="utf-8")
@@ -163,15 +183,13 @@ def test_completed_revision_can_handoff_with_canonical_artifact_ids(tmp_path):
     revision_control.record_candidate(project, change_id="REV-TEST", artifact_id="ART-NEW",
         logical_id="narrative.package", artifact_type="narrative-package", candidate_path="new.md", revision="R02")
     revision_control.record_review(project, change_id="REV-TEST", verdict="approved", report_ref="test:review")
-    revision_control.confirm_candidate(project, change_id="REV-TEST", approval_ref="test:user-adopt")
-    revision_control.commit_change(project, change_id="REV-TEST")
-    assert load_project_state(project)["current_artifacts"] == ["ART-NEW"]
-    status = cli.status(argparse.Namespace(project=str(project)))
-    assert status["ok"] is True
-    assert status["next_allowed_stage"] == "storyboard-planner"
-    assert status["repo"]["revision"] and status["repo"]["baseline_revision"]
-    report = cli.handoff(argparse.Namespace(project=str(project), to_skill="storyboard-planner"))
-    assert report["artifact_ids"] == ["ART-NEW"]
+    with pytest.raises(revision_control.RevisionControlError, match="仅保留历史读取"):
+        revision_control.confirm_candidate(project, change_id="REV-TEST", approval_ref="test:user-adopt")
+    manifest = revision_control.load_manifest(project)
+    assert next(a for a in manifest["artifacts"] if a["artifact_id"] == "ART-NEW")["status"] == "candidate"
+    assert load_project_state(project)["current_artifacts"] == ["ART-OLD"]
+    with pytest.raises(cli.StageContextError):
+        cli.handoff(argparse.Namespace(project=str(project), to_skill="storyboard-planner"))
 
 
 def test_handoff_blocks_unknown_or_conflicting_next_stage(tmp_path):
@@ -489,7 +507,7 @@ def test_review_pack_marks_same_candidate_recheck_as_revision_mode(tmp_path: Pat
 def test_handoff_uses_only_confirmed_current_artifacts_and_prepare_embeds_it(tmp_path: Path, semantic_review) -> None:
     project = _project(tmp_path)
     artifact = project / "R01_叙事包.json"
-    artifact.write_text('{"confirmed":true}', encoding="utf-8")
+    write_json(artifact, _current_narrative_package(project))
     (project / "00_项目管理" / "project_state.json").write_text(json.dumps({
         "current_stage": "creative-director", "current_artifacts": ["ART-NARRATIVE-R01"],
         "user_confirmations": [{"artifact_ids": ["ART-NARRATIVE-R01"]}], "review_report": {"verdict": "approved"},
@@ -528,17 +546,21 @@ def test_handoff_uses_only_confirmed_current_artifacts_and_prepare_embeds_it(tmp
 
 def test_handoff_keeps_video_skill_direct_read_exception(tmp_path: Path) -> None:
     project = _project(tmp_path)
+    narrative_artifact = project / "R01_叙事包.json"
+    write_json(narrative_artifact, _current_narrative_package(project))
+    narrative_entry = {"artifact_id": "ART-NARRATIVE-R01", "logical_id": "narrative.package",
+        "type": "narrative-package", "revision": "R01", "status": "current", "user_approved": True,
+        "path_or_url": narrative_artifact.name, "checksum": cli.digest(narrative_artifact), "depends_on": []}
     artifact = project / "R01_导演包.json"
-    artifact.write_text('{"confirmed":true}', encoding="utf-8")
+    write_json(artifact, _current_storyboard_package(project, narrative_entry))
+    board_entry = {"artifact_id": "ART-STORYBOARD-R01", "logical_id": "storyboard.package",
+        "type": "storyboard-package", "revision": "R01", "status": "current", "user_approved": True,
+        "path_or_url": artifact.name, "checksum": cli.digest(artifact), "depends_on": ["narrative.package"]}
     (project / "00_项目管理" / "project_state.json").write_text(json.dumps({
-        "current_stage": "storyboard-director", "current_artifacts": ["ART-STORYBOARD-R01"],
-        "user_confirmations": [{"artifact_ids": ["ART-STORYBOARD-R01"]}], "next_stage": "voiceover-to-video-script",
+        "current_stage": "storyboard-director", "current_artifacts": ["ART-NARRATIVE-R01", "ART-STORYBOARD-R01"],
+        "user_confirmations": [{"artifact_ids": ["ART-NARRATIVE-R01", "ART-STORYBOARD-R01"]}], "next_stage": "voiceover-to-video-script",
     }, ensure_ascii=False), encoding="utf-8")
-    (project / "00_项目管理" / "artifact_manifest.json").write_text(json.dumps({"artifacts": [{
-        "artifact_id": "ART-STORYBOARD-R01", "logical_id": "storyboard.package", "type": "storyboard-package",
-            "revision": "R01", "status": "current", "path_or_url": str(artifact), "user_approved": True,
-            "checksum": revision_control.sha256_file(artifact),
-    }]}), encoding="utf-8")
+    (project / "00_项目管理" / "artifact_manifest.json").write_text(json.dumps({"artifacts": [narrative_entry, board_entry]}), encoding="utf-8")
 
     report = cli.handoff(argparse.Namespace(project=str(project), to_skill="voiceover-to-video-script"))
 
@@ -557,11 +579,11 @@ def test_prepare_rejects_replaced_handoff_input_and_accepts_regenerated_card(tmp
         for item in entries:
             item["status"] = "superseded"
         path = project / (revision + ".json")
-        path.write_text(json.dumps({"revision": revision}), encoding="utf-8")
+        write_json(path, _current_narrative_package(project, revision))
         artifact_id = "NARR-" + revision
         entries.append({"artifact_id": artifact_id, "logical_id": "narrative.package",
                         "type": "narrative-package", "revision": revision, "status": "current",
-                        "path_or_url": path.name, "user_approved": True, "checksum": cli.digest(path)})
+                        "path_or_url": path.name, "user_approved": True, "checksum": cli.digest(path), "depends_on": []})
         write_json(manage / "artifact_manifest.json", {"artifacts": entries})
         state = load_project_state(project)
         state.update(current_artifacts=[artifact_id], next_stage="storyboard-planner",
@@ -597,16 +619,21 @@ def test_manifest_invalidation_preserves_planner_repair_handoff(tmp_path):
     from scripts.core.artifacts import mark_impacted_artifacts_stale, save_manifest
     project = _project(tmp_path)
     manifest = {"artifacts": []}
-    for artifact_id, logical_id, dependencies in [
-        ("NARR", "narrative.package", []), ("ASSETS", "visual.assets", ["narrative.package"]),
-        ("BOARD", "storyboard.package", ["narrative.package", "visual.assets"]),
-    ]:
-        path = project / (artifact_id + ".json")
-        path.write_text(json.dumps({"artifact_id": artifact_id}), encoding="utf-8")
+    narrative_path = project / "NARR.json"
+    write_json(narrative_path, _current_narrative_package(project))
+    entries = [("NARR", "narrative.package", [], narrative_path)]
+    assets_path = project / "ASSETS.json"
+    write_json(assets_path, {"asset_manifest": []})
+    entries.append(("ASSETS", "visual.assets", ["narrative.package"], assets_path))
+    narrative_entry = {"artifact_id": "NARR", "revision": "R01", "path_or_url": "NARR.json"}
+    board_path = project / "BOARD.json"
+    write_json(board_path, _current_storyboard_package(project, narrative_entry))
+    entries.append(("BOARD", "storyboard.package", ["narrative.package", "visual.assets"], board_path))
+    for artifact_id, logical_id, dependencies, path in entries:
         manifest["artifacts"].append({"artifact_id": artifact_id, "logical_id": logical_id,
             "status": "current", "user_approved": True, "path_or_url": path.name,
             "revision": "R01", "type": "json", "depends_on": dependencies, "checksum": cli.digest(path)})
-    save_manifest(project, manifest)
+    write_json(project / "00_项目管理" / "artifact_manifest.json", manifest)
     state = load_project_state(project)
     state.update(current_artifacts=["NARR", "ASSETS", "BOARD"], next_stage="storyboard-planner",
                  user_confirmations=[{"artifact_ids": ["NARR", "ASSETS", "BOARD"]}])
@@ -976,13 +1003,20 @@ def test_other_skills_keep_isolated_nonempty_profile_rule_compatible(tmp_path: P
 @pytest.mark.parametrize("invalid", [None, "receipt_hash", "file_hash", "approval"])
 def test_handoff_revision_receipt_relative_path_and_hash(tmp_path, invalid):
     project = _project(tmp_path)
+    narrative_path = project / "R03_narrative.json"
+    write_json(narrative_path, _current_narrative_package(project, "R03"))
+    narrative_entry = {"artifact_id": "ART-NARRATIVE-R03", "logical_id": "narrative.package",
+        "type": "narrative-package", "revision": "R03", "status": "current", "user_approved": True,
+        "path_or_url": narrative_path.name, "checksum": cli.digest(narrative_path), "depends_on": []}
     artifact = project / "03_director" / "R03.json"
     artifact.parent.mkdir()
-    artifact.write_text(json.dumps({"status": "confirmed"}), encoding="utf-8")
+    board = _current_storyboard_package(project, narrative_entry, "R03")
+    write_json(artifact, board)
     checksum = cli.digest(artifact)
     entry = {"artifact_id": "ART-R03", "logical_id": "storyboard.package",
              "type": "storyboard.package", "revision": "R03", "status": "current",
-             "user_approved": True, "path_or_url": "03_director/R03.json", "checksum": checksum}
+             "user_approved": True, "path_or_url": "03_director/R03.json", "checksum": checksum,
+             "depends_on": ["narrative.package"]}
     receipt = {"kind": "revision-candidate", "artifact_id": "ART-R03",
                "sha256": checksum, "approval_ref": "approval.json"}
     if invalid == "receipt_hash": receipt["sha256"] = "wrong"
@@ -991,8 +1025,9 @@ def test_handoff_revision_receipt_relative_path_and_hash(tmp_path, invalid):
     manage = project / "00_项目管理"
     (manage / "project_state.json").write_text(json.dumps({
         "current_stage": "storyboard-planner", "next_stage": "storyboard-director",
-        "current_artifacts": ["ART-R03"], "user_confirmations": [receipt]}), encoding="utf-8")
-    (manage / "artifact_manifest.json").write_text(json.dumps({"artifacts": [entry]}), encoding="utf-8")
+        "current_artifacts": ["ART-NARRATIVE-R03", "ART-R03"],
+        "user_confirmations": [{"artifact_ids": ["ART-NARRATIVE-R03"]}, receipt]}), encoding="utf-8")
+    (manage / "artifact_manifest.json").write_text(json.dumps({"artifacts": [narrative_entry, entry]}), encoding="utf-8")
     args = argparse.Namespace(project=str(project), to_skill="storyboard-director")
     if invalid:
         with pytest.raises(cli.StageContextError): cli.handoff(args)

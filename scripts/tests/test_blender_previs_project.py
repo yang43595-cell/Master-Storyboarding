@@ -29,9 +29,14 @@ def project(tmp_path, monkeypatch):
     state['current_artifacts'] = ['PLAN', 'PACKAGE']
     state['user_confirmations'] = [dict(scope='artifact', artifact_ids=['PLAN', 'PACKAGE'], approval_ref='actual user')]
     write_json(root / '00_项目管理/project_state.json', state)
-    for ident, logical, path in (('PLAN', 'storyboard.plan', text), ('PACKAGE', 'storyboard.package', package_path)):
-        artifacts.register_workspace_artifact(root, dict(artifact_id=ident, logical_id=logical, type=logical,
-            path_or_url=path.relative_to(root).as_posix(), status='current', revision='R03', user_approved=True))
+    # Fixture represents pre-existing historic/current state. Seed it directly
+    # instead of using the supported registration API, which now rejects a
+    # caller-supplied current formal storyboard package.
+    write_json(root / artifacts.MANIFEST_PATH, {'artifacts': [dict(
+        artifact_id=ident, logical_id=logical, type=logical,
+        path_or_url=path.relative_to(root).as_posix(), status='current', revision='R03', user_approved=True,
+        depends_on=[])
+        for ident, logical, path in (('PLAN', 'storyboard.plan', text), ('PACKAGE', 'storyboard.package', package_path))]})
     # Manifest saves reconcile selected IDs; select the completed pair afterwards.
     write_json(root / '00_项目管理/project_state.json', state)
     image = root / '04_资产/a.png'

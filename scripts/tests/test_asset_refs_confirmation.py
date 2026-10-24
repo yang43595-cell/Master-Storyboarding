@@ -116,21 +116,19 @@ class AssetReferenceConfirmationTests(unittest.TestCase):
             logical_id="narrative.package", artifact_type="narrative-package",
             candidate_path=str(candidate), revision="R02")
         revision_control.record_review(self.root, change_id="REV-CUP", verdict="approved", report_ref="test:review")
-        revision_control.confirm_candidate(self.root, change_id="REV-CUP", approval_ref="test:user-adopt")
-        revision_control.commit_change(self.root, change_id="REV-CUP")
+        with self.assertRaisesRegex(revision_control.RevisionControlError, 'story_paragraphs'):
+            revision_control.confirm_candidate(self.root, change_id="REV-CUP", approval_ref="test:user-adopt")
 
         registered = asset_refs.load_manifest(self.root)
+        narrative_candidate = next(item for item in registered["artifacts"] if item["artifact_id"] == "narrative-r02")
+        self.assertEqual(narrative_candidate["status"], "candidate")
+        self.assertEqual(next(item for item in registered["artifacts"] if item["artifact_id"] == "narrative-r01")["status"], "current")
         visual = next(item for item in registered["artifacts"] if item["artifact_id"] == self.export["artifact_id"])
-        self.assertEqual(visual["status"], "stale")
-        self.assertNotIn(visual["artifact_id"], asset_refs.load_project_state(self.root)["current_artifacts"])
+        self.assertEqual(visual["status"], "current")
+        self.assertIn(visual["artifact_id"], asset_refs.load_project_state(self.root)["current_artifacts"])
         current = asset_refs.asset_index(asset_refs.load_asset_list(self.root))["AST-CUP"]
-        self.assertEqual(current["name"], "红色杯子")
-        self.assertEqual(current["image"]["status"], "missing")
-        self.assertEqual(asset_refs.confirmed_images(self.root), {})
-        for request in ("AST-CUP", "AST-CUP@view0"):
-            ok, problems = asset_refs.require_images(self.root, [request])
-            self.assertFalse(ok, request)
-            self.assertTrue(problems, request)
+        self.assertEqual(current["name"], "蓝色杯子")
+        self.assertTrue(asset_refs.confirmed_images(self.root))
 
     def test_registered_non_current_manifests_cannot_publish_outputs(self):
         path = self.root / "00_项目管理/artifact_manifest.json"

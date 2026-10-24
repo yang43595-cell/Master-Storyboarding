@@ -59,6 +59,8 @@
 
 业务候选、修订与交接只维护现有 JSON 合同；故事原文、对白、资产需求和导演决定完整保存在对应字段。先在对话集中澄清确需用户决定的事实缺口，再完善 JSON、自查并交用户审定准确修订。未知事实不猜填，不以结构完整冒充用户确认。整稿与局部确认边界不变。
 
+新项目首次正式采用 `narrative.package`、`storyboard.package` 或平台无关 `video.prompt` 时，用户确认准确整稿后运行 `python scripts/stage_context_cli.py adopt-package --project <项目> --artifact-id <新ID> --logical-id <逻辑产物> --path <项目内JSON路径> --revision <正文修订> --approval-ref <准确确认依据> [--depends-on <上游逻辑产物> ...]`。该入口在登记 current 前重跑适用的原文/来源、上游确认与哈希、导演引用及生成段续跑检查，并写入整稿确认和当前产物选择；它不要求或读取任何渠道配置，不自动推进 `next_stage`。遇到已有 current/stale 正式版本时不得用首次采用入口覆盖；返修须按 `scripts.core.revision_control` 的现有变更确认与提交 API 走新版本。渠道冻结快照不属于此平台无关稿件入口。历史导入仍可登记并读取，但不能通过普通 `promote_candidate`、`save_manifest` 或网页审查结果晋升为正式 current；历史 Markdown 与旧事件包须先整理成当前 JSON 合同，再经正式入口重新确认。外部直接改文件或 manifest 不在仓库 API 门禁范围内，交接消费会重新校验已确认产物。
+
 不再强制产出同义编导稿、资产表、导演稿或阶段 Markdown，也不把导出文件登记为新业务依赖。用户需要阅读文件时，校验后运行 `python -m scripts.core.story_sources --project <项目> --narrative <叙事包> [--storyboard <导演包>] --export-markdown <新路径>`。导出包含完整字段，只是阅读副本；不反向覆盖 JSON，不覆盖已确认文件。操作说明、专业方法、原始证据和必要审核记录保留。
 
 新包省略 `human_readable_path`。历史包保留此字段时沿原双文件一致性检查只读兼容；不得为绕过历史差异而删除字段，迁移须另建有明确来源的新 JSON 修订并重新审核确认。历史采用与用户确认记录不改写。旧操作说明中的 Markdown 制作/审稿顺序仅供此历史路径参考，新生产按本节执行。

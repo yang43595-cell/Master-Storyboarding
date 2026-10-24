@@ -21,7 +21,7 @@ description: 从需求、素材、口播或既有脚本形成可确认的短视�
 
 ## 交付
 
-按[JSON 交付与按需导出](../../PROJECT_RULES.md#json-交付与按需导出)完善、自查并送审 `<revision>_叙事包.json`，使用现有 schema 2.0，完整保存故事、对白、稳定 `STP-*`、`DLG-*`、`AST-*` 与资产决定。新包省略 human_readable_path，不再依赖同义 Markdown 或独立资产表。内容结构参考模板；仅按需导出阅读文件，不能把导出作为另一真源。采用或交接前读准确正文并核本轮来源、自查结论及未核范围，必要发现复用现有任务记录；程序 ok 不是语义通过。准确修订经用户确认后才登记采用与交接，普通候选不登记 checksum，不伪造确认。
+按[JSON 交付与按需导出](../../PROJECT_RULES.md#json-交付与按需导出)完善、自查并送审 `<revision>_叙事包.json`，使用现有 schema 2.0，完整保存故事、对白、稳定 `STP-*`、`DLG-*`、`AST-*` 与资产决定。新包省略 human_readable_path，不再依赖同义 Markdown 或独立资产表。内容结构参考模板；仅按需导出阅读文件，不能把导出作为另一真源。采用或交接前读准确正文并核本轮来源、自查结论及未核范围，必要发现复用现有任务记录；程序 ok 不是语义通过。准确修订经用户确认后，首次采用按项目规则运行 `stage_context_cli.py adopt-package`；返修采用走既有 revision_control 确认/提交流程。普通候选不登记 checksum，不伪造确认。
 
 ## 职责边界
 
