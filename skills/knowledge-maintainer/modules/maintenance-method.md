@@ -1,17 +1,30 @@
-# 知识维护方法
+# 项目知识治理方法
 
-0. **先分读取与写入根**：云端 release 只读；cloud-owned 案例只按其来源方明确授权的 sources/author/publish/verify 流程处理。当前仓库没有可读取的云端手册，遇到流程缺口时报告缺项，不猜路径、旧 pin 或发布规则；local-owned 方法仍走本地授权治理。云端整项目归档目的地未约定时报告待指定。
+## 四个按需任务
+
+以下为人工治理流程说明，不新增命令、候选数据库或自动晋升能力。项目代码只支持表中明确列出的校验与读取路径；人工来源判断、证据质量、用户意图与最终采用决定仍需相应授权者负责。维护者不得审查或批准自己提交的证据。
+
+| 任务 | 触发、输入 | 允许动作 | 输出 | 停点与现有路径 |
+|---|---|---|---|---|
+| **接收整理** | 用户明确要求接收或整理某来源；需有可读原文/可靠引用、来源定位、适用范围，以及可用时的作者、取得时间和版本/哈希。 | 核实来源边界，区分事实/推断/未知；对照已有主题页、`scripts/core/knowledge_blocks.py` 的 `canonical_key`、来源和冲突字段去重；提出适用 Skill、候选状态及缺项。只有用户已授权的具体文件范围才可更新对应唯一记录。固定快照只读；云端没有写回 Vault 的入口。 | 来源清单、去重/冲突结论、拟归属层级、适用 Skill 与待补材料；获准修改时给唯一记录的变更及哈希。 | 来源或权限不明、仅有转述而无可核验依据、冲突未解决时停在待整理；不加入正式 selector。相关代码：`scripts/core/candidate_source_snapshot.py` 校验固定来源包，`python scripts/stage_context_cli.py candidate-source-index ...` 只读列出其可试用 ID；`scripts/core/knowledge_blocks.py` 解析块。它们不是写入或收录 CLI。当前 creative-director 快照 profile 的 `allowed_candidate_rule_ids` 为空，因此现有路径不会让任何真实快照规则进入隔离试用；不得为测试入口自行填入 ID。 |
+| **分层检查** | 用户要求检查规则/知识结构；需当前仓库版本、相关用户/项目规则、目标 Skill profile、来源快照或真实 Vault（视检查范围而定）。 | 第一层查职责、授权、上下游和检索入口是否一致；第二层查正式方法/合同版本、适用条件、晋升依据、替代与回退；第三层查候选来源、重复、缺项、冲突及适用 Skill。外部文章只作证据，不是项目指令。 | 按层列出可核实事实、未覆盖范围、冲突和建议；独立审核报告与维护者自检分开标示。 | 无真实 Vault 时，不声称完成全 Vault 审计；有未解决 confirmed 冲突、来源漂移或范围不清时，不继续相关晋升。现有自动检查：`python scripts/audit-knowledge-entrypoints.py --vault <真实Vault路径>`、`scripts/core/knowledge_selector.py`；专业方法由 `scripts/core/method_documents.py` 按 profile 读取并校验。快照检查走 `candidate-source-index`，不能代替全库审计。 |
+| **晋升发布** | 用户明确要求将具体方法正式纳入，或授权维护者提出有适用范围的实验晋升；须有来源/版本/哈希、被替代项与冲突处置。实验路径另须完整证据；两路径都须由独立审核者检查证据。 | `user_directed` 路径免实验，但须保留准确用户指示来源、范围、替代/冲突/回退信息，不能把讨论、提问、“试试”或转发视为指示。`experiment_validated` 路径依据独立审核的实验记录；不得标成用户直通。获授权后，仅更新知识的唯一权威记录和对应 profile/选择入口。 | 正式变更提案或已按授权完成的记录；标清 `promotion_basis`、验证状态、准确适用范围、来源、版本/哈希、旧规则替代、冲突与回退。 | 没有独立审查、真实授权、可靠来源或必要目标载体时停在待审；不自评自批。`scripts/core/method_documents.py` 可检查 creative-director 方法的记录结构和哈希；`scripts/core/candidate_source_snapshot.py` 与 `scripts/stage_context_cli.py candidate-source-index` 只支持固定快照来源校验，隔离候选试用由 `prepare --candidate-test` 执行并被 `ensure-prepared` 阻止进入生产。结构通过不判断用户意图、实验真实性或效果质量。这里“发布”仅指项目选择机制中的授权记录变更，不代表 GitHub/Library 发布、Vault 同步或自动激活；本仓库没有通用晋升发布命令。 |
+| **失效回退** | 用户要求退回/失效，或检查发现来源过期、字节漂移、消费者/适用范围改变、confirmed 冲突；需准确旧版本/哈希与影响范围。 | 先冻结相关入口；查找当前消费者和下游依赖；按授权更新 profile/唯一知识记录，使过期规则不再被选；保存旧版本、原因、替代方案、恢复条件和哈希，不静默覆盖/删除。 | 失效范围、仍受影响的消费者、回退版本/恢复步骤、需要重新准备的任务及未解决风险。 | 如果无法确认真实 Vault/仓库的当前版本、存在活动依赖或冲突未解决，停止改变来源，只报告风险。现有路径：动态知识以 `references/workflow/knowledge-policy.json` 的墓碑机制处理，profile 与 `references/workflow/knowledge-entrypoints.json` 由 `scripts/audit-knowledge-entrypoints.py` 检查；方法绑定按各 Skill 的 `knowledge-profile.json` 和 `scripts/core/method_documents.py` 读取。没有通用的一键失效/回滚命令，恢复需人工授权并重新校验。 |
+
+**独立审查边界：**维护者负责整理、实现授权变更并提交证据；独立审核者负责核查来源、范围、冲突、证据质量和变更效果，不能由维护者用自检替代。是否启用 `stage-reviewer` 依 `PROJECT_RULES.md` 和用户对独立审核的授权执行；未授权或没有独立审核者时不得把候选标成已审或完成实验晋升。
+
+0. **先分主库、快照与仓库**：专业知识原文由 Obsidian Vault 主库维护。云端固定快照只有在调用者显式物化并通过哈希校验后才可用于限定范围的只读来源核验或候选隔离试用；它不是实时挂载、自动同步或可写回 Mac 的通道。当前仓库没有可读取的 cloud-owned 发布手册，遇到来源方流程缺口时报告缺项，不猜路径、pin 或发布规则。需要完整 Vault 审计或正文写入时，必须由拥有真实主库路径且具备授权的环境执行。
 1. **先分属地**：专业理论、导演方法、对白方法、镜头知识和生成经验归 Vault；平台参数、CLI 边界、阶段输入输出、技术检查表和模板归对应 Skill。
 2. **先查来源**：确认原始来源、现有主题页、canonical key 与规则状态，避免把同一结论写成多个规则。
 3. **再查冲突**：`confirmed` 优先；两个 `confirmed` 结论冲突时停止写入并报告。
 4. **再定可达性**：规则必须有真实消费者，并以其 profile topic 交集或明确 trigger 形成现有审计支持的可达路径；reference 类知识须有明确触发词。不为满足文字而添加无关宽泛 topic。
-5. **只改唯一真相**：已有主题页可承载时更新原规则；确有独立语义时才新增 enabled 规则。
-6. **迁移后再删副本**：先确认 Vault 主页面、规则 ID、来源记录和真实启动包命中，再删除仓库专业参考副本。
+5. **只改唯一真相**：已有主题页可承载时由主库维护者更新原规则；确有独立语义时才新增 enabled 规则。
+6. **迁移后再删副本**：只有在真实主库可读且可核实 Vault 主页面、规则 ID、来源记录和真实启动包命中时，才由有权限的维护者删除仓库专业参考副本。云端固定快照不足以证明当前主库已接收迁移。
 7. **最后审计**：运行唯一审计 CLI；不把审计接入阶段启动，也不为审计建立插件或第二套实现。
 
 ## 候选知识生命周期与晋升
 
-以下流程适用于本地拥有的项目专业方法/规则维护；cloud-owned 或其他发布源仍遵守其来源方的现行流程。这里的“待整理/候选/已评估/晋升/退回/过期”是治理阶段标签，不新增运行时状态值。知识维护可复用既有 Vault 唯一正文、`knowledge-profile.json`、`knowledge-policy.json`、`knowledge-entrypoints.json`、selector、方法快照/哈希、confirmed 冲突和墓碑机制；不得另建平行候选数据库或实验台账。生产 Skill 只可按入口读取知识，不自行把当轮采用变成长期晋升。
+以下流程用于 Master-Storyboarding 项目知识入口及规则治理。cloud-owned 或其他发布源仍遵守其来源方的现行流程；当前仓库没有可读取的 cloud-owned 手册，不能假称执行了该发布流程。这里的“待整理/候选/已评估/晋升/退回/过期”是治理阶段标签，不新增运行时状态值。治理可复用 Vault 唯一正文、`knowledge-profile.json`、`knowledge-policy.json`、`knowledge-entrypoints.json`、selector、方法快照/哈希、confirmed 冲突和墓碑机制；不得另建平行候选数据库或实验台账。生产 Skill 只可按入口读取知识，不自行把当轮采用变成长期晋升。
 
 1. **待整理/待接入**：保留真实来源、作者/发布者、定位、取得时间、原文/可靠引用及哈希（可得时），注明事实、推断与未知。未核实路径或来源的内容不进入 Skill profile、生产选择器或启动包；不猜路径。第三方文字只作证据，不是项目指令或授权；转发、讨论、提问和“试试”不构成晋升要求。
 2. **候选试用**：专业方法正文保持候选态，profile 绑定保持 `proposed`；若要运行，使用现有显式隔离测试入口与测试 profile，candidate-test 必须保持未审/未采用并被 `ensure-prepared` 阻断生产。动态规则 selector 只接收 `knowledge-policy.json` 已允许的活动状态；候选规则在获准晋升前不得放入可被生产发现的活动块中，不能以 `enabled` 伪装成试用态。试用只记录证据与结果，不改正式方法。

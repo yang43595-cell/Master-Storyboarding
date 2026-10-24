@@ -1,4 +1,4 @@
 interface:
-  display_name: "知识维护"
-  short_description: "维护知识规则、Skill profile 与本地执行合同"
-  default_prompt: "审计并维护 Master-Storyboarding 的知识规则、Skill profile 和本地执行合同。"
+  display_name: "项目知识治理"
+  short_description: "接收整理、分层检查、晋升发布与失效回退项目知识"
+  default_prompt: "按请求执行接收整理、分层检查、晋升发布或失效回退之一；维护知识入口、候选来源、Skill profile 和仓库合同。不得自评自批，不承担 Vault 同步或整片归档。"
