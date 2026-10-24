@@ -2,13 +2,14 @@
   "schema_version": "1.0",
   "skill": "knowledge-maintainer",
   "skill_contract_checks": [
-    {"id": "CONTRACT-TRIGGER", "text": "触发条件明确指向 Master-Storyboarding 知识规则维护与入口审计"},
-    {"id": "CONTRACT-BOUNDARY", "text": "职责、输入、输出与硬禁区明确，按本机/云端属地使用合法 owner 和已有写入门禁；release 只读"},
+    {"id": "CONTRACT-TRIGGER", "text": "四个按需任务的触发条件与治理范围明确：接收整理、分层检查、晋升发布、失效回退"},
+    {"id": "CONTRACT-BOUNDARY", "text": "职责、输入、输出与硬禁区明确，按本机/云端属地使用合法 owner 和已有写入门禁；本 Skill 对云端 release/pin 只读且不得直接修改。若另有经授权的来源方发布流程，只交由该流程执行，不因调用本 Skill 获得发布权限"},
     {"id": "CONTRACT-REFERENCES", "text": "维护方法、审计合同、知识入口与本地 profile 引用真实存在"},
-    {"id": "CONTRACT-OWNERSHIP", "text": "专业方法保留在 Vault，Skill 本地只保留执行合同和技术清单"}
+    {"id": "CONTRACT-OWNERSHIP", "text": "专业方法保留在 Vault；快照只读；Skill 不负责同步、归档搬移或清理源目录"},
+    {"id": "CONTRACT-INDEPENDENCE", "text": "维护者不对自己的晋升/回退证据自评自批；独立审查与用户授权按项目规则执行，代码结构校验不代表真实性或效果验证"}
   ],
   "production_artifact_checks": [
-    {"id": "KNOWLEDGE-GUARD", "text": "本机写入的合法 owner、guard begin/finish 与提交证据完整；云端 cloud-owned 案例按 author/publish/verify 留存 base/hash 与真实来源，未擅改 release/pin 或自动激活"},
+    {"id": "KNOWLEDGE-GUARD", "text": "本机主库写入具备合法 owner、guard begin/finish 与提交证据；knowledge-maintainer 对云端 release/pin 及固定快照只读，不直接修改。若另有来源方现行手册和明确授权允许发布流程，交由该明确流程执行，不因调用本 Skill 获得发布权限；保留可得的来源、base/hash、release/pin 身份。无手册或授权时停下并报告无法验证，不猜流程或声称已发布/verify、自动同步或激活"},
     {"id": "KNOWLEDGE-CONSUMERS", "text": "知识有真实 Skill 消费者及 topic 或明确 trigger 可达路径，退役消费者已清理"},
     {"id": "KNOWLEDGE-TRUTH", "text": "专业方法只有一个 Vault 权威正文，Skill 未复制知识正文"},
     {"id": "KNOWLEDGE-AUDIT", "text": "知识入口审计为零错误，不存在未知消费者、无消费 topic 或 confirmed 冲突"}
