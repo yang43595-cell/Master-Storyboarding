@@ -65,6 +65,10 @@ class KnowledgeBlock:
     vault_relative_path: str
     anchor: str
     fingerprint: str
+    # Source status retained when an enabled Wiki block is wrapped as a
+    # candidate only inside isolated candidate-test.
+    source_status: str | None = None
+    source_page_sha256: str | None = None
 
 
 class KnowledgeIndexError(ValueError):
@@ -289,6 +293,12 @@ def _validate_active_contract(
             f"{block.id} exceeds max_block_chars "
             f"({len(block.body)} > {policy['budgets']['max_block_chars']})"
         )
+    # Candidate blocks are parseable but inert. The ordinary selector ignores
+    # them; only an explicit candidate-test call may return them separately.
+    if block.status == "candidate":
+        if block.kind not in policy["discovery"]["allowed_kinds"]:
+            raise KnowledgeIndexError(f"unsupported candidate knowledge kind: {block.kind}")
+        return
     if block.kind not in policy["discovery"]["allowed_kinds"]:
         raise KnowledgeIndexError(f"unsupported knowledge kind: {block.kind}")
     if block.status not in policy["discovery"]["allowed_statuses"]:

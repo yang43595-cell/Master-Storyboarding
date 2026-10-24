@@ -19,6 +19,7 @@ class SelectionResult:
     match_reasons: dict[str, list[str]]
     candidate_reasons: dict[str, str] = field(default_factory=dict)
     applicable_confirmed: list[KnowledgeBlock] = field(default_factory=list)
+    trial_candidates: list[KnowledgeBlock] = field(default_factory=list)
 
 
 def select_knowledge(
@@ -29,6 +30,7 @@ def select_knowledge(
     project_state: dict[str, Any],
     tombstone_fingerprints: set[str],
     profile: dict[str, Any] | None = None,
+    candidate_trial_ids: set[str] | None = None,
 ) -> SelectionResult:
     budgets = _validated_budgets(policy)
     signals = _signals(request, project_state)
@@ -43,8 +45,18 @@ def select_knowledge(
     deferred: list[dict[str, str]] = []
     candidate_reasons: dict[str, str] = {}
     applicable_confirmed: list[KnowledgeBlock] = []
+    trial_candidates: list[KnowledgeBlock] = []
+    candidate_trial_ids = candidate_trial_ids or set()
 
     for block in unique_blocks:
+        if block.status == "candidate":
+            if block.id in candidate_trial_ids:
+                if block.authority != "wiki" or not _matches_scope(block, policy, skill):
+                    raise ValueError(f"candidate trial rule is outside this Skill scope: {block.id}")
+                if block.fingerprint in tombstone_fingerprints:
+                    raise ValueError(f"candidate trial rule is tombstoned: {block.id}")
+                trial_candidates.append(block)
+            continue
         contract_reason = _runtime_contract_reason(block, policy)
         if contract_reason is not None:
             deferred.append(_deferred(block, contract_reason))
@@ -82,6 +94,9 @@ def select_knowledge(
         eligible,
         key=lambda block: _rank_key(block, skill_topics, signals, policy),
     )
+    unresolved_trial_ids = candidate_trial_ids - {block.id for block in trial_candidates}
+    if unresolved_trial_ids:
+        raise ValueError("candidate trial IDs are missing or are not candidate-status blocks: " + ", ".join(sorted(unresolved_trial_ids)))
     ranked, duplicate_deferred = _deduplicate_canonical_keys(ranked)
     eligible_ids = {block.id for block in ranked}
     # A currently applicable confirmed mixed rule can be a read-on-demand
@@ -106,11 +121,34 @@ def select_knowledge(
         signals=signals,
         candidate_reasons=candidate_reasons,
         applicable_confirmed=applicable_confirmed,
+        trial_candidates=sorted(trial_candidates, key=lambda block: block.id),
         match_reasons={
             block.id: _match_reasons(block, skill_topics, signals)
             for block in selected
         },
     )
+
+
+def render_candidate_trial_bundle(skill: str, result: SelectionResult) -> str:
+    if not result.trial_candidates:
+        return ""
+    lines = [
+        f"# {skill} 隔离候选知识试用包", "",
+        "> 仅 candidate-test 临时阅读；不进入正式选择集、不构成确认或晋升依据。", "",
+    ]
+    for block in result.trial_candidates:
+        lines.extend([
+            f"## {block.id} [candidate trial only]", "",
+            f"- 来源快照页：`{block.vault_relative_path}`",
+            *( [f"- 原页面 SHA-256：`{block.source_page_sha256}`"] if block.source_page_sha256 else [] ),
+            f"- 来源锚点：`^{block.anchor}`",
+            f"- 正文 SHA-256：`{block.fingerprint}`",
+            f"- 原 Wiki 标签：`{block.source_status or block.status}`（不代表用户确认）；本轮隔离状态：`candidate`。",
+            *( [f"- 声明来源：{', '.join('`'+source+'`' for source in block.sources) if block.sources else '未声明'}"] ),
+            f"- 适用条件（声明）：{block.applies_when}", "",
+            block.body.strip(), "",
+        ])
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def _match_reasons(

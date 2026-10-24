@@ -22,7 +22,8 @@ try:
                                  validate_candidate_submission)
     from .core.io import write_text, write_text_if_changed
     from .core.knowledge_blocks import build_knowledge_index, load_policy, parse_knowledge_blocks
-    from .core.knowledge_selector import render_knowledge_bundle, render_knowledge_candidates, select_knowledge
+    from .core.knowledge_selector import render_knowledge_bundle, render_knowledge_candidates, render_candidate_trial_bundle, select_knowledge
+    from .core.candidate_source_snapshot import CandidateSnapshotError, inspect_candidate_snapshot, load_candidate_snapshot_rules
     from .core.method_documents import MethodDocumentError, render_method_packet, resolve_method_documents
     from .core.project_state import load_project_state, normalize_project_state
     from .core.revision_control import RevisionControlError, guard_action, show_change
@@ -36,7 +37,8 @@ except ImportError:  # direct CLI execution
                                 validate_candidate_submission)
     from core.io import write_text, write_text_if_changed
     from core.knowledge_blocks import build_knowledge_index, load_policy, parse_knowledge_blocks
-    from core.knowledge_selector import render_knowledge_bundle, render_knowledge_candidates, select_knowledge
+    from core.knowledge_selector import render_knowledge_bundle, render_knowledge_candidates, render_candidate_trial_bundle, select_knowledge
+    from core.candidate_source_snapshot import CandidateSnapshotError, inspect_candidate_snapshot, load_candidate_snapshot_rules
     from core.method_documents import MethodDocumentError, render_method_packet, resolve_method_documents
     from core.project_state import load_project_state, normalize_project_state
     from core.revision_control import RevisionControlError, guard_action, show_change
@@ -585,6 +587,22 @@ def validate_text(kind: str, path: Path, text: str | None = None) -> dict[str, A
     return {"kind": kind, "path": str(path), "bytes": size, "valid": True}
 
 
+def candidate_source_index(args: argparse.Namespace) -> dict[str, Any]:
+    """Read a pinned source archive and report trial-eligible items, never promote."""
+    skill = str(args.skill or "").strip()
+    profile_path = ROOT / "skills" / skill / "knowledge-profile.json"
+    profile = _read_json(profile_path, default=None)
+    if not isinstance(profile, dict) or profile.get("skill") != skill:
+        raise StageContextError(f"Skill 知识 profile 无效：{profile_path}")
+    try:
+        result = inspect_candidate_snapshot(
+            profile, Path(args.snapshot).expanduser().resolve(), args.source_id,
+        )
+    except CandidateSnapshotError as exc:
+        raise StageContextError(str(exc)) from exc
+    return {"ok": True, "read_only": True, "skill": skill, **result}
+
+
 def _reading_identity(args: argparse.Namespace) -> dict[str, str]:
     return {
         "actor_id": str(getattr(args, "actor_id", "") or "").strip(),
@@ -593,15 +611,20 @@ def _reading_identity(args: argparse.Namespace) -> dict[str, str]:
 
 
 def _candidate_record(block: Any) -> dict[str, Any]:
-    return {
+    record = {
         "id": block.id, "canonical_key": block.canonical_key, "kind": block.kind,
         "status": block.status, "authority": block.authority,
         "projects": list(block.projects), "stages": list(block.stages),
         "topics": list(block.topics), "triggers": list(block.triggers),
         "conflicts_with": list(block.conflicts_with), "priority": block.priority,
         "applies_when": block.applies_when, "vault_relative_path": block.vault_relative_path,
-        "anchor": block.anchor, "sha256": block.fingerprint,
+        "anchor": block.anchor, "sha256": block.fingerprint, "sources": list(block.sources),
     }
+    if getattr(block, "source_status", None) is not None:
+        record["source_status"] = block.source_status
+    if getattr(block, "source_page_sha256", None) is not None:
+        record["source_page_sha256"] = block.source_page_sha256
+    return record
 
 
 def _candidate_packet(candidates: list[Any], scopes: dict[str, str] | None = None) -> str:
@@ -1086,6 +1109,14 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     if not isinstance(request, dict):
         raise StageContextError("request JSON 必须是对象")
     testing = _test_request(args, project)
+    candidate_rule_ids = set(getattr(args, "candidate_rule", None) or [])
+    candidate_source_id = getattr(args, "candidate_source_id", None)
+    candidate_source_archive = getattr(args, "candidate_source_snapshot", None)
+    if candidate_rule_ids or candidate_source_id or candidate_source_archive:
+        if not testing:
+            raise StageContextError("动态候选试用只允许在 candidate-test 项目中运行。")
+        if not (candidate_rule_ids and candidate_source_id and candidate_source_archive):
+            raise StageContextError("候选试用必须同时指定 --candidate-source-id、--candidate-source-snapshot 与至少一个 --candidate-rule。")
     delivery_contract = _delivery_contract(request)
     if testing and (delivery_contract["delivery_object"] == "submission" or request.get("generation_authorized")):
         raise StageContextError("候选测试只允许 plan/prompt，不允许生成提交")
@@ -1108,9 +1139,27 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     except MethodDocumentError as exc:
         raise StageContextError(str(exc)) from exc
     blocks = build_knowledge_index(vault, policy) if vault.is_dir() else []
+    candidate_source_summary = None
+    if candidate_source_id:
+        try:
+            candidate_trial_blocks = load_candidate_snapshot_rules(
+                profile, Path(candidate_source_archive).expanduser().resolve(),
+                candidate_source_id, candidate_rule_ids,
+            )
+            # The pinned candidate-test snapshot is the only copy of these
+            # explicitly trialed IDs in this task. Do not let an enabled
+            # local Vault copy of the same ID become formal selection input.
+            blocks = [block for block in blocks if block.id not in candidate_rule_ids]
+            blocks.extend(candidate_trial_blocks)
+            candidate_source_summary = inspect_candidate_snapshot(
+                profile, Path(candidate_source_archive).expanduser().resolve(), candidate_source_id,
+            )
+        except CandidateSnapshotError as exc:
+            raise StageContextError(str(exc)) from exc
     result = select_knowledge(
         blocks, policy, args.skill, request, summary,
         _tombstone_fingerprints(vault, policy), profile=profile,
+        candidate_trial_ids=candidate_rule_ids,
     )
     if any(item.get("reason") == "blocking_conflict" for item in result.blocking_conflicts):
         raise StageContextError(f"confirmed 知识冲突：{json.dumps(result.blocking_conflicts, ensure_ascii=False)}")
@@ -1119,6 +1168,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         raise StageContextError("prepare 必须提供非空 --objective")
     bundle = render_knowledge_bundle(args.skill, result)
     candidate_index = render_knowledge_candidates(result)
+    trial_bundle = render_candidate_trial_bundle(args.skill, result)
     method_lines = ["## 必读专业方法", ""]
     if methods.required:
         method_lines.append("- 以下全文已写入 `method_reading_packet.md`；生产者必须逐份完整读取后登记读取证据。")
@@ -1161,9 +1211,19 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     if not isinstance(request_checks, list) or any(not isinstance(item, str) or not item.strip() for item in request_checks):
         raise StageContextError("request.review_checks 必须是非空文字检查项数组。")
     manual_checks = [{"id": f"MANUAL-{index:03d}", "text": text.strip()} for index, text in enumerate(request_checks, start=1)]
-    methods_records = [{"id": item.id, "path": item.vault_path, "version": item.version, "sha256": item.checksum} for item in methods.required]
+    methods_records = [{"id": item.id, "path": item.vault_path, "version": item.version, "sha256": item.checksum, "promotion_basis": item.promotion_basis} for item in methods.required]
     base_packet = render_method_packet(methods.required) if methods.required else "# 本轮必读专业方法快照\n"
-    reading_manifest = {"schema_version": "1.0", "skill": args.skill, "project_path": str(project), "vault_root": str(vault), **_reading_identity(args), "methods": methods_records, "method_packet_sha256": hashlib.sha256(base_packet.encode("utf-8")).hexdigest(), "method_packet_bytes": len(base_packet.encode("utf-8")), "test_only_proposed_method_ids": sorted(test_method_ids), "selected": [_candidate_record(item) for item in result.selected], "candidate_catalog": [_candidate_record(item) for item in result.candidates], "candidate_reasons": result.candidate_reasons, "applicable_confirmed": [_candidate_record(item) for item in result.applicable_confirmed]}
+    trial_record = None
+    if result.trial_candidates:
+        trial_record = {
+            "source_id": candidate_source_id,
+            "archive_path": str(Path(candidate_source_archive).expanduser().resolve()),
+            "archive_sha256": candidate_source_summary["archive_sha256"],
+            "rule_ids": [item.id for item in result.trial_candidates],
+            "rules": [_candidate_record(item) for item in result.trial_candidates],
+            "packet_sha256": hashlib.sha256(trial_bundle.encode("utf-8")).hexdigest(),
+        }
+    reading_manifest = {"schema_version": "1.0", "skill": args.skill, "project_path": str(project), "vault_root": str(vault), **_reading_identity(args), "methods": methods_records, "method_packet_sha256": hashlib.sha256(base_packet.encode("utf-8")).hexdigest(), "method_packet_bytes": len(base_packet.encode("utf-8")), "test_only_proposed_method_ids": sorted(test_method_ids), "selected": [_candidate_record(item) for item in result.selected], "candidate_catalog": [_candidate_record(item) for item in result.candidates], "candidate_reasons": result.candidate_reasons, "applicable_confirmed": [_candidate_record(item) for item in result.applicable_confirmed], "candidate_trial": trial_record}
     local_documents = _local_standard_documents(skill_dir, request)
     task_basis = {
         "schema_version": "1.0",
@@ -1182,7 +1242,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
             "root_rules": str(ROOT / "PROJECT_RULES.md"),
             "root_rules_sha256": digest(ROOT / "PROJECT_RULES.md"),
             "skill_entry": str(skill_dir / "SKILL.md"),
-            "professional_methods": [{"id": item.id, "path": item.vault_path, "version": item.version, "sha256": item.checksum} for item in methods.required],
+            "professional_methods": [{"id": item.id, "path": item.vault_path, "version": item.version, "sha256": item.checksum, "promotion_basis": item.promotion_basis} for item in methods.required],
             "selected_knowledge": [_candidate_record(item) for item in result.selected],
             "applicable_confirmed": [_candidate_record(item) for item in result.applicable_confirmed],
             "review_profile": {"path": str(review_profile_path), "sha256": hashlib.sha256(review_profile_path.read_bytes()).hexdigest(), "schema_version": review_profile["schema_version"]},
@@ -1190,6 +1250,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         },
         "review_acceptance": {"delivery_object": delivery_contract["delivery_object"], "delivery_contract": delivery_contract, "production": {"required_checks": _applicable_checks(review_profile["production_artifact_checks"], delivery_contract), "manual_checks": manual_checks}, "skill_contract": {"required_checks": review_profile["skill_contract_checks"], "manual_checks": manual_checks}},
         "reading_manifest": reading_manifest,
+        "candidate_trial": trial_record,
         "revision": revision,
     }
     if testing:
@@ -1216,6 +1277,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         *method_lines,
         bundle.rstrip(), "",
         *( ["## 按需知识候选", "", f"- 共 {len(result.candidates)} 条；完整可读目录：`knowledge_candidates.md`。仅按其中精确路径和锚点读取。", ""] if result.candidates else [] ),
+        *( ["## 隔离候选知识试用", "", "- 仅 candidate-test 临时阅读，不进入正式选择集、确认或晋升；正文见 `candidate_trial_packet.md`。", ""] if result.trial_candidates else [] ),
         "## 选择记录", "",
         f"- 已选知识块：{', '.join(item.id for item in result.selected) or '无'}",
         f"- 按需知识候选：{len(result.candidates)}",
@@ -1247,6 +1309,11 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     for name in ("method_reading_manifest.json", "candidate_reading_manifest.json", "candidate_reading_packet.md", "candidate_reading_evidence.json"):
         stale = context / name
         if stale.is_file(): stale.unlink()
+    trial_path = context / "candidate_trial_packet.md"
+    if trial_record:
+        write_text_if_changed(trial_path, trial_bundle)
+    elif trial_path.is_file():
+        trial_path.unlink()
     report["elapsed_ms"] = round((time.perf_counter() - started) * 1000, 2)
     report["required_method_count"] = len(methods.required)
     report["pending_method_count"] = len(methods.pending)
@@ -1254,6 +1321,8 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     report["method_reading_bytes"] = len(base_packet.encode("utf-8"))
     if testing:
         report.update(test_metadata())
+        if trial_record:
+            report["candidate_trial"] = {"rule_ids": trial_record["rule_ids"], "production_blocked": True}
     if usage is not None:
         report["run_usage"] = usage
     return report
@@ -1560,6 +1629,33 @@ def _ensure_prepared_base(args: argparse.Namespace) -> dict[str, Any]:
             f"请先为该 Skill 运行 prepare，不得沿用上一个 Skill 的启动包。"
         )
     validate_text("startup", startup, text)
+    reading_manifest = _reading_manifest(project)
+    trial = reading_manifest.get("candidate_trial") if isinstance(reading_manifest, dict) else None
+    trial_packet = project / CONTEXT_DIR / "candidate_trial_packet.md"
+    if trial is not None:
+        if not test_context(project) or "execution_mode: candidate_test" not in text:
+            raise StageContextError("隔离候选试用包只能保留在 candidate-test 项目中。")
+        if not isinstance(trial, dict) or not trial_packet.is_file():
+            raise StageContextError("隔离候选试用记录或正文缺失；请重新 prepare。")
+        packet_bytes = trial_packet.read_bytes()
+        if hashlib.sha256(packet_bytes).hexdigest() != trial.get("packet_sha256"):
+            raise StageContextError("隔离候选试用正文已漂移；请重新 prepare。")
+        source_snapshot = trial.get("archive_path")
+        source_id = trial.get("source_id")
+        rule_ids = trial.get("rule_ids")
+        profile = _read_json(ROOT / "skills" / skill / "knowledge-profile.json", default=None)
+        if not isinstance(profile, dict) or not isinstance(source_snapshot, str) or not isinstance(source_id, str) or not isinstance(rule_ids, list):
+            raise StageContextError("隔离候选来源绑定无效；请重新 prepare。")
+        try:
+            current_rules = load_candidate_snapshot_rules(
+                profile, Path(source_snapshot), source_id, set(rule_ids),
+            )
+        except CandidateSnapshotError as exc:
+            raise StageContextError(str(exc)) from exc
+        if [_candidate_record(item) for item in current_rules] != trial.get("rules"):
+            raise StageContextError("隔离候选来源正文、版本或 hash 已漂移；请重新 prepare。")
+    elif trial_packet.exists():
+        raise StageContextError("发现未登记的隔离候选试用包；请重新 prepare。")
     # Distinguish a complete selection record from merely having a heading.
     body, separator, record = text.rpartition("\n## 选择记录")
     selected = re.search(r"(?m)^- 已选知识块：(.+)$", record)
@@ -1754,6 +1850,10 @@ def parser() -> argparse.ArgumentParser:
     testing.add_argument("--run-id", required=True)
     testing.add_argument("--authorization-ref", required=True)
     testing.add_argument("--input-artifact", action="append", default=[])
+    source_index = commands.add_parser("candidate-source-index", help="只读核验 profile 固定的候选来源快照并列出可试用规则")
+    source_index.add_argument("--skill", required=True)
+    source_index.add_argument("--source-id", required=True)
+    source_index.add_argument("--snapshot", required=True, help="显式提供已核验 Library 快照的本地物化路径")
     start = commands.add_parser("prepare")
     start.add_argument("--project", required=True)
     start.add_argument("--skill", required=True)
@@ -1776,6 +1876,9 @@ def parser() -> argparse.ArgumentParser:
     gate.add_argument("--required-reference", action="append", default=[], help="本任务必需的本地规范，仓库相对路径，可重复")
     for command in (start, gate):
         command.add_argument("--candidate-test", action="store_true", help="仅隔离候选试跑；不构成生产放行")
+        command.add_argument("--candidate-source-id", help="profile 中固定的候选来源 ID，仅 candidate-test 使用")
+        command.add_argument("--candidate-source-snapshot", help="显式提供来源快照物化文件，仅 candidate-test 使用")
+        command.add_argument("--candidate-rule", action="append", default=[], help="指定进入隔离试用包的 candidate 状态规则，可重复")
         command.add_argument("--usage-log", action="append", help="本次 Codex 原始日志，可重复提供窗口分片")
         command.add_argument("--usage-turn-id", help="准确的本轮 turn_id；不以文件名代替边界")
         command.add_argument("--usage-boundaries-json", help="显式累计边界 JSON；不自动发现宿主历史")
@@ -1836,6 +1939,8 @@ def main(argv: list[str] | None = None) -> int:
         result = adopt_package(args)
     elif args.command == "candidate-test":
         result = configure_test(Path(args.project), args.run_id, args.authorization_ref, args.input_artifact)
+    elif args.command == "candidate-source-index":
+        result = candidate_source_index(args)
     elif args.command == "prepare":
         result = prepare(args)
     elif args.command == "ensure-prepared":
