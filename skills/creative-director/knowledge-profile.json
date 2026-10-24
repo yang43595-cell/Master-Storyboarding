@@ -3,11 +3,33 @@
   "skill": "creative-director",
   "topics": ["narrative", "dialogue", "hook", "catchphrase", "douyin-language", "pov", "character-performance", "continuity", "theme", "violence", "directing", "ending", "character-arc", "agency"],
   "forbidden_knowledge_terms": ["景别", "机位", "构图", "运镜", "切点", "镜头表", "镜头轮", "镜头点", "剪辑点", "字幕节奏", "逐句时间窗", "口型动作", "提示词", "模型选择", "生成路径"],
+  "optional_experience_scopes": [],
+  "promotion_contract": "required",
+  "candidate_sources": [
+    {
+      "id": "MSB-WIKI-SNAPSHOT-20261023",
+      "kind": "library_zip_snapshot",
+      "library_file_id": "libfile_9b607b57088c8191a835af6e00479935",
+      "archive_sha256": "140e5c8950053365ce1eec6e8de3b8b8f6877998818b2065f01eb7c4e7f926f0",
+      "archive_bytes": 380630,
+      "vault_head": "df6e2a50468b3b0927da3da4f663c531a253773c",
+      "consumer_repo_commit": "28e457758784930d929557c0834cc4ac00cac37e",
+      "allowed_candidate_rule_ids": [],
+      "note": "快照来源已核验。已知四项历史争议为 MSB-KB-LIGHT-002、MSB-KB-BOARD-007/008/009：争议仅为专业分镜页的消费者映射基线，不是规则正文错误；不据此将其纳入编导候选。编导候选仍须逐项核验；当前正式白名单为空。"
+    }
+  ],
   "professional_methods": [
     {
       "id": "CREATIVE-DIRECTION-METHOD",
       "path": "projects/Master-Storyboarding/应用知识/编导/编导方法.md",
       "binding_status": "user_confirmed",
+      "promotion_record": {
+        "basis": "legacy_unclassified",
+        "method_version": "2026-10-23",
+        "method_sha256": "9dbaa9bda8fdc4f331b1de528d53f0e956570798c86a3da5236eed43a9a47114",
+        "scope": "兼容现有 creative-director 编导方法绑定；历史晋升依据不重新分类。",
+        "source_ref": "libfile_d4bb8cef26508191a0aa202b4ff481c7 v1；精确字节基准。"
+      },
       "applies_when": "当前编导任务遇到具体故事或对白问题，执行者选择参考编导方法时",
       "requires": {"skill": "creative-director", "request.use_story_method": true}
     }
