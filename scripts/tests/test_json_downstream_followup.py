@@ -74,18 +74,17 @@ def t0(root):
 
 
 @pytest.mark.parametrize('phase', ['confirmation', 'adoption'])
-def test_t0_does_not_exempt_upstream_byte_checks(tmp_path, phase):
+def test_t0_channel_snapshot_cannot_be_adopted_as_platform_neutral_prompt(tmp_path, phase):
     t0(tmp_path)
-    if phase == 'adoption':
+    with pytest.raises(rc.RevisionControlError, match='渠道冻结快照'):
         rc.confirm_candidate(tmp_path, change_id='COPY', approval_ref='fixture:user')
-    (tmp_path / 'frame.png').write_bytes(b'changed-after-copy')
-    with pytest.raises(rc.RevisionControlError, match='参考检查失败'):
-        if phase == 'confirmation': rc.confirm_candidate(tmp_path, change_id='COPY', approval_ref='fixture:user')
-        else: rc.commit_change(tmp_path, change_id='COPY')
+    manifest = artifacts.load_manifest(tmp_path)
+    assert next(a for a in manifest['artifacts'] if a['artifact_id'] == 'EQUIVALENT')['status'] == 'candidate'
+    assert 'EQUIVALENT' not in read_json(tmp_path / '00_项目管理/project_state.json')['current_artifacts']
 
 
-def test_t0_equivalent_copy_still_needs_no_repeat_review(tmp_path):
+def test_t0_equivalent_channel_copy_still_cannot_become_formal_prompt(tmp_path):
     t0(tmp_path)
     assert read_json(tmp_path / rc.CONTROL_RELATIVE)['active_change']['review'] is None
-    rc.confirm_candidate(tmp_path, change_id='COPY', approval_ref='fixture:user')
-    rc.commit_change(tmp_path, change_id='COPY')
+    with pytest.raises(rc.RevisionControlError, match='渠道冻结快照'):
+        rc.confirm_candidate(tmp_path, change_id='COPY', approval_ref='fixture:user')

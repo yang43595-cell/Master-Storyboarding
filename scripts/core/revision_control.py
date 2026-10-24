@@ -15,7 +15,8 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from . import confirmation_scope
-from .artifacts import dependency_closure, load_manifest, mark_impacted_artifacts_stale, project_path
+from .artifacts import (dependency_closure, load_manifest, mark_impacted_artifacts_stale,
+                        project_path, validate_candidate_submission)
 from .io import (
     file_lock,
     normalized_text_sha256,
@@ -676,6 +677,22 @@ def confirm_candidate(
         source, _ = _within_project(project, str(candidate.get("path") or ""))
         if sha256_file(source) != candidate.get("sha256"):
             raise RevisionControlError("候选文件在审核后发生漂移，必须重新登记与审核")
+        manifest = load_manifest(project)
+        _assert_manifest_head(change, manifest)
+        candidate_item = next((item for item in manifest.get("artifacts", [])
+                               if item.get("artifact_id") == candidate.get("artifact_id")), None)
+        if (candidate_item is None or candidate_item.get("status") != "candidate"
+                or candidate_item.get("logical_id") != candidate.get("logical_id")
+                or candidate_item.get("revision") != candidate.get("revision")
+                or candidate_item.get("checksum") != candidate.get("sha256")
+                or project_path(project, candidate_item.get("path_or_url", "")) != source):
+            raise RevisionControlError("登记候选与当前审核凭据的 ID/逻辑产物/修订/路径/hash 不一致")
+        try:
+            submission_sha256 = validate_candidate_submission(project, candidate_item, manifest)
+            if candidate_item.get("logical_id") in {"narrative.package", "storyboard.package", "video.prompt"} and not submission_sha256:
+                raise ValueError("旧稿件/未识别结构不能正式确认；仅保留历史读取")
+        except (ValueError, OSError, KeyError, TypeError) as exc:
+            raise RevisionControlError(f"正式稿件提交前校验失败：{exc}") from exc
         receipt = confirmation_scope.new_receipt(
             confirmation_scope.SCOPE_ARTIFACT,
             description=scope_description,
@@ -766,6 +783,12 @@ def commit_change(project: Path, *, change_id: str) -> dict[str, Any]:
         candidate_item = next((item for item in manifest.get("artifacts") or [] if item.get("artifact_id") == candidate_id), None)
         if candidate_item is None or candidate_item.get("status") != "candidate":
             raise RevisionControlError("候选产物登记状态无效")
+        try:
+            submission_sha256 = validate_candidate_submission(project, candidate_item, manifest)
+            if candidate_item.get("logical_id") in {"narrative.package", "storyboard.package", "video.prompt"} and not submission_sha256:
+                raise ValueError("旧稿件/未识别结构不能正式提交；仅保留历史读取")
+        except (ValueError, OSError, KeyError, TypeError) as exc:
+            raise RevisionControlError(f"正式稿件采用前校验失败：{exc}") from exc
         report = mark_impacted_artifacts_stale(
             manifest,
             {str(candidate.get("logical_id"))},

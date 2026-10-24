@@ -16,7 +16,10 @@ from typing import Any
 
 try:
     from .core.candidate_test import context as test_context, configure as configure_test, resolve_inputs as test_inputs, result_metadata as test_metadata, require_production
-    from .core.artifacts import artifact_is_confirmed, project_path, digest, validate_current_dependencies
+    from .core.artifacts import (artifact_is_confirmed, project_path, digest,
+                                 validate_current_dependencies, load_manifest,
+                                 register_workspace_artifact, adopt_initial_package,
+                                 validate_candidate_submission)
     from .core.io import write_text, write_text_if_changed
     from .core.knowledge_blocks import build_knowledge_index, load_policy, parse_knowledge_blocks
     from .core.knowledge_selector import render_knowledge_bundle, render_knowledge_candidates, select_knowledge
@@ -27,7 +30,10 @@ try:
     from .session_usage import measure, measure_boundaries, check_budget
 except ImportError:  # direct CLI execution
     from core.candidate_test import context as test_context, configure as configure_test, resolve_inputs as test_inputs, result_metadata as test_metadata, require_production
-    from core.artifacts import artifact_is_confirmed, project_path, digest, validate_current_dependencies
+    from core.artifacts import (artifact_is_confirmed, project_path, digest,
+                                validate_current_dependencies, load_manifest,
+                                register_workspace_artifact, adopt_initial_package,
+                                validate_candidate_submission)
     from core.io import write_text, write_text_if_changed
     from core.knowledge_blocks import build_knowledge_index, load_policy, parse_knowledge_blocks
     from core.knowledge_selector import render_knowledge_bundle, render_knowledge_candidates, select_knowledge
@@ -80,7 +86,10 @@ def _test_request(args, project):
     if bool(testing) != explicit:
         raise StageContextError("隔离测试须配置 candidate-test 并显式传 --candidate-test；生产入口不消费测试稿")
     if not testing:
-        require_production(project)
+        try:
+            require_production(project)
+        except ValueError as exc:
+            raise StageContextError(str(exc)) from exc
     return testing
 
 
@@ -93,6 +102,61 @@ def _selected_inputs(project, state):
 def _state_summary(raw: dict[str, Any]) -> dict[str, Any]:
     state = normalize_project_state(raw)
     return {key: value for key, value in state.items() if key != "schema_version"}
+
+
+def adopt_package(args: argparse.Namespace) -> dict[str, Any]:
+    """Register and adopt an initial platform-neutral manuscript package."""
+    project = Path(args.project).expanduser().resolve()
+    if not project.is_dir():
+        raise StageContextError(f"项目目录不存在：{project}")
+    require_production(project)
+    logical_id = args.logical_id
+    if logical_id not in {"narrative.package", "storyboard.package", "video.prompt"}:
+        raise StageContextError("仅支持正式叙事包、导演包或视频提示词包")
+    if not args.approval_ref.strip():
+        raise StageContextError("正式稿采用必须绑定准确用户确认依据 --approval-ref")
+    source = project_path(project, args.path)
+    if not source.is_file() or not source.is_relative_to(project) or source.suffix.lower() != ".json":
+        raise StageContextError("正式稿件路径必须是项目内 JSON 文件；渠道导出不是核心稿件")
+    try:
+        package = json.loads(source.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise StageContextError(f"正式稿件 JSON 不可读：{exc}") from exc
+    if not isinstance(package, dict) or not isinstance(package.get("revision"), str):
+        raise StageContextError("正式稿件必须含准确 revision")
+    if package.get("revision") != args.revision:
+        raise StageContextError("--revision 与正式稿件正文 revision 不一致")
+    if logical_id == "video.prompt" and "target_url" in package and "drafts" in package:
+        raise StageContextError("此命令只采用平台无关视频提示词；渠道冻结快照沿用渠道自己的检查")
+    if logical_id == "narrative.package" and (
+            package.get("schema_version") != "2.0" or "story_paragraphs" not in package):
+        raise StageContextError("首次正式采用只接收当前 narrative.package 2.0；旧事件稿沿历史路径处理")
+    if logical_id == "storyboard.package" and package.get("schema_version") != "4.0":
+        raise StageContextError("首次正式采用只接收当前 storyboard.package 4.0；旧版本保持兼容读取")
+    if logical_id == "video.prompt" and not isinstance(package.get("source_storyboard"), dict):
+        raise StageContextError("首次正式采用视频提示词必须绑定已确认 source_storyboard")
+    relative = source.relative_to(project).as_posix()
+    try:
+        manifest = load_manifest(project)
+        existing = next((item for item in manifest.get("artifacts", [])
+                         if item.get("artifact_id") == args.artifact_id), None)
+        if existing is None:
+            register_workspace_artifact(project, {
+                "artifact_id": args.artifact_id, "logical_id": logical_id, "type": logical_id,
+                "revision": args.revision, "path_or_url": relative,
+                "depends_on": list(args.depends_on), "checksum": digest(source), "user_approved": False,
+            })
+        elif (existing.get("status") != "candidate" or not existing.get("checksum")
+              or existing.get("logical_id") != logical_id
+              or existing.get("revision") != args.revision or existing.get("path_or_url") != relative
+              or existing.get("depends_on", []) != list(args.depends_on)):
+            raise StageContextError("同 ID 已登记为不同稿件；保留现状并使用新 artifact_id")
+        adoption = adopt_initial_package(project, args.artifact_id, args.approval_ref,
+                                        scope_description=args.scope_description)
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        raise StageContextError(f"稿件保持候选，正式采用未完成：{exc}") from exc
+    return {"ok": True, **adoption,
+            "notice": "平台无关稿件已正式登记；未执行渠道上传、生成、发布或阶段自动流转"}
 
 
 def _state_reading_view(summary: dict[str, Any]) -> dict[str, Any]:
@@ -390,9 +454,10 @@ def _confirmed_project_inputs(project: Path, state: dict[str, Any]) -> tuple[dic
     artifact_ids = state.get("current_artifacts") or []
     if not isinstance(artifact_ids, list) or not artifact_ids or any(not isinstance(item, str) or not item for item in artifact_ids):
         raise StageContextError("项目没有可交接的当前有效产物 ID")
-    manifest = _read_json(project / "00_项目管理" / "artifact_manifest.json", default=None)
-    if not isinstance(manifest, dict) or not isinstance(manifest.get("artifacts"), list):
-        raise StageContextError("artifact_manifest.json 不存在或无效")
+    try:
+        manifest = load_manifest(project)
+    except (OSError, ValueError) as exc:
+        raise StageContextError("artifact_manifest.json 不存在或无效：" + str(exc)) from exc
     indexed = {item.get("artifact_id"): item for item in manifest["artifacts"] if isinstance(item, dict)}
     inputs: list[dict[str, Any]] = []
     for artifact_id in artifact_ids:
@@ -410,6 +475,9 @@ def _confirmed_project_inputs(project: Path, state: dict[str, Any]) -> tuple[dic
             raise StageContextError(f"交接产物内容与确认版本不一致：{artifact_id}")
         try:
             validate_current_dependencies(item, manifest, state, project)
+            if item.get("logical_id") in {"narrative.package", "storyboard.package", "video.prompt"}:
+                if not validate_candidate_submission(project, item, manifest):
+                    raise ValueError("旧稿件/未识别结构仅保留历史读取，不能作为正式交接输入")
         except ValueError as exc:
             raise StageContextError(str(exc)) from exc
         inputs.append(item)
@@ -1672,6 +1740,15 @@ def parser() -> argparse.ArgumentParser:
     commands = root.add_subparsers(dest="command", required=True)
     state_cmd = commands.add_parser("status", help="只读查看项目状态与续跑阻塞；不执行事务恢复")
     state_cmd.add_argument("--project", required=True)
+    adopt = commands.add_parser("adopt-package", help="登记并确认初次平台无关正式稿件；不上传或发布")
+    adopt.add_argument("--project", required=True)
+    adopt.add_argument("--artifact-id", required=True)
+    adopt.add_argument("--logical-id", choices=("narrative.package", "storyboard.package", "video.prompt"), required=True)
+    adopt.add_argument("--path", required=True, help="项目内的正式 JSON 相对路径")
+    adopt.add_argument("--revision", required=True)
+    adopt.add_argument("--approval-ref", required=True, help="准确用户整稿确认依据")
+    adopt.add_argument("--scope-description", default="", help="本次整稿确认范围说明")
+    adopt.add_argument("--depends-on", action="append", default=[], help="准确上游逻辑产物，可重复")
     testing = commands.add_parser("candidate-test", help="显式配置独立候选试跑；绝不登记用户产物确认")
     testing.add_argument("--project", required=True)
     testing.add_argument("--run-id", required=True)
@@ -1755,6 +1832,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     if args.command == "status":
         result = status(args)
+    elif args.command == "adopt-package":
+        result = adopt_package(args)
     elif args.command == "candidate-test":
         result = configure_test(Path(args.project), args.run_id, args.authorization_ref, args.input_artifact)
     elif args.command == "prepare":

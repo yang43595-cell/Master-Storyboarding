@@ -15,8 +15,9 @@ from test_visual_asset_projects import fixture, plan_result
 import visual_asset_library as library_module
 import visual_asset_projects as project_module
 from core.artifacts import load_manifest, save_manifest
+from core.io import write_json
 from core.project_state import load_project_state, write_project_state
-from stage_context_cli import _confirmed_handoff_inputs
+from stage_context_cli import StageContextError, _confirmed_handoff_inputs
 
 
 class AssetRuntimeRegressions(unittest.TestCase):
@@ -32,7 +33,9 @@ class AssetRuntimeRegressions(unittest.TestCase):
         project_module.write(path, narrative)
         manifest = load_manifest(self.root)
         next(item for item in manifest['artifacts'] if item['artifact_id'] == 'narrative-r01')['checksum'] = project_module.digest(path)
-        save_manifest(self.root, manifest)
+        # Simulate a pre-existing manually edited legacy project record. The
+        # supported save_manifest API now refuses rebinding formal current IDs.
+        write_json(self.root / '00_项目管理/artifact_manifest.json', manifest)
         self.service.sync(self.project['id'])
         project = self.service.get(self.project['id'])
         result = plan_result()
@@ -375,7 +378,7 @@ class AssetRuntimeRegressions(unittest.TestCase):
         state['next_stage'] = 'storyboard-planner'
         write_project_state(self.root, state)
 
-    def test_export_removes_stale_downstream_ids_and_allows_planner_rework_handoff(self):
+    def test_export_removes_stale_downstream_ids_but_legacy_formal_source_blocks_handoff(self):
         self.confirmed_scene()
         self.stale_director()
         out = self.service.export({'project_id': self.project['id'], 'confirm': True})
@@ -383,8 +386,8 @@ class AssetRuntimeRegressions(unittest.TestCase):
         self.assertNotIn('director-r01', state['current_artifacts'])
         self.assertIn(out['artifact_id'], state['current_artifacts'])
         self.assertEqual(state['next_stage'], 'storyboard-planner')
-        _, inputs = _confirmed_handoff_inputs(self.root, 'storyboard-planner')
-        self.assertTrue(inputs)
+        with self.assertRaisesRegex(StageContextError, 'story_paragraphs'):
+            _confirmed_handoff_inputs(self.root, 'storyboard-planner')
 
     def test_reopen_clears_stale_export_selection_without_deleting_old_confirmation(self):
         self.confirmed_scene()
