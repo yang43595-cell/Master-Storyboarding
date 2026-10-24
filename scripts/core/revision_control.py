@@ -8,6 +8,7 @@ It never selects or starts an Agent, stores thread state, or decides a stage.
 from __future__ import annotations
 
 import json
+import hashlib
 import shutil
 import uuid
 from pathlib import Path
@@ -87,6 +88,141 @@ def _destination_within_project(project: Path, value: str | Path) -> tuple[Path,
     if resolved.exists():
         raise RevisionControlError(f"T0 候选目标已存在，拒绝覆盖：{resolved}")
     return resolved, relative.as_posix()
+
+
+def _generation_segments(payload: Any) -> list[dict[str, Any]] | None:
+    """Return actual prompt segments, or None when this is not a segmented prompt."""
+    if not isinstance(payload, dict):
+        return None
+    if "generation_segments" in payload:
+        rows = payload["generation_segments"]
+    elif isinstance(payload.get("creative_sections"), list) and payload["creative_sections"]:
+        sections = payload["creative_sections"]
+        if any(not isinstance(section, dict) or not isinstance(section.get("generation_segments"), list)
+               for section in sections):
+            raise RevisionControlError("视频提示词创作段缺 generation_segments；材料分组不能代替生成段")
+        rows = [row for section in sections for row in section["generation_segments"]]
+    else:
+        return None
+    if (not isinstance(rows, list) or not rows
+            or any(not isinstance(row, dict) or not isinstance(row.get("segment_id"), str)
+                   or not row["segment_id"].strip() for row in rows)):
+        raise RevisionControlError("视频提示词 generation_segments/segment_id 缺失或无效")
+    ids = [row["segment_id"] for row in rows]
+    if len(ids) != len(set(ids)):
+        raise RevisionControlError("视频提示词 generation_segments 含重复 segment_id")
+    # A materials/grouping object is not a video generation segment. Require its
+    # submitted prompt body using the same body resolver as the existing adapter.
+    try:
+        from .prompt_body import submitted_prompt_body
+        for row in rows:
+            if not submitted_prompt_body(row).strip():
+                raise ValueError("empty prompt")
+    except (ValueError, TypeError, KeyError) as exc:
+        raise RevisionControlError("generation_segments 必须含真实提示词正文，不能把材料组登记为生成段") from exc
+    return rows
+
+
+def _validate_segment_reconciliation(project: Path, baseline: dict[str, Any], candidate: Any) -> None:
+    """Bind any stable segment-ID replacement to the actual baseline bytes and reasons."""
+    if not isinstance(baseline, dict):
+        return
+    old_path = project_path(project, str(baseline.get("path_or_url") or ""))
+    if not old_path.is_file():
+        raise RevisionControlError("视频提示词旧版本缺失；生成段续跑基线未知")
+    if not baseline.get("checksum") or sha256_file(old_path) != baseline.get("checksum"):
+        raise RevisionControlError("视频提示词旧版本与活动确认 hash 不一致；生成段续跑基线已过期")
+    try:
+        old_payload = read_json(old_path)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RevisionControlError("视频提示词旧版本不可解析；生成段续跑基线未知") from exc
+    old_rows = _generation_segments(old_payload)
+    new_rows = _generation_segments(candidate)
+    if old_rows is None and new_rows is None:
+        return
+    if new_rows is None:
+        raise RevisionControlError("已有生成段不可被材料组或未分段稿静默替代")
+    old_ids = [row["segment_id"] for row in old_rows or []]
+    new_ids = [row["segment_id"] for row in new_rows]
+    # A first segmentation has no prior generation IDs to resume or replace.
+    if not old_ids:
+        return
+    added, removed = sorted(set(new_ids) - set(old_ids)), sorted(set(old_ids) - set(new_ids))
+    old_by_id = {row["segment_id"]: row for row in old_rows or []}
+    new_by_id = {row["segment_id"]: row for row in new_rows}
+    common = set(old_by_id) & set(new_by_id)
+    old_common_order = [ident for ident in old_ids if ident in common]
+    new_common_order = [ident for ident in new_ids if ident in common]
+    order_changed = old_common_order != new_common_order
+    coverage_fields = ("source_shot_ids", "source_dialogue_ids", "source_paragraph_ids")
+    coverage_changes = []
+    for segment_id in sorted(common):
+        for field in coverage_fields:
+            before, after = old_by_id[segment_id].get(field), new_by_id[segment_id].get(field)
+            for value in (before, after):
+                if value is not None and (not isinstance(value, list)
+                        or any(not isinstance(ident, str) or not ident for ident in value)
+                        or len(value) != len(set(value))):
+                    raise RevisionControlError(f"{segment_id} 的 {field} 覆盖声明无效；不猜镜头/对白范围")
+            if before != after:
+                coverage_changes.append({"segment_id": segment_id, "field": field,
+                                         "before": before, "after": after})
+    from .prompt_body import submitted_prompt_body
+    def body_signature(row: dict[str, Any]) -> str:
+        # Only whitespace layout is normalized. Every punctuation mark remains
+        # content because punctuation can reverse duration, direction, or negation.
+        return " ".join(submitted_prompt_body(row).split())
+    prompt_changes = []
+    for segment_id in sorted(common):
+        before, after = body_signature(old_by_id[segment_id]), body_signature(new_by_id[segment_id])
+        if before != after:
+            prompt_changes.append({"segment_id": segment_id,
+                "before_sha256": hashlib.sha256(submitted_prompt_body(old_by_id[segment_id]).encode()).hexdigest(),
+                "after_sha256": hashlib.sha256(submitted_prompt_body(new_by_id[segment_id]).encode()).hexdigest()})
+    if not added and not removed and not coverage_changes and not prompt_changes and not order_changed:
+        return
+    reconciliation = candidate.get("segment_reconciliation") if isinstance(candidate, dict) else None
+    if not isinstance(reconciliation, dict):
+        raise RevisionControlError("既有生成段 ID/正文/顺序/来源覆盖有变化；须在同一提示词 JSON 写明 segment_reconciliation 和调整理由")
+    target = reconciliation.get("baseline")
+    if (not isinstance(target, dict) or target.get("artifact_id") != baseline.get("artifact_id")
+            or target.get("sha256") != baseline.get("checksum")):
+        raise RevisionControlError("生成段对账未绑定活动变更案的准确旧 artifact/hash")
+    changes = reconciliation.get("changes")
+    if not isinstance(changes, list):
+        raise RevisionControlError("segment_reconciliation.changes 必须逐项说明 ID 增删")
+    seen_added, seen_removed, seen_coverage, seen_prompts, seen_order = [], [], [], [], []
+    for change in changes:
+        if not isinstance(change, dict) or not isinstance(change.get("reason"), str) or not change["reason"].strip():
+            raise RevisionControlError("每项生成段新增/取消都必须有非空调整理由")
+        if change.get("action") == "add" and change.get("segment_id") in added:
+            seen_added.append(change["segment_id"])
+        elif change.get("action") == "remove" and change.get("segment_id") in removed:
+            seen_removed.append(change["segment_id"])
+        elif change.get("action") == "coverage":
+            actual = {key: change.get(key) for key in ("segment_id", "field", "before", "after")}
+            if actual not in coverage_changes:
+                raise RevisionControlError("生成段镜头/对白覆盖对账与旧稿/新稿字段不符")
+            seen_coverage.append(actual)
+        elif change.get("action") == "revise":
+            actual = {key: change.get(key) for key in ("segment_id", "before_sha256", "after_sha256")}
+            if actual not in prompt_changes:
+                raise RevisionControlError("生成段正文调整 hash 与旧稿/新稿正文不符")
+            seen_prompts.append(actual)
+        elif change.get("action") == "reorder":
+            if (not order_changed or change.get("before") != old_ids
+                    or change.get("after") != new_ids or seen_order):
+                raise RevisionControlError("生成段顺序调整必须精确绑定旧/新有序 ID")
+            seen_order.append(True)
+        else:
+            raise RevisionControlError("生成段对账含未知或与真实 ID/正文/顺序/覆盖差异不符的调整项")
+    if (sorted(seen_added) != added or sorted(seen_removed) != removed
+            or len(seen_coverage) != len(coverage_changes)
+            or any(seen_coverage.count(item) != 1 for item in coverage_changes)
+            or len(seen_prompts) != len(prompt_changes)
+            or any(seen_prompts.count(item) != 1 for item in prompt_changes)
+            or bool(seen_order) != order_changed):
+        raise RevisionControlError("生成段对账必须恰好覆盖全部增删、正文替换、顺序及源覆盖变化")
 
 
 def _current_by_logical(manifest: dict[str, Any], logical_id: str) -> dict[str, Any]:
@@ -397,6 +533,11 @@ def record_candidate(
         if any(item.get("artifact_id") == artifact_id for item in manifest.get("artifacts") or []):
             raise RevisionControlError(f"候选 artifact_id 已存在：{artifact_id}")
         source, relative = _within_project(project, candidate_path)
+        baseline_ref = next(item for item in change["targets"] if item["logical_id"] == logical_id)
+        prior_item = next(item for item in manifest["artifacts"] if item.get("artifact_id") == baseline_ref["artifact_id"])
+        if logical_id == "video.prompt":
+            _validate_segment_reconciliation(project, {**baseline_ref, "path_or_url": prior_item.get("path_or_url")},
+                read_json(source) if source.suffix.lower() == ".json" else None)
         if source.suffix.lower() == '.json':
             payload = read_json(source)
             if isinstance(payload, dict) and 'revision' in payload and payload['revision'] != revision:
@@ -412,10 +553,6 @@ def record_candidate(
             "base_manifest_sha256": change["manifest_sha256"],
             "recorded_at": utc_now(),
         }
-        baseline_id = next(item["artifact_id"] for item in change["targets"]
-                           if item["logical_id"] == logical_id)
-        prior_item = next(item for item in manifest["artifacts"]
-                          if item.get("artifact_id") == baseline_id)
         effective_depends_on = list(depends_on) if depends_on is not None else list(prior_item.get("depends_on", []))
         manifest.setdefault("artifacts", []).append({
             "artifact_id": artifact_id,

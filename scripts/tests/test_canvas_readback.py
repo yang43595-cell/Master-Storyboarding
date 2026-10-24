@@ -44,6 +44,23 @@ def test_wrong_evidence_identity_rejected(field, value):
     with pytest.raises(ValueError): compare(frozen, observed)
 
 
+def test_self_reported_refresh_without_native_readback_does_not_pass():
+    frozen, observed = sample()
+    frozen['drafts'][0]['native_entity_type'] = 'fixture-chip'
+    observed['frozen_sha256'] = digest(frozen)
+    # A phase label and matching write payload are claims, not native editor evidence.
+    assert not compare(frozen, observed)['ok']
+    observed['drafts'][0]['native_mentions'] = [{'entity_type': 'fixture-chip',
+        'native_noneditable_entity': True, 'node_id': 'image-1', 'media_id': 'm1'},
+        {'entity_type': 'fixture-chip', 'native_noneditable_entity': True,
+         'node_id': 'image-2', 'media_id': 'm2'},
+        {'entity_type': 'fixture-chip', 'native_noneditable_entity': True,
+         'node_id': 'image-1', 'media_id': 'm1'}]
+    report = compare(frozen, observed)
+    assert report['ok'] and report['native_reference_checks']['draft-13'] == 'passed'
+    assert 'cannot establish remote provenance' in report['limitations']
+
+
 def test_duplicate_drafts_rejected():
     frozen, observed = sample(); observed['drafts'] *= 2
     with pytest.raises(ValueError): compare(frozen, observed)

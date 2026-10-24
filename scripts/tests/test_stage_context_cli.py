@@ -166,8 +166,93 @@ def test_completed_revision_can_handoff_with_canonical_artifact_ids(tmp_path):
     revision_control.confirm_candidate(project, change_id="REV-TEST", approval_ref="test:user-adopt")
     revision_control.commit_change(project, change_id="REV-TEST")
     assert load_project_state(project)["current_artifacts"] == ["ART-NEW"]
+    status = cli.status(argparse.Namespace(project=str(project)))
+    assert status["ok"] is True
+    assert status["next_allowed_stage"] == "storyboard-planner"
+    assert status["repo"]["revision"] and status["repo"]["baseline_revision"]
     report = cli.handoff(argparse.Namespace(project=str(project), to_skill="storyboard-planner"))
     assert report["artifact_ids"] == ["ART-NEW"]
+
+
+def test_handoff_blocks_unknown_or_conflicting_next_stage(tmp_path):
+    project = _project(tmp_path)
+    state = load_project_state(project)
+    state.update(current_stage="creative-director", next_stage=None, current_artifacts=["ART"])
+    write_project_state(project, state)
+    with pytest.raises(cli.StageContextError, match="next_stage 为空"):
+        cli.handoff(argparse.Namespace(project=str(project), to_skill="storyboard-planner"))
+    state["next_stage"] = "creative-director"
+    write_project_state(project, state)
+    with pytest.raises(cli.StageContextError, match="不一致"):
+        cli.handoff(argparse.Namespace(project=str(project), to_skill="storyboard-planner"))
+
+
+@pytest.mark.parametrize("checksum", [None, "0" * 64])
+def test_handoff_requires_exact_current_artifact_hash(tmp_path, checksum):
+    project = _project(tmp_path)
+    artifact = project / "current.json"
+    artifact.write_text('{"revision":"R01"}', encoding="utf-8")
+    write_json(project / "00_项目管理/artifact_manifest.json", {"artifacts": [{
+        "artifact_id": "ART", "logical_id": "story.package", "type": "json", "revision": "R01",
+        "status": "current", "user_approved": True, "path_or_url": artifact.name,
+        "checksum": checksum, "depends_on": []}]})
+    state = load_project_state(project)
+    state.update(current_artifacts=["ART"], next_stage="storyboard-planner",
+                 user_confirmations=[{"artifact_ids": ["ART"]}])
+    write_project_state(project, state)
+    with pytest.raises(cli.StageContextError, match="缺少有效确认 hash|与确认版本不一致"):
+        cli.handoff(argparse.Namespace(project=str(project), to_skill="storyboard-planner"))
+
+
+def test_read_only_status_reports_unknown_and_does_not_recover_transactions(tmp_path):
+    project = _project(tmp_path)
+    tx = project / "00_项目管理/revision_transactions/REV-TX-fixture"
+    tx.mkdir(parents=True)
+    write_json(tx / "transaction.json", {"transaction_id": "REV-TX-fixture", "files": []})
+    write_json(tx / "commit_intent.json", {"transaction_id": "REV-TX-fixture", "files": []})
+    before = {p: p.read_bytes() for p in [*tx.iterdir(), *(project / "00_项目管理").glob("*.json")]}
+    report = cli.status(argparse.Namespace(project=str(project)))
+    assert report["read_only"] is True and report["ok"] is False
+    assert report["next_allowed_stage"] is None
+    assert report["transactions"][0]["state"] == "anomalous"
+    assert any("需显式恢复" in message for message in report["blockers"])
+    assert {p: p.read_bytes() for p in before} == before
+
+
+def test_status_distinguishes_valid_candidate_test_from_production_blockers(tmp_path):
+    from scripts.core import candidate_test
+    project = tmp_path / "isolated-candidate"
+    project.mkdir()
+    write_project_state(project, new_project_state(current_stage="creative-director"))
+    write_json(project / "00_项目管理/artifact_manifest.json", {"artifacts": []})
+    candidate_test.configure(project, "RUN-SYNTHETIC", "fixture:authorized candidate test", [])
+    before = {p: p.read_bytes() for p in (project / "00_项目管理").rglob("*") if p.is_file()}
+    report = cli.status(argparse.Namespace(project=str(project)))
+    assert report["mode"] == "candidate_test"
+    assert report["production_allowed"] is False and report["production_ok"] is False
+    assert report["candidate_test_allowed"] is True and report["ok"] is True
+    assert report["next_allowed_stage"] is None
+    assert "显式选择 --to-skill" in report["next_stage_note"]
+    assert {p: p.read_bytes() for p in before} == before
+    handoff = cli.handoff(argparse.Namespace(project=str(project), to_skill="storyboard-planner",
+        candidate_test=True))
+    assert handoff["execution_mode"] == "candidate_test"
+    assert handoff["production_blocked"] is True
+
+
+def test_missing_project_state_is_unknown_but_does_not_lock_direct_initial_prepare(tmp_path):
+    project = tmp_path / "new-project"
+    (project / "00_项目管理").mkdir(parents=True)
+    before = set((project / "00_项目管理").iterdir())
+    report = cli.status(argparse.Namespace(project=str(project)))
+    assert report["next_allowed_stage"] is None
+    assert any("project_state.json 缺失" in message for message in report["blockers"])
+    assert set((project / "00_项目管理").iterdir()) == before
+    vault = _method_vault(tmp_path / "first-stage-vault")
+    prepared = cli.prepare(argparse.Namespace(project=str(project), skill="creative-director",
+        objective="first-stage fixture", request_json=None, vault=str(vault)))
+    assert prepared["valid"] is True
+    assert (project / cli.CONTEXT_DIR / "stage_startup.md").is_file()
 
 
 def _record_methods(project: Path, skill: str, vault: Path) -> None:
@@ -414,6 +499,7 @@ def test_handoff_uses_only_confirmed_current_artifacts_and_prepare_embeds_it(tmp
         "schema_version": "1.0", "artifacts": [{
             "artifact_id": "ART-NARRATIVE-R01", "logical_id": "narrative.package", "type": "narrative-package",
             "revision": "R01", "status": "current", "path_or_url": str(artifact), "user_approved": True,
+                "checksum": revision_control.sha256_file(artifact),
         }],
     }, ensure_ascii=False), encoding="utf-8")
 
@@ -450,7 +536,8 @@ def test_handoff_keeps_video_skill_direct_read_exception(tmp_path: Path) -> None
     }, ensure_ascii=False), encoding="utf-8")
     (project / "00_项目管理" / "artifact_manifest.json").write_text(json.dumps({"artifacts": [{
         "artifact_id": "ART-STORYBOARD-R01", "logical_id": "storyboard.package", "type": "storyboard-package",
-        "revision": "R01", "status": "current", "path_or_url": str(artifact), "user_approved": True,
+            "revision": "R01", "status": "current", "path_or_url": str(artifact), "user_approved": True,
+            "checksum": revision_control.sha256_file(artifact),
     }]}), encoding="utf-8")
 
     report = cli.handoff(argparse.Namespace(project=str(project), to_skill="voiceover-to-video-script"))
@@ -633,7 +720,7 @@ def test_three_consecutive_stage_cycles_use_only_fixed_packets(tmp_path: Path) -
             "path_or_url": str(artifact), "checksum": cli.digest(artifact),
         }]})
         state = load_project_state(project)
-        state.update(current_stage=skill, current_artifacts=[f"ART-{index}"], next_stage="",
+        state.update(current_stage=skill, current_artifacts=[f"ART-{index}"], next_stage=skill,
                      user_confirmations=[{"artifact_ids": [f"ART-{index}"]}])
         write_project_state(project, state)
         cli.handoff(argparse.Namespace(project=str(project), to_skill=skill))

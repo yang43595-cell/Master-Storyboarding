@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 from PIL import Image
-from test_visual_asset_projects import fixture
+from test_visual_asset_projects import fixture, update_narrative_checksum
 from visual_asset_characters import character_route, upstream_outfits, prepare_character
 
 class CharacterRoutes(unittest.TestCase):
@@ -21,6 +21,7 @@ class CharacterRoutes(unittest.TestCase):
         req.update(asset_id='AST-PERSON', category='CHARACTER', entity_id='CHR-PERSON', name='人物甲', identity_constraints=['日常装与出差装，共用人物身份'], required_states=['日常', '出差'])
         n['asset_requirements'] = [req]
         path.write_text(json.dumps(n, ensure_ascii=False), encoding='utf8')
+        update_narrative_checksum(path.parent)
         self.lib.projects.sync(self.project['id'])
         self.assets = {}
         for kind, size in [('大头照', (300,400)), ('服装三视图',(160,90)), ('人物1x4',(160,90))]:
