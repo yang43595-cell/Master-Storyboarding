@@ -30,6 +30,9 @@ class AssetRuntimeRegressions(unittest.TestCase):
         narrative = project_module.read(path)
         narrative['asset_requirements'] = narrative['asset_requirements'][:1]
         project_module.write(path, narrative)
+        manifest = load_manifest(self.root)
+        next(item for item in manifest['artifacts'] if item['artifact_id'] == 'narrative-r01')['checksum'] = project_module.digest(path)
+        save_manifest(self.root, manifest)
         self.service.sync(self.project['id'])
         project = self.service.get(self.project['id'])
         result = plan_result()
@@ -363,7 +366,8 @@ class AssetRuntimeRegressions(unittest.TestCase):
         manifest = load_manifest(self.root)
         manifest['artifacts'].append({'artifact_id': 'director-r01', 'logical_id': 'director.shot-plan',
             'type': 'shot-plan', 'revision': 'R01', 'status': 'current', 'user_approved': True,
-            'path_or_url': str(path), 'depends_on': ['visual.asset.manifest']})
+            'path_or_url': str(path), 'checksum': project_module.digest(path),
+            'depends_on': ['visual.asset.manifest']})
         save_manifest(self.root, manifest)
         state = load_project_state(self.root)
         state['current_artifacts'].append('director-r01')

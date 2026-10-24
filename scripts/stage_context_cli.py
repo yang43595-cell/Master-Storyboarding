@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from pathlib import Path, PureWindowsPath
@@ -201,9 +202,187 @@ def _confirmed_handoff_inputs(project: Path, target_skill: str) -> tuple[dict[st
         raise StageContextError(f"目标 Skill 不存在：{target_skill}")
     state = _state(project)
     expected = str(state.get("next_stage") or "")
-    if expected and expected != target_skill:
+    if not expected:
+        raise StageContextError("project_state.next_stage 为空；下一阶段未知，不能生成正式交接")
+    if expected != target_skill:
         raise StageContextError(f"目标 Skill 与项目下一阶段不一致：state={expected}, requested={target_skill}")
     return _confirmed_project_inputs(project, state)
+
+
+def status(args: argparse.Namespace) -> dict[str, Any]:
+    """Read project/repository facts without recovering or synchronizing state."""
+    project = Path(args.project).expanduser().resolve()
+    if not project.is_dir():
+        raise StageContextError(f"项目目录不存在：{project}")
+    manage = project / "00_项目管理"
+    state_path = manage / "project_state.json"
+    manifest_path = manage / "artifact_manifest.json"
+    control_path = manage / "change_control.json"
+    state = None
+    manifest = None
+    blockers: list[str] = []
+    if not state_path.is_file():
+        blockers.append("project_state.json 缺失；当前阶段及下一阶段未知")
+    else:
+        try:
+            state = _state(project)
+        except (StageContextError, ValueError) as exc:
+            blockers.append(f"project_state.json 无效；阶段状态未知：{exc}")
+    candidate_mode = False
+    candidate_context = None
+    if state is not None and state.get("candidate_test") is not None:
+        try:
+            candidate_context = test_context(project)
+            candidate_mode = candidate_context is not None
+        except (StageContextError, ValueError) as exc:
+            blockers.append(f"candidate_test 状态无效；隔离流程未知：{exc}")
+    if not manifest_path.is_file():
+        blockers.append("artifact_manifest.json 缺失；产物版本/失效状态未知")
+    else:
+        try:
+            manifest = _read_json(manifest_path, default=None)
+        except StageContextError as exc:
+            manifest = None
+            blockers.append(f"artifact_manifest.json 不可读；产物版本状态未知：{exc}")
+        if not isinstance(manifest, dict) or not isinstance(manifest.get("artifacts"), list):
+            blockers.append("artifact_manifest.json 结构无效；产物版本/失效状态未知")
+            manifest = None
+    artifacts = []
+    if manifest is not None:
+        for item in manifest["artifacts"]:
+            if not isinstance(item, dict):
+                blockers.append("manifest 含非对象产物记录")
+                continue
+            try:
+                path = project_path(project, str(item.get("path_or_url") or ""))
+                exists = path.is_file()
+            except (OSError, ValueError) as exc:
+                path = None
+                exists = None
+                blockers.append(f"产物路径无效，版本状态未知：{item.get('artifact_id', 'unknown')}: {exc}")
+            checksum_ok = None
+            if exists is True and item.get("checksum"):
+                checksum_ok = digest(path) == item["checksum"]
+            if item.get("status") == "current" and (exists is not True or checksum_ok is False):
+                blockers.append(f"current 产物缺失或哈希漂移：{item.get('artifact_id', 'unknown')}")
+            artifacts.append({"artifact_id": item.get("artifact_id"), "logical_id": item.get("logical_id"),
+                "revision": item.get("revision"), "status": item.get("status"),
+                "path": str(path) if path else None, "exists": exists, "checksum_ok": checksum_ok})
+    active_change = "not_applicable_candidate_test" if candidate_mode else "unknown"
+    if control_path.is_file():
+        try:
+            control = _read_json(control_path, default=None)
+        except StageContextError as exc:
+            control = None
+            blockers.append(f"change_control.json 不可读；活动变更状态未知：{exc}")
+        if (isinstance(control, dict) and control.get("schema_version") == "revision-control-1.0"
+                and isinstance(control.get("history"), list)
+                and (control.get("active_change") is None or isinstance(control.get("active_change"), dict))):
+            active_change = control["active_change"]
+        else:
+            blockers.append("change_control.json 结构无效；活动变更状态未知")
+    elif not candidate_mode:
+        blockers.append("change_control.json 缺失；活动变更状态未知")
+    transaction_rows = []
+    tx_root = manage / "revision_transactions"
+    if tx_root.exists() and not tx_root.is_dir():
+        blockers.append("revision_transactions 不是目录；事务状态未知")
+    elif tx_root.is_dir():
+        for folder in sorted(tx_root.iterdir()):
+            if not folder.is_dir():
+                continue
+            row = {"transaction_id": folder.name, "state": "unknown", "anomalies": []}
+            try:
+                transaction = _read_json(folder / "transaction.json", default=None)
+                intent = _read_json(folder / "commit_intent.json", default=None)
+                result = _read_json(folder / "result.json", default=None)
+                if not isinstance(transaction, dict): row["anomalies"].append("transaction.json 缺失/无效")
+                if intent is not None and not isinstance(intent, dict): row["anomalies"].append("commit_intent.json 无效")
+                if isinstance(intent, dict) and not isinstance(result, dict): row["anomalies"].append("已有 commit intent 但无 result；需显式恢复")
+                if isinstance(result, dict) and result.get("state") != "committed": row["anomalies"].append("事务结果不是 committed")
+                if isinstance(result, dict) and result.get("state") == "committed" and not row["anomalies"]: row["state"] = "committed"
+                elif isinstance(transaction, dict) and intent is None and result is None and not row["anomalies"]: row["state"] = "prepared_without_intent"
+                else: row["state"] = "anomalous" if row["anomalies"] else "unknown"
+            except (OSError, StageContextError, json.JSONDecodeError) as exc:
+                row["anomalies"].append(f"事务记录不可读：{exc}")
+            if row["anomalies"]:
+                blockers.extend(f"事务 {folder.name}：{problem}" for problem in row["anomalies"])
+            transaction_rows.append(row)
+    repo = {"root": str(ROOT), "branch": None, "revision": None,
+            "baseline_branch": "main", "baseline_revision": None, "working_tree_clean": None}
+    try:
+        branch = subprocess.run(["git", "-C", str(ROOT), "branch", "--show-current"], check=True, capture_output=True, text=True).stdout.strip()
+        revision = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
+        baseline = subprocess.run(["git", "-C", str(ROOT), "merge-base", "HEAD", "main"], check=True, capture_output=True, text=True).stdout.strip()
+        dirty = subprocess.run(["git", "-C", str(ROOT), "status", "--porcelain"], check=True, capture_output=True, text=True).stdout
+        repo.update(branch=branch or None, revision=revision or None, baseline_revision=baseline or None,
+                    working_tree_clean=not bool(dirty.strip()))
+    except (OSError, subprocess.CalledProcessError):
+        blockers.append("代码仓库分支/当前 revision 无法读取；未知")
+    next_stage = state.get("next_stage") if isinstance(state, dict) else None
+    if isinstance(active_change, dict):
+        blockers.append(f"活动变更案未完成：{active_change.get('change_id', 'unknown')} ({active_change.get('status', 'unknown')})")
+        next_stage = None
+    if not isinstance(next_stage, str) or not next_stage.strip():
+        blockers.append("next_stage 为空；下一允许阶段未知")
+        next_stage = None
+    elif not (ROOT / "skills" / next_stage / "SKILL.md").is_file():
+        blockers.append(f"next_stage 指向不存在的 Skill：{next_stage}")
+        next_stage = None
+    elif manifest is not None and state is not None:
+        try:
+            _confirmed_project_inputs(project, state)
+        except (StageContextError, ValueError) as exc:
+            blockers.append(f"上游确认/版本/依赖未通过：{exc}")
+            next_stage = None
+    else:
+        next_stage = None
+    if blockers:
+        next_stage = None
+    production_blockers = list(blockers)
+    production_ok = not blockers and next_stage is not None
+    candidate_test_blockers: list[str] = []
+    if candidate_mode:
+        # Candidate handoff deliberately accepts an explicit --to-skill when
+        # next_stage is empty. Its isolated inputs, not production approvals or
+        # revision-change records, are the authority for this mode.
+        ignored_for_candidate = ("change_control.json 缺失；活动变更状态未知",
+                                 "next_stage 为空；下一允许阶段未知")
+        candidate_test_blockers.extend(message for message in blockers
+                                       if not message.startswith(ignored_for_candidate))
+        if not state or not isinstance(state.get("current_stage"), str) or not state["current_stage"].strip():
+            candidate_test_blockers.append("候选测试 current_stage 缺失；不能生成隔离交接")
+        try:
+            test_inputs(project)
+        except (StageContextError, ValueError, OSError) as exc:
+            candidate_test_blockers.append(f"隔离候选输入无效：{exc}")
+        if candidate_context is None:
+            candidate_test_blockers.append("候选测试运行身份未知")
+        candidate_test_ok = not candidate_test_blockers
+        return {"read_only": True, "mode": "candidate_test", "project": str(project), "repo": repo,
+            "current_stage": state.get("current_stage") if isinstance(state, dict) else None,
+            "current_artifacts": state.get("current_artifacts") if isinstance(state, dict) else None,
+            "artifacts": artifacts, "stale_artifacts": [a["artifact_id"] for a in artifacts if a["status"] == "stale"],
+            "active_change": active_change, "transactions": transaction_rows,
+            "next_allowed_stage": next_stage,
+            "next_stage_note": ("候选测试隔离有效；next_stage 为空时可显式选择 --to-skill，候选流程不放行正式生产。"
+                                if candidate_test_ok and next_stage is None else
+                                "候选测试仅限隔离输入；正式生产仍被阻止。"),
+            "production_allowed": False, "production_ok": production_ok,
+            "production_blockers": production_blockers,
+            "candidate_test_allowed": candidate_test_ok,
+            "candidate_test": {"run_id": candidate_context.get("run_id") if candidate_context else None,
+                               "input_artifact_ids": candidate_context.get("input_artifact_ids") if candidate_context else None},
+            "blockers": candidate_test_blockers, "ok": candidate_test_ok}
+    return {"read_only": True, "mode": "production", "project": str(project), "repo": repo,
+        "current_stage": state.get("current_stage") if isinstance(state, dict) else None,
+        "current_artifacts": state.get("current_artifacts") if isinstance(state, dict) else None,
+        "artifacts": artifacts, "stale_artifacts": [a["artifact_id"] for a in artifacts if a["status"] == "stale"],
+        "active_change": active_change, "transactions": transaction_rows,
+        "next_allowed_stage": next_stage,
+        "next_stage_note": "上游版本确认后仍需该 Skill 自身输入门禁；状态命令不会启动阶段。" if next_stage else "阻塞或状态未知，不猜下一阶段。",
+        "production_allowed": production_ok, "production_ok": production_ok,
+        "blockers": blockers, "ok": production_ok}
 
 
 def _confirmed_project_inputs(project: Path, state: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -225,7 +404,9 @@ def _confirmed_project_inputs(project: Path, state: dict[str, Any]) -> tuple[dic
         path = project_path(project, str(item.get("path_or_url") or ""))
         if not path.is_file():
             raise StageContextError(f"交接产物文件不存在：{artifact_id}: {path}")
-        if item.get("checksum") and digest(path) != item["checksum"]:
+        if not isinstance(item.get("checksum"), str) or not re.fullmatch(r"[a-f0-9]{64}", item["checksum"]):
+            raise StageContextError(f"交接产物缺少有效确认 hash：{artifact_id}")
+        if digest(path) != item["checksum"]:
             raise StageContextError(f"交接产物内容与确认版本不一致：{artifact_id}")
         try:
             validate_current_dependencies(item, manifest, state, project)
@@ -1489,6 +1670,8 @@ def record_candidate_reading(args: argparse.Namespace) -> dict[str, Any]:
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(description=__doc__)
     commands = root.add_subparsers(dest="command", required=True)
+    state_cmd = commands.add_parser("status", help="只读查看项目状态与续跑阻塞；不执行事务恢复")
+    state_cmd.add_argument("--project", required=True)
     testing = commands.add_parser("candidate-test", help="显式配置独立候选试跑；绝不登记用户产物确认")
     testing.add_argument("--project", required=True)
     testing.add_argument("--run-id", required=True)
@@ -1570,7 +1753,9 @@ def parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
-    if args.command == "candidate-test":
+    if args.command == "status":
+        result = status(args)
+    elif args.command == "candidate-test":
         result = configure_test(Path(args.project), args.run_id, args.authorization_ref, args.input_artifact)
     elif args.command == "prepare":
         result = prepare(args)

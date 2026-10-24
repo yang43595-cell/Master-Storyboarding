@@ -35,7 +35,8 @@ def fixture(base):
     pmod.write(path, narrative)
     pmod.write(manage / 'artifact_manifest.json', {'schema_version': '1.0', 'artifacts': [
         {'artifact_id': 'narrative-r01', 'logical_id': 'narrative.package', 'type': 'narrative-package',
-         'revision': 'R01', 'status': 'current', 'user_approved': True, 'path_or_url': str(path)}]})
+         'revision': 'R01', 'status': 'current', 'user_approved': True, 'path_or_url': str(path),
+         'checksum': pmod.digest(path)}]})
     state = new_project_state(current_stage='storyboard-planner')
     state.update(current_artifacts=['narrative-r01'], next_stage='storyboard-director',
                  user_confirmations=[{'artifact_ids': ['narrative-r01'], 'at': pmod.now()}])
@@ -46,6 +47,16 @@ def fixture(base):
     asset, _ = library.import_file(img, project='验收', category='场景', role='参考')
     p = library.projects.bind(str(project))
     return library, p, asset
+
+
+def update_narrative_checksum(project_root):
+    """Keep isolated manifests bound to the exact narrative bytes after fixture edits."""
+    project_root = Path(project_root)
+    narrative = project_root / 'narrative.json'
+    manifest = load_manifest(project_root)
+    entry = next(item for item in manifest['artifacts'] if item['artifact_id'] == 'narrative-r01')
+    entry['checksum'] = pmod.digest(narrative)
+    pmod.write(project_root / '00_项目管理/artifact_manifest.json', manifest)
 
 
 def plan_result():

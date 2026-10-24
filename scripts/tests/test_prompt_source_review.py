@@ -62,6 +62,19 @@ def test_source_review_preserves_original_and_requires_no_canvas():
                         expected_version=None, scope='qa')
 
 
+def test_source_review_preserves_inline_generation_segment_reconciliation():
+    source = source_fixture()
+    source['segment_reconciliation'] = {
+        'baseline': {'artifact_id': 'OLD-PROMPT', 'sha256': 'a' * 64},
+        'changes': [{'action': 'add', 'segment_id': 'P02', 'reason': 'Documented scene boundary.'}],
+    }
+    raw = canonical(source).encode()
+    result = compile_source(raw)
+    canonical_source = ''.join(b['text'] for b in result['request']['content']['blocks']
+                               if b['id'] == 'canonical-source' or b['id'].startswith('canonical-source-part-'))
+    assert json.loads(canonical_source) == source
+
+
 @pytest.mark.parametrize('fields', [{}, {'prompt': ''}, {'prompt': 42}, {'prompt_text': None},
     {'prompt': 'one', 'prompt_text': 'two'}, {'prompt': 'one', 'prompt_text': ''}])
 def test_source_review_missing_invalid_or_conflicting_body_fails(fields):

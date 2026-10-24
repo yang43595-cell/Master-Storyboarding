@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 from PIL import Image
-from test_visual_asset_projects import fixture, plan_result
+from test_visual_asset_projects import fixture, plan_result, update_narrative_checksum
 import visual_asset_product_usage as usage
 
 
@@ -31,6 +31,7 @@ class VisualBoundaryRepair(unittest.TestCase):
                    image_decision=image_decision, image_reason='隔离fixture：单张或镜内描述足够')
         n['asset_requirements'] = [req]
         path.write_text(json.dumps(n, ensure_ascii=False))
+        update_narrative_checksum(path.parent)
         return self.service.sync(self.p['id'])
 
     def test_human_single_route_enters_without_wardrobe(self):

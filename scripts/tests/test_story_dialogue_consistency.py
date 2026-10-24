@@ -203,12 +203,13 @@ def test_partial_approval_cannot_be_used_as_whole_artifact(partial):
 
 def test_partial_receipt_is_blocked_at_handoff(tmp_path):
     import json
+    from core.artifacts import digest
     from stage_context_cli import _confirmed_handoff_inputs
     manage = tmp_path / '00_项目管理'; manage.mkdir()
-    (tmp_path / 'story.md').write_text('candidate', encoding='utf-8')
+    story = tmp_path / 'story.md'; story.write_text('candidate', encoding='utf-8')
     entry = {'artifact_id': 'ART-X', 'logical_id': 'narrative.script', 'status': 'current',
-             'user_approved': True, 'path_or_url': 'story.md'}
-    state = {'current_artifacts': ['ART-X'], 'user_confirmations': [
+             'user_approved': True, 'path_or_url': 'story.md', 'checksum': digest(story)}
+    state = {'current_artifacts': ['ART-X'], 'next_stage': 'storyboard-planner', 'user_confirmations': [
         {'artifact_ids': ['ART-X'], 'scope': 'dialogue', 'approval_ref': 'user:turn'}]}
     (manage / 'artifact_manifest.json').write_text(json.dumps({'artifacts': [entry]}), encoding='utf-8')
     p = manage / 'project_state.json'; p.write_text(json.dumps(state), encoding='utf-8')
@@ -230,7 +231,7 @@ def test_verified_legacy_scope_normalization_allows_handoff(tmp_path):
     receipt = {'kind': 'revision-candidate', 'artifact_id': 'ART-X',
                'sha256': entry['checksum'], 'approval_ref': 'user:confirmed-version',
                'scope': '已核对原确认依据的整稿说明'}
-    state = {'current_artifacts': ['ART-X'], 'user_confirmations': [receipt]}
+    state = {'current_artifacts': ['ART-X'], 'next_stage': 'storyboard-planner', 'user_confirmations': [receipt]}
     (manage / 'artifact_manifest.json').write_text(json.dumps({'artifacts': [entry]}), encoding='utf-8')
     state_path = manage / 'project_state.json'
     def save():
