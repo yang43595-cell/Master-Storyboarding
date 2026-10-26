@@ -4,7 +4,7 @@ import pytest
 from scripts.canvas_readback import compare, digest, validate_submission
 from scripts.core.io import read_json, write_json
 from scripts.core import artifacts
-from scripts.tests.test_delivery_preflight import delivery
+from scripts.tests.test_delivery_preflight import delivery, bind_synthetic_quality
 
 
 def test_unapproved_native_media_cannot_inherit_approved_local_reference(tmp_path):
@@ -14,6 +14,8 @@ def test_unapproved_native_media_cannot_inherit_approved_local_reference(tmp_pat
             row['ordered_media'][0]['media_id'] = 'UNAPPROVED-media'
     for row in observed['drafts']:
         row['native_mentions'][0]['media_id'] = 'UNAPPROVED-media'
+    bind_synthetic_quality(tmp_path, frozen)
+    observed['drafts'] = [{**row, 'quality_evidence': frozen['drafts'][i]['quality_evidence']} for i, row in enumerate(observed['drafts'])]
     observed['frozen_sha256'] = digest(frozen)
     with pytest.raises(ValueError, match='upload'):
         compare(frozen, observed, tmp_path)
@@ -25,6 +27,7 @@ def test_one_upload_can_have_identity_and_boundary_roles(tmp_path):
     row['reference_checks'][0]['roles'] = ['identity', 'end_frame']
     row['reference_checks'][0].pop('role')
     row['required_reference_roles']['ACTOR'] = ['identity', 'end_frame']
+    bind_synthetic_quality(tmp_path, frozen)
     assert validate_submission(frozen, tmp_path)['ok']
 
 
@@ -33,6 +36,7 @@ def interleaved(root):
     insert = copy.deepcopy(frozen['drafts'][0]); insert['node_id'] = 'cutaway'
     insert['continuity'] = {'event_id': 'other-event'}
     frozen['drafts'].insert(1, insert)
+    bind_synthetic_quality(root, frozen)
     return frozen
 
 
@@ -79,6 +83,7 @@ def group_fixture(root):
     head.update(artifact_id=other['artifact_id'], sha256=other['checksum'])
     frozen['drafts'][1]['ordered_media'] = [{'node_id': 'other-node', 'media_id': 'other-media'}]
     for row in frozen['drafts']: row['reference_checks'][0]['reference_group_id'] = 'BOUNDARY'
+    bind_synthetic_quality(root, frozen)
     return frozen
 
 
@@ -137,6 +142,7 @@ def test_reverse_upload_mapping_conflict_but_same_bytes_reuse_allowed(tmp_path, 
     if selected == 'ALIAS':
         for row in frozen['drafts']:
             row['reference_checks'][0].update(artifact_id='ALIAS', sha256=alias['checksum'])
+    bind_synthetic_quality(tmp_path, frozen)
     if different_bytes:
         with pytest.raises(ValueError, match='conflict'): validate_submission(frozen, tmp_path)
     else: assert validate_submission(frozen, tmp_path)['ok']

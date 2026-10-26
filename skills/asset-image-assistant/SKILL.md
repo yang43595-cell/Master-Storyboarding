@@ -5,6 +5,8 @@ description: 在叙事包确认后按已登记 AST 需求制作和核对角色�
 
 # 图片资产
 
+开始本职任务前读取[共用三层规范](../_shared/skill-layers.md)。本 Skill 适用边界：按实际资产库/项目 Web 或普通阶段入口读取本职指南；Web 由 library_runtime.py 组装，不强套 prepare。只制作获准资产，不决定故事或拍法。
+
 由当前执行者按 [PROJECT_RULES.md 的 Skill 执行分工](../../PROJECT_RULES.md#skill-执行分工) 执行本阶段；默认由主 agent 直接执行和自检，已明确委派时由受派执行者完成。
 
 ## 入口模式

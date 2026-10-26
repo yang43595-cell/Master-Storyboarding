@@ -1,6 +1,7 @@
 """Direct checks for preservation, reuse, generation gates and local HTTP access."""
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -1137,6 +1138,10 @@ class LibraryTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
+        from test_visual_asset_projects import synthetic_vault
+        self._synthetic_env = patch.dict(os.environ, {'MSB_VAULT_ROOT': str(synthetic_vault(self.root / 'synthetic-vault'))})
+        self._synthetic_env.start()
+        self.addCleanup(self._synthetic_env.stop)
         self.lib = m.Library(self.root / 'library', vault=self.root / 'vault')
         self.source = self.root / '衣服参考.png'
         Image.new('RGB', (200, 300), '#ceb3ae').save(self.source)
@@ -1144,6 +1149,7 @@ class LibraryTests(unittest.TestCase):
         self.asset, _ = self.lib.import_file(self.source, project='测试来源')
 
     def tearDown(self):
+        self._synthetic_env.stop()
         self.temporary.cleanup()
 
     def test_import_preserves_source_and_skips_unchanged(self):

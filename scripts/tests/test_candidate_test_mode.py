@@ -44,7 +44,8 @@ def sources(project):
     record = {'sources': [{'source_id': 'ASR-1', 'kind': 'asr_hypothesis', 'text': '不。',
               'evidence_path': 'raw.json', 'evidence_sha256': artifacts.digest(project/'raw.json'),
               'text_pointer': '/text', 'locator': 'synthetic segment', 'producer': 'synthetic ASR'}],
-              'dialogues': [{'dialogue_id': 'DLG-01', 'text': '不。', 'source_ids': ['ASR-1']}]}
+              'dialogues': [{'dialogue_id': 'DLG-01', 'speaker_id': 'CHR-A',
+                            'speaker_status': 'inferred_unverified', 'text': '不。', 'source_ids': ['ASR-1']}]}
     write_json(project/'review.json', record)
     n.update(dialogue_evidence_path='review.json', dialogue_evidence_sha256=artifacts.digest(project/'review.json'))
     b = compact_package()

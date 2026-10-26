@@ -110,7 +110,7 @@ python scripts/canvas_readback.py --private-preview --project <准确候选项�
     "entity_ids": ["实际适用实体ID"],
     "roles": ["layout", "scale"],
     "excluded_roles": ["identity", "appearance"],
-    "failure_scope_note": "如原图曾失败，说明仍失败的用途及本次实看后可用的不同限定用途；未失败时省略"
+    "failure_scope_note": "仅保留历史失败说明，不能授权本轮活动引用"
   },
   "upload_binding": {
     "target_url": "准确目标URL",
@@ -125,7 +125,7 @@ python scripts/canvas_readback.py --private-preview --project <准确候选项�
 
 映射沿冻结快照保存，不往原 manifest 伪造 current 或确认绑定。必须来自实际上传/已存在素材的原生读取，不能先编节点 ID；缺真实映射时该项未完成，不能宣称通过。此校验检查保存草稿前的最终引用映射及保存后的回读，不充当尚未上传时的上传许可。引用顺序、职责、实体、连续切点、时长与原生 mentions 仍走同一公共检查。不同图片的连续边界仍要求既有真实确认组；本预览不新造候选“确认组”绕过。
 
-原结果为 failed_candidate 或有后续失败 review 时，必须保留原记录，显式填写非空 excluded_roles 与 failure_scope_note，而且实际使用职责不得命中失败/排除职责。机器不从自然语言推断失败原因，也不证明“换个用途就可用”：root 必须实际看图、确认所申报限定职责确实可用；原失败用途未修复继续拒绝。预览技术通过从不等于用户确认或合格生成基准。
+原结果为 failed_candidate 或有后续失败 review 时，保留历史记录，但拒绝本轮新增/更新活动引用；excluded_roles、failure_scope_note 或 limited_use 不再豁免失败。非失败图片仍须在原 manifest 条目保存本用途 quality_evidence，并由入口核对。无合格图可保存不带该图的文字候选并明确缺口，不成为生成许可。程序只验声明一致性，不从文字推断或识别像素；预览通过从不等于用户确认。
 
 只在真实用户明确要求清理时，将 `remove_unreferenced_candidates` 加入 operations 和 allowed_operations，并将准确旧候选加入同一快照 `cleanup`。每项字段为 node_id、target_url、target_project_id、status="candidate"、reference_count=0、reference_scan="whole_canvas"、recoverable=true、phase="after_refresh"、readback_ref（实际全画布引用检查来源）、authorization_ref（必须是 evidence 中用户消息 ID）；另将 cleanup_sha256 绑定 digest(cleanup)。不能删当前草稿/媒体、正式产物、非零引用或不可恢复对象。执行者仍须核实整画布真实零引用，不以此声明代替原生读取。
 
@@ -137,10 +137,45 @@ python scripts/canvas_readback.py --private-preview --project <准确候选项�
 
 该条目 `preview_origin` 必须包含 purpose="private_preview_only_not_generation_baseline"、source_sha256、history_gaps（真实未重验/缺失/迁移事实列表）、historical_evidence（每项 location 为原证据绝对文件名，sha256 为证据实际字节）。原生成收据若存在，必须连同原 request 与全部后续 review-overrides 保存引用；至少一份原证据结构必须绑定该图片 SHA。旧方法缺失/改字节只能如实报告，不伪恢复或改 request 来求通过。字段 location 明确表示历史出处，不把历史 JSON 内旧文件路径重新当本轮生产依赖。
 
-每个引用 limited_use 还必须用 review_evidence={location,sha256} 指向上述证据中的真实 root 限定用途复核或沿用的实际审图记录。生成失败、后续失败审图会继续触发失败用途检查，不能把更换登记类型当洗白。只在准确已实看且不含失败用途的限定范围展示。结果明确 historical_generation_revalidated=false，并列出 history_gaps；不宣称旧方法链通过，不允许以此作为生成基准或正式交付输入。普通来源与正式入口的既有依赖/确认门禁不变。
+每个引用 limited_use 还必须用 review_evidence={location,sha256} 指向上述证据中的真实 root 限定用途复核或沿用的实际审图记录。生成失败、后续失败审图会阻止本轮活动引用，不能把更换登记类型或限定用途当洗白。历史原图仍保留，不自动删除现有画布。结果明确 historical_generation_revalidated=false，并列出 history_gaps；不宣称旧方法链通过，不允许以此作为生成基准或正式交付输入。普通来源与正式入口的既有依赖/确认门禁不变。
 
 预览时，`state_reference` 是可用的图片职责，必须写准确 state_id。连续两段若只共享物理状态、不采用平台硬首尾帧，后一段 continuity 可加 mode="state_reference" 与 boundary：claim="shared_state_only_not_hard_frames"、state_id、description、previous_node_id、current_node_id、previous_sha256s、current_sha256s。两侧哈希须精确等于对应段实际 state_reference 的文件哈希，且 state_id 相同；前驱链仍不得漏段、成环或跨事件。不同机位不冒充像素相同，也不虚造确认组；真实已有采用记录保留其原有范围。正式模式不接受 state_reference 替代原首尾帧门禁。
 
 源稿只有整段生成秒数、未分配逐镜时间时，预览可明确 `timing_scope="segment_total_only"` 并将 shot_durations 写为该实际整段秒数的单项数组；只核对段总秒数和本轮平台上下限，不宣称已编排逐镜秒数。正式交付不接受这个预览标记。
 
 候选输入切换与专用展示登记：`candidate_test.configure` 可保留本轮已登记的 `preview-reference`，只读核验实际媒体字节、历史证据哈希及证据中的精确路径/哈希绑定，不把其项目外路径扩成普通输入根。专用展示条目不得列入普通业务输入或依赖；正式生产仍拒绝。该核验不替代私有预览提交时的明确授权范围、原生绑定和刷新回读，也不自行新增生成许可或否认原记录中的历史候选生成使用。
+
+## 本轮观察证据与输入版本
+
+正式 `validate_submission` / `--delivery` 对每个 draft 消费同稿 `quality_evidence`；不改用户确认/审核权限。`input_sha256` 为 `scripts.core.quality_evidence.fingerprint(draft_binding(draft))`，覆盖 draft 全部字段但排除 quality_evidence 本身。正文、参数、有序引用、职责、镜号、时长和连续边界任一变化都会使旧检查失效。不要只改hash冒充重查。
+
+同稿 evidence 含 status、observer、带时区checked_at，以及 checks 的六项 `action_chain / persistent_objects / state_boundaries / framing / timing / reference_conflicts`，每项保存 result（pass/fail/unknown/not_applicable）、observation、locator。无关项写具体理由及来源，不要求为无关动作虚构过程。正式入口缺项、失败或未核拒绝；只保存私有待审文字稿可不具备这个正式放行证据。
+
+- action_chain：在原稿定位承托、左右手占用、接触、分离/落点、释放和后态；手已占用却无人接触脱头须返回上游，不以“动作自然”替代。
+- persistent_objects：同场常驻物完整继承，核身份/类别/尺度/位置/内容物；改一件也回归同桌其他物件，撤参考后必须有真实替代身份依据或合法不出镜处理。
+- state_boundaries：相邻全文和真实尾首观察，膜态按五区核，清水前末处湿擦→巾离脸/放下→无大片连续主膜；不以时间省略掩盖必需状态，未生成不能称动态已核。
+- framing、timing、reference_conflicts：具体画幅草验；自然语速试读/实际操作估时与实测区分；阶段参考职责不冲突。保留锋利嘴部特写与有意义快切。
+
+所有活动 image 引用（包括私有候选预览）还从现有 manifest 条目读取 [图像观察证据](../../skills/storyboard-director/references/image-evidence-admission.md)，draft 用 source_shot_ids 指明实际镜号。音频、视频和文档不套静态图检查。预览的外置文件仅沿原有明确 roots/input_roots 范围读取，不放宽磁盘根。
+
+检查输出只称 evidence_consistency_only，并明确 visual_quality_verified=false、generation_input_provenance=unknown。完整但虚假的观察文字仍可能通过，不能据此证明已看图或模型执行正确。
+
+### 草稿、提交与结果不混用
+
+沿既有交付/任务记录保存三个不同事实：current draft 是当前编辑值；submission snapshot 是当次实际提交前冻结的完整正文、有序node/media/源文件hash、参数、带时区提交时间及可取得的真实job/version；output 是真实结果media/hash、检查范围与用户采用状态。不得拿当前草稿倒填历史任务。平台没有不可变job输入或结果关联时，input_provenance保持unknown，能判断输出错误但不能唯一归责模型。草稿比较器一律不从通过报告推出job已核；本次没有自动抓取平台job的能力。未知项不补假ID。
+
+小云雀上传视频参考按同一来源hash的实际本地文件用ffprobe核时长，至少2秒；声明duration与实测不符即拒绝，不拿填入“2秒”代替媒体。段内切镜/shot_durations可少于2秒，二者不可混淆。此项不拼接参考视频，也不修改用户时长。
+
+## 新稿不得继承旧回读通过
+
+`native_binding.status=persisted_readback_verified` 是需核验的声明，不是可复制的业务常量。当前稿新增revision、改正文/参数/有序本地或原生引用后，旧声明不能用于本稿；保留历史回执，当前候选明确记unknown/stale/not_bound等未核状态即可，不补造新回读、不自动重写业务稿。
+
+若声明verified，同一native_binding需保存当前`revision`、`input_sha256`（`fingerprint(native_input_binding(当前段))`，排除native_binding/quality_evidence，其他业务字段完整覆盖）、准确`evidence_path/evidence_sha256`、`canvas_url`和当前node身份。真实证据沿用canvas回读结构：`phase=after_refresh`、当前revision/target_url、drafts内准确node_id及prompt/parameters/ordered_media/native_mentions；不得把旧平台原始片段包一层新revision冒称刷新。原始证据格式无法核对时保留未核，不猜转换。消费者核当前内容、修订、hash、原生实体顺序；仍不认证采集行为或真实job输入。
+
+现有canvas formal/private-preview和视频稿`check_video_prompt_focal_intent.py <稿件JSON> --project <准确项目根>`检查此声明；没有verified声明的文字候选可保存，不能说已回读。平台无关稿件采用入口也复核，旧回读不证明生成结果。focal检查器从固定main真实源码恢复，本轮新增这一声明核验，非stub。
+
+交付操作前先只读定位节点并核画布URL、原生node_id、节点标题及当前媒体身份；定位不等于切换右侧面板，不以可见面板内容猜当前目标。确认定位与面板确属该节点后，备份实际当前正文、参数、有序原生引用及结果身份，再进行另有授权的修改。面板不能可靠关联时停在只读核查，不全选、不清空、不重试写入。本轮只修机制，不操作案例画布。
+
+`product_refs --discover-dependencies`会输出独立JSON报告行，追加`--package`时另有packages JSON行，错误还有普通文本且退出码非零。调用者先核退出码，再逐行解析明确JSON报告并保留错误原文；不能对混合多行stdout直接json.loads，也不能取最后一行当总PASS。程序输出协议保持不变。
+
+兼容旧别名时，当前活动段的native_binding_verified、materials等活动引用里的native_entity_verified若为true，也必须由上述同修订同输入的逐段native_binding证明；native_readback_source旧路径本身不证明当前实体。跨段边界或整包级的旧true字段不具备逐节点正文/参数，不自动转换成verified；回读结论落在实际逐段native_binding，旧边界结论仅保留历史。legacy native_delivery_scope字符串/已核摘要及final_native_receipt_path不能单独当本轮通过；需要留历史时放历史记录，当前状态明确未核。检查仅遍历当前drafts/generation_segments/creative_sections及其活动引用，不消费history、previous_revision_self_check、excluded_materials_this_revision为当前证据。不会修改或删除这些历史对象。当前目标必须来自顶层target_url或target_canvas.url并与回读一致，原生实体类型也须一致；换画布或纯文本实体不得沿用旧通过。

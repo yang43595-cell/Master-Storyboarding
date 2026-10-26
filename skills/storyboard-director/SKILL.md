@@ -5,6 +5,8 @@ description: 在导演稿和资产图确认后、视频提示词之前，检查�
 
 # 按需分镜图（视觉补充）
 
+开始本职任务前读取[共用三层规范](../_shared/skill-layers.md)。本 Skill 适用边界：承接确认导演稿与资产，先检查动作、表情、空间及连续性；实际补图按缺口，不强制每镜生成，不改导演决定。
+
 由当前执行者按 [PROJECT_RULES.md 的 Skill 执行分工](../../PROJECT_RULES.md#skill-执行分工) 执行本阶段；默认由主 agent 直接执行和自检，已明确委派时由受派执行者完成。
 
 读取 `PROJECT_RULES.md`、`../_shared/knowledge-access.md`、当前 `stage_startup.md`、`../_shared/draft-lifecycle.md` 等六项共享红线（含 `../_shared/prompt-language.md`）、`modules/storyboard-method.md`、`references/reference-asset-contract.md`、`references/storyboard-production-checklist.md`、`references/image-continuity-hard-rules.md`、`templates/storyboard-image-template.md` 与 `../../schemas/visual-supplement-request.schema.json`。涉及灯光风险时才读取 `../storyboard-planner/references/lighting-prompt-standard.md` 的对应小节；写本 Skill 提示词时必读 `../voiceover-to-video-script/references/prompt-language-hard-rules.md` 并以其为准。这些引用不授予修改导演镜头或视频提示词的权力。
@@ -59,6 +61,7 @@ description: 在导演稿和资产图确认后、视频提示词之前，检查�
 - 必须继承导演包的镜头契约和已确认资产状态，不重新决定景别、机位、构图目的、调度、运镜或切点（景别与基础连续性剪辑属模型通用能力或导演已定，不靠知识包供给）。具体镜头的静态构图只把其指定状态可视化；场景关系图的展示视角按模块约定处理，不成为新的导演拍法。
 - 产品实拍、确认母版或动作参考足以承担控制时直接引用，不重复生成。参考冲突与连续性核对按本 Skill 的直接参考执行。
 - 生成或编辑前，工具和具体模型分别取得用户明确授权；付费或额度动作遵守项目授权门槛。输出只包含请求记录、复用引用或候选图片及其技术记录，不写视频模型、视频分段或视频提示词。
+- 成图实际观察及新活动引用按[观察证据准入](references/image-evidence-admission.md)执行；同一原图登记保存准确字节、源版本、用途和可见事实，失败/未核不因用途文字而放行。程序仅查证据一致性，不替代看图。
 - Agent 核对文件存在、格式、尺寸、命名、来源镜头、参考链和明显产品事实。候选保持待确认；用户明确确认具体文件后才能登记为确认视觉补充。
 - 检查结果标明需要补图的镜头、目标动作或表情、原因与复用素材；无须为每个普通镜头另建请求。全部无需补图时简记复用结论；需要补图时先完成这些图片的用户确认，再供视频提示词阶段按镜头引用。不得带着未确认候选当正式输入交接。
 - 交用户审核时只提供文件夹绝对路径、准确文件名、来源镜头和需要判断的视觉事项，不嵌入图片载荷。视觉质量由用户终审。

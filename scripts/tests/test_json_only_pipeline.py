@@ -19,7 +19,7 @@ from scripts.core.project_state import load_project_state, write_project_state
 from scripts.core.story_sources import reading_supplement, validate_story_sources
 from scripts.blender_previs.project import director_input
 from scripts.visual_asset_source import receive_table
-from scripts.tests.test_delivery_preflight import delivery
+from scripts.tests.test_delivery_preflight import delivery, bind_synthetic_quality
 from test_story_paragraph_sources import narrative
 from test_director_compact import compact_package
 
@@ -94,6 +94,7 @@ def setup_pipeline(root):
     row['reference_checks'].append({**ref('PRODUCT-REF'), 'kind': 'image', 'roles': ['appearance'], 'entity_ids': ['AST-PROD']})
     frozen['PRODUCT_VISUAL_INPUT'] = 'REAL_PRODUCT'
     frozen['reference_paths'] = product['reference_paths']
+    bind_synthetic_quality(root, frozen)
     write_json(root / '06_视频/current.json', frozen)
     write_json(root / '05_分镜/current.json', {'source_asset_requirement_ids': shot['source_asset_requirement_ids'], 'reference_paths': product['reference_paths']})
     remove_md(root)

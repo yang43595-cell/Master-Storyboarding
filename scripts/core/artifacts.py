@@ -175,6 +175,8 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
         from .story_sources import validate_story_sources
         validate_story_sources(narrative, payload, project_root=root)
     else:
+        from .quality_evidence import validate_native_binding_claims
+        validate_native_binding_claims(payload, root, entry.get('revision'))
         # Existing frozen delivery JSON is a channel adapter artifact. Its
         # native readback gate remains in _assert_review_current; it is not the
         # platform-neutral video manuscript contract.

@@ -48,7 +48,7 @@ def local_references(kind, request=None):
         'skills/storyboard-planner/references/lighting-prompt-standard.md',
         'skills/voiceover-to-video-script/references/prompt-language-hard-rules.md']
     common += ['skills/_shared/' + name + '.md' for name in
-               ['draft-lifecycle', 'product-reference', 'path-delivery', 'user-confirmation', 'knowledge-access', 'prompt-language']]
+               ['skill-layers', 'draft-lifecycle', 'product-reference', 'path-delivery', 'user-confirmation', 'knowledge-access', 'prompt-language']]
     if not request or not request.get('rows'):
         common.append('skills/asset-image-assistant/references/' + recipe(kind)['guide'])
     if request and request.get('mode') == 'project':

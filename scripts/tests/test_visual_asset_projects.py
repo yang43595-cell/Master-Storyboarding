@@ -1,5 +1,6 @@
 """Project bridge acceptance checks using isolated project files and a fake Vault guard."""
 import copy
+import os
 import json
 from pathlib import Path
 import sys
@@ -70,6 +71,42 @@ def plan_result():
     return result
 
 
+
+def synthetic_vault(root):
+    """Independent synthetic files: tests must not depend on a personal Vault."""
+    from test_stage_context_cli import _method_vault
+    _method_vault(root)
+    for skill in ('asset-image-assistant', 'storyboard-director'):
+        profile_path = m.ROOT / 'skills' / skill / 'knowledge-profile.json'
+        for method in json.loads(profile_path.read_text(encoding='utf-8'))['professional_methods']:
+            path = root / method['path']
+            if not path.exists():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('---\ntitle: Synthetic test method\nversion: 2026-09-11\nstatus: enabled\nlifecycle:\n  state: current\n---\n\n# Synthetic method\n\nIsolated complete method body; not a production reference.\n', encoding='utf-8')
+            if method.get('template_path'):
+                target = root / method['template_path']
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text('Synthetic optional method template; test only.\n', encoding='utf-8')
+    profile = m.asset_skill.profile()
+    templates = root / 'wiki/reference/提示词模板'
+    templates.mkdir(parents=True, exist_ok=True)
+    for name in {r['template'] for r in profile['recipes'].values() if 'template' in r}:
+        (templates / name).write_text('\n'.join(
+            f"```text\nSynthetic test template view {i}; preserve the supplied reference 用户所选照片. "
+            + {1: '从头顶到锁骨的紧凑大头特写，画面内不出现任何衣服，下边缘止于锁骨下缘', 2: '1×3 网格', 3: '1×4'}.get(i, '合成视图') + '\n```'
+            for i in range(5)), encoding='utf-8')
+    meta = {'id': 'MSB-KB-PROMPT-002', 'canonical_key': 'synthetic.prompt',
+        'kind': 'rule', 'status': 'enabled', 'authority': 'wiki',
+        'projects': ['Master-Storyboarding'], 'stages': ['asset-image-assistant'],
+        'topics': ['image-prompt'], 'triggers': [], 'conflicts_with': [], 'priority': 1,
+        'sources': [], 'applies_when': 'synthetic isolated asset input test'}
+    page = root / 'wiki/concepts/03-AI生成与视频/提示词污染.md'
+    page.parent.mkdir(parents=True, exist_ok=True)
+    page.write_text('<!-- msb-knowledge\n' + json.dumps(meta) +
+        '\n-->\nSynthetic observable prompt rule.\n^msb-kb-prompt-002\n<!-- /msb-knowledge -->', encoding='utf-8')
+    return root
+
+
 class ProjectTests(unittest.TestCase):
     def test_project_upload_is_a_reference_not_a_deliverable_or_vault_asset(self):
         import visual_asset_upload
@@ -134,6 +171,10 @@ class ProjectTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.base = Path(self.temp.name)
+        env = patch.dict(os.environ, {'MSB_VAULT_ROOT': str(synthetic_vault(self.base / 'synthetic-vault'))})
+        env.start()
+        self._synthetic_env = env
+        self.addCleanup(env.stop)
         self.lib, self.p, self.asset = fixture(self.base)
         service = self.lib.projects
         p = service.get(self.p['id'])
@@ -143,6 +184,7 @@ class ProjectTests(unittest.TestCase):
         service.apply_plan(p, p['rows'], plan_result(), {'version': m.asset_skill.profile()['version'], 'mode': 'project'})
 
     def tearDown(self):
+        self._synthetic_env.stop()
         self.temp.cleanup()
 
     def job(self, row=0):
@@ -529,6 +571,7 @@ class ProjectTests(unittest.TestCase):
     def test_prepare_has_one_input_with_template_and_dynamic_rules(self):
         request = self.lib.step_request(self.job(1), 0)
         request['kind'] = '人物1x4'
+        request['asset_method_scopes'] = ['character']
         request.pop('template_source', None)
         startup = Path(request['project_path']) / '00_项目管理/执行上下文/stage_startup.md'
         startup.parent.mkdir(parents=True, exist_ok=True)

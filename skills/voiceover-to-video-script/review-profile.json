@@ -4,7 +4,7 @@
   "skill_contract_checks": [
     {
       "id": "CONTRACT-TRIGGER",
-      "text": "根据导演包、原文对白和真实素材交付完整分段提示词；默认由当前对话自查"
+      "text": "根据导演包、原文对白和真实素材交付完整分段提示词；新轮由干净专属生产执行者创作并自查，同轮返修续用；独立审核需用户明确要求"
     },
     {
       "id": "CONTRACT-BOUNDARY",

@@ -4,11 +4,11 @@ import json
 
 import pytest
 
-from scripts.canvas_readback import compare, digest, validate_submission
+from scripts.canvas_readback import compare, digest, validate_submission, preview_scope
 from scripts.core import artifacts, candidate_test
 from scripts.core.io import write_json
 from scripts.core.project_state import new_project_state, write_project_state
-from scripts.tests.test_delivery_preflight import delivery
+from scripts.tests.test_delivery_preflight import delivery, bind_synthetic_quality
 
 
 def seal(frozen):
@@ -143,14 +143,31 @@ def test_real_trial_receipt_and_limited_failed_purpose(tmp_path, failure):
                 trial_provenance=[trial.snap(record.parent/'request.json'), trial.snap(fixture.root/'asset_generation_trial.json')],
                 review_evidence=[trial.snap(p) for p in sorted((record.parent/'review-overrides').glob('*.json'))])
             ref['upload_binding']['sha256'] = ref['sha256']
+        # Qualified synthetic pixels need exact image/source/use evidence too.
+        from scripts.core import quality_evidence as q
+        from scripts.tests.test_quality_evidence_consumers import observations
+        manifest = artifacts.load_manifest(fixture.root)
+        item = next(a for a in manifest['artifacts'] if a['artifact_id'] == 'A01')
+        evidence = observations(q.IMAGE_ASPECTS)
+        evidence.update(image_sha256=receipt['image']['sha256'],
+            source_files=[{'path': str(fixture.source), 'sha256': artifacts.digest(fixture.source)}],
+            source_shot_ids=['SYNTHETIC-SHOT'], view={'resolution':'original','locator':'synthetic generated pixels'},
+            uses=[q.image_use(row['reference_checks'][0], row['source_shot_ids']) for row in frozen['drafts']])
+        item['quality_evidence'] = evidence
+        write_json(fixture.root / artifacts.MANIFEST_PATH, manifest)
         seal(frozen)
         if failure != 'none':
-            with pytest.raises(ValueError, match='failed candidate'):
+            with pytest.raises(ValueError, match='failed pixels'):
                 validate_submission(frozen, tmp_path, private_preview=True)
             for row in frozen['drafts']:
                 row['reference_checks'][0]['limited_use']['failure_scope_note'] = 'Identity remains failed; root inspected spatial end/start state only.'
             seal(frozen)
-        assert compare(frozen, observed(frozen), tmp_path, private_preview=True)['ok']
+        # New authorized contract: a purpose note cannot waive failed active pixels.
+        if failure == 'none':
+            assert compare(frozen, observed(frozen), tmp_path, private_preview=True)['ok']
+        else:
+            with pytest.raises(ValueError, match='failed pixels'):
+                compare(frozen, observed(frozen), tmp_path, private_preview=True)
         assert record.read_bytes() == original
         # The preview declaration never repairs the actual generation baseline.
         if failure != 'none':
@@ -212,14 +229,20 @@ def test_preserved_display_provenance_does_not_replay_old_methods(tmp_path):
     for row in frozen['drafts']:
         row['reference_checks'][0]['limited_use']['review_evidence'] = snap(review)
     seal(frozen)
-    with pytest.raises(ValueError, match='failed candidate'):
+    with pytest.raises(ValueError, match='failed pixels'):
         validate_submission(frozen,tmp_path,private_preview=True)
     for row in frozen['drafts']:
         row['reference_checks'][0]['limited_use']['failure_scope_note']='Identity remains failed; state-only preview independently inspected.'
     seal(frozen)
-    result_report=validate_submission(frozen,tmp_path,private_preview=True)
-    assert result_report['ok']
-    assert any(x.get('historical_generation_revalidated') is False for x in result_report['dependency_checks']['candidate_reports'])
+    # Preserved history is readable; adding it to active references remains forbidden.
+    before = {p: p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}
+    history_reader, _, reports = preview_scope(frozen, tmp_path)
+    _, historical = history_reader(frozen['drafts'][0]['reference_checks'][0])
+    assert historical['_has_later_failure'] is True
+    assert any(x.get('historical_generation_revalidated') is False for x in reports)
+    assert before == {p: p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}
+    with pytest.raises(ValueError, match='failed pixels'):
+        validate_submission(frozen,tmp_path,private_preview=True)
     review.write_text('{}')
     with pytest.raises(ValueError, match='provenance evidence file/hash'):
         validate_submission(frozen,tmp_path,private_preview=True)
@@ -236,6 +259,7 @@ def test_candidate_state_reference_is_not_a_confirmed_hard_frame(tmp_path):
     continuity.update(mode='state_reference',boundary={'claim':'shared_state_only_not_hard_frames',
         'state_id':'handoff','description':'Candidate shared state; no strict first/last frame guarantee',
         'previous_node_id':'one','current_node_id':'two','previous_sha256s':[sha],'current_sha256s':[sha]})
+    bind_synthetic_quality(tmp_path, frozen)
     seal(frozen)
     assert validate_submission(frozen,tmp_path,private_preview=True)['ok']
     with pytest.raises(ValueError): validate_submission(frozen,tmp_path)

@@ -4,17 +4,25 @@
 
 原始来源核对使用同一份 JSON 审核记录：`sources[]` 逐项保存 `source_id`、`kind`（`subtitle_verbatim` 或 `asr_hypothesis`）、逐字 `text`、`evidence_path`、`evidence_sha256`、`locator` 与 `producer`（实际记录者或准确模型版本）。字幕按原帧逐字记录，不凭 ASR 或常识纠错；ASR 用 `text_pointer`（原输出 JSON Pointer）绑定原始字段，保留各模型差异。字幕记录的字节绑定不证明抄录正确，仍须回看原帧；两模型一致不等于人工听核。
 
-`dialogues[]` 沿用稳定 `dialogue_id`、`text`、`source_ids`。解释修订单列 `editorial_proposal` 的 `original_text`、`proposed_text`、`reason`、`source_ids`，不回写来源；实际核对后才记录 `verification` 的 `scope: dialogue`、`dialogue_id`、准确 `text`、`method`（`human_listening` 或 `user_confirmation`）、`reference` 和 `reviewer`。这些是可追溯声明，不是程序证明人声、身份或批准真实。只忽略标点空白比较字词，数字和近义字不自动转换。
+`dialogues[]` 沿用稳定 `dialogue_id`、`text`、`source_ids`。字幕来源不是完整发言单位；整理规则见下节。涉及改词的解释修订单列 `editorial_proposal` 的 `original_text`、`proposed_text`、`reason`、`source_ids`，不回写来源；实际核对后才记录 `verification` 的 `scope: dialogue`、`dialogue_id`、准确 `text`、`speaker_id`、`method`（`human_listening` 或 `user_confirmation`）、`reference` 和 `reviewer`。每行同时保留 `speaker_id` 与 `speaker_status`（`verified`、`inferred_unverified` 或 `unresolved`）；没有实际文字和身份核对时不写 verification。旧 text-only verification 保留历史意义，但不能消除身份未决。机器比对、模型推断和画面自查写在现有任务记录，不能冒充 human_listening 或 user_confirmation。这些是可追溯声明，不是程序证明人声、身份或批准真实。只忽略标点空白比较字词，数字和近义字不自动转换。
+
+### 字幕分页与完整发言的最小接缝
+
+`sources` 的原文、原文件及字节绑定不改。`dialogues.text` 是可读的完整发言，不等于字幕换页：编导先结合连续音频、字幕、画面和剧情上下文判断同一发言轮次，再恢复标点；一个发言跨多个字幕来源时，用可选 `source_assembly` 保存有序 `source_ids`、`reason`、`reference`（实际连续片段核对位置）和 `reviewer`，这些来源同时出现在该行 `source_ids`。source_assembly 成员只允许 subtitle_verbatim；其他 ASR 版本只是交叉证据，不能一起拼接。程序只比较拼接后去标点空白的字词是否相同，不证明同轮、断句语气或身份正确。
+
+仅恢复标点空白及同一轮连续字幕的合句属于来源整理，不是授权改写，无需用户逐句先批，也不需要 editorial_proposal；不能跨轮合并、删发言、换序、换词，不能按重复文本去重。机器整理仍是候选，不自动产生 verification。标点可能改变语义，仍须编导回看自查。已锁/已确认 DLG 不静改；本轮未锁分页草稿可建立新 revision，用有序 source_ids 和现有变更说明保留旧 DLG→新 DLG 映射。
+
+当前 source_baseline 投影仍要求原 DLG/来源/文字精确匹配，尚不支持跨 DLG 的整理迁移。不要删除已有绑定绕过限制，也不要把修订伪装成授权删句；需要该迁移时保留旧版及映射，报告校验未通过原因，候选整理可交用户阅读但不得声称正式生产通过。首次从原始 sources 建立完整发言不受这项旧 DLG 投影限制；缺基线不能声称程序证明全量无遗漏。
 
 ### 原片、作者新增与授权修订
 
 完整创作对白表不只收原片句子。仍用同一审核 JSON 的 `dialogues[]`、稳定 DLG 和现有 `verification`，不另维护作者稿/测试稿。行级可选 `origin.kind`：
 
-- `source_reproduction`：原片复刻，必须引用非空 `source_ids` 的真实字幕/ASR，原文字节及疑点检查不变；显式标此类别不能同时放改编 `editorial_proposal`。
+- `source_reproduction`：原片复刻，必须引用非空 `source_ids` 的真实字幕/ASR，原始 sources 字节及疑点检查不变，dialogues 可按上节保字整理；显式标此类别不能同时放改编 `editorial_proposal`。
 - `authored_addition`：没有原片对应句的作者新增（也包括用户直接给出的新句）。`source_ids: []`，`origin` 同时记录 `reference`（真实创作要求/用户消息引用）、`scope`（允许创作范围）、`author`、`purpose`、`revision`（创作修订）。不得编造原片来源、`editorial_proposal.original_text`、`source_locator` 或 `verified_timing`。
 - `authorized_revision`：有原片对应句的授权修订/改编。`origin` 记录上述五项，`reference/scope` 指向真实授权及范围；复用 `editorial_proposal` 的原文→拟改文、理由、`source_ids`，保留原始来源。与听辨纠错区分，不把新措辞说成原片音轨。
 
-缺 `origin` 的旧行继续原来源规则和已有解释修订入口，不自动豁免。新增/改编的创作依据不等于逐字批准：未实际核对仍无 `verification`；实际逐字确认才用 `method: user_confirmation`，不允许 `human_listening` 或原片已核时码。程序只检查声明字段，不能验证消息真实、授权范围语义或产品客观功效；广告说法仍须对照真实产品资料，缺依据留未决，不以作者身份补证。
+缺 `origin` 的旧行继续原来源规则和已有解释修订入口，不自动豁免。新增/改编的创作依据不等于逐字批准：未实际核对仍无 `verification`；用户可在整稿审核中确认其明确覆盖的准确修订和对白范围，不另强制逐句确认；实际逐字确认才用 `method: user_confirmation`，不允许 `human_listening` 或原片已核时码。程序只检查声明字段，不能验证消息真实、授权范围语义或产品客观功效；广告说法仍须对照真实产品资料，缺依据留未决，不以作者身份补证。
 
 原片保真任务混入上述新来源时，以可选 `source_baseline: {"path": "已有原始抽取审核.json", "sha256": "原记录准确hash"}` 绑定已保留的抽取稿，不从当前创作稿倒抄基线、不增加平行业务稿或基线链。校验完整保留其原始 `sources`，再从当前完整表投影原片 DLG，比对 ID、来源、字词与顺序；作者新增不能复用原片 ID。基线本身仍可能有听辨/人物错误，绑定字节不是核对确认。纯原创任务不需要原片基线；旧记录缺此字段兼容，但报告 `source_fidelity_checked: false`，不得宣称已自动证明原片无遗漏或换序。
 
@@ -22,11 +30,11 @@
 
 审核表与叙事、正文依然全量全序一致；所有新增行同样要真实人物/STP、唯一 DLG、下游对白承载。测试态仅沿已存在的 `candidate_test` 允许未核候选推进，继续 `unreviewed` / `production_blocked`；正常生产仍须真实逐字核对及产物确认。不得移除新任务的 `dialogue_evidence_path/sha256` 伪装历史包；程序拒绝残缺绑定，但为历史兼容，完全移除两字段尚不能自动识别。不要把这项兼容缺口或自由文本内容审核说成技术封闭。
 
-运行 `python -m scripts.core.story_sources --project <项目> --dialogue-review <审核记录>`，返回差异与未核行，不凭检查通过登记确认。新任务形成完整稿时以 `dialogue_evidence_path` 与 `dialogue_evidence_sha256` 绑定这份记录的准确字节，现有 `--narrative` 校验会核对行序、原文及未核状态；历史未绑定记录的包沿原校验，不声称已补足来源核对，也不复制一份同义业务稿。
+运行 `python -m scripts.core.story_sources --project <项目> --dialogue-review <审核记录>`，返回差异与未核行，不凭检查通过登记确认。新任务形成完整稿时以 `dialogue_evidence_path` 与 `dialogue_evidence_sha256` 绑定这份记录的准确字节，现有 `--narrative` 校验会核对行序、原文、speaker_id 及未核状态；历史未绑定记录的包沿原校验，不声称已补足来源核对，也不复制一份同义业务稿。
 
 `source_locator` 的 `start/end` 仅用于找原片位置，ASR 时码默认属于此类；不得当导演精确对白时间。仅实际逐句对齐后记录 `verified_timing` 的 `start/end`、`verification_ref`、`reviewer`，且该行已有上述核对记录。没有已核时码不阻挡无精确时间承诺的故事创作；下游不得把定位时间自动升格。程序只检查显式数值与声明，不能听辨、判断转场或自动验证对齐准确性。
 
-对白先行核对属于完整叙事包形成前的审核步骤，可先在对话核对；仅对白核对不运行完整叙事包校验，故事尚未产出时来源 STP 可空，不为校验提前制造段落或事件。需持久保存时只保留一份必要的 JSON 审核记录，注明对白范围与阶段未完成，不登记为 narrative.package，不另维护同义 Markdown；该记录不是 schema 2.0 完整交付包。收到实际对白范围确认后才完成故事、补齐真实 STP，并执行下述完整稿校验；对白确认不扩展为整稿确认。
+对白先行核对属于完整叙事包形成前的审核步骤，可先在对话核对；仅对白核对不运行完整叙事包校验，故事尚未产出时来源 STP 可空，不为校验提前制造段落或事件。需持久保存时只保留一份必要的 JSON 审核记录，注明对白范围与阶段未完成，不登记为 narrative.package，不另维护同义 Markdown；该记录不是 schema 2.0 完整交付包。编导先完成可做的来源核对、剧情分析和正文，补齐真实 STP 后交完整候选稿给用户整稿审核；不以逐句用户确认作为写正文的前置条件。无法核实的内容原位标明并集中提问，不能为过校验编造 verification。正式生产仍受未核阻塞；候选试跑只用既有隔离路径。用户另行要求先审对白时才采用对白先行支路，其确认不扩展为整稿确认。
 
 新业务稿以 JSON 保存全部故事与对白，送审前运行 `python -m scripts.core.story_sources --project <项目> --narrative <叙事包>`；不要求 Markdown。以下表格解析及旧送审命令只用于历史双文件输入，不要求新流程复刻。
 
@@ -42,9 +50,9 @@
 
 对于明确的 1:1 / 原样任务，先确定本轮原片的核对起止范围，按时间顺序连续回看，核对字幕出现、换页和消失；相邻核对片段须衔接，跨边界句回看前后文。离散抽帧和 ASR 用于定位候选，不能代替完整范围的覆盖核对。无字幕的发言、短促回应、字幕与原声不符或听不清处，返回对应连续片段核对原声；仍无法核实则记录具体位置和限制，未实际听核不得记录为 `human_listening`。
 
-按实际发言逐句建立来源清单：原句、原始顺序、说话人映射依据、来源位置和 `source_paragraph_id`。相同文字在不同位置再次说出，是不同发言事件，分别保留来源位置和稳定 DLG，不按文本去重；同一次发言的字幕持续显示或重复抽帧不另算一句，换页按连续上下文判断。原句必须完整保留；删除、合并或改写只有获得用户授权才能发生，并在变更说明写出依据。
+按实际发言逐句建立来源清单：原句、原始顺序、说话人映射依据、来源位置和 `source_paragraph_id`。相同文字在不同位置再次说出，是不同发言事件，分别保留来源位置和稳定 DLG，不按文本去重；同一次发言的字幕持续显示或重复抽帧不另算一句，换页按连续上下文判断。原词必须完整保留；同一发言的字幕分页合句按上节来源整理办理，其他跨发言合并、删除或改词须有用户授权，并在变更说明写出依据。
 
-在现有任务记录简记实际核过的范围、方式和未核位置，不新建记录格式。范围未连续核完，或仍有影响句子收录的原声疑点时，只能称“当前已提取对白”，不得称“原片全量／无遗漏”。已有核对和确认只保留其真实范围，不补造听核。普通创作不强制保留输入原句，但同样先交对白供用户核对，核对完成后才产出完整故事正文。
+在现有任务记录简记实际核过的范围、方式和未核位置，不新建记录格式。范围未连续核完，或仍有影响句子收录的原声疑点时，只能称“当前已提取对白”，不得称“原片全量／无遗漏”。已有核对和确认只保留其真实范围，不补造听核。普通创作不强制保留输入原句，同样由编导先完成对白及剧情自查，再交完整候选整稿审核，不强制用户逐句先审。
 
 疑点先分清文字与人物。原句听不清或现有转写仍有疑词时，先返回原始资料准备，按已安装的 `video-transcript-correction` Skill 用本轮明确的本地原片和项目资料核对；已有有效结果直接复用，不因人物未知重跑全片，也不把编导任务交给转写 Skill。专用流程的临时证据与清理由其自身约定负责。核对仍不确定或准备不可用时，报告具体疑词与限制，再向用户集中核对。原句清楚而说话人不明时，核对可见发言动作、声画关系、称呼及已知身份；字幕出现在某个人脸上不证明就是此人发言。无法解决的映射继续待确认，不能把推断写成事实。用户明确的改编与确认按其范围保留，不以重新识别结果静默覆盖。
 
