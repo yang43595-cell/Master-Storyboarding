@@ -158,16 +158,21 @@ def _focal_measurements(body: str) -> list[re.Match]:
     return found
 
 
-def inspect_document(path: Path, *, require_focal_intent: bool = False) -> tuple[int, list[str]]:
+def inspect_document(path: Path, *, require_focal_intent: bool = False, project: Path | None = None) -> tuple[int, list[str]]:
     text = path.read_text(encoding="utf-8-sig").replace("\r\n", "\n")
     try:
         if path.suffix.lower() == ".txt":
             segments = [(path.stem, text.strip(), text)]
         elif path.suffix.lower() == ".json":
+            if __package__:
+                from .core.quality_evidence import validate_native_binding_claims
+            else:
+                from core.quality_evidence import validate_native_binding_claims
+            validate_native_binding_claims(json.loads(text), project or path.resolve().parent)
             segments = _json_segments(text)
         else:
             segments = _segments(text)
-    except ValueError as error:
+    except (ValueError, OSError, TypeError) as error:
         return 0, [f"无法检查：{error}；不按0段通过"]
     errors: list[str] = []
     if not segments:
@@ -203,8 +208,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("prompt_file", type=Path)
     parser.add_argument("--require-focal-intent", action="store_true",
                         help="仅当已核对上游确有关键光学要求时启用；脚本不替代适用性判断")
+    parser.add_argument("--project", type=Path, help="native_binding回读证据的准确项目根；缺省为稿件所在目录，不搜索其他项目")
     args = parser.parse_args(argv)
-    count, errors = inspect_document(args.prompt_file, require_focal_intent=args.require_focal_intent)
+    count, errors = inspect_document(args.prompt_file, require_focal_intent=args.require_focal_intent, project=args.project)
     if not count:
         print(f"UNCHECKED {args.prompt_file}: " + "; ".join(errors))
         return 2

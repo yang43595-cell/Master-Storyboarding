@@ -44,7 +44,8 @@ class WebReadingTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.vault = self.root / 'vault'
-        live = self.live = Path(os.environ.get('MSB_VAULT_ROOT') or Path.home() / 'Documents/Obsidian Vault')
+        from test_visual_asset_projects import synthetic_vault
+        live = self.live = synthetic_vault(self.root / 'synthetic-live-vault')
         self.profile = json.loads((asset.SKILL / 'knowledge-profile.json').read_text(encoding='utf-8'))
         # Copy only declared methods and the existing required dynamic rule source.
         for relative in [m['path'] for m in self.profile['professional_methods']] + [

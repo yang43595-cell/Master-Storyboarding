@@ -14,7 +14,13 @@ import sys
 import pytest
 
 from scripts import stage_context_cli as cli
-from scripts.tests.test_stage_context_cli import _project, _method_vault
+from scripts.tests.test_stage_context_cli import _project, _method_vault, _synthetic_method_profile
+
+
+@pytest.fixture(autouse=True)
+def synthetic_adopted_method(tmp_path, monkeypatch):
+    vault = _method_vault(tmp_path / 'vault')
+    _synthetic_method_profile(tmp_path, vault, monkeypatch)
 
 
 def write(path, value):

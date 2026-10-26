@@ -115,7 +115,8 @@ def test_narrative_binding_blocks_unverified_and_changed_evidence(tmp_path):
     package.update(dialogue_evidence_path='review.json',dialogue_evidence_sha256=artifacts.digest(path))
     with pytest.raises(ValueError,match='未核'):
         story_sources.validate_story_sources(package,project_root=tmp_path)
-    row['verification']={'scope':'dialogue','dialogue_id':'DLG-01','text':'不。','method':'user_confirmation','reference':'synthetic receipt only','reviewer':'synthetic user'}
+    row.update(speaker_id='CHR-A', speaker_status='verified')
+    row['verification']={'scope':'dialogue','dialogue_id':'DLG-01','speaker_id':'CHR-A','text':'不。','method':'user_confirmation','reference':'synthetic receipt only','reviewer':'synthetic user'}
     write_json(path,record)
     with pytest.raises(ValueError,match='字节'):
         story_sources.validate_story_sources(package,project_root=tmp_path)

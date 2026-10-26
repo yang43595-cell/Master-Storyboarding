@@ -82,7 +82,7 @@ def preview_scope(frozen: dict, project: Path):
     for row in frozen['drafts']:
         if set(row) - {'node_id','prompt','parameters','duration_bounds','shot_durations',
                       'native_entity_type','required_entities','required_reference_roles',
-                      'ordered_media','reference_checks','continuity','timing_scope'}:
+                      'ordered_media','reference_checks','continuity','timing_scope','source_shot_ids','quality_evidence','native_binding'}:
             raise ValueError('unknown preview draft execution fields')
         if set(row['parameters']) - {'duration','aspect','aspect_ratio','ratio','resolution','model'}:
             raise ValueError('unknown preview parameters; generation controls are forbidden')
@@ -223,7 +223,7 @@ def preview_scope(frozen: dict, project: Path):
             raise ValueError('actual candidate file/hash mismatch')
         return path, receipt
     def usage(row, ref, media):
-        _, receipt = authority(ref)
+        path, receipt = authority(ref)
         use = ref.get('limited_use', {})
         assigned = ref.get('roles', [ref.get('role')])
         if (use.get('conclusion') != 'usable_for_private_preview'
@@ -233,9 +233,17 @@ def preview_scope(frozen: dict, project: Path):
                 or not set(ref.get('entity_ids', [])) <= set(use.get('entity_ids', []))
                 or set(assigned) & set(use.get('excluded_roles', []))):
             raise ValueError('reference usage exceeds actual limited visual review scope')
-        if (receipt.get('outcome') == 'failed_candidate' or receipt.get('_has_later_failure')) and (
-                not use.get('excluded_roles') or not nonempty(use.get('failure_scope_note'))):
-            raise ValueError('failed candidate requires explicit excluded failed-purpose scope; original failure remains')
+        if receipt.get('outcome') == 'failed_candidate' or receipt.get('_has_later_failure'):
+            raise ValueError('quality_evidence: failed pixels cannot be admitted by limited-use scope; preserve history, remove from new active references')
+        if ref.get('kind') == 'image':
+            try:
+                from .core.quality_evidence import validate_image_evidence
+            except ImportError:
+                from core.quality_evidence import validate_image_evidence
+            root = Path(ref['project_path']).resolve()
+            item = checked[(str(root), ref['artifact_id'])]
+            validate_image_evidence(root, path, item.get('quality_evidence'), row.get('source_shot_ids'),
+                                    allowed_roots=[Path(p) for p in roots + input_roots], reference=ref)
         binding = ref.get('upload_binding', {})
         expected = dict(target_url=frozen['target_url'], target_project_id=frozen['target_project_id'],
                         node_id=media['node_id'], media_id=media['media_id'],
@@ -281,6 +289,9 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         from core.project_state import load_project_state
         from core.candidate_test import require_production
         from core.delivery_files import discover_dependencies
+    project = project.resolve()
+    if not private_preview:
+        require_production(project)
     # New submissions use current output policy. Legacy compare without a project
     # remains an evidence comparison and must not rewrite historical payloads.
     try:
@@ -296,14 +307,17 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             issues = generated_overlay_issues(row['prompt'])
             if issues:
                 raise ValueError(f"{row['node_id']}: " + '; '.join(issues))
-    project = project.resolve()
+    try:
+        from .core.quality_evidence import validate_native_binding_claims
+    except ImportError:
+        from core.quality_evidence import validate_native_binding_claims
+    validate_native_binding_claims(frozen, project)
     if private_preview:
         preview_authority, preview_usage, reports = preview_scope(frozen, project)
         dependencies = {'ok': True, 'candidate_reports': reports}
     else:
         if 'preview_authorization' in frozen:
             raise ValueError('preview scope cannot be used by formal delivery')
-        require_production(project)
         dependencies = discover_dependencies(project, payload=frozen)
     if not dependencies['ok']:
         raise ValueError('Dependency readiness failed: ' + '; '.join(dependencies['errors'] + dependencies['uncheckable']))
@@ -379,6 +393,12 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                 return False
         return True
     for row in frozen['drafts']:
+        if not private_preview:
+            try:
+                from .core.quality_evidence import validate_draft_evidence
+            except ImportError:
+                from core.quality_evidence import validate_draft_evidence
+            validate_draft_evidence(row)
         if not isinstance(row.get('prompt'), str) or not row['prompt'].strip():
             raise ValueError('complete submitted prompt body required')
         if not isinstance(row.get('native_entity_type'), str) or not row['native_entity_type'].strip():
@@ -442,9 +462,15 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             extensions = {'image': {'.png','.jpg','.jpeg','.webp'}, 'video': {'.mp4','.mov','.mkv','.webm'}, 'audio': {'.wav','.mp3','.m4a'}}
             if path.suffix.lower() not in extensions[kind]:
                 raise ValueError('reference kind differs from actual registered file type')
-            if 'action' in assigned:
-                if kind != 'video':
-                    raise ValueError('action video cannot be replaced by identity/still reference')
+            if kind == 'image' and not private_preview:
+                try:
+                    from .core.quality_evidence import validate_image_evidence
+                except ImportError:
+                    from core.quality_evidence import validate_image_evidence
+                validate_image_evidence(project, path, item.get('quality_evidence'), row.get('source_shot_ids'), reference=ref)
+            if 'action' in assigned and kind != 'video':
+                raise ValueError('action video cannot be replaced by identity/still reference')
+            if 'action' in assigned or (xiaoyunque and kind == 'video'):
                 seconds(ref.get('duration'))
                 import subprocess
                 try:
@@ -453,6 +479,8 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                     actual_duration = seconds(float(json.loads(probe.stdout)['format']['duration']))
                 except (subprocess.SubprocessError, OSError, KeyError, ValueError) as exc:
                     raise ValueError('cannot read actual action video duration') from exc
+                if xiaoyunque and actual_duration < 2:
+                    raise ValueError('小云雀上传参考视频的实际文件必须至少2秒；不限制段内切镜时长')
                 if not math.isclose(actual_duration, ref['duration'], abs_tol=0.1):
                     raise ValueError('declared action duration differs from actual video bytes')
             if 'voice' in assigned:
@@ -517,8 +545,10 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             **({'status': 'candidate', 'review_status': 'unreviewed', 'production_blocked': True} if private_preview else {}),
             'revision': frozen['revision'], 'frozen_sha256': digest(frozen),
             'dependency_checks': dependencies,
+            'quality_evidence_checks': 'image_evidence_only_not_draft_release' if private_preview else 'evidence_consistency_only',
+            'visual_quality_verified': False, 'generation_input_provenance': 'unknown',
             'scope': 'registered bytes, declared reference roles/entities, durations and continuous split boundaries',
-            'limitations': 'Declaration consistency only, not proof of user consent or a browser sandbox. Requires actual visual inspection of roles/states and current platform bounds; does not verify pixels, media duration metadata, remote provenance or generation authorization.'}
+            'limitations': 'Declaration consistency only, not proof of user consent or a browser sandbox. Requires actual visual inspection of roles/states and current platform bounds; does not verify pixels, remote provenance or generation authorization; action-video and Xiaoyunque video durations are locally probed only.'}
 
 
 def compare(frozen: dict, observed: dict, project: Path | None = None, *, private_preview: bool = False) -> dict:

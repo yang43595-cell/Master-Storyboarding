@@ -5,7 +5,7 @@ import pytest
 
 from scripts.core.prompt_body import generated_overlay_issues
 from scripts.canvas_readback import compare, digest, validate_submission
-from scripts.tests.test_delivery_preflight import delivery
+from scripts.tests.test_delivery_preflight import delivery, bind_synthetic_quality
 
 GUARD = '正文中的秒数与切镜时间只控制动作和剪辑，不在画面显示。'
 
@@ -64,6 +64,7 @@ def test_480p_passes_and_historical_720p_comparison_is_preserved(tmp_path, host)
         for binding in item.get('upload_bindings', []):
             binding['target_url'] = frozen['target_url']
     manifest_path.write_text(json.dumps(manifest))
+    bind_synthetic_quality(tmp_path, frozen)
     assert validate_submission(frozen, tmp_path)['ok']
     from scripts.tests.test_canvas_readback import sample
     frozen, _ = sample()
@@ -98,6 +99,7 @@ def test_480p_rule_is_not_applied_to_other_hosts(tmp_path, host):
     manifest_path.write_text(json.dumps(manifest))
     for row in frozen['drafts']:
         row['parameters']['resolution'] = '720P'
+    bind_synthetic_quality(tmp_path, frozen)
     assert validate_submission(frozen, tmp_path)['ok']
 
 

@@ -117,6 +117,32 @@ lifecycle:
     return root
 
 
+
+def _synthetic_method_profile(tmp_path, vault, monkeypatch):
+    """Bind test-only method bytes to a test-only explicit promotion record."""
+    import shutil
+    repo = tmp_path / "synthetic-repo"
+    shutil.copytree(cli.ROOT, repo, ignore=shutil.ignore_patterns('__pycache__', '.pytest_cache', '.git', 'regression_evidence'))
+    monkeypatch.setattr(cli, 'ROOT', repo)
+    _bind_synthetic_method_revision(vault)
+
+
+def _bind_synthetic_method_revision(vault):
+    profile_path = cli.ROOT / 'skills/creative-director/knowledge-profile.json'
+    profile = json.loads(profile_path.read_text(encoding='utf-8'))
+    method = profile['professional_methods'][0]
+    method['promotion_record'] = {
+        'basis': 'user_directed', 'method_version': '2026-09-11',
+        'method_sha256': cli.digest(vault / method['path']),
+        'scope': 'synthetic isolated cache and reading test only',
+        'source_ref': 'fixture:synthetic method document',
+        'user_instruction_ref': 'fixture:explicit adoption of this synthetic revision',
+        'conflict_resolution': 'fixture:no competing method',
+        'rollback': 'fixture:discard temporary repository', 'supersedes': [],
+    }
+    write_json(profile_path, profile)
+
+
 def test_state_summary_preserves_finalization_and_old_projects_remain_compatible() -> None:
     old = cli._state_summary({"current_stage": "creative-director"})
     assert old["project_status"] == "active"
@@ -237,8 +263,15 @@ def test_read_only_status_reports_unknown_and_does_not_recover_transactions(tmp_
     assert {p: p.read_bytes() for p in before} == before
 
 
-def test_status_distinguishes_valid_candidate_test_from_production_blockers(tmp_path):
+def test_status_distinguishes_valid_candidate_test_from_production_blockers(tmp_path, monkeypatch):
     from scripts.core import candidate_test
+    import subprocess
+    def git_result(command, **kwargs):
+        assert command[:3] == ['git', '-C', str(cli.ROOT)]
+        value = {'branch': 'fixture-branch', 'rev-parse': 'a' * 40,
+                 'merge-base': 'a' * 40, 'status': ''}[command[3]]
+        return subprocess.CompletedProcess(command, 0, value, '')
+    monkeypatch.setattr(cli.subprocess, 'run', git_result)
     project = tmp_path / "isolated-candidate"
     project.mkdir()
     write_project_state(project, new_project_state(current_stage="creative-director"))
@@ -366,9 +399,10 @@ def test_task_view_preserves_frozen_checks_without_rewriting_basis(tmp_path, cap
 
 
 @pytest.mark.parametrize('change', ['none', 'source', 'method', 'scope', 'actor', 'confirmation', 'corrupt'])
-def test_stage_switch_restores_only_matching_reading_state(tmp_path, change):
+def test_stage_switch_restores_only_matching_reading_state(tmp_path, change, monkeypatch):
     project = _project(tmp_path)
     vault = _method_vault(tmp_path / 'vault')
+    _synthetic_method_profile(tmp_path, vault, monkeypatch)
     source = project / 'source.md'; source.write_text('原始内容', encoding='utf-8')
     request = project / 'request.json'
     request.write_text(json.dumps({'inputs':[str(source)], 'use_story_method': True}), encoding='utf-8')
@@ -384,6 +418,8 @@ def test_stage_switch_restores_only_matching_reading_state(tmp_path, change):
     if change == 'method':
         p=vault/'projects/Master-Storyboarding/应用知识/编导/编导方法.md'
         p.write_text(p.read_text(encoding='utf-8')+'\n新规则。',encoding='utf-8')
+        # A separately adopted synthetic revision, not unapproved byte drift.
+        _bind_synthetic_method_revision(vault)
     if change == 'scope': a.objective = '改变范围'
     if change == 'actor': a.actor_id = 'another-agent'
     if change == 'confirmation':
@@ -1037,9 +1073,10 @@ def test_handoff_revision_receipt_relative_path_and_hash(tmp_path, invalid):
 
 
 @pytest.mark.parametrize("requested", [False, True])
-def test_creative_story_method_is_optional_but_selected_method_keeps_reading_gate(tmp_path, requested):
+def test_creative_story_method_is_optional_but_selected_method_keeps_reading_gate(tmp_path, requested, monkeypatch):
     project = _project(tmp_path)
     vault = _method_vault(tmp_path / "vault")
+    _synthetic_method_profile(tmp_path, vault, monkeypatch)
     request = project / "request.json"
     request.write_text(json.dumps({"use_story_method": requested}), encoding="utf-8")
     args = argparse.Namespace(project=str(project), skill="creative-director", objective="局部故事修订",

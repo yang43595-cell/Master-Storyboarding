@@ -15,7 +15,15 @@ from .director_reading import director_scene_reading, readable_fields
 def _dialogue_comparison_text(text):
     """Only whitespace/punctuation; never normalize numerals or meaning."""
     import unicodedata
-    return ''.join(c for c in text if not c.isspace() and not unicodedata.category(c).startswith('P'))
+    compact = ''.join(c for c in text if not c.isspace())
+    def significant(index, char):
+        # Numeric separators/signs are content, not sentence punctuation.
+        before = index > 0 and compact[index - 1].isdecimal()
+        after = index + 1 < len(compact) and compact[index + 1].isdecimal()
+        return (before and after or char in '%‰‱％'
+                or after and char in '-‐‑‒–—﹣－')
+    return ''.join(c for i, c in enumerate(compact)
+                   if not unicodedata.category(c).startswith('P') or significant(i, c))
 
 
 def _origin(row):
@@ -162,10 +170,26 @@ def validate_dialogue_review(record, project_root):
         if row.get('origin') is not None and kind == 'source_reproduction' and row.get('editorial_proposal') is not None:
             raise ValueError('明确原片复刻不能混入修订；使用 authorized_revision')
         originals = [sources[x]['text'] for x in refs]
+        # An assembly is one utterance spanning caption pages, not alternative ASR hypotheses.
+        assembly = row.get('source_assembly')
+        if assembly is not None:
+            if (kind != 'source_reproduction' or not isinstance(assembly, dict)
+                    or not isinstance(assembly.get('source_ids'), list) or not assembly['source_ids']
+                    or any(not isinstance(x, str) or x not in refs for x in assembly['source_ids'])
+                    or len(set(assembly['source_ids'])) != len(assembly['source_ids'])
+                    or any(not isinstance(assembly.get(k), str) or not assembly[k].strip()
+                           for k in ('reason', 'reference', 'reviewer'))):
+                raise ValueError('字幕整理须绑定有序来源、同轮核对依据、理由与核对者：' + ident)
+            if any(sources[x]['kind'] != 'subtitle_verbatim' for x in assembly['source_ids']):
+                raise ValueError('字幕整理只能拼接逐字字幕，不能拼接 ASR 替代假设：' + ident)
+            assembled = ''.join(sources[x]['text'] for x in assembly['source_ids'])
+            if _dialogue_comparison_text(assembled) != _dialogue_comparison_text(row['text']):
+                raise ValueError('字幕整理只能恢复标点空白，不能改词、删词或换序：' + ident)
+            originals = [assembled] + [sources[x]['text'] for x in refs if x not in assembly['source_ids']]
         if len({_dialogue_comparison_text(t) for t in originals}) > 1:
             conflicts.append(ident)
         proposal = row.get('editorial_proposal')
-        if kind != 'authored_addition' and (row['text'] not in originals or proposal is not None or kind == 'authorized_revision'):
+        if kind != 'authored_addition' and (not any(_dialogue_comparison_text(row['text']) == _dialogue_comparison_text(t) for t in originals) or proposal is not None or kind == 'authorized_revision'):
             if (not isinstance(proposal, dict) or proposal.get('proposed_text') != row['text']
                     or proposal.get('original_text') not in originals
                     or not isinstance(proposal.get('reason'), str) or not proposal['reason'].strip()
@@ -183,7 +207,18 @@ def validate_dialogue_review(record, project_root):
                     or resolution.get('method') not in {'human_listening', 'user_confirmation'}
                     or any(not isinstance(resolution.get(k), str) or not resolution[k].strip() for k in ('reference', 'reviewer'))):
                 raise ValueError('对白核对记录须绑定本行原文、范围、真实依据与核对者：' + ident)
-        else:
+        speaker = row.get('speaker_id')
+        speaker_status = row.get('speaker_status', 'unresolved')
+        if speaker_status not in {'verified', 'inferred_unverified', 'unresolved'}:
+            raise ValueError('说话人状态无效：' + ident)
+        if isinstance(resolution, dict) and resolution.get('speaker_id') is not None and resolution['speaker_id'] != speaker:
+            raise ValueError('对白核对记录的说话人与当前行不一致：' + ident)
+        # Explicit unknown sentinels are not an identity, even if marked verified.
+        unknown_speaker = (isinstance(speaker, str) and speaker.strip().casefold() in
+                           {'unknown', 'unknown_speaker', 'unk', 'unresolved', '未知', '待确认', '未确认'})
+        # Legacy text-only verification is retained but cannot clear identity uncertainty.
+        if (resolution is None or not isinstance(speaker, str) or not speaker.strip()
+                or unknown_speaker or speaker_status != 'verified' or resolution.get('speaker_id') != speaker):
             unresolved.append(ident)
         for field in ('source_locator', 'verified_timing'):
             timing = row.get(field)
@@ -195,6 +230,13 @@ def validate_dialogue_review(record, project_root):
                 raise ValueError('时码须为有限、非负且递增的起止秒数：' + ident)
             if field == 'verified_timing':
                 if not resolution or any(not isinstance(timing.get(k), str) or not timing[k].strip() for k in ('verification_ref', 'reviewer')):
+                    raise ValueError('已核时码需要本行核对及独立对齐依据：' + ident)
+                if ident in unresolved:
+                    # Historical text-only receipts remain readable as declarations,
+                    # never verified timing or production authority. New identity
+                    # claims must satisfy the current contract rather than downgrade.
+                    if 'speaker_status' not in row and 'speaker_id' not in resolution:
+                        continue
                     raise ValueError('已核时码需要本行核对及独立对齐依据：' + ident)
                 verified_times.append(ident)
     fidelity_checked = _validate_source_projection(record, project_root)
@@ -346,8 +388,8 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
             if test_report is None:
                 raise ValueError('完整叙事包仍有未核对白证据：' + ', '.join(report['unresolved_ids']))
             test_report['unresolved_dialogue_ids'] = report['unresolved_ids']
-        if [(r['dialogue_id'], r['text']) for r in evidence['dialogues']] != [(r['dialogue_id'], r['text']) for r in narrative['dialogues']]:
-            raise ValueError('叙事包与对白审核记录的 ID、原文或顺序不一致')
+        if [(r['dialogue_id'], r.get('speaker_id'), r['text']) for r in evidence['dialogues']] != [(r['dialogue_id'], r['speaker_id'], r['text']) for r in narrative['dialogues']]:
+            raise ValueError('叙事包与对白审核记录的 ID、说话人、原文或顺序不一致')
     paragraphs = narrative['story_paragraphs']
     by_id = {p['paragraph_id']: p['text'] for p in paragraphs}
     if len(by_id) != len(paragraphs):

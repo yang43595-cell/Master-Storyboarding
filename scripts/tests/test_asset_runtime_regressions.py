@@ -1,6 +1,7 @@
 """Runtime sequences use isolated catalogs/projects; no model or real Vault calls."""
 import copy
 import json
+import os
 from pathlib import Path
 import tempfile
 import threading
@@ -24,6 +25,10 @@ class AssetRuntimeRegressions(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.base = Path(self.temp.name)
+        from test_visual_asset_projects import synthetic_vault
+        self._synthetic_env = patch.dict(os.environ, {'MSB_VAULT_ROOT': str(synthetic_vault(self.base / 'synthetic-vault'))})
+        self._synthetic_env.start()
+        self.addCleanup(self._synthetic_env.stop)
         self.lib, self.project, self.asset = fixture(self.base)
         self.service = self.lib.projects
         self.root = Path(self.project['path'])
@@ -44,6 +49,7 @@ class AssetRuntimeRegressions(unittest.TestCase):
         self.job_id = self.service.detail(self.project['id'])['rows'][0]['job']['id']
 
     def tearDown(self):
+        self._synthetic_env.stop()
         self.temp.cleanup()
 
     def job(self):

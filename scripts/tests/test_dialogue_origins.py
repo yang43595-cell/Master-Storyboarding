@@ -22,13 +22,13 @@ def fixture(root):
         sources.append(dict(source_id=f'S{i}', kind='subtitle_verbatim', text=text,
             evidence_path=path.name, evidence_sha256=artifacts.digest(path), text_pointer='/text',
             locator='synthetic frame', producer='synthetic reader'))
-        rows.append(dict(dialogue_id=f'DLG-0{i}', text=text, source_ids=[f'S{i}']))
+        rows.append(dict(dialogue_id=f'DLG-0{i}', speaker_id='CHR-A', speaker_status='inferred_unverified', text=text, source_ids=[f'S{i}']))
     baseline = dict(sources=sources, dialogues=rows)
     write_json(root/'extracted.json', baseline)
     record = copy.deepcopy(baseline)
     for row in record['dialogues']:
         row['origin'] = {'kind': 'source_reproduction'}
-    record['dialogues'].insert(1, dict(dialogue_id='DLG-NEW', text='新增衔接。', source_ids=[], origin=origin()))
+    record['dialogues'].insert(1, dict(dialogue_id='DLG-NEW', speaker_id='CHR-A', speaker_status='inferred_unverified', text='新增衔接。', source_ids=[], origin=origin()))
     record['source_baseline'] = dict(path='extracted.json', sha256=artifacts.digest(root/'extracted.json'))
     return record
 
@@ -85,7 +85,8 @@ def test_user_direct_addition_and_fully_original_work(tmp_path):
     report = check(tmp_path, dict(sources=[], dialogues=[row]))
     assert report['unresolved_ids'] == ['DLG-USER']
     assert not report['source_fidelity_checked']
-    row['verification'] = dict(scope='dialogue', dialogue_id='DLG-USER', text=row['text'],
+    row.update(speaker_id='CHR-A', speaker_status='verified')
+    row['verification'] = dict(scope='dialogue', dialogue_id='DLG-USER', speaker_id='CHR-A', text=row['text'],
         method='user_confirmation', reference='synthetic-exact-text-confirmation', reviewer='synthetic user')
     checked = check(tmp_path, dict(sources=[], dialogues=[row]))
     assert checked['unresolved_ids'] == [] and checked['verified_timing_ids'] == []

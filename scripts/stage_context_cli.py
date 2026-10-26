@@ -1265,8 +1265,8 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         f"- 交付意图：`{json.dumps(delivery_contract, ensure_ascii=False)}`；按本轮交付对象及适用检查项审核。",
         f"- 根规则：`{ROOT / 'PROJECT_RULES.md'}`",
         f"- Skill 入口：`{skill_dir / 'SKILL.md'}`",
-        "- 执行分工：遵守根规则的 Skill 执行分工；当前主 agent 直接读取、prepare、产出并自检，只有用户要求或明确独立并行收益时委派。",
-        "- 上下文边界：按本次启动包和准确源证据执行；返修保留有效读取并核对当前版本，不因换修订号新建执行者。",
+        "- 执行分工：遵守根规则的干净上下文启动规则；新一轮编导等创作生产或实质重跑由全新专属生产 agent 执行，不继承长主会话；本轮执行者读取、准备、产出并自查。其他任务按根规则执行。",
+        "- 上下文边界：交接当前有效规则、原始素材、本轮约束与已确认决定及依据、现行版本、未决事项、范围和停止点；不得以摘要替代原片。已在本轮专属 agent 内的逐段推进和局部返修可继续；目标、来源或基线重大变化时新开，不按修订号机械重开。",
         "- prepare 只生成文件，不清空宿主对话。读取规则见共享 knowledge-access.md；计量和停止条件见 docs/development/token-budget.md。",
         "## 本轮范围", "",
         "- 交付对象、非目标、输入版本、范围字段和适用标准仅维护在上列 `task_basis.json`；本启动包不复制第二份范围记录。", "",
@@ -1367,13 +1367,13 @@ def handoff(args: argparse.Namespace) -> dict[str, Any]:
     startup_requirement = (
         "- `voiceover-to-video-script` 直接按其 Skill 的原始资料读取例外建立本段输入范围；不生成或校验 stage_startup.md。"
         if target_skill == "voiceover-to-video-script" else
-        "- 用户已确认上游且明确要求继续时，当前主 agent 生成并校验下一 Skill 的 stage_startup.md，在该 Skill 边界内直接执行和自检；不固定新增生产子 agent。"
+        "- 用户已确认上游且明确要求继续时，按根规则为下一 Skill 建立本轮执行者；创作新轮使用干净专属生产 agent，由其生成并校验 stage_startup.md，在该 Skill 边界内执行和自查。"
     )
     lines.extend([
         "", "## 接收约束", "",
         ("- 仅按独立测试授权继续候选试写；保留所有未核对事实和素材阻塞。视频 Skill 仍直接读取，不重建准备包。" if testing else startup_requirement),
         "- 编导交接须实际读准确正文、核来源和本轮自查结论；关键发现及未核范围复用现有任务记录，程序 ok 不代表叙事充分。",
-        "- 默认在当前对话完成制作、自查和修正；仅用户明确要求独立审核或明确委派时才交接，并核对执行仓库与当前规则。",
+        "- 创作新轮按根规则使用干净专属生产 agent，候选试跑与视频直接读取分支同样适用；同轮返修可继续原执行者。核对执行环境、仓库与当前规则；无法创建时如实报告，不冒称独立执行。生产委派不等于独立审核授权，仅用户明确要求时另行独立审核。",
         ("- 只消费以上未确认候选及准确稳定 ID；不得读取旧案例答案，不得写入确认记录。" if testing else "- 只消费以上已确认产物及其稳定 ID；不得读取旧生产对话或未列入启动包的历史内容。"),
         "- 本交接不等于下一阶段已启动，也不替代下一阶段的输入门禁。", "",
     ])

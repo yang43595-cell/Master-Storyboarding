@@ -43,12 +43,41 @@ def delivery(root):
                 'continuity': {'event_id': 'one-event', **({'previous_node_id': previous} if previous else {})}}
     frozen = {'target_url': 'https://fixture.invalid/exact', 'revision': 'R02',
               'source_artifacts': [refs['DIRECTOR']], 'drafts': [row('one'), row('two', 'one')]}
+    bind_synthetic_quality(root, frozen)
     observed = copy.deepcopy(frozen)
     observed.update(phase='after_refresh', frozen_sha256=digest(frozen))
     for row in observed['drafts']:
         row['native_mentions'] = [{**m, 'entity_type': 'fixture-chip', 'native_noneditable_entity': True}
                                   for m in row['ordered_media']]
     return frozen, observed
+
+
+
+def bind_synthetic_quality(root, frozen):
+    """Complete byte/use-bound synthetic observations, never real approval."""
+    from scripts.core import quality_evidence as q
+    from scripts.tests.test_quality_evidence_consumers import observations
+    manifest = artifacts.load_manifest(root)
+    images = {}
+    for row in frozen['drafts']:
+        row.setdefault('source_shot_ids', ['SYNTHETIC-SHOT'])
+        for ref in row['reference_checks']:
+            if ref.get('kind') != 'image':
+                continue
+            item = next(a for a in manifest['artifacts'] if a['artifact_id'] == ref['artifact_id'])
+            if item['artifact_id'] not in images:
+                evidence = observations(q.IMAGE_ASPECTS)
+                evidence.update(image_sha256=item['checksum'],
+                    source_files=[{'path': 'director.json', 'sha256': artifacts.digest(root / 'director.json')}],
+                    source_shot_ids=[], view={'resolution': 'original', 'locator': 'synthetic pixels'}, uses=[])
+                images[item['artifact_id']] = evidence
+                item['quality_evidence'] = evidence
+            evidence = images[item['artifact_id']]
+            evidence['source_shot_ids'] = sorted(set(evidence['source_shot_ids'] + row['source_shot_ids']))
+            evidence['uses'].append(q.image_use(ref, row['source_shot_ids']))
+        row['quality_evidence'] = observations(q.DRAFT_ASPECTS)
+        row['quality_evidence']['input_sha256'] = q.fingerprint(q.draft_binding(row))
+    write_json(root / artifacts.MANIFEST_PATH, manifest)
 
 
 def test_full_reference_and_native_readback_then_mutation_fails(tmp_path):
@@ -110,8 +139,11 @@ def test_action_reference_checks_actual_video_duration(tmp_path):
     ref = {'artifact_id': 'ACTION', 'revision': 'R01', 'sha256': item['checksum'],
            'role': 'action', 'kind': 'video', 'entity_ids': ['ACTOR'], 'duration': 1}
     row['reference_checks'].append(ref)
+    bind_synthetic_quality(tmp_path, frozen)
     assert validate_submission(frozen, tmp_path)['ok']
     ref['duration'] = 2
+    # Recheck this synthetic revision so actual media duration remains the target gate.
+    bind_synthetic_quality(tmp_path, frozen)
     with pytest.raises(ValueError, match='actual video'):
         validate_submission(frozen, tmp_path)
 

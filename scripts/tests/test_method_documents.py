@@ -122,6 +122,12 @@ lifecycle:
 
 完整正文必须进入本 Skill 的方法快照。
 """, encoding="utf-8")
+    if skill == 'creative-director':
+        import hashlib
+        entry['promotion_record'] = dict(basis='user_directed', method_version='2026-09-11',
+            method_sha256=hashlib.sha256(source.read_bytes()).hexdigest(), scope='synthetic binding test',
+            source_ref='fixture:synthetic method', user_instruction_ref='fixture:synthetic exact revision adoption',
+            conflict_resolution='fixture:no conflict', rollback='fixture:discard temporary files', supersedes=[])
     context = {"skill": skill, "request": {"use_story_method": True}}
     loaded = resolve_method_documents(tmp_path / "vault", profile, context)
     if skill == "creative-director":

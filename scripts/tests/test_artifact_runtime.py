@@ -227,12 +227,21 @@ def test_exact_supplement_reference_checks_receipt_and_freeze(tmp_path):
                 revision='R01', user_approved=True, confirmation_ref='receipt.json')
     receipt = {'scope': 'artifact', 'artifact_ids': ['FRAME-R01'],
                'images': [{'artifact_id': 'FRAME-R01', 'path': image.name, 'sha256': digest}]}
+    receipt['images'][0]['usage'] = {'source_shot_ids': ['S04-010']}
+    from scripts.tests.test_quality_evidence_consumers import observations
+    from scripts.core import quality_evidence as q
+    evidence = observations(q.IMAGE_ASPECTS)
+    evidence.update(image_sha256=digest, source_shot_ids=['S04-010'],
+        source_files=[{'path': image.name, 'sha256': digest}],
+        view={'resolution': 'original', 'locator': 'synthetic blue image'})
+    item['quality_evidence'] = evidence
     write_json(tmp_path / 'receipt.json', receipt)
     write_json(tmp_path / '00_项目管理/artifact_manifest.json', {'artifacts': [item]})
     state = new_project_state()
     state.update(current_artifacts=['FRAME-R01'], user_confirmations=[receipt])
     write_project_state(tmp_path, state)
-    assert require_references(tmp_path, ['FRAME-R01'])[0]
+    assert not require_references(tmp_path, ['FRAME-R01'])[0]  # Exact usage is mandatory.
+    assert require_references(tmp_path, ['FRAME-R01'], ['S04-010'])[0]
     assert not require_references(tmp_path, [])[0]
     receipt['images'][0]['usage'] = {'source_shot_ids': ['S04-010']}
     write_json(tmp_path / 'receipt.json', receipt)
@@ -240,11 +249,11 @@ def test_exact_supplement_reference_checks_receipt_and_freeze(tmp_path):
     assert not require_references(tmp_path, ['FRAME-R01'], ['S06-010'])[0]
     receipt['images'][0]['sha256'] = '0' * 64
     write_json(tmp_path / 'receipt.json', receipt)
-    assert not require_references(tmp_path, ['FRAME-R01'])[0]
+    assert not require_references(tmp_path, ['FRAME-R01'], ['S04-010'])[0]
     receipt['images'][0]['sha256'] = digest
     write_json(tmp_path / 'receipt.json', receipt)
     revision_control.open_change(tmp_path, change_id='REWORK', tier='T1',
                                 logical_ids=[item['logical_id']], reason='fixture rework')
-    assert not require_references(tmp_path, ['FRAME-R01'])[0]
+    assert not require_references(tmp_path, ['FRAME-R01'], ['S04-010'])[0]
     revision_control.cancel_change(tmp_path, change_id='REWORK', reason='fixture cancelled')
-    assert require_references(tmp_path, ['FRAME-R01'])[0]
+    assert require_references(tmp_path, ['FRAME-R01'], ['S04-010'])[0]
