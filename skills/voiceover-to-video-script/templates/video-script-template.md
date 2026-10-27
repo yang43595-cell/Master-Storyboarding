@@ -70,6 +70,16 @@
 
 按同样方式完成当前创作段落内其余实际生成段；后续创作段落确认推进后追加到同一稿件。外部广告等非生成段明确标记占位，未知时长不编造。
 
+## 已变化场景的参考（发生持续可见变化时才写）
+
+读取导演包对应 `scenes[].scene_states[]` 的旧态 → 来源事件 → 新态、持续不变量与变化、准确生效及沿用镜号，在同一视频 JSON 制作信息中引用，不另建状态台账；根据 `source_shots` 检查本段所有镜头而非仅段首。素材行列对应已审状态图及范围，正文以自然语言写可见状态；如“采用桌面已摆齐菜肴的场景参考，后续反打仍保留原有菜盘及摆放关系”，但只在来源确有该状态时写，不虚构菜品。真实素材引用须同步替换，空桌旧图不继续作新态的活动全景参考。
+
+提交制作信息同步绑定真实来源：`source_artifacts` 包含视频所引准确 `source_storyboard`／`source_director` 文件；源视频已有 `generation_segments` 时用草稿 `source_segment_id` 对应原 `segment_id`，`source_shot_ids`／`source_shots` 逐镜保留该源段映射。存在 `layout`、来源 `scene_states` 命中或已声明 `scene_state_assessment` 时，原 `quality_evidence.checks.persistent_objects` 保留具体 `observation`／`locator`，加 `scene_state_assessment: changed | unchanged` 和覆盖全段的 `source_shot_ids`；变化须有来源状态链，无变化须有具体依据，缺判断阻提交，删状态记录不等于无变化。有 `scene_states` 的新提交必须携带准确视频源的 `generation_segments` 及草稿 `source_segment_id`，不能删视频来源降级为只检查导演；旧包可读不代表新提交 ready。泛用演员切点的 `state_reference` 保持原合同，不强制环境判断；场景用途的 `state_reference` 须显式写上述判断，程序无法仅凭实体名称发现未登记却冒充演员用途的场景引用。这些制作字段不复制到模型正文。
+
+原文首次出场已摆满饭菜／已捧碗时，直接引用该已成立状态图；对应导演状态用 `previous_state_id: null`，`change_event` 写成立事实及原文定位，不强造上菜／拿碗过程或先制作空桌／桌上碗。图像基础母版只是派生来源，不自动是视频开场状态；已有同实体链中间不能用 null 重置，后续变化仍据真实事件承接。
+
+无图写待制作、未核写待审，放在制作信息，不伪造 `@` 或已绑定声明；相关生成提交仍阻塞。同段变化明确起终状态及过程，同段涉及多状态而无真实逐镜／起终控制证据时如实写限制，当前消费者阻止提交，不自动拆段；前半段前态、后半段单一已声明后态同样属于此限制，不能当作全段同态。按[场景状态参考合同](../../storyboard-director/references/image-continuity-hard-rules.md#剧情后的场景状态参考)处理，不为微动作强制补图，不改变用户规定的产品开盒／挤料／搅拌同段。
+
 ## 连续事件的跨段参考（确因时长拆分时才写）
 
 前段 → 后段及拆分原因：{准确段号，不能仅按切镜机械拆分}

@@ -11,6 +11,8 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from .prompt_body import submitted_prompt_body
+
 IMAGE_ASPECTS = ('identity_wardrobe', 'hands_support', 'product_geometry',
                  'ownership', 'space_objects', 'product_phase', 'boundary_state')
 DRAFT_ASPECTS = ('action_chain', 'persistent_objects', 'state_boundaries',
@@ -174,7 +176,8 @@ def validate_native_binding_claims(value, root, revision=None, target=None):
             if len(matches) != 1:
                 raise ValueError('native_binding: 缺当前节点唯一回读')
             actual = matches[0]
-            if not _text(value.get('prompt')) or not isinstance(value.get('parameters'), dict):
+            prompt = submitted_prompt_body(value)
+            if not _text(prompt) or not isinstance(value.get('parameters'), dict):
                 raise ValueError('native_binding: verified仅可绑定完整当前段正文/参数，不接受整包摘要冒充')
             expected_media = value.get('ordered_media')
             if expected_media is None:
@@ -189,7 +192,7 @@ def validate_native_binding_claims(value, root, revision=None, target=None):
                 if isinstance(material, dict) and material.get('native_entity_verified') is True:
                     if {'node_id': material.get('native_node_id'), 'media_id': material.get('native_media_id')} not in expected_media:
                         raise ValueError('native_binding: 已核materials声明与当前原生实体不一致')
-            if (actual.get('prompt') != value.get('prompt') or actual.get('parameters') != value.get('parameters')
+            if (actual.get('prompt') != prompt or actual.get('parameters') != value.get('parameters')
                     or actual.get('ordered_media') != expected_media):
                 raise ValueError('native_binding: 本稿正文/参数/有序引用与回读不一致')
             mentions = actual.get('native_mentions')
@@ -204,3 +207,251 @@ def validate_native_binding_claims(value, root, revision=None, target=None):
     for key in ('drafts', 'generation_segments', 'creative_sections'):
         if key in value:
             validate_native_binding_claims(value[key], root, revision, target)
+
+
+def source_shot_ids(row):
+    """Resolve all source shots, never just a segment's first shot."""
+    direct = row.get('source_shot_ids')
+    mapped = row.get('source_shots')
+    if mapped is not None:
+        if not isinstance(mapped, list):
+            raise ValueError('scene_state: source_shots 必须为准确镜号数组')
+        mapped = [s.get('shot_id') if isinstance(s, dict) else s for s in mapped]
+    for ids in (direct, mapped):
+        if ids is not None and (not isinstance(ids, list) or not ids or
+                                any(not _text(s) for s in ids) or len(set(ids)) != len(ids)):
+            raise ValueError('scene_state: 缺准确、唯一的 source_shots/source_shot_ids')
+    if direct is not None and mapped is not None and direct != mapped:
+        raise ValueError('scene_state: source_shots 与 source_shot_ids 映射不一致')
+    return direct if direct is not None else mapped or []
+
+
+def scene_state_requirements(payload):
+    """Read persistent changes from the existing director JSON; no NLP/vision.
+
+    An omitted declaration is NOT proof that the story has no scene changes.
+    The creative reader must detect and record these before image/video work.
+    """
+    requirements = []
+    for scene in payload.get('scenes', []):
+        if 'scene_states' not in scene:
+            continue
+        states = scene['scene_states']
+        if not isinstance(states, list):
+            raise ValueError('scene_state: scene_states 必须是数组')
+        shots = [s['shot_id'] for s in scene.get('shots', [])]
+        known, occupied, latest = set(), set(), {}
+        for state in states:
+            if (not isinstance(state, dict) or any(not _text(state.get(k)) for k in
+                    ('state_id', 'entity_id', 'change_event', 'description'))
+                    or 'previous_state_id' not in state
+                    or (state['previous_state_id'] is not None and not _text(state['previous_state_id']))
+                    or state['state_id'] == state['previous_state_id']):
+                raise ValueError('scene_state: 缺旧态→事件→新态及场景实体')
+            for key in ('preserve', 'changes', 'source_shot_ids'):
+                values = state.get(key)
+                if not isinstance(values, list) or not values or any(not _text(v) for v in values):
+                    raise ValueError('scene_state: 缺不变量、变化或后续镜号范围')
+            ids = state['source_shot_ids']
+            ident = (state['entity_id'], state['state_id'])
+            if ident in known or len(set(ids)) != len(ids) or not set(ids) <= set(shots):
+                raise ValueError('scene_state: 重复状态或镜号越出来源场景')
+            positions = [shots.index(shot) for shot in ids]
+            prior = latest.get(state['entity_id'])
+            if positions != sorted(positions) or (prior and (
+                    state['previous_state_id'] != prior['state_id'] or
+                    shots.index(prior['source_shot_ids'][-1]) >= positions[0])):
+                raise ValueError('scene_state: 状态链前驱或镜号顺序不一致')
+            latest[state['entity_id']] = state
+            pairs = {(state['entity_id'], shot) for shot in ids}
+            if occupied & pairs:
+                raise ValueError('scene_state: 同镜同实体状态范围冲突；明确起终变化后再处理提交')
+            known.add(ident)
+            occupied.update(pairs)
+            requirements.append(state)
+    return requirements
+
+
+def reference_shot_ids(reference, row):
+    """A scoped use may narrow a multi-shot draft, never widen its authority."""
+    whole = source_shot_ids(row)
+    ids = reference.get('source_shot_ids', whole)
+    if (not isinstance(ids, list) or not ids or any(not _text(s) for s in ids)
+            or len(set(ids)) != len(ids) or not set(ids) <= set(whole)):
+        raise ValueError('scene_state: reference 镜号范围不属于当前生成段')
+    return ids
+
+
+def validate_scene_state_references(row, requirements):
+    """Consumer-side declared state coverage, not image or native control proof."""
+    shots = source_shot_ids(row)
+    refs = row.get('reference_checks', [])
+    environment = any('layout' in r.get('roles', [r.get('role')]) for r in refs)
+    assessment = row.get('quality_evidence', {}).get('checks', {}).get('persistent_objects', {})
+    conclusion = assessment.get('scene_state_assessment')
+    needed = [s for s in requirements if set(shots) & set(s['source_shot_ids'])]
+    if environment or needed or conclusion is not None:
+        if (conclusion not in {'changed', 'unchanged'} or
+                assessment.get('source_shot_ids') != shots or not shots or
+                not _text(assessment.get('observation')) or not _text(assessment.get('locator'))):
+            raise ValueError('scene_state: 活动环境参考缺逐镜持久状态判断，待检查；省略scene_states不等于无变化')
+        if (conclusion == 'changed') != bool(needed):
+            raise ValueError('scene_state: 持久状态判断与源状态链不一致；不能删state声明绕过后态图')
+    if not requirements:
+        return
+    if not shots:
+        raise ValueError('scene_state: 有持久场景状态时必须提供完整 source_shots 映射')
+    by_entity = {}
+    for state in needed:
+        by_entity.setdefault(state['entity_id'], set()).add(state['state_id'])
+    if any(len(states) > 1 for states in by_entity.values()):
+        raise ValueError('scene_state: 同段多个持久状态，逐镜原生控制未证明；明确起终态并核平台能力或在真实剧情变化处分段，不能拆开用户限定的产品连续段')
+    for state in needed:
+        if not set(shots) <= set(state['source_shot_ids']):
+            raise ValueError('scene_state: 同段含变化前后镜号，文字用途范围不等于原生逐镜控制；先核真实起终控制或合法叙事分段')
+    for state in needed:
+        required_shots = set(shots) & set(state['source_shot_ids'])
+        covered = set()
+        for ref in refs:
+            if state['entity_id'] not in ref.get('entity_ids', []):
+                continue
+            roles = set(ref.get('roles', [ref.get('role')]))
+            # A stale full scene remains a conflicting active reference even if
+            # the author merely relabels it as layout/appearance.
+            if not roles & {'state_reference', 'layout', 'appearance', 'start_frame', 'end_frame'}:
+                continue
+            used = set(reference_shot_ids(ref, row))
+            if used & required_shots:
+                if ref.get('state_id') != state['state_id']:
+                    raise ValueError('scene_state: 旧态/基础环境图仍为变化后活动全景参考；保留来源历史，不得继续绑定')
+                if not used <= set(state['source_shot_ids']):
+                    raise ValueError('scene_state: 新态图用途越出源导演状态范围')
+                if ref.get('kind') == 'image' and 'state_reference' in roles:
+                    covered.update(used)
+        if not required_shots <= covered:
+            raise ValueError('scene_state: 新场景状态图待制作/待审或未实际引用，阻止提交；文字保持或假@不代替图片')
+
+
+def validate_scene_source_mapping(rows, sources, project):
+    """Bind draft shot mapping to byte-checked source segments and director.
+
+    sources contains (authority reference, resolved path, decoded JSON). Source
+    director links must be present in source_artifacts: omission cannot downgrade
+    the state check to a legacy/no-change path.
+    """
+    videos = []
+    all_shots = set()
+    has_states = False
+    for ref, path, payload in sources:
+        if not isinstance(payload, dict):
+            continue
+        for scene in payload.get('scenes', []):
+            all_shots.update(s['shot_id'] for s in scene.get('shots', []))
+            has_states |= bool(scene.get('scene_states'))
+        for key in ('source_storyboard', 'source_director'):
+            upstream = payload.get(key)
+            if not isinstance(upstream, dict):
+                continue
+            expected_path = (Path(ref.get('project_path', project)) / upstream['path']).resolve() if upstream.get('path') else None
+            matches = [(r, p, value) for r, p, value in sources if p != path and
+                       (not upstream.get('artifact_id') or r.get('artifact_id') == upstream['artifact_id']) and
+                       (expected_path is None or expected_path == p) and
+                       (upstream.get('artifact_id') or expected_path is not None)]
+            if len(matches) != 1:
+                raise ValueError('scene_state: source_artifacts 必须包含准确来源导演，不能省略后跳过状态检查')
+            r, p, value = matches[0]
+            if ((upstream.get('revision') and upstream['revision'] != r.get('revision')) or
+                    (upstream.get('sha256') and upstream['sha256'] != r.get('sha256')) or
+                    not isinstance(value, dict) or not isinstance(value.get('scenes'), list)):
+                raise ValueError('scene_state: 视频源与导演修订/字节不一致')
+        segments = payload.get('generation_segments')
+        if segments is None and isinstance(payload.get('creative_sections'), list):
+            segments = [s for section in payload['creative_sections'] for s in section.get('generation_segments', [])]
+        if segments:
+            videos.extend(segments)
+    if any(row.get('source_segment_id') for row in rows) and not videos:
+        raise ValueError('scene_state: 已声明source_segment_id但缺准确视频源，不能退回无映射检查')
+    # Audio provenance is independent of persistent environment changes. Read
+    # only existing director placements and video source_audio; no NLP claims.
+    shot_audio = {}
+    for _, _, payload in sources:
+        for scene in payload.get('scenes', []):
+            for shot in scene.get('shots', []):
+                if isinstance(shot.get('audio'), dict) and 'dialogue' in shot['audio']:
+                    key = shot['shot_id']
+                    if key in shot_audio:
+                        raise ValueError('source_audio: 来源导演镜号冲突')
+                    shot_audio[key] = shot['audio']['dialogue']
+    if videos and (shot_audio or any('source_audio' in s for s in videos)):
+        replay_source_audio(videos, shot_audio)
+    if not has_states:
+        return
+    if not videos:
+        raise ValueError('scene_state: 场景后态交付必须携带准确视频源generation_segments，不能省略视频源绕过镜号映射')
+    for row in rows:
+        ids = source_shot_ids(row)
+        if not ids or not set(ids) <= all_shots:
+            raise ValueError('scene_state: 提交镜号不在准确源导演内')
+        if videos:
+            segment = row.get('source_segment_id', row.get('node_id'))
+            matches = [s for s in videos if s.get('segment_id') == segment]
+            if len(matches) != 1 or source_shot_ids(matches[0]) != ids:
+                raise ValueError('scene_state: 提交 source_shots 必须逐镜匹配准确视频源 source_segment_id，不能换镜绕过后态')
+
+
+def replay_source_audio(segments, shot_audio):
+    """Resolve existing source_audio fragments with a transient per-shot cursor.
+
+    No NLP, synthesized speech, new dialogue ledger, or native job guarantee.
+    Call with the complete selected source segments (not an arbitrary mid-shot
+    excerpt). Context/prompt prose is deliberately not a source of utterances.
+    The return value is an audit projection, not another business authority.
+    """
+    cursors, selected, result = {}, [], []
+    known_order = list(shot_audio)
+    last_position = -1
+    for segment in segments:
+        ids = source_shot_ids(segment)
+        audio = segment.get('source_audio')
+        if (not ids or not isinstance(audio, list) or
+                any(not isinstance(a, dict) for a in audio) or
+                [a.get('shot_id') for a in audio] != ids):
+            raise ValueError('source_audio: 必须逐镜对应本段完整source_shots，不能漏掉无对白镜')
+        output = []
+        for item in audio:
+            shot = item['shot_id']
+            if shot not in shot_audio:
+                raise ValueError('source_audio: 镜号不在准确来源导演中')
+            position = known_order.index(shot)
+            if position < last_position:
+                raise ValueError('source_audio: 来源镜头顺序倒退')
+            last_position = position
+            if shot not in selected:
+                selected.append(shot)
+            expected = shot_audio[shot]
+            placements = item.get('dialogue')
+            if not isinstance(placements, list):
+                raise ValueError('source_audio: 缺准确dialogue片段')
+            index, offset = cursors.get(shot, (0, 0))
+            for part in placements:
+                if (not isinstance(part, dict) or not _text(part.get('text')) or
+                        index >= len(expected)):
+                    raise ValueError('source_audio: 片段为空或重复发声')
+                original = expected[index]
+                if any(part.get(k) != original.get(k) for k in
+                       ('dialogue_id', 'speaker_id', 'presentation')):
+                    raise ValueError('source_audio: 源ID/说话人/声画职责不一致')
+                text = part['text']
+                if not original['text'].startswith(text, offset):
+                    raise ValueError('source_audio: 片段重复、漏字或改写，不得按ID重取整句')
+                output.append({k: part[k] for k in
+                               ('dialogue_id', 'speaker_id', 'presentation', 'text')})
+                offset += len(text)
+                if offset == len(original['text']):
+                    index, offset = index + 1, 0
+            cursors[shot] = (index, offset)
+        result.append({'segment_id': segment.get('segment_id'), 'dialogue': output})
+    for shot in selected:
+        if cursors[shot] != (len(shot_audio[shot]), 0):
+            raise ValueError('source_audio: 所选源镜对白没有完整覆盖；片段游标尚未到句末')
+    return result
