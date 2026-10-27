@@ -194,6 +194,9 @@ def test_same_shot_new_role_cannot_reuse_old_image_review(tmp_path):
     frozen,_=fixture(tmp_path);d=frozen['drafts'][0]
     d['reference_checks'][0]['roles']=['layout']
     d['required_reference_roles']={'E1':['layout']}
+    # Explicit synthetic scene assessment keeps this test focused on stale image use.
+    d['quality_evidence']['checks']['persistent_objects'].update(
+        scene_state_assessment='unchanged', source_shot_ids=d['source_shot_ids'])
     d['quality_evidence']['input_sha256']=q.fingerprint(q.draft_binding(d))
     with pytest.raises(ValueError,match='职责/实体/状态'): canvas_readback.validate_submission(frozen,tmp_path)
 

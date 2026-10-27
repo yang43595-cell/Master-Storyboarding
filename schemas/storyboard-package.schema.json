@@ -246,6 +246,65 @@
         "end_state": {
           "$ref": "#/$defs/nonEmptyString"
         },
+        "scene_states": {
+          "type": "array",
+          "description": "登记原文进入已成立或剧情改变后须持续保留的场景状态；非逐微动作补图清单。",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state_id",
+              "entity_id",
+              "previous_state_id",
+              "change_event",
+              "description",
+              "preserve",
+              "changes",
+              "source_shot_ids"
+            ],
+            "properties": {
+              "state_id": {
+                "$ref": "#/$defs/nonEmptyString"
+              },
+              "entity_id": {
+                "$ref": "#/$defs/nonEmptyString"
+              },
+              "previous_state_id": {
+                "anyOf": [{"type": "null"}, {"$ref": "#/$defs/nonEmptyString"}]
+              },
+              "change_event": {
+                "$ref": "#/$defs/nonEmptyString"
+              },
+              "description": {
+                "$ref": "#/$defs/nonEmptyString"
+              },
+              "preserve": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/$defs/nonEmptyString"
+                }
+              },
+              "changes": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/$defs/nonEmptyString"
+                }
+              },
+              "source_shot_ids": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/$defs/nonEmptyString"
+                }
+              }
+            }
+          }
+        },
         "space_rules": {
           "$ref": "#/$defs/spaceRules"
         },

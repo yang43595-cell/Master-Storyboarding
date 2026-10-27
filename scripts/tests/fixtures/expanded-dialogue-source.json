@@ -1,0 +1,347 @@
+{
+  "provenance": {
+    "kind": "pure_synthetic_publication_fixture",
+    "status": "text contract only; not actual dialogue, speech, or job input"
+  },
+  "shot_audio": {
+    "SYN-S01": [],
+    "SYN-S02": [
+      {
+        "dialogue_id": "SYN-D1",
+        "speaker_id": "A",
+        "presentation": "SYNC",
+        "text": "Ready."
+      },
+      {
+        "dialogue_id": "SYN-D2",
+        "speaker_id": "B",
+        "presentation": "PLAYBACK",
+        "text": "Alpha "
+      }
+    ],
+    "SYN-S03": [
+      {
+        "dialogue_id": "SYN-D2",
+        "speaker_id": "B",
+        "presentation": "PLAYBACK",
+        "text": "beta "
+      }
+    ],
+    "SYN-S04": [
+      {
+        "dialogue_id": "SYN-D2",
+        "speaker_id": "B",
+        "presentation": "PLAYBACK",
+        "text": "gamma."
+      }
+    ],
+    "SYN-S05": [
+      {
+        "dialogue_id": "SYN-D3",
+        "speaker_id": "A",
+        "presentation": "SYNC",
+        "text": "Acknowledged."
+      }
+    ],
+    "SYN-S06": [],
+    "SYN-S07": [
+      {
+        "dialogue_id": "SYN-D4",
+        "speaker_id": "A",
+        "presentation": "SYNC",
+        "text": "Continue."
+      },
+      {
+        "dialogue_id": "SYN-D5",
+        "speaker_id": "B",
+        "presentation": "PLAYBACK",
+        "text": "Delta "
+      }
+    ],
+    "SYN-S08": [
+      {
+        "dialogue_id": "SYN-D5",
+        "speaker_id": "B",
+        "presentation": "PLAYBACK",
+        "text": "epsilon."
+      },
+      {
+        "dialogue_id": "SYN-D6",
+        "speaker_id": "A",
+        "presentation": "SYNC",
+        "text": "Yes."
+      },
+      {
+        "dialogue_id": "SYN-D7",
+        "speaker_id": "A",
+        "presentation": "SYNC",
+        "text": "Zeta "
+      }
+    ],
+    "SYN-S09": [
+      {
+        "dialogue_id": "SYN-D7",
+        "speaker_id": "A",
+        "presentation": "SYNC",
+        "text": "eta."
+      },
+      {
+        "dialogue_id": "SYN-D8",
+        "speaker_id": "UNKNOWN",
+        "presentation": "PLAYBACK",
+        "text": "Theta "
+      }
+    ],
+    "SYN-S10": [
+      {
+        "dialogue_id": "SYN-D8",
+        "speaker_id": "UNKNOWN",
+        "presentation": "PLAYBACK",
+        "text": "iota."
+      },
+      {
+        "dialogue_id": "SYN-D9",
+        "speaker_id": "UNKNOWN",
+        "presentation": "PLAYBACK",
+        "text": "Kappa "
+      }
+    ],
+    "SYN-S11": [
+      {
+        "dialogue_id": "SYN-D9",
+        "speaker_id": "UNKNOWN",
+        "presentation": "PLAYBACK",
+        "text": "lambda "
+      }
+    ],
+    "SYN-S12": [
+      {
+        "dialogue_id": "SYN-D9",
+        "speaker_id": "UNKNOWN",
+        "presentation": "PLAYBACK",
+        "text": "mu."
+      },
+      {
+        "dialogue_id": "SYN-D10",
+        "speaker_id": "A",
+        "presentation": "SYNC",
+        "text": "Yes."
+      }
+    ],
+    "SYN-S13": [
+      {
+        "dialogue_id": "SYN-D11",
+        "speaker_id": "A",
+        "presentation": "SYNC",
+        "text": "Finished."
+      }
+    ]
+  },
+  "segments": [
+    {
+      "segment_id": "SYN-G1",
+      "source_shots": [
+        "SYN-S01",
+        "SYN-S02",
+        "SYN-S03",
+        "SYN-S04",
+        "SYN-S05",
+        "SYN-S06"
+      ],
+      "source_audio": [
+        {
+          "shot_id": "SYN-S01",
+          "dialogue": []
+        },
+        {
+          "shot_id": "SYN-S02",
+          "dialogue": [
+            {
+              "dialogue_id": "SYN-D1",
+              "speaker_id": "A",
+              "presentation": "SYNC",
+              "text": "Ready."
+            },
+            {
+              "dialogue_id": "SYN-D2",
+              "speaker_id": "B",
+              "presentation": "PLAYBACK",
+              "text": "Alpha "
+            }
+          ]
+        },
+        {
+          "shot_id": "SYN-S03",
+          "dialogue": [
+            {
+              "dialogue_id": "SYN-D2",
+              "speaker_id": "B",
+              "presentation": "PLAYBACK",
+              "text": "beta "
+            }
+          ]
+        },
+        {
+          "shot_id": "SYN-S04",
+          "dialogue": [
+            {
+              "dialogue_id": "SYN-D2",
+              "speaker_id": "B",
+              "presentation": "PLAYBACK",
+              "text": "gamma."
+            }
+          ]
+        },
+        {
+          "shot_id": "SYN-S05",
+          "dialogue": [
+            {
+              "dialogue_id": "SYN-D3",
+              "speaker_id": "A",
+              "presentation": "SYNC",
+              "text": "Acknowledged."
+            }
+          ]
+        },
+        {
+          "shot_id": "SYN-S06",
+          "dialogue": []
+        }
+      ]
+    },
+    {
+      "segment_id": "SYN-G2",
+      "source_shots": [
+        "SYN-S07",
+        "SYN-S08",
+        "SYN-S09"
+      ],
+      "source_audio": [
+        {
+          "shot_id": "SYN-S07",
+          "dialogue": [
+            {
+              "dialogue_id": "SYN-D4",
+              "speaker_id": "A",
+              "presentation": "SYNC",
+              "text": "Continue."
+            },
+            {
+              "dialogue_id": "SYN-D5",
+              "speaker_id": "B",
+              "presentation": "PLAYBACK",
+              "text": "Delta "
+            }
+          ]
+        },
+        {
+          "shot_id": "SYN-S08",
+          "dialogue": [
+            {
+              "dialogue_id": "SYN-D5",
+              "speaker_id": "B",
+              "presentation": "PLAYBACK",
+              "text": "epsilon."
+            },
+            {
+              "dialogue_id": "SYN-D6",
+              "speaker_id": "A",
+              "presentation": "SYNC",
+              "text": "Yes."
+            },
+            {
+              "dialogue_id": "SYN-D7",
+              "speaker_id": "A",
+              "presentation": "SYNC",
+              "text": "Zeta "
+            }
+          ]
+        },
+        {
+          "shot_id": "SYN-S09",
+          "dialogue": [
+            {
+              "dialogue_id": "SYN-D7",
+              "speaker_id": "A",
+              "presentation": "SYNC",
+              "text": "eta."
+            },
+            {
+              "dialogue_id": "SYN-D8",
+              "speaker_id": "UNKNOWN",
+              "presentation": "PLAYBACK",
+              "text": "Theta "
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "segment_id": "SYN-G3",
+      "source_shots": [
+        "SYN-S10",
+        "SYN-S11",
+        "SYN-S12",
+        "SYN-S13"
+      ],
+      "source_audio": [
+        {
+          "shot_id": "SYN-S10",
+          "dialogue": [
+            {
+              "dialogue_id": "SYN-D8",
+              "speaker_id": "UNKNOWN",
+              "presentation": "PLAYBACK",
+              "text": "iota."
+            },
+            {
+              "dialogue_id": "SYN-D9",
+              "speaker_id": "UNKNOWN",
+              "presentation": "PLAYBACK",
+              "text": "Kappa "
+            }
+          ]
+        },
+        {
+          "shot_id": "SYN-S11",
+          "dialogue": [
+            {
+              "dialogue_id": "SYN-D9",
+              "speaker_id": "UNKNOWN",
+              "presentation": "PLAYBACK",
+              "text": "lambda "
+            }
+          ]
+        },
+        {
+          "shot_id": "SYN-S12",
+          "dialogue": [
+            {
+              "dialogue_id": "SYN-D9",
+              "speaker_id": "UNKNOWN",
+              "presentation": "PLAYBACK",
+              "text": "mu."
+            },
+            {
+              "dialogue_id": "SYN-D10",
+              "speaker_id": "A",
+              "presentation": "SYNC",
+              "text": "Yes."
+            }
+          ]
+        },
+        {
+          "shot_id": "SYN-S13",
+          "dialogue": [
+            {
+              "dialogue_id": "SYN-D11",
+              "speaker_id": "A",
+              "presentation": "SYNC",
+              "text": "Finished."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

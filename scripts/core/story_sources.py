@@ -416,6 +416,8 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
     if storyboard is None:
         return test_report
     require_schema(storyboard, 'storyboard-package.schema.json', label='导演包')
+    from .quality_evidence import scene_state_requirements
+    scene_state_requirements(storyboard)
     if storyboard.get('schema_version') not in {'3.0', '4.0'}:
         raise ValueError('段落引用要求导演包 4.0（3.0 仅历史兼容）')
     if storyboard['project_id'] != narrative['project_id'] or storyboard['source_narrative']['revision'] != narrative['revision']:

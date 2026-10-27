@@ -82,7 +82,7 @@ def preview_scope(frozen: dict, project: Path):
     for row in frozen['drafts']:
         if set(row) - {'node_id','prompt','parameters','duration_bounds','shot_durations',
                       'native_entity_type','required_entities','required_reference_roles',
-                      'ordered_media','reference_checks','continuity','timing_scope','source_shot_ids','quality_evidence','native_binding'}:
+                      'ordered_media','reference_checks','continuity','timing_scope','source_shot_ids','source_shots','source_segment_id','quality_evidence','native_binding'}:
             raise ValueError('unknown preview draft execution fields')
         if set(row['parameters']) - {'duration','aspect','aspect_ratio','ratio','resolution','model'}:
             raise ValueError('unknown preview parameters; generation controls are forbidden')
@@ -237,12 +237,12 @@ def preview_scope(frozen: dict, project: Path):
             raise ValueError('quality_evidence: failed pixels cannot be admitted by limited-use scope; preserve history, remove from new active references')
         if ref.get('kind') == 'image':
             try:
-                from .core.quality_evidence import validate_image_evidence
+                from .core.quality_evidence import validate_image_evidence, reference_shot_ids
             except ImportError:
-                from core.quality_evidence import validate_image_evidence
+                from core.quality_evidence import validate_image_evidence, reference_shot_ids
             root = Path(ref['project_path']).resolve()
             item = checked[(str(root), ref['artifact_id'])]
-            validate_image_evidence(root, path, item.get('quality_evidence'), row.get('source_shot_ids'),
+            validate_image_evidence(root, path, item.get('quality_evidence'), reference_shot_ids(ref, row),
                                     allowed_roots=[Path(p) for p in roots + input_roots], reference=ref)
         binding = ref.get('upload_binding', {})
         expected = dict(target_url=frozen['target_url'], target_project_id=frozen['target_project_id'],
@@ -308,9 +308,11 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             if issues:
                 raise ValueError(f"{row['node_id']}: " + '; '.join(issues))
     try:
-        from .core.quality_evidence import validate_native_binding_claims
+        from .core.quality_evidence import (validate_native_binding_claims, scene_state_requirements,
+                                            validate_scene_state_references, reference_shot_ids, validate_scene_source_mapping)
     except ImportError:
-        from core.quality_evidence import validate_native_binding_claims
+        from core.quality_evidence import (validate_native_binding_claims, scene_state_requirements,
+                                           validate_scene_state_references, reference_shot_ids, validate_scene_source_mapping)
     validate_native_binding_claims(frozen, project)
     if private_preview:
         preview_authority, preview_usage, reports = preview_scope(frozen, project)
@@ -345,15 +347,21 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
     sources = frozen.get('source_artifacts')
     if not isinstance(sources, list) or not sources:
         raise ValueError('exact confirmed source_artifacts required')
+    scene_requirements = []
+    scene_sources = []
     for ref in sources:
-        authority(ref)
+        source_path = authority(ref)
+        if source_path.suffix.lower() == '.json':
+            source_payload = json.loads(source_path.read_text(encoding='utf-8-sig'))
+            if isinstance(source_payload, dict):
+                scene_requirements.extend(scene_state_requirements(source_payload))
+                scene_sources.append((ref, source_path.resolve(), source_payload))
+    validate_scene_source_mapping(frozen['drafts'], scene_sources, project)
     def seconds(value):
         if isinstance(value, bool) or not isinstance(value, (float, int)) or not math.isfinite(value) or value <= 0:
             raise ValueError('finite positive duration required')
         return value
-    roles = {'identity', 'appearance', 'start_frame', 'end_frame', 'action', 'scale', 'layout', 'voice'}
-    if private_preview:
-        roles.add('state_reference')
+    roles = {'identity', 'appearance', 'start_frame', 'end_frame', 'action', 'scale', 'layout', 'voice', 'state_reference'}
     event_last = {}
     def same_boundary(tail, head, event, prior_id, current_id):
         if (tail["state_id"] != head["state_id"]
@@ -393,6 +401,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                 return False
         return True
     for row in frozen['drafts']:
+        validate_scene_state_references(row, scene_requirements)
         if not private_preview:
             try:
                 from .core.quality_evidence import validate_draft_evidence
@@ -464,10 +473,10 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                 raise ValueError('reference kind differs from actual registered file type')
             if kind == 'image' and not private_preview:
                 try:
-                    from .core.quality_evidence import validate_image_evidence
+                    from .core.quality_evidence import validate_image_evidence, reference_shot_ids
                 except ImportError:
-                    from core.quality_evidence import validate_image_evidence
-                validate_image_evidence(project, path, item.get('quality_evidence'), row.get('source_shot_ids'), reference=ref)
+                    from core.quality_evidence import validate_image_evidence, reference_shot_ids
+                validate_image_evidence(project, path, item.get('quality_evidence'), reference_shot_ids(ref, row), reference=ref)
             if 'action' in assigned and kind != 'video':
                 raise ValueError('action video cannot be replaced by identity/still reference')
             if 'action' in assigned or (xiaoyunque and kind == 'video'):
