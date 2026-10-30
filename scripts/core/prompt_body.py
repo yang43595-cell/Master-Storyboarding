@@ -30,7 +30,7 @@ def generated_overlay_issues(body: str) -> list[str]:
     action = r'(?:出现|显示|叠加|浮现|打出|生成|呈现|写上|加上|添加|闪出|标出|加入|淡入|标)'
     # Keep negation bound to the text/action it modifies. Never let an unrelated
     # “人物不动” or “不要改变机位” cancel a subsequent overlay instruction.
-    modifiers = r'(?:\s|再|重新|自动|额外|任何|新的|新|其他|全部|一律|均|都|在画面(?:上|中)?|在屏幕(?:上|中)?)*'
+    modifiers = r'(?:\s|再|重新|自动|额外|任何|新的|新|其他|全部|一律|均|都|画外|在画面(?:上|中)?|在屏幕(?:上|中)?)*'
     negative = r'(?:不(?:需要|需|必|应当|应该|应)?|禁止|不得|不要|无需|不可)'
 
     def negated_action(prefix):

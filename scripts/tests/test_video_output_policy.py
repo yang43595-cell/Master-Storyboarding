@@ -148,3 +148,23 @@ def test_unrelated_or_contrasted_negative_does_not_cancel_overlay(body):
 ])
 def test_scoped_text_negation_and_timing_control_are_allowed(body):
     assert not generated_overlay_issues(body)
+
+
+@pytest.mark.parametrize('body', [
+    '不叠加画外字幕。',
+    '画面不添加画外字幕、片尾文字。',
+    '显示器内问题与答案按所配参考呈现，不叠加画外字幕。',
+])
+def test_offscreen_subtitle_negation_is_local_and_allowed(body):
+    assert not generated_overlay_issues(body)
+
+
+@pytest.mark.parametrize('body', [
+    '不叠加画外字幕，同时添加字幕：你好。',
+    '不叠加画外字幕，但显示片尾字卡。',
+    '不叠加画外字幕。画面添加说明字卡。',
+    '人物看画外，同时添加字幕。',
+    '不看画外，添加字幕。',
+])
+def test_offscreen_modifier_does_not_hide_affirmative_overlay(body):
+    assert generated_overlay_issues(body)
