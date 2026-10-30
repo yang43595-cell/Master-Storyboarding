@@ -199,13 +199,19 @@ def compile_content(raw: bytes, *, stage: str, case_id: str, source_script_versi
                     expected_version: str | None, scope: str, media_registry: dict | None = None,
                     benchmark: dict | None = None, title: str | None = None,
                     reviewable: bool = False, contract_root=CONTRACT, project_root: Path | None = None,
-                    transport_evidence: dict | None = None, prompt_mode: str = "executed"):
+                    transport_evidence: dict | None = None, prompt_mode: str = "executed",
+                    director_narrative: dict | None = None, candidate_paragraph_ids: list[str] | None = None):
     """Compile from one source plus explicit transport/readback evidence.
 
     media_registry contains existing media descriptors/local paths and the actual
     publish helper's per-media readback receipt; it is not another business draft.
     Synthetic receipts belong only in tests. No URL/hash/source basis is guessed.
     """
+    if candidate_paragraph_ids is not None and (stage != 'director' or reviewable or director_narrative is None):
+        raise WebContentError('局部导演送审须提供完整原叙事及 STP 范围，且 reviewable 必须为 false')
+    if director_narrative is not None and stage != 'director':
+        raise WebContentError('director_narrative 仅用于导演来源自查')
+    director_report = None
     media_registry = {} if media_registry is None else media_registry
     if not isinstance(media_registry, dict):
         raise WebContentError('media_registry 必须是对象')
@@ -318,6 +324,14 @@ def compile_content(raw: bytes, *, stage: str, case_id: str, source_script_versi
             raise WebContentError('未决事实尚在，不能把本包设为可通过')
     elif stage == 'director':
         require_schema(business, 'storyboard-package.schema.json', label='网页导演源')
+        from .story_sources import validate_scene_ids, validate_story_sources
+        validate_scene_ids(business)
+        if director_narrative is not None:
+            director_report = validate_story_sources(director_narrative, business,
+                project_root=Path(project_root) if project_root is not None else None,
+                candidate_paragraph_ids=candidate_paragraph_ids)
+        if director_report is not None:
+            block('director-validation-scope', '本轮来源自查范围（非整稿通过）', canonical(director_report))
         if business['schema_version'] != '4.0':
             raise WebContentError('当前导演适配只支持已核 v4 JSON，旧格式不猜拍法')
         for scene in business['scenes']:
@@ -445,6 +459,8 @@ def compile_content(raw: bytes, *, stage: str, case_id: str, source_script_versi
     validated['mediaMap'] = compiled_media_map
     validated['remoteReadbackPerformed'] = False
     validated['published'] = False
+    if director_report is not None:
+        validated['directorSourceCheck'] = director_report
     if stage == 'prompts' and prompt_mode == 'executed' and 'drafts' not in business:
         validated['transportEvidence'] = {'source_sha256': hashlib.sha256(raw).hexdigest(),
             'native_readback_canonical_sha256': hashlib.sha256(canonical(transport_evidence['native_readback']).encode()).hexdigest(),
@@ -512,7 +528,10 @@ def main():
             expected_version=job['expectedVersion'], scope=job['scope'], media_registry=job.get('mediaRegistry'),
             benchmark=job.get('benchmark'), title=job.get('title'), reviewable=job.get('reviewable', False),
             contract_root=job.get('contractRoot', CONTRACT), project_root=job.get('projectRoot'),
-            transport_evidence=job.get('transportEvidence'), prompt_mode=job.get('promptMode', 'executed'))
+            transport_evidence=job.get('transportEvidence'), prompt_mode=job.get('promptMode', 'executed'),
+            director_narrative=(json.loads(Path(job['directorNarrativePath']).read_text(encoding='utf-8-sig'))
+                                if job.get('directorNarrativePath') else None),
+            candidate_paragraph_ids=job.get('candidateParagraphIds'))
         print(canonical(result))
         return 0
     except (ValueError, KeyError, TypeError, OSError, subprocess.SubprocessError) as exc:

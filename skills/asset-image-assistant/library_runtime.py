@@ -27,8 +27,10 @@ def recipe(kind):
 
 
 def language_issues(prompt):
-    # Concrete forbidden examples in shared/prompt-language and PROMPT-LANG.
-    terms = re.findall(r'(?i)(?<![a-z0-9])(?:[248]\s*[kｋ])(?![a-z0-9])|影视级|高级感?|高端|唯美|大片|电影感|大师摄影|最佳画质|超高清|高细节', prompt)
+    # Only unambiguous quality expressions are deterministic blockers.
+    # Bare adjectives can be source names (高级中学) or visible quantities
+    # (大片草地); the existing PROMPT-LANG semantic review owns those cases.
+    terms = re.findall(r'(?i)(?<![a-z0-9])(?:[248]\s*[kｋ])(?![a-z0-9])|影视级|高级感|(?:高级|高端|唯美|大片)\s*(?:的\s*)?(?:画质|质感|风格|画面|摄影|影像|效果)|大片感|电影感|大师摄影|最佳画质|超高清|高细节|(?<![\w])(?:高级|高端|唯美|大片)(?![\w])', prompt)
     return ['PROMPT-LANG：将含糊画质词改为可观察描述：' + '、'.join(dict.fromkeys(terms))] if terms else []
 
 
@@ -144,7 +146,26 @@ def template_source(kind, raw=''):
     return path.resolve()
 
 
-def _template_excerpt(raw, kind, view=''):
+def template_step(kind, view='', index=None):
+    """Resolve display labels/legacy arguments once; unknown scene views fail closed."""
+    spec = recipe(kind)
+    if index is not None:
+        if type(index) is not int or not 0 <= index < len(spec['steps']):
+            raise ValueError('无效视图序号')
+        # Index is the stable identity carried by library jobs. Labels are display only.
+        return index
+    if kind != '环境':
+        return 0
+    keys = spec['step_keys']
+    if view in spec['steps']:
+        return spec['steps'].index(view)
+    key = spec.get('legacy_views', {}).get(view, view)
+    if key in keys:
+        return keys.index(key)
+    raise ValueError('未知环境视角：' + str(view))
+
+
+def _template_excerpt(raw, kind, view='', index=None):
     spec = recipe(kind)
     path = template_source(kind, raw)
     text = path.read_text(encoding='utf-8-sig')
@@ -153,9 +174,7 @@ def _template_excerpt(raw, kind, view=''):
     if 'template' not in spec or path == (SKILL / 'references' / spec['guide']).resolve():
         return {'path': str(path), 'content': text, 'status': 'category-guide'}
     blocks = re.findall(r'```text\s*\n(.*?)```', text, re.S)
-    step = 0
-    if kind == '环境':
-        step = next((i for i, name in enumerate(['45°', '正面', '反面', '俯视']) if name in view), 0)
+    step = template_step(kind, view, index)
     index = spec['blocks'][step]
     if index >= len(blocks) or not blocks[index].strip():
         raise ValueError('提示词模板缺少对应视图正文：' + spec['template'])
@@ -210,7 +229,7 @@ def build_task_package(request, refs=None, startup_text='', methods=()):
                'professional_methods': [{'id': m.id, 'path': m.vault_path, 'version': m.version,
                    'sha256': m.checksum, 'content': m.content} for m in methods]}
     if not request.get('rows'):
-        template = _template_excerpt(request.get('template_source', ''), request['kind'], request.get('view', ''))
+        template = _template_excerpt(request.get('template_source', ''), request['kind'], request.get('view', ''), request.get('index') if request.get('mode', 'asset-library') == 'asset-library' else None)
         if request['kind'] == '环境' and template['status'] == 'loaded' and not request.get('reference_paths'):
             raise ValueError('场景派生模板需要参考母图；首张场景请使用分类指南')
         if template['status'] == 'category-guide':

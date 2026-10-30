@@ -10,6 +10,13 @@ import json
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
+try:
+    from .core.media_types import MEDIA_EXTENSIONS
+    from .core.native_references import reference_readback_status
+except ImportError:
+    from core.media_types import MEDIA_EXTENSIONS
+    from core.native_references import reference_readback_status
+
 
 def target_url(value: str) -> str:
     parsed = urlsplit(value)
@@ -410,8 +417,6 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             validate_draft_evidence(row)
         if not isinstance(row.get('prompt'), str) or not row['prompt'].strip():
             raise ValueError('complete submitted prompt body required')
-        if not isinstance(row.get('native_entity_type'), str) or not row['native_entity_type'].strip():
-            raise ValueError('versioned delivery requires native entity readback for all references')
         duration = seconds(row['parameters']['duration'])
         low, high = map(seconds, row['duration_bounds'])
         if low > high or not low <= duration <= high:
@@ -424,6 +429,8 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         media, refs = row.get('ordered_media'), row.get('reference_checks')
         if not isinstance(media, list) or not isinstance(refs, list) or len(refs) != len(media):
             raise ValueError('every uploaded media needs one explicit role/authority check in actual order')
+        if media and (not isinstance(row.get('native_entity_type'), str) or not row['native_entity_type'].strip()):
+            raise ValueError('versioned delivery requires native entity readback for all references')
         if any(not isinstance(m, dict) or not isinstance(m.get('node_id'), str) or not m['node_id']
                or not isinstance(m.get('media_id'), str) or not m['media_id'] for m in media):
             raise ValueError('every uploaded media needs exact native node/media identity')
@@ -468,8 +475,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             if (not isinstance(assigned, list) or not assigned or not set(assigned).issubset(roles)
                     or kind not in {'image', 'video', 'audio'}):
                 raise ValueError('unknown reference role/kind')
-            extensions = {'image': {'.png','.jpg','.jpeg','.webp'}, 'video': {'.mp4','.mov','.mkv','.webm'}, 'audio': {'.wav','.mp3','.m4a'}}
-            if path.suffix.lower() not in extensions[kind]:
+            if path.suffix.lower() not in MEDIA_EXTENSIONS[kind]:
                 raise ValueError('reference kind differs from actual registered file type')
             if kind == 'image' and not private_preview:
                 try:
@@ -607,25 +613,19 @@ def compare(frozen: dict, observed: dict, project: Path | None = None, *, privat
         # and media edges. Opt in per draft so historical/plain-text clients keep
         # their original comparison scope without claiming entity verification.
         native_reference_checks[node_id] = 'not_checked'
-        if 'native_entity_type' in row:
-            entity_type = row['native_entity_type']
-            if not isinstance(entity_type, str) or not entity_type.strip():
+        # Current versioned text-only drafts still prove no native references
+        # survived refresh. Legacy comparisons retain their original opt-in scope.
+        if 'native_entity_type' in row or project is not None:
+            entity_type = row.get('native_entity_type')
+            if row['ordered_media'] and (not isinstance(entity_type, str) or not entity_type.strip()):
                 raise ValueError(f'incomplete frozen {node_id}: native_entity_type')
             mentions = got.get('native_mentions')
-            valid_mentions = isinstance(mentions, list) and all(
-                isinstance(ref, dict) and ref.get('entity_type') == entity_type
-                and ref.get('native_noneditable_entity') is True
-                and isinstance(ref.get('node_id'), str) and ref['node_id']
-                and isinstance(ref.get('media_id'), str) and ref['media_id']
-                for ref in mentions)
-            identities = ([{'node_id': ref['node_id'], 'media_id': ref['media_id']}
-                           for ref in mentions] if valid_mentions else None)
-            matched = valid_mentions and identities == row['ordered_media']
-            native_reference_checks[node_id] = 'passed' if matched else 'failed'
-            if not matched:
+            status = reference_readback_status(row['ordered_media'], mentions, entity_type)
+            native_reference_checks[node_id] = status
+            if status == 'failed':
                 differences.append({'node_id': node_id, 'field': 'native_mentions',
                                     'expected_sha256': digest(row['ordered_media']),
-                                    'observed_sha256': digest(identities) if identities is not None else None})
+                                    'observed_sha256': digest(mentions) if mentions is not None else None})
     return {'ok': not differences, 'scope': 'selected post-refresh editor fields only',
             'draft_count': len(expected), 'submission_checks': submission or 'not_checked',
             'revision': frozen.get('revision'), 'frozen_sha256': digest(frozen),

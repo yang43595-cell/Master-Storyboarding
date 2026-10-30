@@ -13,7 +13,7 @@
 - `required_entities: [entity_id, ...]` 与 `required_reference_roles: {entity_id: [role, ...]}`：实际需要参考覆盖的实体及职责。没有独立参考的剧情实体不虚造参考。
 - `reference_checks`：与 ordered_media 一一对应，按实际上传顺序保存每份参考的 artifact_id、revision、sha256、kind（image/video/audio）、roles 职责集合、entity_ids（兼容旧单值 role）；不省掉未在提示词中显式提及的上传素材。role 为 identity/appearance/start_frame/end_frame/action/scale/layout/voice。首尾帧同时保存明确 state_id；action 须为视频，duration 与本地 ffprobe 实际时长核对。此入口要求参考作为具体已确认产物登记，不能以旧快照的 confirmed 字样或文件名替代确认。AST 母图仍先走现有 asset_refs 的具体 output 检查，不伪造通用登记来绕过。
 - `continuity: {event_id, previous_node_id?}`：真实连续事件保持相同 event_id；确因时长拆段时，后段准确指向实际前段，并同时提供前段 end_frame 与后段 start_frame。沿每个事件的前驱链核对，不要求两个段落在全片列表中相邻。重复出现的事件必须指向同事件上一片段，拒绝漏前驱、断链、环、分叉或跨事件引用。边界 state_id、entity_ids 必须相同；可共用确认图，也可使用下述准确获准的不同机位参考组。
-- `native_entity_type`：本轮平台实际原生引用实体类型。比较时要求每个 draft 的 native_mentions 逐项提供准确 node_id/media_id、相同 entity_type 及 native_noneditable_entity=true；纯文本同名标签或图边不足。
+- `native_entity_type`：有媒体引用时，填写本轮平台实际原生引用实体类型；回读 native_mentions 逐项提供准确 node_id/media_id、相同 entity_type 及 native_noneditable_entity=true。纯文本同名标签或图边不足。合法无媒体文字稿（ordered_media=[]）不编造实体类型，但仍须实际回读 native_mentions=[]；缺少回读或多出引用均失败。仅此空引用状态记 native_reference_checks.status=not_applicable，不能用于有引用的稿件，也不代表获得生成许可。
 
 角色、动作、比例、布局的视觉语义仍须实际看图/视频，与上游镜头核对。文件扩展名和申明职责不是视觉证据；程序不推断图片里是谁、不证明视觉一致性，不证明远端素材字节来源或生成授权。不要以同一 entity_id 混淆角色身份、动作示范者和产品实体。
 
@@ -179,3 +179,5 @@ python scripts/canvas_readback.py --private-preview --project <准确候选项�
 `product_refs --discover-dependencies`会输出独立JSON报告行，追加`--package`时另有packages JSON行，错误还有普通文本且退出码非零。调用者先核退出码，再逐行解析明确JSON报告并保留错误原文；不能对混合多行stdout直接json.loads，也不能取最后一行当总PASS。程序输出协议保持不变。
 
 兼容旧别名时，当前活动段的native_binding_verified、materials等活动引用里的native_entity_verified若为true，也必须由上述同修订同输入的逐段native_binding证明；native_readback_source旧路径本身不证明当前实体。跨段边界或整包级的旧true字段不具备逐节点正文/参数，不自动转换成verified；回读结论落在实际逐段native_binding，旧边界结论仅保留历史。legacy native_delivery_scope字符串/已核摘要及final_native_receipt_path不能单独当本轮通过；需要留历史时放历史记录，当前状态明确未核。检查仅遍历当前drafts/generation_segments/creative_sections及其活动引用，不消费history、previous_revision_self_check、excluded_materials_this_revision为当前证据。不会修改或删除这些历史对象。当前目标必须来自顶层target_url或target_canvas.url并与回读一致，原生实体类型也须一致；换画布或纯文本实体不得沿用旧通过。
+
+本地引用发现与最终引用类型检查共用 `scripts/core/media_types.py` 的扩展名集合，含 WEBM、MKV、M4A（大小写不敏感）。被发现只表示进入存在性和来源检查，不证明编码、时长、平台支持或内容已验收。

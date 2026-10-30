@@ -197,9 +197,8 @@ def validate_native_binding_claims(value, root, revision=None, target=None):
                 raise ValueError('native_binding: 本稿正文/参数/有序引用与回读不一致')
             mentions = actual.get('native_mentions')
             entity_type = value.get('native_entity_type') or binding.get('native_entity_type')
-            if (not _text(entity_type) or not isinstance(mentions, list) or any(not isinstance(m, dict)
-                    or m.get('entity_type') != entity_type or m.get('native_noneditable_entity') is not True for m in mentions)
-                    or [{'node_id': m.get('node_id'), 'media_id': m.get('media_id')} for m in mentions] != expected_media):
+            from .native_references import reference_readback_status
+            if reference_readback_status(expected_media, mentions, entity_type) == 'failed':
                 raise ValueError('native_binding: 缺本节点原生实体回读，文字或图边不代替')
         elif status not in {None, 'unknown', 'not_bound', 'unverified', 'not_checked', 'stale'}:
             raise ValueError('native_binding: 未识别状态不能冒充已回读')
@@ -210,7 +209,11 @@ def validate_native_binding_claims(value, root, revision=None, target=None):
 
 
 def source_shot_ids(row):
-    """Resolve all source shots, never just a segment's first shot."""
+    """Resolve both existing aliases as ordered IDs; absence stays unspecified.
+
+    Duplicate IDs inside one segment and conflicting aliases are invalid. A shot
+    may recur across segments (continuous subranges); this is not duplicate use.
+    """
     direct = row.get('source_shot_ids')
     mapped = row.get('source_shots')
     if mapped is not None:

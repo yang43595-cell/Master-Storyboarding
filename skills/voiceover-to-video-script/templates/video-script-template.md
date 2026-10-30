@@ -94,4 +94,6 @@
 
 注明自查范围，简记镜头覆盖、对白、时长、素材与连续性结论和真实缺口；每轮检查当前段落与跨段依赖，全部完成后补充全片覆盖、衔接及节奏复核结果。没有问题时不另建问题表。实际生成后才追加任务 ID、输出和状态，不预填成功。
 
+`source_shots` 与兼容拼写 `source_shot_ids` 表示同一有序来源镜号，两个同时出现须逐项相同，段内不得重复或写未知镜号；对象式 source_shots 仍按其中 shot_id 解析。旧稿省略映射不自动补成授权或覆盖。换拼写但映射不变不是覆盖变更；镜号及顺序变化须在 segment_reconciliation 以 field: source_shot_ids（兼容 source_shots）和准确 before/after 对账。长镜连续子范围可跨生成段复用同一镜号，须在正文写清连续动作/切点，不据此宣称完整镜头被重复执行，也不要求每镜只属一段。
+
 返修的影响范围由本稿source_shots反向派生并核直接接口，不以手填目标段清单代替；实际方法见[状态与节拍步骤](../../storyboard-planner/modules/shot-planning.md#把创作决定落实为可验证的状态与节拍)。新修订不继承旧native_binding已回读状态，准确核验方法见[交付快照](../../../docs/development/delivery-snapshot-checks.md)。

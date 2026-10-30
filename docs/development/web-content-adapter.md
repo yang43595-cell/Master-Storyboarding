@@ -67,3 +67,11 @@ stdin 包含 sourcePath（现有 JSON）、stage、caseId、scope、sourceScript
 `scripts/review/script-template.js` 是供后续真实前端集成的离线阅读器候选，源于 v78 快照但不修改快照；不是当前线上源码或已部署版本。它沿用 page/story/fromPackage/fromArtifact 接口，导演主 scenes 不含 canonical-source，逐镜附录用 details 展开；正文缺逐镜编号或对白片段时附录默认展开并给阅读提示。该覆盖检查只决定展开方式，不证明导演质量或用户确认。未识别的历史内容仍保留完整文字，不按摘要隐藏执行卡；过长分块未满足单场投影条件时保守保留通用阅读。
 
 新旧内容 hash 必然不同，原业务 ID、sourceScriptVersion 与 expectedVersion 的来源要求不变。只有实际源码合并、真实 head/CAS 核对、部署与准确内容回读后，才能称线上修复完成。当前仅确认 Sites 是 v81；官方源码 helper open 返回 `Unable to prepare the Site.`，未生成 checkout。已有 v81 验收包只有导航补丁/回读，另一 restored-site-source 是旧 v66 内容交付，不当作完整现行前端。未尝试部署、未改分享、未提交新业务稿。
+
+## 导演逐段候选来源范围
+
+导演未全片完成时，同一 `compile_content` 调用显式传 `director_narrative=<完整原叙事对象>` 与 `candidate_paragraph_ids=[现有 STP...]`。stdin CLI 对应 `directorNarrativePath`（完整叙事 JSON 路径）和 `candidateParagraphIds`；同时传准确 `projectRoot` 以校验现行资产与历史来源文件。两份业务源仍按原确认/路径/修订选择，不猜最新文件；报告绑定所读叙事的 canonical SHA256，不将 R 编号或局部结果当线上 script head。
+
+此路由同次运行 `story_sources` 局部来源核验，添加非业务的 `director-validation-scope` 阅读说明，并在回执保留 `directorSourceCheck`。仅允许 candidate 导演源且强制 `reviewable:false`；传 true、漏原叙事、未知 STP 或半个跨段镜头均拒绝。结果列已核/未核 STP、机械可见的跨边界引用与邻段；跨段语义、人工作品质量和真实用户确认不由程序宣称。已有 sourceScriptVersion、expectedVersion、发布/CAS/回读合同不变；不发布、不生成批准。
+
+默认不带这些参数的既有离线编译保持兼容（不据其成功推断来源自查通过）；任何导演包都会在编译前拒绝重复 scene_id。全片完成后仍运行不带 candidate 范围的严格来源校验，正式 adopt/commit 不接受局部结果作全片通过凭据。

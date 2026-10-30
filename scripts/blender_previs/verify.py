@@ -32,7 +32,7 @@ from contacts import (  # noqa: E402
     GROUND_GAP_TOLERANCE,
 )
 from actor_state import actor_target_height, effective_actor_state
-from output_contract import check_build_outputs, check_shoot_outputs, file_sha256, render_settings, shot_still_times, validate_shots  # noqa: E402
+from output_contract import check_build_outputs, check_shoot_outputs, file_sha256, json_fingerprint, render_settings, shot_still_times, validate_shots  # noqa: E402
 from shoot import apply_props as apply_prop_overrides, restore_props as restore_prop_overrides  # noqa: E402
 
 FLOOR_TOLERANCE = 0.02      # 允许的最低点（脚不得低于此值，米）
@@ -394,6 +394,9 @@ def main() -> None:
     failed = [item for item in checks if not item["ok"]]
     report = {
         "blender_version": bpy.app.version_string,
+        "recipe_sha256": json_fingerprint(recipe),
+        "shot_ids": [shot["id"] for shot in (shots_spec or recipe.get("camera", {})).get("shots", [])],
+        "shots_sha256": json_fingerprint(shots_spec) if shots_spec is not None else None,
         "scene_sha256": file_sha256(blend) if blend.is_file() else None,
         "render_manifest_sha256": file_sha256(output_dir / "shoot_manifest.json") if (output_dir / "shoot_manifest.json").is_file() else None,
         "ok": not failed,

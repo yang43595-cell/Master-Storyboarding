@@ -155,11 +155,15 @@ def _validate_segment_reconciliation(project: Path, baseline: dict[str, Any], ca
     old_common_order = [ident for ident in old_ids if ident in common]
     new_common_order = [ident for ident in new_ids if ident in common]
     order_changed = old_common_order != new_common_order
+    from .quality_evidence import source_shot_ids
     coverage_fields = ("source_shot_ids", "source_dialogue_ids", "source_paragraph_ids")
     coverage_changes = []
     for segment_id in sorted(common):
         for field in coverage_fields:
-            before, after = old_by_id[segment_id].get(field), new_by_id[segment_id].get(field)
+            if field == "source_shot_ids":
+                before, after = source_shot_ids(old_by_id[segment_id]) or None, source_shot_ids(new_by_id[segment_id]) or None
+            else:
+                before, after = old_by_id[segment_id].get(field), new_by_id[segment_id].get(field)
             for value in (before, after):
                 if value is not None and (not isinstance(value, list)
                         or any(not isinstance(ident, str) or not ident for ident in value)
@@ -202,6 +206,8 @@ def _validate_segment_reconciliation(project: Path, baseline: dict[str, Any], ca
             seen_removed.append(change["segment_id"])
         elif change.get("action") == "coverage":
             actual = {key: change.get(key) for key in ("segment_id", "field", "before", "after")}
+            if actual["field"] == "source_shots":
+                actual["field"] = "source_shot_ids"
             if actual not in coverage_changes:
                 raise RevisionControlError("生成段镜头/对白覆盖对账与旧稿/新稿字段不符")
             seen_coverage.append(actual)
@@ -269,6 +275,7 @@ def _commit_json_transaction_unlocked(
     reason: str,
     transaction_id: str | None = None,
     fail_after: int | None = None,
+    preserve_state_extensions: bool = False,
 ) -> dict[str, Any]:
     """Write a durable intent, then replace JSON targets and their state view.
 
@@ -279,18 +286,31 @@ def _commit_json_transaction_unlocked(
     if not updates:
         raise RevisionControlError("事务至少需要一个状态更新")
     updates = dict(updates)
+    state_view = None
     for target, value in updates.items():
         if target.resolve() == (project / MANAGE / "project_state.json").resolve():
             manifest = updates.get(project / MANAGE / "artifact_manifest.json")
             if manifest is None:
                 manifest = load_manifest(project)
+            raw_state = value
+            if preserve_state_extensions:
+                from .project_state import normalize_project_state, STATE_KEYS
+                value = normalize_project_state(raw_state)
+                # Legacy schema/ID-object decoding is read compatibility, not
+                # permission to coerce malformed known business fields.
+                for key in STATE_KEYS:
+                    if key in raw_state and key not in {"schema_version", "current_artifacts"}:
+                        value[key] = raw_state[key]
+                validate_project_state(value)
             value = reconcile_current_artifacts(value, manifest)
             validate_project_state(value)
-            updates[target] = value
+            state_view = value
+            updates[target] = ({**raw_state, "current_artifacts": value["current_artifacts"]}
+                               if preserve_state_extensions else value)
     # Keep the human view inside the same recoverable transaction as its JSON.
     state_value = updates.get(project / MANAGE / "project_state.json")
     if state_value is not None:
-        updates[project / MANAGE / "project_state.md"] = render_project_state_markdown(state_value).encode("utf-8")
+        updates[project / MANAGE / "project_state.md"] = render_project_state_markdown(state_view or state_value).encode("utf-8")
     transaction_id = transaction_id or f"REV-TX-{uuid.uuid4().hex[:16]}"
     tx_dir = _transaction_dir(project, transaction_id)
     if tx_dir.exists():
@@ -637,12 +657,16 @@ def record_review(project: Path, *, change_id: str, verdict: str, report_ref: st
                 report = read_json(report_path)
                 native = report.get('native_reference_checks', {})
                 expected_nodes = {row['node_id'] for row in payload['drafts']}
+                native_ok = isinstance(native, dict) and all(
+                    native.get(row['node_id']) in ({'passed', 'not_applicable'}
+                        if row.get('ordered_media') == [] else {'passed'})
+                    for row in payload['drafts'])
                 if (report.get('ok') is not True or not payload.get('revision')
                         or report.get('revision') != payload['revision']
                         or report.get('frozen_sha256') != sha256_json(payload)
                         or not isinstance(report.get('submission_checks'), dict)
                         or report['submission_checks'].get('ok') is not True
-                        or set(native) != expected_nodes or any(v != 'passed' for v in native.values())):
+                        or not native_ok or set(native) != expected_nodes):
                     raise RevisionControlError('交付快照须绑定本修订/hash的完整参考检查和实际实体回读；旧 PASS 不能复用')
                 receipt.update(report_ref=relative, report_sha256=sha256_file(report_path))
         change["review"] = receipt
@@ -661,6 +685,7 @@ def confirm_candidate(
     change_id: str,
     approval_ref: str,
     scope_description: str = "",
+    usage: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not approval_ref.strip():
         raise RevisionControlError("候选确认必须提供 approval_ref")
@@ -693,6 +718,13 @@ def confirm_candidate(
                 raise ValueError("旧稿件/未识别结构不能正式确认；仅保留历史读取")
         except (ValueError, OSError, KeyError, TypeError) as exc:
             raise RevisionControlError(f"正式稿件提交前校验失败：{exc}") from exc
+        if candidate_item.get("type") == "visual-supplement-image":
+            try:
+                confirmation_scope.image_usage_shots(usage, required=True)
+            except ValueError as exc:
+                raise RevisionControlError(str(exc)) from exc
+        elif usage is not None:
+            raise RevisionControlError("usage 仅用于独立分镜图片确认；不扩展其他产物许可")
         receipt = confirmation_scope.new_receipt(
             confirmation_scope.SCOPE_ARTIFACT,
             description=scope_description,
@@ -705,6 +737,8 @@ def confirm_candidate(
                 "at": utc_now(),
             },
         )
+        if usage is not None:
+            receipt["usage"] = json.loads(json.dumps(usage))
         change["candidate_confirmation"] = receipt
         change["status"] = "commit_ready"
         state = load_project_state(project)

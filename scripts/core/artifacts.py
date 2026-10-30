@@ -203,6 +203,13 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
             _json_segments(json.dumps(payload, ensure_ascii=False))
         except ValueError as exc:
             raise ValueError("正式视频提示词生成段/创作段引用不一致：" + str(exc)) from exc
+        from .quality_evidence import source_shot_ids
+        known_shots = {shot["shot_id"] for scene in storyboard.get("scenes", [])
+                       for shot in scene.get("shots", [])}
+        for row in revision_control._generation_segments(payload):
+            unknown = set(source_shot_ids(row)) - known_shots
+            if unknown:
+                raise ValueError("视频来源镜号不属于准确已确认导演包：" + ", ".join(sorted(unknown)))
         prior = [item for item in manifest.get("artifacts", [])
                  if item.get("logical_id") == logical_id and item.get("status") == "current"]
         if len(prior) > 1:

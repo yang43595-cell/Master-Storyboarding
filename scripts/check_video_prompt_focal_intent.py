@@ -13,8 +13,10 @@ from pathlib import Path
 
 if __package__:
     from .core.prompt_body import submitted_prompt_body, generated_overlay_issues
+    from .core.quality_evidence import source_shot_ids
 else:
     from core.prompt_body import submitted_prompt_body, generated_overlay_issues
+    from core.quality_evidence import source_shot_ids
 
 
 HEADING_RE = re.compile(r"^##[ \t]+[^\n]+", re.MULTILINE)
@@ -123,6 +125,9 @@ def _json_segments(text: str) -> list[tuple[str, str, str]]:
         if (any(not isinstance(ident, str) for ident in links + ids)
                 or set(links) != set(ids)):
             raise ValueError("顶层生成段与创作段引用不一致，不猜权威正文")
+
+    for row in rows:
+        source_shot_ids(row)
 
     def source_strings(value):
         if isinstance(value, dict):
