@@ -221,6 +221,9 @@ def sha256(path: Path) -> str:
 
 def download_assets(only: set[str] | None = None) -> list[dict[str, Any]]:
     cache_root, assets = registry()
+    unknown = (only or set()) - {str(item["id"]) for item in assets}
+    if unknown:
+        raise PrevisError("未知资产 ID：" + ", ".join(sorted(unknown)))
     records: list[dict[str, Any]] = []
     for item in assets:
         asset_id = str(item["id"])
@@ -229,6 +232,10 @@ def download_assets(only: set[str] | None = None) -> list[dict[str, Any]]:
         target = cache_root / str(item["filename"])
         target.parent.mkdir(parents=True, exist_ok=True)
         if not target.exists() or target.stat().st_size == 0:
+            if item.get("download_mode") == "generated_locally":
+                raise PrevisError(
+                    f"资产 {asset_id} 须在本机生成，不能下载；请先检查 doctor，按 bootstrap-human 流程操作；安装和生成仍需授权"
+                )
             if item.get("download_mode") == "manual_archive":
                 raise PrevisError(
                     f"资产 {asset_id} 由发布页压缩包提供，尚未安装；请从 {item['url']} 下载免费标准包并按注册路径解压"

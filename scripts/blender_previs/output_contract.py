@@ -42,7 +42,7 @@ def shot_still_times(shot: dict) -> list[float]:
 
 
 def reference_name(shot: dict, index: int, time: float) -> str:
-    suffix = "START" if index == 0 else f"T{time:05.2f}"
+    suffix = "START" if float(time) == float(shot["start"]) else f"T{time:05.2f}"
     return f"REF-{shot['id']}_{suffix}.png"
 
 

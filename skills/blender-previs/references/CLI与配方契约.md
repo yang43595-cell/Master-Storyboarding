@@ -39,8 +39,8 @@
 
 | 段形态 | 判定 | `outputs` | 产物 |
 |---|---|---|---|
-| 静态参考 | 只需核对单态构图/空间 | `preview_video: false`；`topdown.video: false`；`topdown.show_paths: false` | 每镜首/落幅**图**，按需俯视图 |
-| 时序参考 | 确需核对相机运动或粗路径/遮挡过程 | `preview_video: true` | **视频**（整段）＋每镜首/落幅图 |
+| 静态参考 | 只需核对单态构图/空间 | `preview_video: false`；`topdown.video: false`；`topdown.show_paths: false` | 本轮所需首/落幅或关键帧**图**（显式选择），按需俯视图 |
+| 时序参考 | 确需核对相机运动或粗路径/遮挡过程 | `preview_video: true` | **视频**（所选时段）＋本轮显式选择的参考图 |
 | 混合段 | 只有部分镜头需要时序参考 | `preview_video: true` + `preview_video_shots: ["镜号"]` | 静态镜出图，**视频只含已选择时序参考的镜头** |
 
 `preview_video_range: [起秒, 止秒]` 可按秒限定（两者取其一即可，缺省渲整段）。`preview_video_shots` 多镜选择必须连续相邻；不相邻的所选镜头使用 `shoot` 逐镜输出，避免把中间静态镜混进视频。视频不重复编码结束时刻那一帧；例如 10 fps 的一秒视频为 10 帧。静帧和俯视帧按秒保留两位小数命名，格式化后重名的时刻会在渲染前报错。
@@ -65,7 +65,7 @@
 05_分镜/预演/<场次>_<段号>/        ← --output-dir，必须为空；重建使用新目录
   previs.blend  manifest.json  resolved.recipe.json  blender-previs.log
   previs.mp4                      仅选择了时序参考的镜头/范围才有
-  reference-frames/*.png          参考帧：每镜首/落幅
+  reference-frames/*.png          参考帧：本轮显式选择的首/落幅或关键时刻
   stills/*.png                    still_frames 指定的时刻
   topdown/topdown-<秒>.png        俯视站位图（开 outputs.topdown 时）
 
@@ -160,3 +160,7 @@ python -B -m scripts.blender_previs_cli verify --recipe <本镜有效配方.json
 - `build` 的 `outputs.topdown`（俯视站位图）可用：渲染时会临时清掉时间轴上的切镜相机、并隐藏天花板/屋顶/吊灯/壁灯。需要跨镜站位图时给 `topdown.still_times` 至少一个时刻；默认 `video: false`、`show_paths: false`。`stage-shot` 不渲染、`shoot` 不自动生成俯视图，不把配置项当成已有产物。
 - 环境母版画的是它自己的家具数量；座位与椅数这类故事事实以已确认的关系图为准，母版只提供房间本身。
 - `armchair` 净坐宽取决于实际尺寸；窄座告警用于提醒核对，不自动授权更换椅型或改确认尺度。实际碰撞仍由既有接触检查判定。
+
+### shoot 静帧默认与准确命名
+
+`build` 按 `outputs.reference_views` 选择首/落幅；`shoot` 按每镜 `still_times` 选择静帧，不保证默认包含首/落幅。省略时只渲染一张 `min(start + 0.5, (start + end) / 2)` 秒参考，不自动增加渲染。只有实际时刻等于 `start` 才命名 `START`，其他时刻命名 `T<秒数>`。需要 0–4 秒镜头首/落幅时，在授权范围内明确 `still_times: [0, 4]`；单态只选必要一帧。manifest 的 time/frame 是实际时刻依据，静帧不证明连续动作。

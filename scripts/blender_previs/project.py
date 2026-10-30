@@ -10,14 +10,16 @@ import shutil
 from pathlib import Path
 
 if __package__ == 'scripts.blender_previs':
-    from ..core import artifacts
+    from ..core import artifacts, revision_control
+    from ..core.candidate_test import require_production
     from ..core.revision_control import guard_action
     from ..core.asset_refs import require_images, scope_assets
     from ..core.io import read_json, sha256_file, utc_now, write_json, write_text
     from ..core.project_state import load_project_state, render_project_state_markdown
     from .output_contract import png_size
 else:
-    from core import artifacts
+    from core import artifacts, revision_control
+    from core.candidate_test import require_production
     from core.revision_control import guard_action
     from core.asset_refs import require_images, scope_assets
     from core.io import read_json, sha256_file, utc_now, write_json, write_text
@@ -242,7 +244,7 @@ def prepare_shot(root: Path, shot_id: str, revision: str, scene_artifact: str) -
     return path
 
 
-def render_runtime(spec: dict, evidence: dict, files: list[dict]) -> dict:
+def render_runtime(spec: dict, evidence: dict, files: list[dict], shot_id: str) -> dict:
     """Keep local defaults; an explicit cloud run must carry native byte evidence."""
     location = spec.get('runtime_location', 'local')
     backend = str(spec['render_backend'])
@@ -270,7 +272,14 @@ def render_runtime(spec: dict, evidence: dict, files: list[dict]) -> dict:
             or evidence.get('render_manifest_sha256') != sha256_file(manifest_path)):
         raise ProjectPrevisError('云白模场景/渲染清单与实际 verify 字节不一致')
     manifest = read_json(manifest_path)
-    still_hashes = {f.get('sha256') for shot in manifest.get('shots', []) for f in shot.get('stills', [])}
+    if evidence.get('shots_sha256') is not None and evidence['shots_sha256'] != manifest.get('shots_sha256'):
+        raise ProjectPrevisError('原生验收与渲染清单镜头配方指纹不一致')
+    shots = [shot for shot in manifest.get('shots', []) if shot.get('id') == shot_id]
+    if len(shots) != 1:
+        raise ProjectPrevisError('云白模渲染清单必须唯一绑定准确镜号：' + shot_id)
+    if 'shot_ids' in evidence and shot_id not in evidence['shot_ids']:
+        raise ProjectPrevisError('原生验收未覆盖准确镜号：' + shot_id)
+    still_hashes = {f.get('sha256') for f in shots[0].get('stills', [])}
     if manifest.get('scene_sha256') != scene_hash or sha256_file(by_role['main_image']) not in still_hashes:
         raise ProjectPrevisError('云白模主图不属于已验收的同一场景渲染')
     return dict(runtime_location='cloud', blender_version=version)
@@ -306,7 +315,7 @@ def register_reference(root: Path, input_path: Path, spec_path: Path) -> dict:
     if evidence.get('source_package_sha256', binding['source_storyboard']['sha256']) != binding['source_storyboard']['sha256']:
         raise ProjectPrevisError('技术检查来源导演包不同')
     files = spec['files']
-    runtime = render_runtime(spec, evidence, files)
+    runtime = render_runtime(spec, evidence, files, shot_id)
     if sum(f['role'] == 'main_image' for f in files) != 1:
         raise ProjectPrevisError('必须有且仅有一张 main_image')
     for f in files:
@@ -361,7 +370,7 @@ def reference_data(root: Path, artifact_id: str) -> tuple[dict, dict]:
     if data.get('runtime_location') == 'cloud':
         evidence_file = next(f for f in data['files'] if f['role'] == 'technical_evidence')
         evidence = read_json(verify_file(root, evidence_file))
-        runtime = render_runtime(data, evidence, [dict(f, path=str(project_file(root, f['path']))) for f in data['files']])
+        runtime = render_runtime(data, evidence, [dict(f, path=str(project_file(root, f['path']))) for f in data['files']], data['source']['shot']['shot_id'])
         if runtime['blender_version'] != data.get('blender_version'):
             raise ProjectPrevisError('云白模版本登记与技术证据不一致')
     refs = appearance_inputs(root, [r['ref_id'] for r in data['appearance_references']])
@@ -371,38 +380,71 @@ def reference_data(root: Path, artifact_id: str) -> tuple[dict, dict]:
 
 
 def confirm_reference(root: Path, artifact_id: str, approval_ref: str, user_quote: str) -> dict:
+    """Adopt one exact receipt using the existing recoverable revision transaction.
+
+    No current selection or downstream validity changes before durable intent.
+    An interrupted intent rolls forward on retry; confirmations are never deleted.
+    """
     if not approval_ref.strip() or not user_quote.strip():
         raise ProjectPrevisError('须填实际用户确认引用和原话；技术通过不等于用户确认')
-    entry, data = reference_data(root, artifact_id)
-    if entry.get('status') != 'candidate':
-        raise ProjectPrevisError('只能采用当前候选；已确认版本不可重写')
-    receipt_path = project_file(root, entry['path_or_url']).parent / 'user-confirmation.json'
-    if receipt_path.exists():
-        raise ProjectPrevisError('已有确认记录不可覆盖')
-    receipt = dict(scope='artifact', scope_description='仅本逐镜白模参考，不含成图或其他镜头',
-                   kind='previs-reference-confirmation', artifact_ids=[artifact_id], reference_shot_id=data['shot_id'],
-                   revision=entry['revision'], approval_ref=approval_ref, user_quote=user_quote,
-                   checksum=entry['checksum'], files=data['files'], at=utc_now(),
-                   confirmation_ref=receipt_path.relative_to(root).as_posix())
-    backup_metadata(root)
-    write_json(receipt_path, receipt)
-    manifest = artifacts.load_manifest(root)
-    artifacts.mark_impacted_artifacts_stale(
-        manifest, {entry['logical_id']}, '逐镜白模修订替代，下游参考须重新核对', entry['revision'])
-    artifacts.save_manifest(root, manifest)
-    artifacts.promote_candidate(root, entry['logical_id'], artifact_id)
-    manifest = artifacts.load_manifest(root)
-    adopted = next(a for a in manifest['artifacts'] if a['artifact_id'] == artifact_id)
-    adopted.update(user_approved=True, confirmation_ref=receipt['confirmation_ref'])
-    artifacts.save_manifest(root, manifest)
-    state_path = root / '00_项目管理/project_state.json'
-    state = read_json(state_path)
-    superseded = {a['artifact_id'] for a in manifest['artifacts']
-                  if a.get('logical_id') == entry['logical_id'] and a['artifact_id'] != artifact_id}
-    state['current_artifacts'] = [a for a in state['current_artifacts'] if a not in superseded]
-    write_json(state_path, state)
-    save_state_additions(root, artifact_id, receipt)
-    return receipt
+    root = root.resolve()
+    require_production(root)
+    revision_control.recover_transactions(root)
+    with revision_control.file_lock(root / revision_control.LOCK_RELATIVE):
+        entry, data = reference_data(root, artifact_id)
+        guard_action(root, logical_ids=[entry['logical_id']])
+        receipt_path = project_file(root, entry['path_or_url']).parent / 'user-confirmation.json'
+        receipt = dict(scope='artifact', scope_description='仅本逐镜白模参考，不含成图或其他镜头',
+                       kind='previs-reference-confirmation', artifact_ids=[artifact_id], reference_shot_id=data['shot_id'],
+                       revision=entry['revision'], approval_ref=approval_ref, user_quote=user_quote,
+                       checksum=entry['checksum'], files=data['files'],
+                       confirmation_ref=receipt_path.relative_to(root).as_posix())
+        if receipt_path.exists():
+            previous = read_json(receipt_path)
+            if {k: v for k, v in previous.items() if k != 'at'} != receipt:
+                raise ProjectPrevisError('已有确认记录不可重写：确认依据或准确版本冲突')
+            receipt = previous
+            if entry.get('status') == 'current':
+                confirmed_reference_data(root, artifact_id)
+                state = read_json(root / '00_项目管理/project_state.json')
+                if state.get('user_confirmations', []).count(receipt) != 1:
+                    raise ProjectPrevisError('确认状态不一致，须核查原事务，不重复写确认')
+                return receipt
+        else:
+            receipt['at'] = utc_now()
+        if entry.get('status') != 'candidate':
+            raise ProjectPrevisError('只能采用当前候选；已确认版本不可重写')
+        manifest = artifacts.load_manifest(root)
+        artifacts.validate_candidate_submission(root, entry, manifest)
+        active = [a for a in manifest['artifacts'] if a.get('logical_id') == entry['logical_id']
+                  and a['artifact_id'] != artifact_id and a.get('status') in {'current', 'stale'}]
+        if len(active) > 1:
+            raise ProjectPrevisError('同一 logical_id 对应多个有效/待返工产物，不能整组覆盖')
+        artifacts.mark_impacted_artifacts_stale(
+            manifest, {entry['logical_id']}, '逐镜白模修订替代，下游参考须重新核对', entry['revision'])
+        for old in active:
+            old.update(status='superseded', superseded_at=utc_now())
+        adopted = next(a for a in manifest['artifacts'] if a['artifact_id'] == artifact_id)
+        adopted.update(status='current', user_approved=True, confirmation_ref=receipt['confirmation_ref'])
+        manifest['updated_at'] = utc_now()
+        state_path = root / '00_项目管理/project_state.json'
+        state = read_json(state_path)
+        # Preserve the effective selection, including legacy active_artifact_ids
+        # and object-shaped IDs, before introducing the canonical field. Keep
+        # all unrelated raw fields untouched; the transaction reconciles stale IDs.
+        state['current_artifacts'] = list(load_project_state(root)['current_artifacts'])
+        if artifact_id not in state['current_artifacts']:
+            state['current_artifacts'].append(artifact_id)
+        confirmations = state.setdefault('user_confirmations', [])
+        if receipt not in confirmations:
+            confirmations.append(receipt)
+        backup_metadata(root)
+        revision_control._commit_json_transaction_unlocked(root, {
+            root / artifacts.MANIFEST_PATH: manifest,
+            state_path: state,
+            receipt_path: receipt,
+        }, reason='confirm exact previs reference', preserve_state_extensions=True)
+        return receipt
 
 
 def confirmed_reference_data(root: Path, artifact_id: str) -> tuple[dict, dict]:
