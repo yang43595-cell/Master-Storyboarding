@@ -25,8 +25,12 @@ _TEMP = tempfile.mkdtemp(prefix="msb-preflight-")
 PROJECT = Path(_TEMP)
 atexit.register(shutil.rmtree, _TEMP, ignore_errors=True)
 
-_PRODUCT_REF = ROOT / "assets/product-references/creator-polishing-mask-2/20260518-100605.png"
-assert _PRODUCT_REF.exists(), "产品参考 fixture 必须存在"
+# These tests inspect path/availability and segment policy, not image pixels.
+# Keep the fixture inside the synthetic project; never depend on a private photo
+# or treat these non-image bytes as product/visual evidence.
+_PRODUCT_REF = PROJECT / "assets/product-references/SYNTHETIC-NONIMAGE-FIXTURE.png"
+_PRODUCT_REF.parent.mkdir(parents=True, exist_ok=True)
+_PRODUCT_REF.write_bytes(b"SYNTHETIC contract fixture only; not an image or product reference")
 
 
 def _request_file() -> Path:
@@ -537,6 +541,14 @@ class ProductionPreflightTests(unittest.TestCase):
         )
         report = validate_production_plan(plan, PROJECT)
         assert "PRODUCT_NOT_AT_END" not in report.error_codes
+
+    def test_missing_product_directory_reference_still_fails(self) -> None:
+        plan = plan_with_order(["PRODUCT"])
+        missing = _PRODUCT_REF.parent / "SYNTHETIC-definitely-missing.png"
+        assert not missing.exists()
+        plan["segments"][0]["reference_images"] = [str(missing)]
+        report = validate_production_plan(plan, PROJECT)
+        assert "REFERENCE_FILE_MISSING" in report.error_codes
 
     def test_product_reference_inputs_field_is_acceptable(self) -> None:
         plan = make_plan()
