@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -361,7 +362,22 @@ def read_story_paragraphs(path: Path) -> list[dict[str, str]]:
     return result
 
 
-def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, project_root: Path | None = None, candidate_test: bool = False) -> dict | None:
+def validate_scene_ids(storyboard: dict) -> None:
+    """Scene identities also become web anchors; creative segments do not duplicate them."""
+    positions = {}
+    for index, scene in enumerate(storyboard['scenes'], 1):
+        key = scene['scene_id']
+        if key in positions:
+            raise ValueError(f'场景编号重复：{key}（位置 {positions[key]} 与 {index}）；同场创作段请合并到同一场景对象，不自动改号')
+        positions[key] = index
+
+
+def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, project_root: Path | None = None, candidate_test: bool = False,
+                           candidate_paragraph_ids: list[str] | None = None) -> dict | None:
+    # Explicit read-only route, never inferred from missing coverage or open questions.
+    local_candidate = candidate_paragraph_ids is not None
+    if local_candidate and (storyboard is None or storyboard.get('status') != 'candidate'):
+        raise ValueError('局部来源检查仅接受明确范围的 candidate 导演包')
     test_report = None
     if candidate_test:
         from .candidate_test import context, result_metadata
@@ -423,9 +439,20 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
     if storyboard['project_id'] != narrative['project_id'] or storyboard['source_narrative']['revision'] != narrative['revision']:
         raise ValueError('导演包与编导包项目或修订不匹配')
     all_ids = set(by_id)
-    if set(storyboard['source_paragraph_ids']) != all_ids:
+    checked_ids = all_ids
+    if local_candidate:
+        if (not isinstance(candidate_paragraph_ids, list) or not candidate_paragraph_ids
+                or any(not isinstance(key, str) for key in candidate_paragraph_ids)
+                or len(candidate_paragraph_ids) != len(set(candidate_paragraph_ids))
+                or not set(candidate_paragraph_ids).issubset(all_ids)):
+            raise ValueError('局部范围须列不重复且存在的故事段落 ID')
+        checked_ids = set(candidate_paragraph_ids)
+    declared_ids = set(storyboard['source_paragraph_ids'])
+    if not (checked_ids <= declared_ids <= all_ids):
         raise ValueError('导演包必须覆盖完整故事段落，不能只覆盖有对白的段落')
     dialogue_ids = {d['dialogue_id'] for d in narrative['dialogues']}
+    checked_dialogues = {d['dialogue_id'] for d in narrative['dialogues']
+                         if d['source_paragraph_id'] in checked_ids}
     # Image exclusions do not remove story facts. Only active, explicitly approved
     # additions extend the original reference set; use the existing choices reader.
     assets = {a['asset_id']: a for a in narrative['asset_requirements']}
@@ -452,7 +479,7 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
                 raise ValueError('新增资产缺少当前叙事修订的用户确认：' + ast)
             assets[ast] = requirement
     asset_ids = set(assets)
-    if set(storyboard['source_dialogue_ids']) != dialogue_ids:
+    if not (checked_dialogues <= set(storyboard['source_dialogue_ids']) <= dialogue_ids):
         raise ValueError('导演包遗漏最终对白或引用未知对白')
     for key, ids in [('source_dialogue_ids', dialogue_ids), ('source_asset_requirement_ids', asset_ids)]:
         if not set(storyboard[key]).issubset(ids):
@@ -460,8 +487,12 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
     covered = set()
     covered_dialogues = set()
     shot_ids = []
+    shot_sources = {}
+    validate_scene_ids(storyboard)
+    boundary_ids = set()
     for scene in storyboard['scenes']:
         scene_ids = set(scene['source_paragraph_ids'])
+        boundary_ids.update(scene_ids - checked_ids)
         if not scene_ids.issubset(all_ids):
             raise ValueError('场景引用未知段落')
         for item in scene.get('beats', []) + scene['shots']:
@@ -469,6 +500,9 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
                 raise ValueError('节拍或镜头引用超出场景段落范围')
         for shot in scene['shots']:
             shot_ids.append(shot['shot_id'])
+            shot_sources[shot['shot_id']] = set(shot['source_paragraph_ids'])
+            if not shot_sources[shot['shot_id']].issubset(checked_ids):
+                raise ValueError('镜头跨出本轮校验范围；须纳入完整跨段镜头的全部来源段落：' + shot['shot_id'])
             covered.update(shot['source_paragraph_ids'])
             covered_dialogues.update(shot['source_dialogue_ids'])
             for ast in shot['source_asset_requirement_ids']:
@@ -481,6 +515,7 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
                                  + '（当前资产清单里没有该编号：可能已被排除、已拆分或未登记，'
                                    '见 04_资产/当前资产清单.json）')
             for ast in shot['source_asset_requirement_ids']:
+                boundary_ids.update(set(assets[ast]['source_paragraph_ids']) - checked_ids)
                 if not set(assets[ast]['source_paragraph_ids']) & set(shot['source_paragraph_ids']):
                     raise ValueError('镜头资产与已核对出现段落不对应：' + ast)
             if not set(shot['source_dialogue_ids']).issubset(dialogue_ids):
@@ -490,13 +525,14 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
                     raise ValueError('镜头对白与所引段落不对应')
     if len(shot_ids) != len(set(shot_ids)):
         raise ValueError('镜头编号重复')
-    if covered_dialogues != dialogue_ids:
+    if covered_dialogues != checked_dialogues:
         raise ValueError('最终对白未完整落实到镜头')
-    if covered != all_ids:
+    if covered != checked_ids:
         raise ValueError('有故事段落未落实到镜头；包含无对白动作')
     if storyboard['schema_version'] == '4.0':
         # Fragments may span shots, but must preserve exact text, speaker and order.
-        expected = {d['dialogue_id']: d for d in narrative['dialogues']}
+        expected = {d['dialogue_id']: d for d in narrative['dialogues']
+                    if d['dialogue_id'] in checked_dialogues}
         fragments = {key: [] for key in expected}
         order = []
         for scene in storyboard['scenes']:
@@ -516,8 +552,35 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
         if any(''.join(fragments[key]) != d['text'] for key, d in expected.items()):
             raise ValueError('跨镜对白片段遗漏、重复或改写')
     for gap in storyboard['asset_gaps']:
+        boundary_ids.update(set(gap['source_paragraph_ids']) - checked_ids)
         if not set(gap['source_paragraph_ids']).issubset(all_ids):
             raise ValueError('缺口引用未知段落')
+        if not set(gap['affected_shot_ids']).issubset(shot_sources):
+            raise ValueError('缺口引用未知镜头：' + gap['gap_id'])
+        if not set(gap['related_asset_ids']).issubset(asset_ids):
+            raise ValueError('缺口引用未知资产：' + gap['gap_id'])
+        for shot_id in gap['affected_shot_ids']:
+            if not shot_sources[shot_id] & set(gap['source_paragraph_ids']):
+                raise ValueError('缺口镜头与来源段落不对应：' + gap['gap_id'] + ' / ' + shot_id)
+        for ast in gap['related_asset_ids']:
+            if not set(assets[ast]['source_paragraph_ids']) & set(gap['source_paragraph_ids']):
+                raise ValueError('缺口资产与来源段落不对应：' + gap['gap_id'] + ' / ' + ast)
+    if local_candidate:
+        ordered_ids = list(by_id)
+        adjacent = {ordered_ids[j] for i, key in enumerate(ordered_ids) if key in checked_ids
+                    for j in (i - 1, i + 1) if 0 <= j < len(ordered_ids)
+                    and ordered_ids[j] not in checked_ids}
+        return {**(test_report or {}),
+                'source_narrative_revision': narrative['revision'],
+                'source_narrative_canonical_sha256': hashlib.sha256(json.dumps(narrative,
+                    ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest(), 'validation_scope': 'candidate_paragraphs',
+                'checked_paragraph_ids': [key for key in by_id if key in checked_ids],
+                'unchecked_paragraph_ids': [key for key in by_id if key not in checked_ids],
+                'cross_boundary_paragraph_ids': [key for key in by_id if key in boundary_ids],
+                'adjacent_unwritten_paragraph_ids': [key for key in by_id if key in adjacent],
+                'cross_boundary_semantics_checked': False,
+                'whole_package_validated': False, 'formal_adoption_allowed': False,
+                'notice': '仅本轮已写段落的结构与来源自查；跨段衔接须人工核对，未写部分未检查，不构成整稿通过或用户确认。'}
     return test_report
 
 
@@ -694,11 +757,15 @@ def main():
     parser.add_argument('--reading-supplement', action='store_true',
                         help='完整校验后只返回 JSON 独有字段及引用，不重复打印 Markdown 原文')
     parser.add_argument('--storyboard', type=Path)
+    parser.add_argument('--candidate-paragraph-id', action='append',
+                        help='局部候选已写范围，可重复列现有 STP；不放宽正式整稿校验')
     parser.add_argument('--strict-assets', action='store_true',
                         help='把“引用了已取消／已拆分的资产”也当作错误（默认只告警）')
     parser.add_argument('--candidate-test', action='store_true', help='仅隔离候选试跑；保留未核对白并报告生产阻塞')
     parser.add_argument('--project', type=Path, required=True)
     args = parser.parse_args()
+    if args.candidate_paragraph_id is not None and (not args.narrative or not args.storyboard):
+        parser.error('--candidate-paragraph-id 必须与 --narrative 和 --storyboard 使用')
     if args.candidate_test and (not args.narrative or args.reading_supplement):
         parser.error("--candidate-test 仅用于 narrative/storyboard 完整候选校验")
     if args.dialogue_review:
@@ -729,12 +796,16 @@ def main():
         print(json.dumps(reading_supplement(narrative, args.project), ensure_ascii=False, indent=2))
         return
     storyboard = json.loads(args.storyboard.read_text(encoding='utf-8-sig')) if args.storyboard else None
-    report = validate_story_sources(narrative, storyboard, project_root=args.project, candidate_test=args.candidate_test)
+    report = validate_story_sources(narrative, storyboard, project_root=args.project, candidate_test=args.candidate_test,
+                                    candidate_paragraph_ids=args.candidate_paragraph_id)
     if report is not None:
         print(json.dumps(report, ensure_ascii=False))
     if args.export_markdown:
         export_markdown(storyboard or narrative, args.export_markdown)
-    print('故事原文与引用一致；此检查不代表语义完整或用户确认。')
+    if args.candidate_paragraph_id is not None:
+        print('本轮候选范围的来源检查通过；全片未核，跨段语义仍须自查，不可据此正式采用。')
+    else:
+        print('故事原文与引用一致；此检查不代表语义完整或用户确认。')
 
 
 if __name__ == '__main__':

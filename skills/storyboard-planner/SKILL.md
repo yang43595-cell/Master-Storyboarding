@@ -51,4 +51,18 @@ description: 承接已确认故事与对白，创作供用户审定整段拍法�
 - 不修改剧情、角色、事件顺序、对白、产品事实或叙事包 ID。
 - 不调用下一 Skill、不决定阶段流转、不写批准事实。
 
-结构化后运行 `python -m scripts.core.story_sources --project <项目> --narrative <叙事包> --storyboard <导演包>`，验证版本、原文与段落覆盖。STP 只是原文定位，不是镜头数量或事件摘要；一段可对应多个镜头，同一镜也可引用多个连续段落。
+全片完成后运行 `python -m scripts.core.story_sources --project <项目> --narrative <叙事包> --storyboard <导演包>`，验证版本、原文与段落覆盖。STP 只是原文定位，不是镜头数量或事件摘要；一段可对应多个镜头，同一镜也可引用多个连续段落。
+
+## 逐段候选来源自查（不等于整稿采用）
+
+全片未完成时，在同一累计候选 JSON 内写清已写/待写范围与跨段衔接未决项，不补占位镜头。显式运行：
+
+```sh
+python -m scripts.core.story_sources --project <项目> --narrative <完整已确认叙事JSON> --storyboard <同一候选导演JSON> --candidate-paragraph-id STP-01
+```
+
+每个已写 STP 重复一次 `--candidate-paragraph-id`；范围必须覆盖该累计候选内所有已写镜头（包括前轮已写但不改动的部分），不是裁出本轮段落另建包。跨段镜头必须将全部来源 STP 纳入本次范围并完整承载这些段落；不截断对白/动作来迁就范围。顶层来源清单可保留全片统筹，未写段落不能伪装成已完成镜头。仍完整检查上游叙事、准确修订、当前资产及本轮对白原句/顺序。
+
+结果明确列出 checked/unchecked STP、共享场景/资产可机械识别的跨边界来源、相邻待写段落，并标明 `whole_package_validated:false` / `formal_adoption_allowed:false`。这些只帮助定位，不证明跨段语义已检查；人工核对前后状态、远处铺垫/回应与衔接，将未解决处留在现有 `open_questions` / `asset_gaps`。无关后续未写部分不当作本轮漏写，不能宣称全片自查完成。
+
+局部网页送审按[适配说明](../../docs/development/web-content-adapter.md#导演逐段候选来源范围)，同次提供完整原叙事及相同 STP 范围，强制 `reviewable:false`，只供阅读/反馈。用户段落确认仍走原 segment 范围记录，绝不变成网页整稿批准。全片写完后去掉局部参数重跑默认严格校验，之后才按原确认及正式采用合同处理；局部参数不传入 adopt-package/commit，恢复稿也无例外。
