@@ -93,14 +93,13 @@ def external_generation_provenance(source, record):
 
 def template_prompt(kind, subject, notes, index=0):
     recipe = asset_skill.recipe(kind)
+    index = asset_skill.template_step(kind, index=index)
     source = asset_skill.template_source(kind)
     if 'template' not in recipe:
         return (f'从真实参考图制作「{subject}」的{recipe["steps"][index]}。' + recipe['description'] +
                 '\n用户补充：' + notes, str(source))
-    text = source.read_text(encoding='utf-8')
-    blocks = re.findall(r'```text\s*\n(.*?)```', text, re.S)
+    block = asset_skill._template_excerpt(str(source), kind, index=index)['content']
     if kind == '环境':
-        block = blocks[[3, 1, 2, 4][index]]
         if index == 0:
             block = block.replace('以图一【SC-XXX 场景母图】为唯一场景参考', '以用户所选照片为场景参考')
             block += '\n本次45°图是这组场景的第一张母图和文件夹封面。'
@@ -111,8 +110,6 @@ def template_prompt(kind, subject, notes, index=0):
             block = block.replace('图一【SC-XXX 场景母图】', '图一【已确认的45°母图】与图二【已确认的正面图】')
         else:
             block = block.replace('图一【场景母图】、图二【反向平视回望图】和图三【45°斜俯视全景图】', '图一【45°母图】、图二【正面图】和图三【反面图】')
-    else:
-        block = blocks[recipe['blocks'][index]]
     fields = {'永久固定项': '参考图中的空间边界、建筑、门窗、通道、家具数量和位置、材质、颜色与光源方向',
               '状态编号与仅允许变化项': '保持参考图中的时间、光照与场景状态；只改变本步规定的视角'}
     block = re.sub(r'【([^】]+)】', lambda m: '「' + subject + '」' if 'SC-XXX' in m[1] else fields.get(m[1], '参照输入图片中的' + m[1]), block)

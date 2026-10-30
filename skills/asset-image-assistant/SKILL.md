@@ -12,7 +12,7 @@ description: 在叙事包确认后按已登记 AST 需求制作和核对角色�
 ## 入口模式
 
 - 短剧项目模式：执行下文叙事包、AST 白名单与项目资产清单流程。
-- 从资产网页接收项目需求表时，同时执行 [modules/project-web-mode.md](modules/project-web-mode.md)，仍属于项目模式；由已确认独立资产表驱动制作项，逐项确认后正式回填项目。
+- 从资产网页接收项目需求表时，同时执行 [modules/project-web-mode.md](modules/project-web-mode.md)，仍属于项目模式；由已采用叙事包的有效资产需求驱动制作项，逐项确认后正式回填项目。
 - 用户明确要求跨项目独立资产库时：执行 [modules/library-mode.md](modules/library-mode.md)。这是本 Skill 的独立入口，不是另一个 Skill；资产库需求代替叙事包 AST 输入，不能伪造项目事实。按 Web 受限读取合同读取共享红线/分类指南及动态知识，并执行本 Skill 的语言审查和确认门禁。
 
 读取 `PROJECT_RULES.md`、`../_shared/knowledge-access.md`、当前 `stage_startup.md`、`../_shared/draft-lifecycle.md` 等六项共享红线（含 `../_shared/prompt-language.md`）、`modules/asset-method.md`、`references/00-asset-production-workflow.md`、`references/00a-asset-complexity-routing-guide.md`、`references/05-asset-manifest-handoff-guide.md` 与 `../../schemas/visual-asset-manifest.schema.json`。只有当前 AST 类别需要时才读取 `references/01-style-master-guide.md`（含**整片色彩统一色卡工作流**）、`references/02-character-master-guide.md`、`references/03-scene-master-guide.md` 或 `references/04-prop-product-master-guide.md` 的对应部分；**产出前必读** `../storyboard-director/references/image-continuity-hard-rules.md`（背景母版 + 多角度参考组，强制非"涉风险才读"）；涉及灯光风险时才读取 `../storyboard-planner/references/lighting-prompt-standard.md` 的对应小节；写本 Skill 提示词时必读 `../voiceover-to-video-script/references/prompt-language-hard-rules.md` 并以其为准；**产出前先 `ensure-prepared` 并命中 `modules/asset-method.md` 开头"本 Skill 产出须命中的规范"清单**。这些条件引用只提供资产实现约束，不扩大本 Skill 职责，也不加载其他阶段方法。
@@ -33,7 +33,7 @@ description: 在叙事包确认后按已登记 AST 需求制作和核对角色�
 
 ## 输入与启动
 
-- 制作入口是已登记确认的独立资产表（`narrative.assets`）及同版 `narrative.package` 的结构化 AST 需求。当前有效状态统一由项目核心产物读取代码核验登记与采用凭据；候选文件正文可保留采用前原文，不以正文状态重复裁决。MD 与 JSON 的一致性在上游审查/采用时完成。网页读取表内必要背景和当前结构化条目，不重新从编导稿提取或解析另一份 AST。旧版未拆表项目兼容原已确认包；新版缺少登记表须返回上游。可与导演规划并行。
+- 制作入口是已正式采用的叙事包内结构化 AST 需求。canonical JSON（schema_version=2.0 且省略 human_readable_path）从已正式采用的 narrative.package 内 asset_requirements 读取，不要求独立 narrative.assets 或 Markdown；保留 human_readable_path 的历史包才沿原双文件及适用的同版独立资产表检查，不得删除该字段绕过差异。当前有效状态统一由项目核心产物读取代码核验登记与采用凭据；候选文件正文可保留采用前原文，不以正文状态重复裁决。历史 MD 与 JSON 的一致性在上游审查/采用时完成。网页读取同一有效来源中的必要背景和当前结构化条目，不重新从编导稿提取或解析另一份 AST。旧版未拆表项目兼容原已确认包；仅历史合同要求独立表而缺表时返回上游。可与导演规划并行。
 - 按 PROJECT_RULES.md 的“用户调整资产图需求”，由已确认资产表及用户明确、已核对出现位置并登记的调整建立本轮有效 AST 白名单。未经授权或尚未登记的表外项停止并报告；不得自行创建、改名或扩写 AST，不把用户新增需求伪称为原叙事包事实。
 - 读取资产表的处理结论与判断依据：无需独立图和待定不进入制作；复用只选用现有素材；需要制作才准备新图。只检查判断是否缺失，不重新详细审查。历史无字段的确认包保留兼容，返修时由上游补齐。
 - 先盘点现有确认资产与真实参考，能覆盖需求时直接复用，不为走流程重复生成。

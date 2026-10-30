@@ -1,5 +1,5 @@
 {
-  "version": "asset-library-skill-v3",
+  "version": "asset-library-skill-v4",
   "required_rules": [
     "MSB-KB-PROMPT-002"
   ],
@@ -82,7 +82,19 @@
         4
       ],
       "description": "45°封面→正面→反面→俯视；每步确认后再派生。",
-      "method_scope": "scene"
+      "method_scope": "scene",
+      "step_keys": [
+        "oblique",
+        "front",
+        "reverse",
+        "overhead"
+      ],
+      "legacy_views": {
+        "45°": "oblique",
+        "正面平视": "front",
+        "反向平视": "reverse",
+        "俯视": "overhead"
+      }
     },
     "物品": {
       "label": "物品 · 正侧背俯四视图",
@@ -152,4 +164,3 @@
     }
   }
 }
-
