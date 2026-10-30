@@ -152,6 +152,23 @@ def problems_for_write(receipt: Any) -> list[str]:
     return problems
 
 
+def image_usage_shots(usage: Any, *, required: bool = False) -> list[str]:
+    """Explicit image-use permission, independent of observation/whole-image approval.
+
+    Legacy receipts without usage remain readable but grant no shot permission.
+    """
+    if usage is None and not required:
+        return []
+    if not isinstance(usage, dict):
+        raise ValueError("分镜图确认必须明确 usage.source_shot_ids；不从说明或观察镜号推断许可")
+    ids = usage.get("source_shot_ids")
+    if (not isinstance(ids, list) or not ids
+            or any(not isinstance(i, str) or not i.strip() for i in ids)
+            or len(ids) != len(set(ids))):
+        raise ValueError("usage.source_shot_ids 必须是准确、非空、唯一的获准镜号数组")
+    return list(ids)
+
+
 def new_receipt(
     scope: str,
     *,

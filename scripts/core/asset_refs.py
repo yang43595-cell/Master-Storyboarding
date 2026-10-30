@@ -733,16 +733,20 @@ def require_references(root: Path, artifact_ids: list[str], shot_ids: list[str] 
             else:
                 # Existing image receipts are either a single hash-bound image,
                 # a named member of a batch, or the revision-control adoption.
-                from .confirmation_scope import is_whole_artifact
+                from .confirmation_scope import is_whole_artifact, image_usage_shots
                 from .artifacts import formal_adoption
                 confirmation = entry.get('confirmation_ref')
                 if not confirmation:
-                    exact = any(r.get('kind') == 'revision-candidate'
-                                and r.get('artifact_id') == ident and is_whole_artifact(r)
-                                and r.get('sha256') == entry['checksum'] and r.get('approval_ref')
-                                for r in state['user_confirmations'])
+                    exact = [r for r in state['user_confirmations']
+                             if r.get('kind') == 'revision-candidate'
+                             and r.get('artifact_id') == ident and is_whole_artifact(r)
+                             and r.get('sha256') == entry['checksum'] and r.get('approval_ref')]
                     if not exact and not formal_adoption(entry, root):
                         raise ValueError('分镜图缺少绑定该版本的具体确认依据')
+                    permissions = [image_usage_shots(r.get('usage')) for r in exact]
+                    if permissions and any(p != permissions[0] for p in permissions[1:]):
+                        raise ValueError('同一分镜图存在冲突用途确认，须核对准确批准依据')
+                    permitted_shots = set(permissions[0] if permissions else [])
                 else:
                     receipt_path, _ = _confirmation_file(root, confirmation)
                     receipt = _read(receipt_path) if receipt_path else {}
@@ -760,7 +764,8 @@ def require_references(root: Path, artifact_ids: list[str], shot_ids: list[str] 
                     if (not image.get('path') or project_path(root, image['path']) != path
                             or image.get('sha256') != entry['checksum']):
                         raise ValueError('确认记录的图片路径/指纹与当前版本不一致')
-                    permitted_shots = set((image.get('usage') or receipt.get('usage') or {}).get('source_shot_ids', []))
+                    usage = image['usage'] if 'usage' in image else receipt.get('usage')
+                    permitted_shots = set(image_usage_shots(usage))
                     white = image.get('white_reference')
                     if white:
                         white_path = project_path(root, white['path'])

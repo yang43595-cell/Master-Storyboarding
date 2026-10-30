@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 from urllib.parse import urlsplit
 from .artifacts import project_path, load_manifest
+from .media_types import LOCAL_REFERENCE_EXTENSIONS
 
 # Conservative transfer budget for this workflow, not a universal platform limit.
 DEFAULT_MAX_PACKAGE_BYTES = 19_000_000
@@ -13,7 +14,7 @@ PATH_KEYS = {'path', 'paths', 'path_or_url', 'file', 'files', 'localPath',
              'human_readable_path', 'image_path', 'video_path', 'audio_path',
              'source_image', 'source_video', 'source_audio', 'reference_images', 'reference_videos'}
 REFERENCE_KEYS = {'reference', 'references', 'image', 'images'}
-FILE_EXTENSION = re.compile(r'\.(?:json|md|txt|pdf|png|jpe?g|webp|mp4|mov|wav|mp3)$', re.I)
+FILE_EXTENSION = re.compile('(?:' + '|'.join(re.escape(ext) for ext in sorted(LOCAL_REFERENCE_EXTENSIONS)) + ')$', re.I)
 
 def validate_required_files(project: Path, files: list[str], input_roots: list[Path] = ()) -> list[str]:
     """Read-only readiness for explicitly selected inputs, not content/approval."""
