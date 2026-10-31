@@ -198,30 +198,37 @@ if (Test-Path -LiteralPath $executionDir -PathType Container) {
     # 通用图片引用在下方 Python --include-images 中检查，覆盖 JSON/MD/TXT。
   }
 
-  # 产品类型只认明确标记或已确认资产类别；普通剧情道具名称不触发广告产品门禁。
-  $previousOutputEncoding = [Console]::OutputEncoding
-  $previousOutputEncoder = $OutputEncoding
-  try {
-    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-    $OutputEncoding = [System.Text.Encoding]::UTF8
-    Push-Location -LiteralPath (Split-Path -Parent $PSScriptRoot)
+  # 新项目的空执行目录没有内容检查对象，不把跳过说成引用通过。
+  $referenceDocs = @(Get-ChildItem -LiteralPath $executionDir -File -Recurse -ErrorAction Stop |
+    Where-Object { $_.Extension.ToLowerInvariant() -in @('.json', '.md', '.txt') })
+  if ($referenceDocs.Count -gt 0) {
+    # 产品类型只认明确标记或已确认资产类别；普通剧情道具名称不触发广告产品门禁。
+    $previousOutputEncoding = [Console]::OutputEncoding
+    $previousOutputEncoder = $OutputEncoding
     try {
-      $productOutput = @(& python -m scripts.core.product_refs --project $projectRoot --directory $executionDir --include-images 2>&1)
-      $productExit = $LASTEXITCODE
+      [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+      $OutputEncoding = [System.Text.Encoding]::UTF8
+      Push-Location -LiteralPath (Split-Path -Parent $PSScriptRoot)
+      try {
+        $productOutput = @(& python -m scripts.core.product_refs --project $projectRoot --directory $executionDir --include-images 2>&1)
+        $productExit = $LASTEXITCODE
+      } finally {
+        Pop-Location
+      }
+      if ($productExit -ne 0) {
+        foreach ($line in $productOutput) {
+          $issues.Add((Add-Issue 'ERROR' "Product reference validation: $line"))
+        }
+        if ($productOutput.Count -eq 0) {
+          $issues.Add((Add-Issue 'ERROR' "Product reference validation failed (exit $productExit)"))
+        }
+      }
     } finally {
-      Pop-Location
+      [Console]::OutputEncoding = $previousOutputEncoding
+      $OutputEncoding = $previousOutputEncoder
     }
-    if ($productExit -ne 0) {
-      foreach ($line in $productOutput) {
-        $issues.Add((Add-Issue 'ERROR' "Product reference validation: $line"))
-      }
-      if ($productOutput.Count -eq 0) {
-        $issues.Add((Add-Issue 'ERROR' "Product reference validation failed (exit $productExit)"))
-      }
-    }
-  } finally {
-    [Console]::OutputEncoding = $previousOutputEncoding
-    $OutputEncoding = $previousOutputEncoder
+  } else {
+    Write-Host 'SKIP: no JSON/MD/TXT execution documents; product/image references not checked.'
   }
 }
 

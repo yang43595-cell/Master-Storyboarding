@@ -71,6 +71,12 @@ def test_project_validator_uses_product_category_boundary(tmp_path):
     validator = Path(__file__).resolve().parents[1] / 'validate-project.ps1'
     command = ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
                '-File', str(validator), '-ProjectPath', str(project)]
+    # An initialized empty video directory is optional, not a zero-coverage PASS.
+    (directory / 'S01.md').unlink()
+    result = subprocess.run(command, capture_output=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert b'SKIP: no JSON/MD/TXT' in result.stdout
+    (directory / 'S01.md').write_text('普通剧情物品：玻璃碗。', encoding='utf-8-sig')
     result = subprocess.run(command, capture_output=True, timeout=30)
     assert result.returncode == 0, result.stdout + result.stderr
     (directory / 'S01.md').write_text('PRODUCT_VISUAL_INPUT: REAL_PRODUCT', encoding='utf-8-sig')

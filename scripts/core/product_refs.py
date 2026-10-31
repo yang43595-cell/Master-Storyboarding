@@ -21,6 +21,20 @@ PRODUCT_REFERENCE = re.compile(
 )
 
 
+def _documents(directory: Path, suffixes: set[str]) -> tuple[list[Path], list[str]]:
+    """No scanned documents is unchecked, not evidence of valid references."""
+    try:
+        if not directory.is_dir():
+            return [], [f'UNCHECKED: 检查目录不存在或不是目录：{directory}']
+        documents = sorted(p for p in directory.rglob('*')
+                           if p.is_file() and p.suffix.lower() in suffixes)
+        if not documents:
+            return [], [f'UNCHECKED: 目录中没有可检查文档（{", ".join(sorted(suffixes))}）：{directory}']
+        return documents, []
+    except (OSError, RuntimeError) as exc:
+        return [], [f'UNCHECKED: 无法读取检查目录：{directory}: {exc}']
+
+
 def validate_documents(project: Path, directory: Path) -> list[str]:
     """Check JSON and legacy Markdown explicit product markers or typed asset IDs.
 
@@ -31,7 +45,9 @@ def validate_documents(project: Path, directory: Path) -> list[str]:
     errors: list[str] = []
     categories: dict[str, str] | None = None
     source_error: str | None = None
-    documents = sorted(p for p in directory.rglob('*') if p.is_file() and p.suffix.lower() in {'.md', '.json'})
+    documents, coverage_errors = _documents(directory, {'.md', '.json'})
+    if coverage_errors:
+        return coverage_errors
     for path in documents:
         text = path.read_text(encoding='utf-8-sig')
         structured_product = False
@@ -105,9 +121,10 @@ def validate_image_documents(project: Path, directory: Path) -> list[str]:
     extension = re.compile(r'\.(?:png|jpg|jpeg|webp)$', re.I)
     path_keys = {'path', 'paths', 'path_or_url', 'file', 'files', 'image', 'images', 'reference', 'references'}
     errors = []
-    for path in sorted(directory.rglob('*')):
-        if not path.is_file() or path.suffix.lower() not in {'.json', '.md', '.txt'}:
-            continue
+    documents, coverage_errors = _documents(directory, {'.json', '.md', '.txt'})
+    if coverage_errors:
+        return coverage_errors
+    for path in documents:
         text = path.read_text(encoding='utf-8-sig')
         fields = [((), text)]
         if path.suffix.lower() == '.json':
@@ -164,8 +181,15 @@ def main() -> int:
         if args.package:
             print(json.dumps({'packages': check_package_files(args.package, args.max_package_bytes)}, ensure_ascii=False))
         if args.directory is not None:
-            errors.extend(validate_documents(args.project.resolve(), args.directory.resolve()))
-        if args.include_images:
+            # TXT-only image scans have valid coverage, but no product-document
+            # scope. Do not turn that optional subcheck into a false blocker.
+            documents, coverage_errors = _documents(args.directory, {'.json', '.md', '.txt'} if args.include_images else {'.json', '.md'})
+            errors.extend(coverage_errors)
+            if not coverage_errors and any(p.suffix.lower() in {'.json', '.md'} for p in documents):
+                errors.extend(validate_documents(args.project.resolve(), args.directory.resolve()))
+            elif not coverage_errors:
+                print('SKIP: no JSON/MD product documents; checking TXT image references only')
+        if args.include_images and not coverage_errors:
             errors.extend(validate_image_documents(args.project.resolve(), args.directory.resolve()))
     except (OSError, ValueError, RuntimeError) as exc:
         errors = [str(exc)]
