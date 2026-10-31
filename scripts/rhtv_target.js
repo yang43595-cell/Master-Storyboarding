@@ -61,7 +61,7 @@ function operationRequest(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('须提供结构化操作 JSON；不执行任意 JS');
   const allowed = new Set(['operation', 'selector', 'wait_ms', 'value', 'attributes', 'all']);
   if (Object.keys(value).some(k => !allowed.has(k))) throw new Error('存在不支持的操作字段');
-  if (!['read', 'click', 'set-value'].includes(value.operation)) throw new Error('operation 仅支持 read、click、set-value');
+  if (!['read', 'read-rich-editor', 'click', 'set-value'].includes(value.operation)) throw new Error('operation 仅支持 read、read-rich-editor、click、set-value');
   if (typeof value.selector !== 'string' || !value.selector.trim()) throw new Error('须给准确 CSS selector');
   if (value.wait_ms !== undefined && (!Number.isInteger(value.wait_ms) || value.wait_ms < 0 || value.wait_ms > 10000)) throw new Error('wait_ms 须为 0..10000 整数');
   if (value.operation === 'set-value' && typeof value.value !== 'string') throw new Error('set-value 须给字符串 value');
@@ -90,6 +90,10 @@ function operationExpression(request, expectedUrl) {
     check();
     matches = nodes();
     if (!matches.length || (request.all !== true && matches.length !== 1) || matches.length > 100) throw new Error('selector 未匹配唯一目标，或读取范围过大');
+    if (request.operation === 'read-rich-editor') {
+      const value = (${require('./rhtv_rich_editor').readRichEditor.toString()})(matches[0]);
+      check(); return {operation: 'read-rich-editor', value};
+    }
     if (request.operation === 'read') {
       const values = matches.map(el => ({tag: el.localName, text: el.textContent,
         value: ['input','textarea','select'].includes(el.localName) ? el.value : null,

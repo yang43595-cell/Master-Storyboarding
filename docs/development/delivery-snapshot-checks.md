@@ -181,3 +181,28 @@ python scripts/canvas_readback.py --private-preview --project <准确候选项�
 兼容旧别名时，当前活动段的native_binding_verified、materials等活动引用里的native_entity_verified若为true，也必须由上述同修订同输入的逐段native_binding证明；native_readback_source旧路径本身不证明当前实体。跨段边界或整包级的旧true字段不具备逐节点正文/参数，不自动转换成verified；回读结论落在实际逐段native_binding，旧边界结论仅保留历史。legacy native_delivery_scope字符串/已核摘要及final_native_receipt_path不能单独当本轮通过；需要留历史时放历史记录，当前状态明确未核。检查仅遍历当前drafts/generation_segments/creative_sections及其活动引用，不消费history、previous_revision_self_check、excluded_materials_this_revision为当前证据。不会修改或删除这些历史对象。当前目标必须来自顶层target_url或target_canvas.url并与回读一致，原生实体类型也须一致；换画布或纯文本实体不得沿用旧通过。
 
 本地引用发现与最终引用类型检查共用 `scripts/core/media_types.py` 的扩展名集合，含 WEBM、MKV、M4A（大小写不敏感）。被发现只表示进入存在性和来源检查，不证明编码、时长、平台支持或内容已验收。
+
+
+## 平台采集与离线合同的接缝
+
+`canvas_readback.py` 消费实际采集的 `after_refresh` / `drafts`，并复核现有 `ordered_media`、`reference_checks` 与登记中的 `upload_bindings`。它不是平台采集器。`rhtv_target.js` 的通用 DOM text/value/attributes 读取只能证明所读字段，不能单靠标签、截图、连线或一次保存回执产生 `native_mentions`、媒体字节来源或刷新后持久化的事实。
+
+接入准确平台时，先用已有获准只读入口确认目标、刷新动作和平台实际支持的原生节点/媒体/不可编辑实体字段；采集结果按现有字段交给 `canvas_readback.py --readback`，不新增平行绑定表。真实目标、完整正文/参数、有序原生身份或刷新事实缺一项即保持未验证；不能猜 selector、补空字段伪装“无引用”或由本地期望值生成 observed。换图同名、顺序交换、换修订、目标变化均重新采集并比对，不继承旧通过。
+
+没有合法可用采集入口时，停在离线合同与 fixture 测试：可以验证接口拒绝反例，但必须写“线上绑定未验证”。Fixture 的 `.invalid` 目标和合成原生实体不是实际小云雀回执，也不授权写画布或生成。现有 `native_binding` 状态、来源 hash 和 confirmation 边界不变。
+
+### 红帧富文本的局部只读采集
+
+`rhtv_target.js` 新增结构化 `read-rich-editor`，仍要求明确目标和唯一编辑器 selector，沿原入口的导航检查执行，不接受任意 JS、不模拟 userGesture、不点击、不刷新、不调用平台内部 API：
+
+```json
+{"operation":"read-rich-editor","selector":"<本轮已只读核实且唯一的编辑器 selector>"}
+```
+
+已有合法浏览器读取入口也可将 `scripts/rhtv_rich_editor.js` 的自包含 `readRichEditor(root)` 作为准确编辑器 locator 的只读 evaluate 回调；不能把本仓库 CDP 可用性当作当前云浏览器已连接。先验证编辑器确属所选节点，刷新事实由实际操作证据另行建立，函数不补写 `phase=after_refresh`。
+
+本轮实际观察到 `richWrap` 编辑器内的不可编辑 `richCustom` 标签，其后代公开 `data-reference-id`（URI 编码的源 node ID 与 image 类型）及 `data-value={{ref N}}`。采集按 DOM 顺序提取这些字段，沿最近不可编辑祖先核归属，不猜固定嵌套深度。可见标签、缩略图 blob URL、源 node ID 都不等于稳定 media ID 或文件 hash；输出 `native_mentions` 沿既有字段，但缺失的 `media_id` 不回填。直接交现有 `canvas_readback` 仍不能通过，`coverage.media_identity=unchecked`、`production_ready=false`。
+
+`tokens` 仅是采集表示，不是新业务正文或绑定台账：普通 text node 逐字保留空白/FEFF，相邻文本节点合并；BR 与 DIV/P/SPAN 边界显式保留；完整原生引用替换成带 node/type/data-value 与准确 textContent 的 token；先检查其展示子树只含支持的 SPAN/IMG/Text，再跳过布局序列化，保留标签及额外文本变化，避免 `innerText` 的 CSS 换行抖动。禁止全局 trim/去空白、把 tokens 拼回已确认 prompt，或用期望值补 observed。未知结构/冲突实体返回未检查并清空不完整结果。普通块标签支持是保守通用实现，尚无当前红帧完整 DOM 样本证明覆盖；测试只来自已观察的脱敏属性合同与明确合成嵌套/正文，不是完整线上回执。
+
+完整正文与参数、媒体字节身份、刷新后持久化及 frozen 修订仍须各自取得真实证据；该局部适配不宣称线上端到端绑定通过，也不改现有比较器或生成门槛。

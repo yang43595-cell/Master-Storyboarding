@@ -257,3 +257,63 @@ def test_exact_supplement_reference_checks_receipt_and_freeze(tmp_path):
     assert not require_references(tmp_path, ['FRAME-R01'], ['S04-010'])[0]
     revision_control.cancel_change(tmp_path, change_id='REWORK', reason='fixture cancelled')
     assert require_references(tmp_path, ['FRAME-R01'], ['S04-010'])[0]
+
+
+@pytest.mark.parametrize("preinvalidated", [False, True])
+def test_generic_promotion_invalidates_only_adopted_descendants_and_retries(tmp_path, preinvalidated):
+    rows = [entry('OLD', 'reference.bridge'), entry('NEW', 'reference.bridge', 'candidate'),
+            entry('DIRECT', 'video.direct', dependencies=['reference.bridge']),
+            entry('INDIRECT', 'video.indirect', dependencies=['video.direct']),
+            entry('OTHER', 'reference.other'),
+            entry('HISTORY', 'video.history', 'superseded', ['reference.bridge']),
+            entry('UNUSED', 'video.unused', 'candidate', ['reference.bridge'])]
+    for row in rows:
+        path = tmp_path / (row['artifact_id'] + '.txt')
+        path.write_text(row['artifact_id'])
+        row.update(path_or_url=path.name, checksum=artifacts.digest(path), revision='R1')
+    write_json(tmp_path / artifacts.MANIFEST_PATH, {'artifacts': rows})
+    state = new_project_state()
+    state.update(current_artifacts=['OLD', 'DIRECT', 'INDIRECT', 'OTHER'],
+                 user_confirmations=[{'artifact_ids': ['OLD'], 'approval_ref': 'synthetic-only'}])
+    write_project_state(tmp_path, state)
+    original = {p.name: p.read_bytes() for p in tmp_path.glob('*.txt')}
+    if preinvalidated:
+        before = artifacts.load_manifest(tmp_path)
+        artifacts.mark_impacted_artifacts_stale(before, {'reference.bridge'}, 'existing caller', 'R1')
+        artifacts.save_manifest(tmp_path, before)
+    artifacts.promote_candidate(tmp_path, 'reference.bridge', 'NEW')
+    first = artifacts.load_manifest(tmp_path)
+    statuses = {a['artifact_id']: a['status'] for a in first['artifacts']}
+    assert statuses == {'OLD': 'superseded', 'NEW': 'current', 'DIRECT': 'stale',
+                        'INDIRECT': 'stale', 'OTHER': 'current', 'HISTORY': 'superseded', 'UNUSED': 'candidate'}
+    artifacts.promote_candidate(tmp_path, 'reference.bridge', 'NEW')
+    assert artifacts.load_manifest(tmp_path)['artifacts'] == first['artifacts']
+    state_after = load_project_state(tmp_path)
+    assert state_after['current_artifacts'] == ['OTHER']
+    assert state_after['user_confirmations'] == state['user_confirmations']
+    assert {p.name: p.read_bytes() for p in tmp_path.glob('*.txt')} == original
+
+
+def test_generic_first_promotion_does_not_invalidate_unrelated_current(tmp_path):
+    write_json(tmp_path / artifacts.MANIFEST_PATH, {'artifacts': [
+        entry('NEW', 'reference.new', 'candidate'), entry('OTHER', 'reference.other')]})
+    artifacts.promote_candidate(tmp_path, 'reference.new', 'NEW')
+    assert [a['status'] for a in artifacts.load_manifest(tmp_path)['artifacts']] == ['current', 'current']
+
+
+def test_promotion_retries_after_state_sync_interruption(tmp_path, monkeypatch):
+    from scripts.core import project_state
+    write_json(tmp_path / artifacts.MANIFEST_PATH, {'artifacts': [
+        entry('OLD', 'reference'), entry('NEW', 'reference', 'candidate'),
+        entry('VIDEO', 'video', dependencies=['reference'])]})
+    state = new_project_state(); state['current_artifacts'] = ['OLD', 'VIDEO']
+    write_project_state(tmp_path, state)
+    sync = project_state.sync_current_artifacts
+    with monkeypatch.context() as fault:
+        def interrupted(*args): raise OSError('synthetic state sync interruption')
+        fault.setattr(project_state, 'sync_current_artifacts', interrupted)
+        with pytest.raises(OSError): artifacts.promote_candidate(tmp_path, 'reference', 'NEW')
+    first = artifacts.load_manifest(tmp_path)['artifacts']
+    artifacts.promote_candidate(tmp_path, 'reference', 'NEW')
+    assert artifacts.load_manifest(tmp_path)['artifacts'] == first
+    assert load_project_state(tmp_path)['current_artifacts'] == []

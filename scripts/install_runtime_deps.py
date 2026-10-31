@@ -53,7 +53,7 @@ def verify(root: Path) -> tuple[bool, str]:
     vendor = runtime_deps.vendor_directory(root)
     if not vendor.is_dir():
         return False, "隔离依赖目录不存在"
-    return runtime_deps.probe_vendored(vendor, runtime_deps.vendored_packages(vendor))
+    return runtime_deps.verify_vendored(root)
 
 
 def plan_action(root: Path) -> dict[str, object]:
@@ -68,7 +68,12 @@ def plan_action(root: Path) -> dict[str, object]:
         "stamp_problem": problem,
     }
     if stamp is not None and not problem:
-        plan.update(action=ACTION_OK, reason="stamp 与当前解释器一致，无需改动")
+        ok, detail = verify(root)
+        plan["probe"] = {"通过": ok, "说明": detail}
+        if ok:
+            plan.update(action=ACTION_OK, reason="stamp 匹配且实际依赖导入通过，无需改动")
+        else:
+            plan.update(action=ACTION_REFUSE, reason=f"旧 stamp 对应的依赖已不可用（{detail}）；核对后用 --force 重建，不覆盖当前目录")
         return plan
     if not vendor.is_dir():
         plan.update(action=ACTION_INSTALL, reason="隔离目录不存在，按当前解释器安装")
