@@ -416,6 +416,11 @@ def promote_candidate(project_root: Path, logical_id: str, artifact_id: str) -> 
               and item.get("status") in {"current", "stale"}]
     if len(active) > 1:
         raise ValueError("同一 logical_id 对应多个有效/待返工产物，先明确独立替换对象，不能整组覆盖")
+    # Compute on the adopted graph before replacement; existing manual callers
+    # may already have invalidated it, so stale rows must remain idempotent.
+    if active:
+        mark_impacted_artifacts_stale(manifest, {logical_id},
+                                     "上游产物已采用新版本，需复核准确下游依赖", new_item.get("revision", ""))
     superseded: list[str] = []
     now = utc_now()
     for item in manifest.get("artifacts", []):

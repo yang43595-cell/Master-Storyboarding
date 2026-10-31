@@ -77,7 +77,7 @@ def test_unimportable_vendor_directory_is_refused(tmp_path: Path):
     assert "broken_package" in resolved.detail
 
 
-def test_matching_stamp_is_trusted_without_probe(tmp_path: Path):
+def test_matching_stamp_and_actual_import_are_verified(tmp_path: Path):
     vendor = runtime_deps.vendor_directory(tmp_path)
     _write_package(vendor, "demo_package", "VALUE = 1\n")
     installer.write_stamp(tmp_path)
@@ -144,3 +144,39 @@ def test_only_runtime_deps_may_add_the_vendor_directory_to_sys_path():
             if "visual-library-deps" in line or "vendor_directory(" in line:
                 offenders.append(f"{path.name}:{number}")
     assert offenders == []
+
+
+def test_matching_stamp_does_not_hide_broken_or_removed_package(tmp_path):
+    vendor = runtime_deps.vendor_directory(tmp_path)
+    package = _write_package(vendor, 'recovery_demo', 'VALUE = 1\n')
+    installer.write_stamp(tmp_path)
+    assert installer.plan_action(tmp_path)['action'] == installer.ACTION_OK
+    (package / '__init__.py').write_text('raise ImportError("missing native extension")\n')
+    assert installer.plan_action(tmp_path)['action'] == installer.ACTION_REFUSE
+    assert runtime_deps.resolve_runtime_deps(str(tmp_path)).path is None
+    import shutil
+    shutil.rmtree(package)
+    runtime_deps.resolve_runtime_deps.cache_clear()
+    assert installer.plan_action(tmp_path)['action'] == installer.ACTION_REFUSE
+    assert runtime_deps.resolve_runtime_deps(str(tmp_path)).path is None
+
+
+def test_required_dependency_checks_actual_import_not_only_spec(tmp_path, monkeypatch):
+    _write_package(tmp_path, 'recovery_broken', 'raise ImportError("broken bytes")\n')
+    monkeypatch.syspath_prepend(str(tmp_path))
+    assert importlib.util.find_spec('recovery_broken') is not None
+    assert runtime_deps.missing_required(tmp_path, ('recovery_broken',)) == ['recovery_broken']
+
+
+@pytest.mark.parametrize('stdout', ['', '[]', 'null', 'true'])
+def test_probe_rejects_missing_or_wrong_result_shape(tmp_path, monkeypatch, stdout):
+    from types import SimpleNamespace
+    monkeypatch.setattr(runtime_deps.subprocess, 'run', lambda *a, **k:
+                        SimpleNamespace(returncode=0, stdout=stdout, stderr=''))
+    assert not runtime_deps.probe_vendored(tmp_path, ['demo'])[0]
+
+
+def test_syntax_broken_required_dependency_is_reported(tmp_path, monkeypatch):
+    _write_package(tmp_path, 'recovery_bad_syntax', 'not valid python !!!\n')
+    monkeypatch.syspath_prepend(str(tmp_path))
+    assert runtime_deps.missing_required(tmp_path, ('recovery_bad_syntax',)) == ['recovery_bad_syntax']

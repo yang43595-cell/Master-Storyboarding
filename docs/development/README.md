@@ -93,6 +93,21 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/validate-project
 
 再从本轮准确业务 JSON 发现当前依赖，报告真实缺失/漂移；历史来源保留可追溯，但不得借恢复去删活动引用、补造原图或继承旧确认。运行现有检查时同时核退出码和返回结果、覆盖数量：零文档或未识别正文是“未检查”，不是通过；只有候选登记也不是正式采用。方法全文、实际看图/试听与适用动作仍由执行者完成，不由路径存在或程序通过替代。修复环境后重跑相同范围，分别记录通过、失败、未运行和仍被阻塞的生产步骤。
 
+### 可重复的恢复入口（只读验收）
+
+源码恢复继续使用标准 Git bundle，不新增项目账本。先核可信交付包完整性与其中准确源码 tree；在新目录 `git clone <已核验.bundle> <新目录>`。已存在目录不得覆盖；失败/重试先检查已有目录，核实准确字节后继续或选择新目录。源码树不包含外部方法、真实媒体、运行依赖或用户批准。
+
+在恢复后的目录、选定的当前解释器中单独运行：
+
+```sh
+python -B scripts/verify_workspace.py --expected-tree <已核定40位Git-tree-SHA>
+python -B scripts/verify_workspace.py --expected-tree <同一SHA> --project <准确项目根> --require-file <现行业务JSON> --input-root <明确外部输入根>
+```
+
+不得从“最新”文件名猜基线；传入的是 tree，不是 commit。命令先核全部登记源码和入口自身，再刷新依赖选择缓存、实际导入并核已加载源码路径/字节；损坏 stamp 对应的依赖不能沿用旧安装通过。版本与 requirements 指纹会报告，兼容性仍按准确 requirements 安装并运行测试，不把可导入等同所有版本/API 均兼容。缺失依赖按原 `install_runtime_deps.py` 修复；不会自动覆盖、安装或提升权限。
+
+业务分支复用 `discover_dependencies(..., verify_hashes=True)`，只核所选依赖及同一明确文件上的 `path/path_or_url/file + sha256/checksum`。错字节、非法/冲突 hash、歧义路径失败；无 hash 的文件明确列 `unhashed_files`，只证明字节存在，不证明历史准确版本，不能补造旧 hash/确认。未提供业务输入时记 not_requested，不声称完整项目已恢复。报告是本次检查结果，不是新的业务权威；始终 `production_ready:false`，平台绑定与用户批准另核。
+
 ## 六、整片收尾
 
 本仓库没有受支持的整片归档入口或完整搬运合同。`knowledge-maintainer` 只负责项目知识治理，不负责把项目整体搬入 Vault、同步文件或清理桌面源目录。不要根据本说明执行搬移或删除；需要整片归档时，应先指定已授权的归档流程和目标。上文的阶段内旧稿归档规则仍按其原有范围执行，不等同于整片归档。

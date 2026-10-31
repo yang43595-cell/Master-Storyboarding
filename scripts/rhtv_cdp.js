@@ -4,7 +4,7 @@
 const {connectTarget, operationRequest, operationExpression} = require('./rhtv_target');
 async function main() {
   if (process.argv[2] === '--about') {
-    console.log('stdin JSON: {operation:"read|click|set-value",selector:"...",wait_ms:0,value:"..."}; 明确 RHTV_TARGET_ID 或 RHTV_CANVAS_URL');
+    console.log('stdin JSON: {operation:"read|read-rich-editor|click|set-value",selector:"...",wait_ms:0,value:"..."}; 明确 RHTV_TARGET_ID 或 RHTV_CANVAS_URL');
     return;
   }
   let input = '';
@@ -20,13 +20,13 @@ async function main() {
     submitted = true;
     const result = await target.call('Runtime.evaluate', {
       expression: operationExpression(request, target.expectedUrl), returnByValue: true,
-      awaitPromise: true, userGesture: request.operation !== 'read',
+      awaitPromise: true, userGesture: !['read', 'read-rich-editor'].includes(request.operation),
     });
     if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text || '页面异常');
     await target.verify();
     console.log(JSON.stringify(result.result, null, 2));
   } catch (error) {
-    if (submitted && request.operation !== 'read') error.message += '；操作已提交到页面，可能已有部分作用，勿自动重试';
+    if (submitted && !['read', 'read-rich-editor'].includes(request.operation)) error.message += '；操作已提交到页面，可能已有部分作用，勿自动重试';
     throw error;
   } finally { target.close(); }
 }

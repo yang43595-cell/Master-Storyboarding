@@ -8,7 +8,7 @@ Python（3.12，跑视觉资产库服务）。隔离依赖目录 `.master-storyb
 
 判定规则只有这一处：
 
-1. 隔离目录带可信 `stamp.json`（解释器标识、平台、依赖清单哈希都对得上）→ 直接使用；
+1. 隔离目录带可信 `stamp.json`（解释器标识、平台、依赖清单哈希都对得上）→ 仍核包清单并真实导入；
 2. 没有可信 stamp → 用当前解释器起一次隔离子进程，逐个导入目录里的顶层包，要求
    解析结果确实落在该目录内；探测不通过就不插入；
 3. 不使用隔离目录时，交给当前环境已有的 site-packages，不猜测、不报错。
@@ -118,7 +118,7 @@ def stamp_problem(root: Path, stamp: dict[str, object] | None) -> str:
 def _probe_source() -> str:
     # 必须真正 import：find_spec 只看得到包目录，看不出里面的扩展是否为当前 ABI 编译。
     return (
-        "import importlib, json, sys\n"
+        "import importlib, json, sys\nfrom pathlib import Path\n"
         "root = sys.argv[1]\n"
         "names = json.loads(sys.argv[2])\n"
         "sys.path.insert(0, root)\n"
@@ -131,7 +131,7 @@ def _probe_source() -> str:
         "        continue\n"
         "    paths = list(getattr(module, '__path__', []) or [])\n"
         "    origin = str(getattr(module, '__file__', '') or '')\n"
-        "    if not (paths and all(str(item).startswith(root) for item in paths)) and not origin.startswith(root):\n"
+        "    if not (paths and all(Path(item).resolve().is_relative_to(Path(root).resolve()) for item in paths)) and not (origin and Path(origin).resolve().is_relative_to(Path(root).resolve())):\n"
         "        failed[name] = 'imported from outside the vendor directory'\n"
         "print(json.dumps(failed))\n"
     )
@@ -152,12 +152,28 @@ def probe_vendored(vendor: Path, packages: list[str], *, python: str | None = No
         tail = (completed.stderr or "").strip().splitlines()
         return False, f"隔离依赖探测失败：{tail[-1] if tail else '退出码 ' + str(completed.returncode)}"
     try:
-        missing = json.loads(completed.stdout.strip() or "[]")
+        missing = json.loads(completed.stdout.strip())
     except ValueError:
         return False, "隔离依赖探测返回了无法解析的结果"
+    if not isinstance(missing, dict):
+        return False, "隔离依赖探测没有返回逐包结果对象"
     if missing:
         return False, f"隔离依赖无法被当前解释器导入：{', '.join(missing)}"
     return True, f"{len(packages)} 个顶层包均解析到隔离目录"
+
+
+def verify_vendored(root: Path) -> tuple[bool, str]:
+    """A matching installation receipt does not prove surviving package bytes."""
+    vendor = vendor_directory(root)
+    packages = vendored_packages(vendor)
+    stamp = read_stamp(vendor)
+    if stamp is not None and not stamp_problem(root, stamp):
+        recorded = stamp.get("packages")
+        if (not isinstance(recorded, list) or not recorded
+                or any(not isinstance(name, str) for name in recorded)
+                or sorted(recorded) != packages):
+            return False, "隔离依赖实际包清单与 stamp 不一致，不能沿用旧安装通过"
+    return probe_vendored(vendor, packages)
 
 
 @lru_cache(maxsize=16)
@@ -172,7 +188,10 @@ def resolve_runtime_deps(root_text: str) -> RuntimeDeps:
         # 已登记的目录只属于登记时那一台解释器：不匹配就直接弃用，绝不试探性加载。
         reason = stamp_problem(root, stamp)
         if not reason:
-            return RuntimeDeps(str(vendor), "vendored", "stamp 与当前解释器、平台和依赖清单一致")
+            ok, detail = verify_vendored(root)
+            if ok:
+                return RuntimeDeps(str(vendor), "vendored", f"stamp 匹配且当前实际导入通过：{detail}")
+            return RuntimeDeps(None, "host", f"旧 stamp 不能证明当前依赖可用：{detail}；改用当前环境")
         return RuntimeDeps(
             None, "host",
             f"{reason}；本次运行改用已有环境，如需属于当前解释器的隔离依赖请运行 {REMEDY_COMMAND}"
@@ -194,15 +213,13 @@ def ensure_runtime_deps(root: Path) -> RuntimeDeps:
 
 def missing_required(root: Path, required: tuple[str, ...] = ("jsonschema", "referencing")) -> list[str]:
     """当前进程（含已按需加入的隔离依赖）仍无法导入的必需依赖。"""
-    import importlib.util
+    import importlib
 
     missing: list[str] = []
     for name in required:
         try:
-            spec = importlib.util.find_spec(name)
-        except (ImportError, ValueError):
-            spec = None
-        if spec is None:
+            importlib.import_module(name)
+        except (ImportError, ValueError, OSError, RuntimeError, SyntaxError):
             missing.append(name)
     return missing
 

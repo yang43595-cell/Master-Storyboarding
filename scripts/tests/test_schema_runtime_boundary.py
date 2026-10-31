@@ -35,6 +35,7 @@ runtime_deps.vendor_directory = lambda root: Path(sys.argv[2])
 runtime_deps.read_stamp = lambda vendor: {
     'schema_version': runtime_deps.STAMP_SCHEMA_VERSION,
     **runtime_deps.interpreter_identity(Path(sys.argv[1])),
+    'packages': runtime_deps.vendored_packages(Path(sys.argv[2])),
 }
 errors = schema_contracts.schema_errors({}, 'prompt-intent.schema.json')
 assert errors, 'Invalid input must reach the actual schema validator'

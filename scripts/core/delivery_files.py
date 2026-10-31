@@ -45,7 +45,7 @@ def validate_required_files(project: Path, files: list[str], input_roots: list[P
     return errors
 
 
-def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=None):
+def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=None, verify_hashes=False):
     """Follow selected JSON path fields and exact manifest IDs, never scan prose.
 
     Paths are project-relative, as in artifact manifests; external absolute paths
@@ -58,6 +58,7 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
     manifest = None
     testing = None
     seen_files, seen_ids = set(), set()
+    hash_checked = set()
 
     def error(location, message):
         report['errors'].append(f'{location}: {message}')
@@ -133,6 +134,26 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
             for i, child in enumerate(value):
                 walk(child, f'{location}/{i}')
         elif isinstance(value, dict):
+            if verify_hashes:
+                # Only an explicit single-file identity carries this digest.
+                # input_sha256/frozen_sha256 and plural paths are not file hashes.
+                paths = [value[key] for key in ('path', 'path_or_url', 'file')
+                         if isinstance(value.get(key), str) and value[key]]
+                hashes = [value[key] for key in ('sha256', 'checksum') if key in value]
+                if hashes and paths:
+                    if len(set(paths)) != 1:
+                        error(location, 'ambiguous file hash binding: multiple paths')
+                    elif any(not isinstance(h, str) or not re.fullmatch(r'[0-9a-fA-F]{64}', h) for h in hashes):
+                        error(location, 'invalid declared file hash')
+                    elif len({h.lower() for h in hashes}) != 1:
+                        error(location, 'conflicting sha256/checksum declarations')
+                    elif '://' not in paths[0] and not validate_required_files(project, [paths[0]], input_roots):
+                        target = project_path(project, paths[0])
+                        actual = hashlib.sha256(target.read_bytes()).hexdigest()
+                        if actual != hashes[0].lower():
+                            error(location, 'declared file hash differs from actual bytes: ' + paths[0])
+                        else:
+                            hash_checked.add(str(target))
             for key, child in value.items():
                 here = f'{location}/{key}'
                 if key in {'artifact_id', 'source_artifact_id'}:
@@ -174,6 +195,10 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
             walk(payload, 'delivery')
     except (ValueError, TypeError, KeyError, OSError, RuntimeError) as exc:
         error('dependencies', f'cannot inspect dependencies: {exc}')
+    if verify_hashes:
+        report['hash_checks'] = {'checked_files': sorted(hash_checked),
+            'unhashed_files': sorted(set(report['checked_files']) - hash_checked),
+            'scope': 'Existing unambiguous path/path_or_url/file + sha256/checksum only; unhashed bytes do not establish historical exact versions'}
     report['ok'] = not report['errors'] and not report['uncheckable']
     return report
 

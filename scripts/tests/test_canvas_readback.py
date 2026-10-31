@@ -19,6 +19,20 @@ def test_full_fields_and_repeated_order_pass():
     assert compare(frozen, observed)['ok']
 
 
+def test_partial_dom_node_identity_never_substitutes_for_media_identity():
+    frozen, observed = sample()
+    frozen['drafts'][0]['native_entity_type'] = 'image'
+    observed['frozen_sha256'] = digest(frozen)
+    # Shape emitted by readRichEditor. Even if all other fields were obtained,
+    # public node/type attributes do not prove the actual media version/bytes.
+    observed['drafts'][0]['native_mentions'] = [
+        {'node_id': ref['node_id'], 'entity_type': 'image', 'native_noneditable_entity': True}
+        for ref in frozen['drafts'][0]['ordered_media']]
+    result = compare(frozen, observed)
+    assert not result['ok']
+    assert result['native_reference_checks']['draft-13'] == 'failed'
+
+
 @pytest.mark.parametrize('field', ['prompt', 'parameters', 'ordered_media', 'missing_fields', 'node_ids'])
 def test_graph_equivalent_editor_mutations_fail(field):
     frozen, observed = sample()
