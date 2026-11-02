@@ -105,7 +105,8 @@
 
 本轮运行在现有 `project_state.json` 保存 `candidate_test`，现有 manifest 中候选标记 `unreviewed` 和生产阻塞。以下命令只记录用户已给出的测试授权引用，不自行取得授权；输入 ID 每次列全本阶段实际用到的准确候选及其依赖，不按最新文件猜选：
 
-- 配置或更新输入：`python scripts/stage_context_cli.py candidate-test --project <独立项目> --run-id <本轮ID> --authorization-ref <用户原话或消息引用> [--input-artifact <准确候选ID> ...]`
+- 配置或更新输入：`python scripts/stage_context_cli.py candidate-test --project <独立项目> --run-id <本轮ID> --authorization-ref <用户原话或消息引用> [--skill <当前候选Skill>] [--input-artifact <准确候选ID> ...]`
+- 新建隔离项目的 `current_stage` 默认为空，首次配置须显式传 `--skill`（如 `creative-director`）；不从输入或 prepare 猜阶段。候选交接先用 `handoff --candidate-test --to-skill <目标Skill>`，随后在原测试授权范围内沿同一 run-id、authorization-ref 和完整准确输入 ID，用 `candidate-test --skill <目标Skill>` 显式记录下一候选阶段。只接受仓库中真实存在的 Skill；不写入生产 `next_stage`、current 或确认，也不代表阶段创作已完成。省略 `--skill` 保留原阶段；空阶段仍阻止 status/交接。
 - 普通候选仍用 `artifacts.register_workspace_artifact` 登记；不登记确认 checksum。测试标记由登记入口继承，不写入 current_artifacts。
 - `prepare`、`ensure-prepared`、`handoff` 额外传 `--candidate-test`。检查 `ok` 只表示本次候选结构/准备检查通过；结果始终含 `production_blocked: true`。专业方法读取不豁免。
 - 故事与导演检查：`python -m scripts.core.story_sources --project <独立项目> --narrative <候选JSON> [--storyboard <候选JSON>] --candidate-test`。未核对白列在结果中；去掉测试参数仍按生产规则阻塞。

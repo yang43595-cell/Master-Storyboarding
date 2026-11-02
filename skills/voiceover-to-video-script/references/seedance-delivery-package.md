@@ -32,3 +32,11 @@
 
 文件可读不代表恢复运行授权。候选测试状态绑定准确项目目录，复制到新目录仍会拒绝运行；不得删标记、伪造确认或自动改路径以求通过。当前没有自动重绑候选运行身份的恢复命令，需要另行明确处理授权和运行身份。恢复检查不推进采用、上传、生成或发布。
 
+
+### 生成前检查的证据边界
+
+- `--preflight` 只核本地输入，不读取平台实际绑定；不得同时传 `--readback`。要比较真实回读，单独运行不带 `--preflight` 的 `--readback` 流程。
+- `native_refresh_binding=selected_fields_match` 仅表示所选回读字段匹配，须结合 `native_reference_checks` 判断是否覆盖原生实体。它不证明未暴露的媒体 ID / 原件哈希，也不是生成授权；`production_ready=false` 不得解释为可以生成。
+- 只读富文本采集支持已观察到的 `P/richGrid`、`SPAN/richMark`、`SPAN/richWrite` 结构，保留结构、空白与 FEFF，不把序列化 token 回写正文。未知结构继续未检查；离线 HTML 回放不能代替当前平台刷新后的实际采集。
+
+红帧若无公开稳定 `media_id`，只可按[明确的 node/port/输入槽下载分支](../../../docs/development/delivery-snapshot-checks.md#红帧-node--输出-port--实际输入槽下载显式分支)核实际字节；不得把 port 或 blob URL 填成媒体 ID。完整输入槽证据未取得时仍未核；已有证据通过也不代替持久状态、包装用途、内容审查或生成授权。

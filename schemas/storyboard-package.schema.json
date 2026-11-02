@@ -206,6 +206,148 @@
         }
       }
     },
+    "endpointBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state_id",
+        "shot_id",
+        "position",
+        "source_quote",
+        "description"
+      ],
+      "properties": {
+        "state_id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "shot_id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "position": {
+          "enum": [
+            "segment_start",
+            "segment_end"
+          ]
+        },
+        "source_quote": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "description": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "endpointFact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fact_id",
+        "entity_id",
+        "expected_presence",
+        "evidence_requirement",
+        "source_quote"
+      ],
+      "properties": {
+        "fact_id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "entity_id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "expected_presence": {
+          "enum": [
+            "present",
+            "absent_from_visible_frame"
+          ]
+        },
+        "evidence_requirement": {
+          "enum": [
+            "visible",
+            "source_constraint_allowed"
+          ]
+        },
+        "source_quote": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "endpointStrategy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strategy_id",
+        "mode",
+        "segment_id",
+        "source_shot_ids",
+        "entity_id",
+        "state_ids",
+        "initial_boundary",
+        "final_boundary",
+        "intermediate_control",
+        "required_native_intermediate_states",
+        "start_facts",
+        "end_facts"
+      ],
+      "properties": {
+        "strategy_id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "mode": {
+          "const": "endpoint_constrained_continuous_action"
+        },
+        "segment_id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "source_shot_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "entity_id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "state_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "initial_boundary": {
+          "$ref": "#/$defs/endpointBoundary"
+        },
+        "final_boundary": {
+          "$ref": "#/$defs/endpointBoundary"
+        },
+        "intermediate_control": {
+          "const": "source_intent_only"
+        },
+        "required_native_intermediate_states": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "start_facts": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/endpointFact"
+          }
+        },
+        "end_facts": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/endpointFact"
+          }
+        }
+      }
+    },
     "scene": {
       "type": "object",
       "additionalProperties": false,
@@ -245,6 +387,14 @@
         },
         "end_state": {
           "$ref": "#/$defs/nonEmptyString"
+        },
+        "endpoint_strategies": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/endpointStrategy"
+          }
         },
         "scene_states": {
           "type": "array",
@@ -379,6 +529,203 @@
         "rhythm"
       ],
       "properties": {
+        "packaging_requirements": {
+          "description": "本镜出镜包装归属与目标版本；未知不得作为包装通过，不从道具名字猜商品。",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "entity_id",
+              "classification",
+              "source_basis"
+            ],
+            "properties": {
+              "entity_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "classification": {
+                "enum": [
+                  "ordinary_prop",
+                  "product",
+                  "unknown"
+                ]
+              },
+              "source_basis": {
+                "type": "string",
+                "minLength": 1
+              },
+              "product_reference": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "product_id",
+                      "sku",
+                      "version"
+                    ],
+                    "properties": {
+                      "product_id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "sku": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "version": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "product_id",
+                      "product_name",
+                      "packaging_reference_revision",
+                      "physical_variant"
+                    ],
+                    "properties": {
+                      "product_id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "product_name": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "packaging_reference_revision": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "sha256"
+                        ],
+                        "properties": {
+                          "sha256": {
+                            "type": "string",
+                            "pattern": "^[a-f0-9]{64}$"
+                          }
+                        }
+                      },
+                      "physical_variant": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "status",
+                          "scope",
+                          "basis"
+                        ],
+                        "properties": {
+                          "status": {
+                            "const": "not_applicable"
+                          },
+                          "scope": {
+                            "const": "visible_packaging_only"
+                          },
+                          "basis": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "source",
+                              "source_shot_ids",
+                              "rationale",
+                              "visible_faces",
+                              "excluded_uses"
+                            ],
+                            "properties": {
+                              "source": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                  "path",
+                                  "sha256"
+                                ],
+                                "properties": {
+                                  "path": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "sha256": {
+                                    "type": "string",
+                                    "pattern": "^[a-f0-9]{64}$"
+                                  }
+                                }
+                              },
+                              "source_shot_ids": {
+                                "type": "array",
+                                "minItems": 1,
+                                "uniqueItems": true,
+                                "items": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "rationale": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "visible_faces": {
+                                "type": "array",
+                                "minItems": 1,
+                                "uniqueItems": true,
+                                "items": {
+                                  "enum": [
+                                    "front",
+                                    "top",
+                                    "right",
+                                    "left"
+                                  ]
+                                },
+                                "contains": {
+                                  "const": "front"
+                                }
+                              },
+                              "excluded_uses": {
+                                "type": "array",
+                                "minItems": 4,
+                                "maxItems": 4,
+                                "uniqueItems": true,
+                                "items": {
+                                  "enum": [
+                                    "back_face",
+                                    "opened_packaging",
+                                    "formula_or_specification",
+                                    "efficacy_claims"
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "classification": {
+                      "const": "product"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "product_reference"
+                  ]
+                }
+              }
+            ]
+          }
+        },
         "shot_id": {
           "$ref": "#/$defs/shotId"
         },

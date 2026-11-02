@@ -69,6 +69,9 @@ def test_new_state_or_body_cannot_reuse_old_review_but_new_hash_is_not_semantic_
     draft['quality_evidence'] = dict(status='pass', observer='SYNTHETIC ONLY',
         checked_at='2026-10-26T00:00:00Z', checks={k: dict(result='pass', observation='synthetic',
         locator='text fixture') for k in q.DRAFT_ASPECTS})
+    draft['quality_evidence']['checks']['packaging_identity'].update(scope='present', result='pass', items=[
+        dict(entity_id='SYNTHETIC-BOX', classification='ordinary_prop', source_basis='Synthetic ordinary storage prop',
+             source_shot_ids=['SYNTHETIC-1'], prompt_claim='ordinary_prop')])
     draft['quality_evidence']['input_sha256'] = q.fingerprint(q.draft_binding(draft))
     assert q.validate_draft_evidence(draft)['visual_quality_verified'] is False
     changed = copy.deepcopy(draft); changed['exit_state'] = 'Next segment starts the transfer.'

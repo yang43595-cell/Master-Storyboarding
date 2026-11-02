@@ -159,6 +159,9 @@ def test_changed_input_invalidates_review_without_approving_new_text(field):
     d={'prompt':'The box is already placed.','entry_state':'Table holds box.','exit_state':'Hands free.',
        'source_shots':['S1'],'parameters':{'duration':5},'ordered_media':[{'node_id':'M1','media_id':'I1'}]}
     d['quality_evidence']=evidence(q.DRAFT_ASPECTS)
+    d['quality_evidence']['checks']['packaging_identity'].update(scope='present', result='pass', items=[
+        dict(entity_id='SYNTHETIC-BOX', classification='ordinary_prop', source_basis='Synthetic ordinary storage prop',
+             source_shot_ids=['S1'], prompt_claim='ordinary_prop')])
     d['quality_evidence']['input_sha256']=q.fingerprint(q.draft_binding(d))
     assert q.validate_draft_evidence(d)['verification']=='evidence_consistency_only'
     d[field]={'changed':True}
@@ -168,5 +171,6 @@ def test_changed_input_invalidates_review_without_approving_new_text(field):
 def test_fresh_hash_and_pass_declarations_do_not_become_semantic_or_visual_proof():
     d={'prompt':'She is already standing. She now stands up from the same chair again.',
        'entry_state':'Standing.','exit_state':'Seated.','quality_evidence':evidence(q.DRAFT_ASPECTS)}
+    d['quality_evidence']['checks']['packaging_identity'].update(scope='none', items=[], result='not_applicable')
     d['quality_evidence']['input_sha256']=q.fingerprint(q.draft_binding(d))
     assert q.validate_draft_evidence(d)=={'verification':'evidence_consistency_only','visual_quality_verified':False}

@@ -15,7 +15,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Any
 
 try:
-    from .core.candidate_test import context as test_context, configure as configure_test, resolve_inputs as test_inputs, result_metadata as test_metadata, require_production
+    from .core.candidate_test import context as test_context, configure as configure_test, resolve_inputs as test_inputs, result_metadata as test_metadata, require_production, validate_stage as validate_test_stage
     from .core.artifacts import (artifact_is_confirmed, project_path, digest,
                                  validate_current_dependencies, load_manifest,
                                  register_workspace_artifact, adopt_initial_package,
@@ -30,7 +30,7 @@ try:
     from .core.review_delta import fingerprint, revision_delta, lightweight_revision
     from .session_usage import measure, measure_boundaries, check_budget
 except ImportError:  # direct CLI execution
-    from core.candidate_test import context as test_context, configure as configure_test, resolve_inputs as test_inputs, result_metadata as test_metadata, require_production
+    from core.candidate_test import context as test_context, configure as configure_test, resolve_inputs as test_inputs, result_metadata as test_metadata, require_production, validate_stage as validate_test_stage
     from core.artifacts import (artifact_is_confirmed, project_path, digest,
                                 validate_current_dependencies, load_manifest,
                                 register_workspace_artifact, adopt_initial_package,
@@ -1337,6 +1337,7 @@ def handoff(args: argparse.Namespace) -> dict[str, Any]:
         raise StageContextError("handoff 必须提供非空 --to-skill")
     testing = _test_request(args, project)
     if testing:
+        validate_test_stage(target_skill)
         state, inputs = _selected_inputs(project, _state(project))
         if state.get("next_stage") and state["next_stage"] != target_skill:
             raise StageContextError("目标 Skill 与项目下一阶段不一致")
@@ -1850,6 +1851,7 @@ def parser() -> argparse.ArgumentParser:
     testing.add_argument("--run-id", required=True)
     testing.add_argument("--authorization-ref", required=True)
     testing.add_argument("--input-artifact", action="append", default=[])
+    testing.add_argument("--skill", help="显式设置本轮候选阶段；须为现有 Skill，不设置生产 next_stage 或确认")
     source_index = commands.add_parser("candidate-source-index", help="只读核验 profile 固定的候选来源快照并列出可试用规则")
     source_index.add_argument("--skill", required=True)
     source_index.add_argument("--source-id", required=True)
@@ -1938,7 +1940,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "adopt-package":
         result = adopt_package(args)
     elif args.command == "candidate-test":
-        result = configure_test(Path(args.project), args.run_id, args.authorization_ref, args.input_artifact)
+        result = configure_test(Path(args.project), args.run_id, args.authorization_ref, args.input_artifact, current_stage=args.skill)
     elif args.command == "candidate-source-index":
         result = candidate_source_index(args)
     elif args.command == "prepare":

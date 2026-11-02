@@ -44,6 +44,7 @@ def fixture(root):
     entry['quality_evidence']['uses']=[q.image_use(draft['reference_checks'][0], ['S1'])]
     write_json(root/artifacts.MANIFEST_PATH,manifest)
     draft['quality_evidence']=observations(q.DRAFT_ASPECTS)
+    draft['quality_evidence']['checks']['packaging_identity'].update(scope='none', items=[], result='not_applicable')
     draft['quality_evidence']['input_sha256']=q.fingerprint(q.draft_binding(draft))
     frozen=dict(target_url=url,revision='R1',source_artifacts=[dict(artifact_id='IMG',revision='R1',sha256=sha)],drafts=[draft])
     return frozen,manifest
