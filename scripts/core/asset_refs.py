@@ -774,7 +774,8 @@ def require_references(root: Path, artifact_ids: list[str], shot_ids: list[str] 
 
             if entry.get('type') == 'visual-supplement-image':
                 from .quality_evidence import validate_image_evidence
-                validate_image_evidence(root, path, entry.get('quality_evidence'), shot_ids)
+                validate_image_evidence(root, path, entry.get('quality_evidence'), shot_ids,
+                                        product_reference=entry.get('product_reference'))
 
             if shot_ids and not set(shot_ids) <= permitted_shots:
                 raise ValueError('本图确认用途未覆盖这些镜头，不能自行扩用：' + ', '.join(sorted(set(shot_ids) - permitted_shots)))

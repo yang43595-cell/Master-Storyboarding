@@ -31,6 +31,7 @@ def text_delivery(root):
     row['quality_evidence'] = dict(status='pass',observer='SYNTHETIC ONLY',checked_at='2026-10-30T10:00:00Z',
         checks={k:dict(result='pass',observation='Synthetic assertion, not pixels',locator='fixture') for k in q.DRAFT_ASPECTS},
         input_sha256=q.fingerprint(q.draft_binding(row)))
+    row['quality_evidence']['checks']['packaging_identity'].update(scope='none', items=[], result='not_applicable')
     frozen=dict(target_url='https://fixture.invalid/text-only',revision='R2',source_artifacts=[source],drafts=[row])
     observed=copy.deepcopy(frozen)
     observed.update(phase='after_refresh',frozen_sha256=digest(frozen))

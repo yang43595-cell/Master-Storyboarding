@@ -206,3 +206,14 @@ python scripts/canvas_readback.py --private-preview --project <准确候选项�
 `tokens` 仅是采集表示，不是新业务正文或绑定台账：普通 text node 逐字保留空白/FEFF，相邻文本节点合并；BR 与 DIV/P/SPAN 边界显式保留；完整原生引用替换成带 node/type/data-value 与准确 textContent 的 token；先检查其展示子树只含支持的 SPAN/IMG/Text，再跳过布局序列化，保留标签及额外文本变化，避免 `innerText` 的 CSS 换行抖动。禁止全局 trim/去空白、把 tokens 拼回已确认 prompt，或用期望值补 observed。未知结构/冲突实体返回未检查并清空不完整结果。普通块标签支持是保守通用实现，尚无当前红帧完整 DOM 样本证明覆盖；测试只来自已观察的脱敏属性合同与明确合成嵌套/正文，不是完整线上回执。
 
 完整正文与参数、媒体字节身份、刷新后持久化及 frozen 修订仍须各自取得真实证据；该局部适配不宣称线上端到端绑定通过，也不改现有比较器或生成门槛。
+
+
+### 红帧 node + 输出 port + 实际输入槽下载（显式分支）
+
+默认 `media_id` 合同不变。平台公开 DOM 只提供 `[node UUID, output port]` 时，不能把第二项当媒体 ID；已观察的 `imageReference` 可指向 `image` 或 `main` 输出。只读 reader 保留 `reference_port`，不推断媒体 ID。
+
+当前段可显式声明 `native_identity_mode: node_port_download`，`ordered_media` 每项严格为 `node_id/reference_port/sha256`，并在原有 reference 的 `upload_binding`（正式来源在 manifest 的 `upload_bindings`）绑定实际证据。新分支必须带 project，核准确目标 URL、项目目录、草稿修订/节点/segment、槽位、源修订与文件 hash。`evidence` 引用同一次刷新后的原始项目定位、编辑器实体、逐输入槽正常 UI 下载收据及源节点输出 port DOM；每份报告和实际下载文件必须在明确项目根内、字节 hash 相符。scope 还绑定三个原始报告 hash；槽位顺序、不可编辑实体、原始 percent-JSON tuple、token、下载收据对应实体以及 source output handle 必须交叉一致。任意本地路径/hash、图边、源节点缩略图或同名文件都不能代替该输入槽下载证据。
+
+源节点在视口外时可以不渲染 IMG；不以另一处缩略图同时可见为门槛。此时仍须有真实源节点/输出 port 和实际输入槽下载的完整证据。新分支的回读实体使用 `download_sha256`，旧分支仍须真实 `media_id`，二者不混填。物理商品版本、图像用途 QA、上游权威、场景状态、稿件审核和生产授权检查不因此豁免。
+
+这只是采集证据的一致性校验，不认证采集行为，不从调用方修订标签推出平台存在该修订号。不得把正文做全局去空白后称 exact；DOM canonical tokens 可分别证明实际刷新前后结构与文本保持，不能把 token 串回填原稿或用预期值补 observed。原始正文比较仍保留差异；私有候选通过也不意味着正式交付/生成就绪，所有结果仍 `production_ready=false`。

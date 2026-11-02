@@ -30,7 +30,7 @@ function element(tag, attrs = {}, children = []) {
 const text = value => ({nodeType: 3, data: value});
 function reference(n, nested = true) {
   const ref = element('span', {'data-reference-id': encodeURIComponent(JSON.stringify(['SYNTHETIC-NODE-'+n, 'image'])),
-    'data-value': '{{ref '+n+'}}'}, [element('img', {src: 'blob:https://fixture.invalid/volatile-'+n})]);
+    class: 'imageReference', 'data-value': '{{ref '+n+'}}'}, [element('img', {src: 'blob:https://fixture.invalid/volatile-'+n})]);
   return element('span', {'data-set-richtype': 'richCustom', contenteditable: 'false', class: 'chat-tag-wrap'},
     [nested ? element('span', {style: 'display: inline-block;'}, [ref]) : ref, text('参考 '+n)]);
 }
@@ -70,6 +70,19 @@ test('text splitting merges losslessly; explicit block and BR boundaries are not
   assert.deepEqual(readRichEditor(root([element('p',{},[text('a'),element('br'),text('b')])])).tokens,
     [{kind:'open',tag:'p'},{kind:'text',value:'a'},{kind:'break'},{kind:'text',value:'b'},{kind:'close',tag:'p'}]);
 });
+test('observed richGrid richMark richWrite prose is lossless; mismatched tag still unchecked',()=>{
+  // Attribute/tag hierarchy observed in original-live editor HTML; prose and
+  // identifiers redacted. This is a fixture, not an online binding receipt.
+  const prose=root([element('p',{'data-set-richtype':'richGrid'},[
+    element('span',{'data-set-richtype':'richMark'},[
+      element('span',{'data-set-richtype':'richWrite','data-set-empty':'false'},[text(' 原文\n\uFEFF '),reference(1)])])])]);
+  const result=readRichEditor(prose);
+  assert.equal(result.coverage.serialization,'collected');
+  assert.equal(result.tokens.find(t=>t.kind==='text').value,' 原文\n\uFEFF ');
+  assert.equal(result.native_mentions.length,1);assert.equal(result.coverage.media_identity,'unchecked');
+  prose.childNodes[0].localName='span';
+  assert.equal(readRichEditor(prose).coverage.serialization,'unchecked');
+});
 test('reference display text edits are visible and unknown descendants are unchecked',()=>{
   const before=readRichEditor(fixture(true)).tokens;
   for(const extra of ['参考 2','额外正文','\n']) {
@@ -101,4 +114,22 @@ test('structured operation embeds only fixed reader and protects exact target',a
   await assert.rejects(vm.runInNewContext(expression,{document:doc,location:{href:url+'/changed'},URL}),/导航/);
   for(const extra of [{all:true},{value:'new'},{attributes:['data-value']},{expression:'write()'}])
     assert.throws(()=>operationRequest({...request,...extra}));
+});
+
+
+test('observed imageReference tuples retain mixed image/main ports, never invent media IDs',()=>{
+  // Attribute shape is from real pre-refresh V05/V06 DOM; all IDs/text synthetic.
+  const r=fixture(true);const refs=r.querySelectorAll('[data-reference-id]');
+  refs[7].attrs['data-reference-id']=encodeURIComponent('["SYNTHETIC-PRODUCT","main"]');
+  const out=readRichEditor(r);
+  assert.equal(out.coverage.native_nodes,'collected');
+  assert.deepEqual(out.native_mentions.map(x=>x.reference_port),[...Array(7).fill('image'),'main']);
+  assert.ok(out.native_mentions.every(x=>x.entity_type==='image'&&!('media_id' in x)));
+  assert.equal(out.coverage.media_identity,'unchecked');assert.equal(out.production_ready,false);
+  for(const unsupported of ['audio','video','unknown']) {
+    refs[7].attrs['data-reference-id']=encodeURIComponent(JSON.stringify(['SYNTHETIC-PRODUCT',unsupported]));
+    const failed=readRichEditor(r);assert.equal(failed.coverage.serialization,'unchecked');assert.deepEqual(failed.native_mentions,[]);
+  }
+  refs[7].attrs['data-reference-id']=encodeURIComponent('["SYNTHETIC-PRODUCT","main"]');
+  refs[7].attrs.class='audioReference';assert.equal(readRichEditor(r).coverage.serialization,'unchecked');
 });

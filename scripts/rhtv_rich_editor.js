@@ -53,11 +53,15 @@ function readRichEditor(root) {
         const identity = JSON.parse(decodeURIComponent(ref.getAttribute('data-reference-id')));
         const value = ref.getAttribute('data-value');
         if (!Array.isArray(identity) || identity.length !== 2 || typeof identity[0] !== 'string'
-            || !identity[0].trim() || identity[1] !== 'image'
+            || !identity[0].trim() || !['image', 'main'].includes(identity[1])
+            || !(ref.getAttribute('class') || '').split(/\s+/).includes('imageReference')
             || typeof value !== 'string' || !/^\{\{ref [1-9]\d*\}\}$/.test(value)) {
           throw new Error('unsupported reference identity or token');
         }
-        const mention = {node_id: identity[0], entity_type: identity[1], native_noneditable_entity: true};
+        // The native tuple stores node + reference port (image or observed main),
+        // not an opaque media ID. The imageReference DOM supplies rendering kind.
+        const mention = {node_id: identity[0], reference_port: identity[1],
+          entity_type: 'image', native_noneditable_entity: true};
         result.native_mentions.push(mention);
         result.tokens.push({kind: 'reference', ...mention, value, display_text: node.textContent});
         // Presentation descendants (including volatile blob thumbnails and
@@ -65,7 +69,10 @@ function readRichEditor(root) {
         // textContent separately so label edits/extra text cannot disappear.
         return;
       }
-      if ((richType && node !== root) || node.hasAttribute('data-reference-id')
+      // Observed redacted editor structure: paragraphs contain richMark/richWrite
+      // spans. Keep their structural tokens/text, never flatten whitespace.
+      const proseTypes = {richGrid: 'p', richMark: 'span', richWrite: 'span'};
+      if ((richType && node !== root && proseTypes[richType] !== node.localName) || node.hasAttribute('data-reference-id')
           || (node !== root && node.hasAttribute('contenteditable'))) {
         throw new Error('unowned or unsupported rich-text entity');
       }

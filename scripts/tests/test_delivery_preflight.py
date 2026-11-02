@@ -76,6 +76,7 @@ def bind_synthetic_quality(root, frozen):
             evidence['source_shot_ids'] = sorted(set(evidence['source_shot_ids'] + row['source_shot_ids']))
             evidence['uses'].append(q.image_use(ref, row['source_shot_ids']))
         row['quality_evidence'] = observations(q.DRAFT_ASPECTS)
+        row['quality_evidence']['checks']['packaging_identity'].update(scope='none', items=[], result='not_applicable')
         row['quality_evidence']['input_sha256'] = q.fingerprint(q.draft_binding(row))
     write_json(root / artifacts.MANIFEST_PATH, manifest)
 

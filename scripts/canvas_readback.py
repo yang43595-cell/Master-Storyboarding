@@ -11,11 +11,17 @@ from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 try:
+    from .core.endpoint_control import verify_endpoint_control
+    from .core.endpoint_states import validate_endpoint_strategy
+    from .core.native_port_binding import verify_port_binding
     from .core.media_types import MEDIA_EXTENSIONS
-    from .core.native_references import reference_readback_status
+    from .core.native_references import reference_readback_status, valid_native_media, endpoint_readback_status
 except ImportError:
+    from core.endpoint_control import verify_endpoint_control
+    from core.endpoint_states import validate_endpoint_strategy
+    from core.native_port_binding import verify_port_binding
     from core.media_types import MEDIA_EXTENSIONS
-    from core.native_references import reference_readback_status
+    from core.native_references import reference_readback_status, valid_native_media, endpoint_readback_status
 
 
 def target_url(value: str) -> str:
@@ -40,6 +46,43 @@ def rows_by_id(rows: list) -> dict:
             raise ValueError('missing or duplicate exact draft node_id')
         result[node_id] = row
     return result
+
+
+def _port_expected(frozen, row, ref, media, slot):
+    if ref.get('kind') != 'image' or row.get('native_entity_type') != 'image':
+        raise ValueError('node_port_download supports observed image references only')
+    if media['sha256'] != ref['sha256']:
+        raise ValueError('native port media hash differs from exact source bytes')
+    return dict(target_url=frozen['target_url'], target_project_id=frozen.get('target_project_id'),
+                draft_revision=frozen['revision'], draft_node_id=row['node_id'],
+                source_segment_id=row.get('source_segment_id'), slot=slot,
+                node_id=media['node_id'], reference_port=media['reference_port'],
+                sha256=ref['sha256'], revision=ref['revision'], phase='after_refresh')
+
+
+def _endpoint_expected(frozen, row):
+    params = row['parameters']
+    aspects = [params[k] for k in ('aspect_ratio', 'aspect', 'ratio') if k in params]
+    if not aspects or any(a != aspects[0] for a in aspects):
+        raise ValueError('exact consistent endpoint aspect ratio required')
+    return dict(target_url=frozen['target_url'], target_project_id=frozen.get('target_project_id'),
+                draft_revision=frozen['revision'], draft_node_id=row['node_id'],
+                source_segment_id=row.get('source_segment_id'), duration=params['duration'],
+                model=params.get('model'), aspect_ratio=aspects[0], resolution=params.get('resolution'),
+                ordered_media=row['ordered_media'])
+
+
+def _endpoint_upload_expected(frozen, row, ref, media, slot):
+    if ref.get('kind') != 'image' or media['sha256'] != ref['sha256'] or slot not in (1, 2):
+        raise ValueError('endpoint needs exactly scoped image source bytes')
+    control = row.get('state_control')
+    if not isinstance(control, dict) or not isinstance(control.get('platform'), dict):
+        raise ValueError('endpoint needs exact source strategy/platform evidence')
+    return dict(identity_mode='first_last_frame_download', target_url=frozen['target_url'],
+                target_project_id=frozen.get('target_project_id'), draft_revision=frozen['revision'],
+                draft_node_id=row['node_id'], node_id=media['node_id'], reference_port=media['reference_port'],
+                revision=ref['revision'], sha256=ref['sha256'], slot=slot,
+                role=('start_frame', 'end_frame')[slot - 1], control_evidence_sha256=digest(control['platform']))
 
 
 def preview_scope(frozen: dict, project: Path):
@@ -88,7 +131,7 @@ def preview_scope(frozen: dict, project: Path):
         raise ValueError('unknown preview execution fields')
     for row in frozen['drafts']:
         if set(row) - {'node_id','prompt','parameters','duration_bounds','shot_durations',
-                      'native_entity_type','required_entities','required_reference_roles',
+                      'native_entity_type','native_identity_mode','state_control','required_entities','required_reference_roles',
                       'ordered_media','reference_checks','continuity','timing_scope','source_shot_ids','source_shots','source_segment_id','quality_evidence','native_binding'}:
             raise ValueError('unknown preview draft execution fields')
         if set(row['parameters']) - {'duration','aspect','aspect_ratio','ratio','resolution','model'}:
@@ -229,7 +272,7 @@ def preview_scope(frozen: dict, project: Path):
                 or artifacts.digest(path) != ref.get('sha256')):
             raise ValueError('actual candidate file/hash mismatch')
         return path, receipt
-    def usage(row, ref, media):
+    def usage(row, ref, media, slot):
         path, receipt = authority(ref)
         use = ref.get('limited_use', {})
         assigned = ref.get('roles', [ref.get('role')])
@@ -244,14 +287,36 @@ def preview_scope(frozen: dict, project: Path):
             raise ValueError('quality_evidence: failed pixels cannot be admitted by limited-use scope; preserve history, remove from new active references')
         if ref.get('kind') == 'image':
             try:
-                from .core.quality_evidence import validate_image_evidence, reference_shot_ids
+                from .core.quality_evidence import validate_image_evidence, reference_shot_ids, validate_registered_product_reference
             except ImportError:
-                from core.quality_evidence import validate_image_evidence, reference_shot_ids
+                from core.quality_evidence import validate_image_evidence, reference_shot_ids, validate_registered_product_reference
             root = Path(ref['project_path']).resolve()
             item = checked[(str(root), ref['artifact_id'])]
+            validate_registered_product_reference(root, ref, item,
+                                                  allowed_roots=[Path(p) for p in roots + input_roots])
             validate_image_evidence(root, path, item.get('quality_evidence'), reference_shot_ids(ref, row),
                                     allowed_roots=[Path(p) for p in roots + input_roots], reference=ref)
         binding = ref.get('upload_binding', {})
+        if row.get('native_identity_mode') == 'first_last_frame_download':
+            if digest(binding) != digest(_endpoint_upload_expected(frozen, row, ref, media, slot)):
+                raise ValueError('preview endpoint upload mapping differs from exact source/control evidence')
+            hashes = {r.get('sha256') for r in all_refs
+                      if r.get('upload_binding', {}).get('identity_mode') == 'first_last_frame_download'
+                      and r['upload_binding'].get('node_id') == media['node_id']
+                      and r['upload_binding'].get('reference_port') == media['reference_port']}
+            if hashes != {ref['sha256']}:
+                raise ValueError('conflicting preview endpoint upload mapping')
+            return
+        if row.get('native_identity_mode', 'media_id') == 'node_port_download':
+            verify_port_binding(Path(ref['project_path']), binding,
+                                _port_expected(frozen, row, ref, media, slot))
+            hashes = {r.get('sha256') for r in all_refs
+                      if r.get('upload_binding', {}).get('identity_mode') == 'node_port_download'
+                      and r['upload_binding'].get('node_id') == media['node_id']
+                      and r['upload_binding'].get('reference_port') == media['reference_port']}
+            if hashes != {ref['sha256']}:
+                raise ValueError('conflicting preview node/port upload mapping')
+            return
         expected = dict(target_url=frozen['target_url'], target_project_id=frozen['target_project_id'],
                         node_id=media['node_id'], media_id=media['media_id'],
                         revision=ref['revision'], sha256=ref['sha256'])
@@ -355,6 +420,13 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
     if not isinstance(sources, list) or not sources:
         raise ValueError('exact confirmed source_artifacts required')
     scene_requirements = []
+    try:
+        from .core.quality_evidence import (packaging_requirements, validate_packaging_scope,
+                                            validate_registered_product_reference)
+    except ImportError:
+        from core.quality_evidence import (packaging_requirements, validate_packaging_scope,
+                                           validate_registered_product_reference)
+    package_requirements = []
     scene_sources = []
     for ref in sources:
         source_path = authority(ref)
@@ -362,6 +434,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             source_payload = json.loads(source_path.read_text(encoding='utf-8-sig'))
             if isinstance(source_payload, dict):
                 scene_requirements.extend(scene_state_requirements(source_payload))
+                package_requirements.extend(packaging_requirements(source_payload))
                 scene_sources.append((ref, source_path.resolve(), source_payload))
     validate_scene_source_mapping(frozen['drafts'], scene_sources, project)
     def seconds(value):
@@ -407,14 +480,20 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             if len(members) != 1:
                 return False
         return True
+    endpoint_control_checks = {}
     for row in frozen['drafts']:
-        validate_scene_state_references(row, scene_requirements)
+        endpoint_mode = row.get('native_identity_mode') == 'first_last_frame_download'
+        if not endpoint_mode:
+            if 'state_control' in row:
+                raise ValueError('endpoint state_control requires its explicit verified identity mode')
+            validate_scene_state_references(row, scene_requirements)
         if not private_preview:
             try:
                 from .core.quality_evidence import validate_draft_evidence
             except ImportError:
                 from core.quality_evidence import validate_draft_evidence
             validate_draft_evidence(row)
+            validate_packaging_scope(row, package_requirements)
         if not isinstance(row.get('prompt'), str) or not row['prompt'].strip():
             raise ValueError('complete submitted prompt body required')
         duration = seconds(row['parameters']['duration'])
@@ -429,11 +508,11 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         media, refs = row.get('ordered_media'), row.get('reference_checks')
         if not isinstance(media, list) or not isinstance(refs, list) or len(refs) != len(media):
             raise ValueError('every uploaded media needs one explicit role/authority check in actual order')
-        if media and (not isinstance(row.get('native_entity_type'), str) or not row['native_entity_type'].strip()):
+        if media and not endpoint_mode and (not isinstance(row.get('native_entity_type'), str) or not row['native_entity_type'].strip()):
             raise ValueError('versioned delivery requires native entity readback for all references')
-        if any(not isinstance(m, dict) or not isinstance(m.get('node_id'), str) or not m['node_id']
-               or not isinstance(m.get('media_id'), str) or not m['media_id'] for m in media):
-            raise ValueError('every uploaded media needs exact native node/media identity')
+        identity_mode = row.get('native_identity_mode', 'media_id')
+        if not valid_native_media(media, identity_mode):
+            raise ValueError('every uploaded media needs exact supported native identity')
         required = row.get('required_entities')
         if not isinstance(required, list) or any(not isinstance(e, str) or not e for e in required):
             raise ValueError('required_entities must explicitly name entities needing reference coverage')
@@ -442,33 +521,71 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                 or any(not isinstance(v, list) or not v or not set(v).issubset(roles) for v in required_roles.values())):
             raise ValueError('required reference roles must cover exactly the required entities')
         covered, covered_roles, frames = set(), {}, {}
-        for media_item, ref in zip(media, refs):
+        for slot, (media_item, ref) in enumerate(zip(media, refs), 1):
             path = authority(ref)
             if private_preview:
-                preview_usage(row, ref, media_item)
+                preview_usage(row, ref, media_item, slot)
             else:
                 item = next(a for a in manifest['artifacts'] if a['artifact_id'] == ref['artifact_id'])
+                validate_registered_product_reference(project, ref, item)
                 # Bind actual native identities to source bytes in the existing source
                 # artifact registration, not a caller-provided parallel list of labels.
-                bindings = [b for b in item.get('upload_bindings', [])
-                            if b.get('node_id') == media_item['node_id']
-                            and b.get('media_id') == media_item['media_id']
-                            and b.get('target_url') == frozen.get('target_url')
-                            and b.get('revision') == ref['revision'] and b.get('sha256') == ref['sha256']]
-                if not bindings:
-                    raise ValueError('actual upload node/media has no exact current source mapping')
-                reverse_hashes = {binding['sha256']
-                    for source in manifest['artifacts']
-                    if source.get('status') == 'current'
-                    and artifact_is_confirmed(source, state, project)
-                    for binding in source.get('upload_bindings', [])
-                    if binding.get('target_url') == frozen.get('target_url')
-                    and binding.get('node_id') == media_item['node_id']
-                    and binding.get('media_id') == media_item['media_id']
-                    and binding.get('revision') == source.get('revision')
-                    and binding.get('sha256') == source.get('checksum')}
-                if reverse_hashes != {ref['sha256']}:
-                    raise ValueError('conflicting upload mapping: one native identity names different source bytes')
+                if endpoint_mode:
+                    expected_binding = _endpoint_upload_expected(frozen, row, ref, media_item, slot)
+                    if sum(digest(b) == digest(expected_binding) for b in item.get('upload_bindings', [])) != 1:
+                        raise ValueError('endpoint has no unique exact manifest upload mapping')
+                    reverse_hashes = {b.get('sha256') for source in manifest['artifacts']
+                        if source.get('status') == 'current' and artifact_is_confirmed(source, state, project)
+                        for b in source.get('upload_bindings', [])
+                        if b.get('identity_mode') == 'first_last_frame_download'
+                        and b.get('target_url') == frozen['target_url']
+                        and b.get('target_project_id') == frozen.get('target_project_id')
+                        and b.get('node_id') == media_item['node_id']
+                        and b.get('reference_port') == media_item['reference_port']
+                        and b.get('revision') == source.get('revision')
+                        and b.get('sha256') == source.get('checksum')}
+                    if reverse_hashes != {ref['sha256']}:
+                        raise ValueError('conflicting endpoint upload source bytes')
+                elif identity_mode == 'node_port_download':
+                    expected_binding = _port_expected(frozen, row, ref, media_item, slot)
+                    bindings = [b for b in item.get('upload_bindings', [])
+                                if b.get('identity_mode') == 'node_port_download'
+                                and all(b.get(k) == v for k, v in expected_binding.items())]
+                    if len(bindings) != 1:
+                        raise ValueError('node/port has no unique exact registered upload binding')
+                    verify_port_binding(project, bindings[0], expected_binding)
+                    reverse_hashes = {b.get('sha256') for source in manifest['artifacts']
+                        if source.get('status') == 'current' and artifact_is_confirmed(source, state, project)
+                        for b in source.get('upload_bindings', [])
+                        if b.get('identity_mode') == 'node_port_download'
+                        and b.get('target_url') == frozen['target_url']
+                        and b.get('target_project_id') == frozen.get('target_project_id')
+                        and b.get('node_id') == media_item['node_id']
+                        and b.get('reference_port') == media_item['reference_port']
+                        and b.get('revision') == source.get('revision')
+                        and b.get('sha256') == source.get('checksum')}
+                    if reverse_hashes != {ref['sha256']}:
+                        raise ValueError('conflicting upload node/port source bytes')
+                else:
+                    bindings = [b for b in item.get('upload_bindings', [])
+                                if b.get('node_id') == media_item['node_id']
+                                and b.get('media_id') == media_item['media_id']
+                                and b.get('target_url') == frozen.get('target_url')
+                                and b.get('revision') == ref['revision'] and b.get('sha256') == ref['sha256']]
+                    if not bindings:
+                        raise ValueError('actual upload node/media has no exact current source mapping')
+                    reverse_hashes = {binding['sha256']
+                        for source in manifest['artifacts']
+                        if source.get('status') == 'current'
+                        and artifact_is_confirmed(source, state, project)
+                        for binding in source.get('upload_bindings', [])
+                        if binding.get('target_url') == frozen.get('target_url')
+                        and binding.get('node_id') == media_item['node_id']
+                        and binding.get('media_id') == media_item['media_id']
+                        and binding.get('revision') == source.get('revision')
+                        and binding.get('sha256') == source.get('checksum')}
+                    if reverse_hashes != {ref['sha256']}:
+                        raise ValueError('conflicting upload mapping: one native identity names different source bytes')
 
             assigned = ref.get('roles', [ref.get('role')])
             kind = ref.get('kind')
@@ -510,13 +627,29 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                 raise ValueError('reference requires explicit actual entity_ids')
             if not set(entities).issubset(required):
                 raise ValueError('reference is assigned to an undeclared/wrong entity')
-            covered.update(entities)
             for entity in entities:
-                covered_roles.setdefault(entity, set()).update(assigned)
+                eligible = set(assigned)
+                if endpoint_mode:
+                    facts = ref.get('endpoint_observations', {}).get('facts', [])
+                    visibility = {fact.get('visibility') for fact in facts
+                                  if isinstance(fact, dict) and fact.get('entity_id') == entity}
+                    if 'visible' not in visibility:
+                        eligible &= ({'start_frame', 'end_frame', 'state_reference'}
+                                     if 'absent_from_visible_frame' in visibility else set())
+                if eligible:
+                    covered.add(entity)
+                    covered_roles.setdefault(entity, set()).update(eligible)
             for role in set(assigned) & {'start_frame', 'end_frame'}:
                 if role in frames or not isinstance(ref.get('state_id'), str) or not ref['state_id']:
                     raise ValueError('unique start/end frame state required')
                 frames[role] = ref
+        if endpoint_mode:
+            control = row.get('state_control')
+            if not isinstance(control, dict) or 'platform' not in control:
+                raise ValueError('endpoint mode requires actual platform evidence and source strategy')
+            proof = verify_endpoint_control(project, control['platform'], _endpoint_expected(frozen, row))
+            endpoint_control_checks[row['node_id']] = {
+                **proof, 'source_strategy': validate_endpoint_strategy(row, scene_sources, proof)}
         if any(not set(expected).issubset(covered_roles.get(e, set())) for e, expected in required_roles.items()):
             raise ValueError('required start/end/identity/action reference role is missing')
         if covered != set(required):
@@ -560,7 +693,11 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             **({'status': 'candidate', 'review_status': 'unreviewed', 'production_blocked': True} if private_preview else {}),
             'revision': frozen['revision'], 'frozen_sha256': digest(frozen),
             'dependency_checks': dependencies,
+            'endpoint_control_checks': endpoint_control_checks,
             'quality_evidence_checks': 'image_evidence_only_not_draft_release' if private_preview else 'evidence_consistency_only',
+            'packaging_checks': 'not_checked' if private_preview else 'declared_scope_and_evidence_consistency_only',
+            'native_refresh_binding': 'not_checked',
+            'generation_authorization': 'not_checked', 'production_ready': False,
             'visual_quality_verified': False, 'generation_input_provenance': 'unknown',
             'scope': 'registered bytes, declared reference roles/entities, durations and continuous split boundaries',
             'limitations': 'Declaration consistency only, not proof of user consent or a browser sandbox. Requires actual visual inspection of roles/states and current platform bounds; does not verify pixels, remote provenance or generation authorization; action-video and Xiaoyunque video durations are locally probed only.'}
@@ -572,7 +709,12 @@ def compare(frozen: dict, observed: dict, project: Path | None = None, *, privat
         raise ValueError('preview snapshot requires explicit --private-preview; not formal delivery')
     if private_preview and project is None:
         raise ValueError('private preview requires --project')
+    port_mode = any(row.get('native_identity_mode') in ('node_port_download', 'first_last_frame_download') for row in frozen['drafts'])
+    if port_mode and project is None:
+        raise ValueError('download identity modes require --project and original slot evidence')
     submission = validate_submission(frozen, project, private_preview=private_preview) if project is not None else None
+    if port_mode and observed.get('target_project_id') != frozen.get('target_project_id'):
+        raise ValueError('readback project differs from native port target')
     if private_preview and observed.get('target_project_id') != frozen['target_project_id']:
         raise ValueError('readback project differs from private preview target')
     if 'revision' in frozen and project is None:
@@ -591,18 +733,20 @@ def compare(frozen: dict, observed: dict, project: Path | None = None, *, privat
         if observed.get('cleanup_results') != expected_cleanup:
             differences.append({'field': 'cleanup_results', 'expected': expected_cleanup})
     native_reference_checks = {}
+    endpoint_control_checks = {}
     if set(actual) != set(expected):
         differences.append({'field': 'node_ids', 'missing': sorted(set(expected)-set(actual)),
                             'extra': sorted(set(actual)-set(expected))})
     for node_id, row in expected.items():
         got = actual.get(node_id, {})
+        identity_mode = row.get('native_identity_mode', 'media_id')
+        if not isinstance(identity_mode, str) or identity_mode not in {'media_id', 'node_port_download', 'first_last_frame_download'}:
+            raise ValueError('unsupported native_identity_mode')
         for field in ('prompt', 'parameters', 'ordered_media'):
             value = row.get(field)
             valid = (isinstance(value, str) if field == 'prompt' else
                      isinstance(value, dict) if field == 'parameters' else
-                     isinstance(value, list) and all(isinstance(r, dict) and
-                         isinstance(r.get('node_id'), str) and r['node_id'] and
-                         isinstance(r.get('media_id'), str) and r['media_id'] for r in value))
+                     valid_native_media(value, identity_mode))
             if field not in row or not valid:
                 raise ValueError(f'incomplete frozen {node_id}: {field}')
             if field not in got or digest(got[field]) != digest(value):
@@ -612,6 +756,13 @@ def compare(frozen: dict, observed: dict, project: Path | None = None, *, privat
         # Native rich-text entities are distinct evidence from plain prompt text
         # and media edges. Opt in per draft so historical/plain-text clients keep
         # their original comparison scope without claiming entity verification.
+        if identity_mode == 'first_last_frame_download':
+            status = endpoint_readback_status(row['ordered_media'], got.get('frame_slots'), got.get('native_mentions'))
+            native_reference_checks[node_id] = 'not_applicable_endpoint_slots'
+            endpoint_control_checks[node_id] = status
+            if status != 'passed':
+                differences.append({'node_id': node_id, 'field': 'frame_slots', 'status': 'failed'})
+            continue
         native_reference_checks[node_id] = 'not_checked'
         # Current versioned text-only drafts still prove no native references
         # survived refresh. Legacy comparisons retain their original opt-in scope.
@@ -620,17 +771,20 @@ def compare(frozen: dict, observed: dict, project: Path | None = None, *, privat
             if row['ordered_media'] and (not isinstance(entity_type, str) or not entity_type.strip()):
                 raise ValueError(f'incomplete frozen {node_id}: native_entity_type')
             mentions = got.get('native_mentions')
-            status = reference_readback_status(row['ordered_media'], mentions, entity_type)
+            status = reference_readback_status(row['ordered_media'], mentions, entity_type, identity_mode)
             native_reference_checks[node_id] = status
             if status == 'failed':
                 differences.append({'node_id': node_id, 'field': 'native_mentions',
                                     'expected_sha256': digest(row['ordered_media']),
                                     'observed_sha256': digest(mentions) if mentions is not None else None})
     return {'ok': not differences, 'scope': 'selected post-refresh editor fields only',
+            'native_refresh_binding': 'selected_fields_match' if not differences else 'failed',
+            'generation_authorization': 'not_checked', 'production_ready': False,
             'draft_count': len(expected), 'submission_checks': submission or 'not_checked',
             'revision': frozen.get('revision'), 'frozen_sha256': digest(frozen),
             'observed_sha256': digest(observed), 'differences': differences,
             'native_reference_checks': native_reference_checks,
+            'endpoint_control_checks': endpoint_control_checks,
             'limitations': 'Evidence collector must actually refresh and read native editor values. '
                            'Native entity checks only cover explicitly requested drafts. '
                            'This comparison cannot establish remote provenance, pixel quality, generation status or generation authorization.'}
@@ -649,6 +803,8 @@ def main() -> int:
     parser.add_argument('--package', type=Path, action='append', default=[], help='交付文件包时必传实际成品路径，可重复；严格检查实际字节')
     parser.add_argument('--max-package-bytes', type=int, default=19_000_000, help='每包字节数必须严格小于此值')
     args = parser.parse_args()
+    if args.preflight and args.readback is not None:
+        parser.error('--preflight only checks local inputs; use --readback without --preflight for actual binding comparison')
     try:
         frozen = json.loads(args.frozen.read_text(encoding='utf-8'))
         if args.delivery or args.private_preview:

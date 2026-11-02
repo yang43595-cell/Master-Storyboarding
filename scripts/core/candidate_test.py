@@ -6,6 +6,15 @@ browser/provider calls: those remain forbidden by the test task's scope.
 from pathlib import Path
 
 
+def validate_stage(skill):
+    """Accept only an actual local Skill name, never paths or invented stages."""
+    import re
+    root = Path(__file__).resolve().parents[2] / "skills"
+    if (not isinstance(skill, str) or not re.fullmatch(r"[a-z][a-z0-9-]*", skill)
+            or not (root / skill / "SKILL.md").is_file()):
+        raise ValueError("候选测试 Skill 不存在或名称无效：" + str(skill))
+
+
 def result_metadata():
     return {"execution_mode": "candidate_test", "review_status": "unreviewed",
             "production_blocked": True}
@@ -35,6 +44,8 @@ def context(project):
     validate_context(value, state)
     if value["project_path"] != str(project):
         raise ValueError("候选测试状态属于另一项目，不能复制授权运行身份")
+    if state.get("current_stage"):
+        validate_stage(state["current_stage"])
     return value
 
 
@@ -90,7 +101,7 @@ def validate_preview_registration(project, item, run_id):
         raise ValueError("preview-reference 来源未绑定准确文件路径与哈希")
 
 
-def configure(project, run_id, authorization_ref, input_artifact_ids):
+def configure(project, run_id, authorization_ref, input_artifact_ids, *, current_stage=None):
     """One existing-state marker; caller must have explicit user test authorization."""
     from .project_state import load_project_state, write_project_state
     from .artifacts import load_manifest, save_manifest, project_path
@@ -104,6 +115,10 @@ def configure(project, run_id, authorization_ref, input_artifact_ids):
     previous = context(project)
     if previous and any(previous[k] != value[k] for k in ("run_id", "authorization_ref", "project_path")):
         raise ValueError("不能替换既有测试运行身份或授权")
+    if state.get("current_stage"):
+        validate_stage(state["current_stage"])
+    if current_stage is not None:
+        validate_stage(current_stage)
     manifest = load_manifest(project)
     for item in manifest["artifacts"]:
         if item.get("status") != "candidate" or item.get("user_approved", False) is not False:
@@ -122,6 +137,8 @@ def configure(project, run_id, authorization_ref, input_artifact_ids):
     if not set(input_artifact_ids).issubset(known):
         raise ValueError("测试输入必须是准确已登记候选 ID")
     state["candidate_test"] = value
+    if current_stage is not None:
+        state["current_stage"] = current_stage
     # Stamp before writing state: failure can only block production, never grant it.
     for item in manifest["artifacts"]:
         item.update(candidate_test=run_id, review_status="unreviewed", production_blocked=True)
