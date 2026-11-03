@@ -29,6 +29,16 @@ description: 承接已确认故事与对白，创作供用户审定整段拍法�
 
 输出以表演／情绪单元组成的分镜段为阅读主线：场景共用设定写一次，段正文直接写行动、表情和声音，在实际词句／动作切点处写景别与运镜，一句对白可跨多个镜头，不在段首固定单一景别。目的、候选比较、知识映射和审核声明留在过程／审查记录，不挤入每段阅读正文；检查仍照常执行。按 [分镜段创作与实质比较](references/segment-sequence-method.md) 和简洁阅读模板落实；底层每次连续摄影仍对应一个 shots[]，不删执行细节。
 
+## 实质创作的先后顺序
+
+准备/阅读通过只说明可以开始本阶段工作，不表示拍法已经比较或选定。完整视听展开与选定的逐镜 JSON 写出前，按[两阶段比较记录](references/segment-sequence-method.md#先选路再核落实不要等最终哈希才比较)执行：
+
+1. 在现有过程/审查记录中先写本轮源版本、来源字节哈希与段落范围，识别真正影响观看的取舍。存在重要岔路时，把不同方案都写成同事实、对白、预算、接口下可读的实际短序列，比较后保存选择及理由；没有实质岔路则说明本段为何直接展开，不机械凑双案。
+2. 将上述记录真实保存、得到工具返回后，再把选定拍法展开成完整候选。前一阶段不要求尚不存在的最终 JSON 哈希；不得先写选定整段再倒推一套陪跑方案，或把同一脚本末尾补出的比较冒充创作前决定。
+3. 成稿后先读实际视听展开，核选路有没有落实或发生有据改变，再在原记录追加准确最终 revision/hash 和落实位置。此阶段是后验自查，不倒写第一阶段历史。
+
+如果发现初稿已先于关键比较生成，保留该轮顺序偏差；补比较可帮助返修，但不能追认此前符合顺序。需要验证方法修复时使用新冻结基线和全新执行者，不在旧稿旁补一张表就报循环通过。真实工具调用先后可证明保存顺序；自填时间、mtime、布尔字段或阅读凭据不能证明实际思考先后和创作质量。
+
 ## 输入门禁
 
 - 只消费 `project_state.json` 与 artifact manifest 指向的已确认 `narrative.package` revision；确认状态、路径或 revision 不一致时停止。
@@ -66,3 +76,19 @@ python -m scripts.core.story_sources --project <项目> --narrative <完整已�
 结果明确列出 checked/unchecked STP、共享场景/资产可机械识别的跨边界来源、相邻待写段落，并标明 `whole_package_validated:false` / `formal_adoption_allowed:false`。这些只帮助定位，不证明跨段语义已检查；人工核对前后状态、远处铺垫/回应与衔接，将未解决处留在现有 `open_questions` / `asset_gaps`。无关后续未写部分不当作本轮漏写，不能宣称全片自查完成。
 
 局部网页送审按[适配说明](../../docs/development/web-content-adapter.md#导演逐段候选来源范围)，同次提供完整原叙事及相同 STP 范围，强制 `reviewable:false`，只供阅读/反馈。用户段落确认仍走原 segment 范围记录，绝不变成网页整稿批准。全片写完后去掉局部参数重跑默认严格校验，之后才按原确认及正式采用合同处理；局部参数不传入 adopt-package/commit，恢复稿也无例外。
+
+### 历史正文批准与原声证据分层（仅隔离候选）
+
+用户真实批准的准确正文，不因历史原声审核附件未恢复就被当成“从未批准”；但正文批准不替代原声保真、资产确认或完整结构化包正式采用。先核原字节、项目/修订、真实批准消息与实际可见范围，不凭文件名、摘要或旧网页 pending 推断。
+
+若本轮明确授权仅用该正文写有限段落候选，沿已有 `candidate-test` 隔离入口登记原 `narrative.package` 和 `source.evidence`，保持原 JSON 字节/历史路径不变，全部仍为 candidate/unreviewed/production_blocked，不写 user_confirmations/current。范围证据亦登记为 source.evidence，内容为：
+
+```json
+{"purpose":"approved_text_candidate_input","source":{"artifact_id":"准确叙事ID","project_id":"原项目","revision":"准确修订","sha256":"原文件SHA256"},"paragraph_ids":["本轮允许的STP"],"approval":{"reference":"真实历史用户批准引用","evidence_artifact_id":"真实批准上下文证据ID","sha256":"该证据文件SHA256"}}
+```
+
+叙事、批准附件、范围证据均必须登记准确 checksum，并列入本轮 candidate-test 输入白名单。历史批准范围由执行者实读原消息/原显示版本核实；程序只能检查绑定一致性，不自动证明批准语义。不得把候选级记录升为正式确认，也不得以另一个版本/项目/后续待批改动替换原批准正文。
+
+运行 `python -m scripts.core.story_sources --project <隔离项目> --narrative <原JSON> --candidate-test --candidate-source-evidence <范围证据ID>` 先核输入；本轮导演候选再加 `--storyboard <候选JSON> --candidate-paragraph-id <准确STP>`（可重复，必须在证据范围内）。仍核原文、对白/说话者顺序、资产与镜号引用。缺历史对白证据明确报告 missing_unverified，全部原声核验仍未通过；存在但 hash 或对白不一致直接拒绝，不能抓住异常后忽略。
+
+此入口不修改普通正式 adopt-package/返修提交规则，不允许用局部来源检查充整稿交接或生成许可。若无法满足真实输入/范围绑定，保留缺口，不制作虚假附件、不删除原证据字段。

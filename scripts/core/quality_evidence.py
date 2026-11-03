@@ -271,6 +271,23 @@ def validate_packaging_scope(draft, requirements=()):
             covered.update(used)
         if not set(item['source_shot_ids']) <= covered:
             raise ValueError('packaging: 准确商品包装参考未覆盖所需镜号')
+    # A composite image may contain people and ordinary props as well as the
+    # product. Its whole entity_ids list is NOT a list of packaging entities.
+    # Require an explicit product inventory target for each packaging reference;
+    # forward checks above bind every declared product back to a matching use.
+    # Undeclared visual objects remain a semantic QA responsibility, not inferred
+    # from entity names, image contents or the ordinary-prop label.
+    for ref in packaging_refs:
+        used = set(reference_shot_ids(ref, draft))
+        entities = ref.get('entity_ids')
+        if not isinstance(entities, list) or not entities:
+            raise ValueError('packaging: 活动包装引用缺准确实体归属')
+        matches = [item for item in items if item['classification'] == 'product'
+                   and item['entity_id'] in entities
+                   and product_identity(item['product_reference']) == product_identity(ref['product_reference'])
+                   and used <= set(item['source_shot_ids'])]
+        if not matches:
+            raise ValueError('packaging: 活动包装引用缺同实体/商品/本段镜号的明确商品盘点')
     for required in requirements:
         needed = set(required['source_shot_ids']) & set(shots)
         if not needed:
@@ -306,7 +323,56 @@ def native_input_binding(row):
             if key not in {'native_binding', 'quality_evidence'}}
 
 
-def validate_native_binding_claims(value, root, revision=None, target=None):
+def _validate_persisted_download_evidence(row, root, revision, target, project_id):
+    """Direct claim consumers must re-open raw evidence, not trust a mode/PASS.
+
+    Artifact adoption and focal checks call this outside canvas preflight. The
+    low-level validators remain the sole raw download/DOM evidence contracts;
+    this does not replace later source authority, image QA or production gates.
+    """
+    from .native_port_binding import verify_port_binding
+    from .endpoint_control import verify_endpoint_control
+    media, refs = row['ordered_media'], row.get('reference_checks')
+    if (not isinstance(refs, list) or len(refs) != len(media)
+            or any(not isinstance(ref, dict) or ref.get('kind') != 'image'
+                   or ref.get('sha256') != item['sha256'] for ref, item in zip(refs, media))):
+        raise ValueError('native_binding: 下载身份必须逐槽绑定准确图片来源字节')
+    common = dict(target_url=target, target_project_id=project_id, draft_revision=revision,
+                  draft_node_id=row.get('node_id'), source_segment_id=row.get('source_segment_id'))
+    if row['native_identity_mode'] == 'first_last_frame_download':
+        params = row['parameters']
+        aspects = [params[k] for k in ('aspect_ratio', 'aspect', 'ratio') if k in params]
+        if not aspects or any(a != aspects[0] for a in aspects):
+            raise ValueError('native_binding: 首尾比例缺失或别名冲突')
+        expected = dict(common, duration=params.get('duration'), model=params.get('model'),
+                        aspect_ratio=aspects[0], resolution=params.get('resolution'), ordered_media=media)
+        verify_endpoint_control(root, (row.get('state_control') or {}).get('platform'), expected)
+        return
+    # A preview carries its bounded upload mapping; formal references consume
+    # the existing artifact registration. Neither path infers a media_id.
+    from .artifacts import load_manifest
+    for slot, (item, ref) in enumerate(zip(media, refs), 1):
+        expected = dict(common, slot=slot, node_id=item['node_id'], reference_port=item['reference_port'],
+                        sha256=item['sha256'], revision=ref.get('revision'), phase='after_refresh')
+        evidence_root = Path(ref.get('project_path', root)).resolve()
+        if 'upload_binding' in ref:
+            upload = ref['upload_binding']
+        else:
+            sources = [a for a in load_manifest(evidence_root)['artifacts']
+                       if a.get('artifact_id') == ref.get('artifact_id')
+                       and a.get('revision') == ref.get('revision') and a.get('checksum') == ref.get('sha256')]
+            if len(sources) != 1:
+                raise ValueError('native_binding: 缺准确已登记下载来源')
+            uploads = [b for b in sources[0].get('upload_bindings', []) if isinstance(b, dict)
+                       and b.get('identity_mode') == 'node_port_download'
+                       and all(b.get(k) == v for k, v in expected.items())]
+            if len(uploads) != 1:
+                raise ValueError('native_binding: 缺唯一逐槽原始下载映射')
+            upload = uploads[0]
+        verify_port_binding(evidence_root, upload, expected)
+
+
+def validate_native_binding_claims(value, root, revision=None, target=None, project_id=None):
     """Reject stale verified claims without modifying historical receipts/drafts.
 
     Missing/not_bound/unknown permits an explicitly unverified candidate; this
@@ -315,13 +381,15 @@ def validate_native_binding_claims(value, root, revision=None, target=None):
     """
     if isinstance(value, list):
         for item in value:
-            validate_native_binding_claims(item, root, revision, target)
+            validate_native_binding_claims(item, root, revision, target, project_id)
         return
     if not isinstance(value, dict):
         return
     revision = value.get('revision') if revision is None else revision
     if target is None:
         target = value.get('target_url') or (value.get('target_canvas') or {}).get('url')
+    if project_id is None:
+        project_id = value.get('target_project_id')
     binding = value.get('native_binding')
     def current_flags(record):
         if not isinstance(record, dict):
@@ -367,14 +435,15 @@ def validate_native_binding_claims(value, root, revision=None, target=None):
             prompt = submitted_prompt_body(value)
             if not _text(prompt) or not isinstance(value.get('parameters'), dict):
                 raise ValueError('native_binding: verified仅可绑定完整当前段正文/参数，不接受整包摘要冒充')
+            from .native_references import valid_native_media, reference_readback_status, endpoint_readback_status
+            identity_mode = value.get('native_identity_mode', 'media_id')
             expected_media = value.get('ordered_media')
-            if expected_media is None:
+            if expected_media is None and identity_mode == 'media_id':
                 nodes, media = binding.get('ordered_asset_node_ids'), binding.get('ordered_native_media_ids')
                 if not isinstance(nodes, list) or not isinstance(media, list) or len(nodes) != len(media):
                     raise ValueError('native_binding: 缺有序原生引用身份')
                 expected_media = [dict(node_id=n, media_id=m) for n, m in zip(nodes, media)]
-            if not isinstance(expected_media, list) or any(not isinstance(m, dict)
-                    or not _text(m.get('node_id')) or not _text(m.get('media_id')) for m in expected_media):
+            if not valid_native_media(expected_media, identity_mode):
                 raise ValueError('native_binding: 当前有序引用身份无效')
             for material in value.get('materials', []):
                 if isinstance(material, dict) and material.get('native_entity_verified') is True:
@@ -385,15 +454,22 @@ def validate_native_binding_claims(value, root, revision=None, target=None):
                 raise ValueError('native_binding: 本稿正文/参数/有序引用与回读不一致')
             mentions = actual.get('native_mentions')
             entity_type = value.get('native_entity_type') or binding.get('native_entity_type')
-            from .native_references import reference_readback_status
-            if reference_readback_status(expected_media, mentions, entity_type) == 'failed':
+            if identity_mode == 'first_last_frame_download':
+                status = endpoint_readback_status(expected_media, actual.get('frame_slots'), mentions)
+            else:
+                status = reference_readback_status(expected_media, mentions, entity_type, identity_mode)
+            if status == 'failed':
                 raise ValueError('native_binding: 缺本节点原生实体回读，文字或图边不代替')
+            if identity_mode != 'media_id':
+                if not _text(project_id) or observed.get('target_project_id') != project_id:
+                    raise ValueError('native_binding: 缺当前准确目标项目，不能从回执反推')
+                _validate_persisted_download_evidence(value, root, revision, target, project_id)
         elif status not in {None, 'unknown', 'not_bound', 'unverified', 'not_checked', 'stale'}:
             raise ValueError('native_binding: 未识别状态不能冒充已回读')
     # Historical receipts/archives remain data, not current verified claims.
     for key in ('drafts', 'generation_segments', 'creative_sections'):
         if key in value:
-            validate_native_binding_claims(value[key], root, revision, target)
+            validate_native_binding_claims(value[key], root, revision, target, project_id)
 
 
 def source_shot_ids(row):

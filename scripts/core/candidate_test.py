@@ -20,12 +20,26 @@ def result_metadata():
             "production_blocked": True}
 
 
+def validate_usage_contract(value):
+    """Explicit controlled-run checkpoint, not a host-wide spending cap."""
+    if (not isinstance(value, dict) or set(value) != {'required', 'turn_id', 'limits'}
+            or value['required'] is not True
+            or value['turn_id'] is not None and (not isinstance(value['turn_id'], str) or not value['turn_id'].strip())):
+        raise ValueError('usage_contract 必须明确 required=true、准确 turn_id（未知可为 null）与预算')
+    limits = value['limits']
+    if (not isinstance(limits, dict) or set(limits) != {'max_input', 'max_total', 'max_requests'}
+            or any(type(v) is not int or v <= 0 for v in limits.values())):
+        raise ValueError('usage_contract 必须声明本轮三个正整数预算；不自动使用示例默认值')
+
+
 def validate_context(value, state):
-    if not isinstance(value, dict) or set(value) != {"run_id", "authorization_ref", "project_path", "input_artifact_ids"}:
+    if not isinstance(value, dict) or set(value) not in ({"run_id", "authorization_ref", "project_path", "input_artifact_ids"}, {"run_id", "authorization_ref", "project_path", "input_artifact_ids", "usage_contract"}):
         raise ValueError("candidate_test 必须有准确运行、授权、项目路径和输入 ID")
     if any(not isinstance(value[k], str) or not value[k].strip()
            for k in ("run_id", "authorization_ref", "project_path")):
         raise ValueError("candidate_test 运行、授权与项目路径不能为空")
+    if "usage_contract" in value:
+        validate_usage_contract(value["usage_contract"])
     ids = value["input_artifact_ids"]
     if (not isinstance(ids, list) or any(not isinstance(i, str) or not i.strip() for i in ids)
             or len(set(ids)) != len(ids)):
@@ -101,7 +115,7 @@ def validate_preview_registration(project, item, run_id):
         raise ValueError("preview-reference 来源未绑定准确文件路径与哈希")
 
 
-def configure(project, run_id, authorization_ref, input_artifact_ids, *, current_stage=None):
+def configure(project, run_id, authorization_ref, input_artifact_ids, *, current_stage=None, usage_contract=None):
     """One existing-state marker; caller must have explicit user test authorization."""
     from .project_state import load_project_state, write_project_state
     from .artifacts import load_manifest, save_manifest, project_path
@@ -115,6 +129,16 @@ def configure(project, run_id, authorization_ref, input_artifact_ids, *, current
     previous = context(project)
     if previous and any(previous[k] != value[k] for k in ("run_id", "authorization_ref", "project_path")):
         raise ValueError("不能替换既有测试运行身份或授权")
+    prior_usage = previous.get('usage_contract') if previous else None
+    if usage_contract is not None:
+        validate_usage_contract(usage_contract)
+        if prior_usage and (prior_usage['turn_id'] is not None and usage_contract['turn_id'] != prior_usage['turn_id']
+                            or any(usage_contract['limits'][k] > v for k, v in prior_usage['limits'].items())):
+            raise ValueError('不能替换本轮计量边界或提高已登记预算')
+    effective_usage = usage_contract if usage_contract is not None else prior_usage
+    if effective_usage is not None:
+        value['usage_contract'] = effective_usage
+    validate_context(value, state)
     if state.get("current_stage"):
         validate_stage(state["current_stage"])
     if current_stage is not None:

@@ -372,8 +372,58 @@ def validate_scene_ids(storyboard: dict) -> None:
         positions[key] = index
 
 
+def _candidate_text_source(narrative, root, evidence_id, paragraph_ids, storyboard):
+    """Consume byte-bound historical text evidence, never import a confirmation."""
+    from .candidate_test import resolve_inputs
+    from .artifacts import digest
+    selected = {r['artifact_id']: r for r in resolve_inputs(root, [evidence_id])}
+    entry = selected[evidence_id]
+    if entry.get('type') != 'source.evidence' or not entry.get('checksum'):
+        raise ValueError('有限正文来源须为准确 hash 登记的 source.evidence')
+    evidence = json.loads(project_path(root, entry['path_or_url']).read_text(encoding='utf-8-sig'))
+    if evidence.get('purpose') != 'approved_text_candidate_input':
+        raise ValueError('来源证据用途不是有限正文候选输入')
+    source, approval = evidence.get('source'), evidence.get('approval')
+    if not isinstance(source, dict) or not isinstance(approval, dict):
+        raise ValueError('有限正文来源缺少源身份或历史批准依据')
+    ids = [source.get('artifact_id'), approval.get('evidence_artifact_id')]
+    if any(not isinstance(i, str) or not i for i in ids):
+        raise ValueError('有限正文来源须指定准确已登记输入 ID')
+    records = {r['artifact_id']: r for r in resolve_inputs(root, ids)}
+    src, approval_entry = records[ids[0]], records[ids[1]]
+    path = project_path(root, src['path_or_url'])
+    if (not src.get('checksum') or src.get('logical_id') != 'narrative.package'
+            or source.get('revision') != narrative.get('revision')
+            or source.get('project_id') != narrative.get('project_id')
+            or source.get('sha256') != digest(path)
+            or json.loads(path.read_text(encoding='utf-8-sig')) != narrative):
+        raise ValueError('有限正文来源项目、修订或字节与本轮叙事不一致')
+    approval_path = project_path(root, approval_entry['path_or_url'])
+    if (not approval_entry.get('checksum') or approval_entry.get('type') != 'source.evidence'
+            or not isinstance(approval.get('reference'), str) or not approval['reference'].strip()
+            or approval.get('sha256') != digest(approval_path)):
+        raise ValueError('历史批准依据缺失、未登记或字节不符')
+    allowed = evidence.get('paragraph_ids')
+    known = {p['paragraph_id'] for p in narrative['story_paragraphs']}
+    if (not isinstance(allowed, list) or not allowed
+            or any(not isinstance(i, str) for i in allowed)
+            or len(set(allowed)) != len(allowed) or not set(allowed) <= known):
+        raise ValueError('有限正文来源须明确本轮准确段落范围')
+    if storyboard is not None and (not paragraph_ids or not set(paragraph_ids) <= set(allowed)):
+        raise ValueError('导演候选范围越出本轮有限正文来源')
+    if storyboard is not None and not set(storyboard.get('source_paragraph_ids', [])) <= set(allowed):
+        raise ValueError('导演包声明来源越出本轮有限正文来源')
+    return {'candidate_source_evidence_id': evidence_id,
+            'source_artifact_id': src['artifact_id'], 'source_sha256': digest(path),
+            'allowed_paragraph_ids': allowed, 'historical_approval_reference': approval['reference'],
+            'authority_scope': 'candidate_text_only', 'historical_evidence_semantics_checked': False,
+            'source_fidelity_checked': False, 'human_listening_verified': False,
+            'formal_adoption_allowed': False, 'asset_approval_inferred': False}
+
+
 def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, project_root: Path | None = None, candidate_test: bool = False,
-                           candidate_paragraph_ids: list[str] | None = None) -> dict | None:
+                           candidate_paragraph_ids: list[str] | None = None,
+                           candidate_source_evidence: str | None = None) -> dict | None:
     # Explicit read-only route, never inferred from missing coverage or open questions.
     local_candidate = candidate_paragraph_ids is not None
     if local_candidate and (storyboard is None or storyboard.get('status') != 'candidate'):
@@ -389,7 +439,28 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
     require_schema(narrative, 'narrative-package.schema.json', label='编导包')
     if narrative.get('schema_version') != '2.0':
         raise ValueError('新段落引用要求编导包 2.0；旧事件包须按原稿重新整理，不能自动换编号')
-    if narrative.get('dialogue_evidence_path'):
+    if candidate_source_evidence is not None:
+        if test_report is None:
+            raise ValueError('有限正文来源仅用于显式隔离 candidate_test，不是正式采用入口')
+        test_report.update(_candidate_text_source(narrative, project_root, candidate_source_evidence,
+                                                 candidate_paragraph_ids, storyboard))
+        historical_path = narrative.get('dialogue_evidence_path')
+        if historical_path:
+            historical_file = project_path(project_root, historical_path)
+            from .artifacts import digest
+            if historical_file.is_file() and digest(historical_file) != narrative.get('dialogue_evidence_sha256'):
+                raise ValueError('历史对白证据已存在但偏离绑定字节；不得以正文授权掩盖篡改')
+            if historical_file.is_file():
+                historical = json.loads(historical_file.read_text(encoding='utf-8-sig'))
+                validate_dialogue_review(historical, project_root)
+                if [(r['dialogue_id'], r.get('speaker_id'), r['text']) for r in historical['dialogues']] != [(r['dialogue_id'], r['speaker_id'], r['text']) for r in narrative['dialogues']]:
+                    raise ValueError('历史对白证据存在但与正文不符；不得以正文授权掩盖冲突')
+            test_report['dialogue_evidence_status'] = 'present_not_verified' if historical_file.is_file() else 'missing_unverified'
+            test_report['dialogue_evidence_path'] = historical_path
+        else:
+            test_report['dialogue_evidence_status'] = 'not_bound_unverified'
+        test_report['unresolved_dialogue_ids'] = [r['dialogue_id'] for r in narrative['dialogues']]
+    if narrative.get('dialogue_evidence_path') and candidate_source_evidence is None:
         if project_root is None:
             raise ValueError('绑定对白审核记录需要 project_root')
         from .artifacts import digest
@@ -761,9 +832,14 @@ def main():
                         help='局部候选已写范围，可重复列现有 STP；不放宽正式整稿校验')
     parser.add_argument('--strict-assets', action='store_true',
                         help='把“引用了已取消／已拆分的资产”也当作错误（默认只告警）')
+    parser.add_argument('--candidate-source-evidence', help='已登记 source.evidence ID；显式候选正文来源分层，非原声验真或正式批准')
     parser.add_argument('--candidate-test', action='store_true', help='仅隔离候选试跑；保留未核对白并报告生产阻塞')
     parser.add_argument('--project', type=Path, required=True)
     args = parser.parse_args()
+    if args.candidate_source_evidence is not None and (
+            not args.candidate_test or not args.narrative or args.dialogue_review
+            or args.markdown or args.shot_plan or args.reading_supplement or args.dialogue_baseline):
+        parser.error('--candidate-source-evidence 仅用于 --narrative --candidate-test 来源检查，不接受其他检查模式')
     if args.candidate_paragraph_id is not None and (not args.narrative or not args.storyboard):
         parser.error('--candidate-paragraph-id 必须与 --narrative 和 --storyboard 使用')
     if args.candidate_test and (not args.narrative or args.reading_supplement):
@@ -797,7 +873,8 @@ def main():
         return
     storyboard = json.loads(args.storyboard.read_text(encoding='utf-8-sig')) if args.storyboard else None
     report = validate_story_sources(narrative, storyboard, project_root=args.project, candidate_test=args.candidate_test,
-                                    candidate_paragraph_ids=args.candidate_paragraph_id)
+                                    candidate_paragraph_ids=args.candidate_paragraph_id,
+                                    candidate_source_evidence=args.candidate_source_evidence)
     if report is not None:
         print(json.dumps(report, ensure_ascii=False))
     if args.export_markdown:

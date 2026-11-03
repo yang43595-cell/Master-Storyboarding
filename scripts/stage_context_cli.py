@@ -15,7 +15,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Any
 
 try:
-    from .core.candidate_test import context as test_context, configure as configure_test, resolve_inputs as test_inputs, result_metadata as test_metadata, require_production, validate_stage as validate_test_stage
+    from .core.candidate_test import context as test_context, configure as configure_test, resolve_inputs as test_inputs, result_metadata as test_metadata, require_production, validate_stage as validate_test_stage, validate_usage_contract
     from .core.artifacts import (artifact_is_confirmed, project_path, digest,
                                  validate_current_dependencies, load_manifest,
                                  register_workspace_artifact, adopt_initial_package,
@@ -30,7 +30,7 @@ try:
     from .core.review_delta import fingerprint, revision_delta, lightweight_revision
     from .session_usage import measure, measure_boundaries, check_budget
 except ImportError:  # direct CLI execution
-    from core.candidate_test import context as test_context, configure as configure_test, resolve_inputs as test_inputs, result_metadata as test_metadata, require_production, validate_stage as validate_test_stage
+    from core.candidate_test import context as test_context, configure as configure_test, resolve_inputs as test_inputs, result_metadata as test_metadata, require_production, validate_stage as validate_test_stage, validate_usage_contract
     from core.artifacts import (artifact_is_confirmed, project_path, digest,
                                 validate_current_dependencies, load_manifest,
                                 register_workspace_artifact, adopt_initial_package,
@@ -733,6 +733,24 @@ def _semantic_request(request: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in request.items() if key not in {"history", "updated_at", "created_at"}}
 
 
+def _normalize_source_alias(inputs: dict[str, Any]) -> dict[str, Any]:
+    """The request-level sources alias declares local files, not semantic sources.
+
+    Normalize at the input boundary only; do not reinterpret arbitrary nested
+    prose/metadata named sources or enumerate undeclared project files.
+    """
+    if "sources" not in inputs:
+        return inputs
+    sources = inputs["sources"]
+    if (not isinstance(sources, list) or not sources
+            or any(not isinstance(item, str) or not item.strip() for item in sources)):
+        raise StageContextError("request.sources 必须是非空本地文件路径数组。")
+    if "source_files" in inputs and inputs["source_files"] != sources:
+        raise StageContextError("request.sources 与 source_files 声明不一致；请保留准确的同一来源列表。")
+    return {**{key: value for key, value in inputs.items() if key != "sources"},
+            "source_files": sources}
+
+
 def _explicit_source_paths(project: Path, inputs: dict[str, Any]) -> list[Path]:
     """Resolve declared files only, never enumerate the project or guess ID paths."""
     paths: set[Path] = set()
@@ -758,7 +776,7 @@ def _explicit_source_paths(project: Path, inputs: dict[str, Any]) -> list[Path]:
                 if not path.is_file():
                     raise StageContextError(f"必需显式来源文件缺失：{value}")
                 paths.add(path)
-    collect(inputs)
+    collect(_normalize_source_alias(inputs))
     return sorted(paths)
 
 
@@ -939,7 +957,12 @@ def _validate_current_inputs(project: Path, basis: dict[str, Any]) -> dict[str, 
         current_request = _read_json(Path(request_path), default=None)
         if not isinstance(current_request, dict) or _semantic_request(current_request) != basis.get("task_request"):
             raise StageContextError("当前请求缺失或实质范围已改变；请重新 prepare。")
-    current = _input_snapshot(project, basis["input_versions"], _state(project))
+    inputs = basis["input_versions"]
+    if "sources" in basis.get("task_request", {}):
+        # Old preparations omitted this alias entirely. Reopen the declaration
+        # at consumption too, so their empty snapshots cannot remain valid.
+        inputs = {**inputs, "sources": basis["task_request"]["sources"]}
+    current = _input_snapshot(project, inputs, _state(project))
     if current != snapshot:
         raise StageContextError("当前来源、选定产物或确认依据已改变；请重新 prepare 并核对变更。")
     _current_handoff_text(project, basis["skill"])
@@ -993,10 +1016,25 @@ def _read_candidate_exact(vault: Path, record: dict[str, Any]) -> Any:
 
 
 def _check_run_budget(args: argparse.Namespace) -> dict[str, Any] | None:
+    project_arg = getattr(args, 'project', None)
+    project = Path(project_arg).expanduser().resolve() if project_arg else None
+    testing = test_context(project) if project is not None and project.is_dir() else None
+    contract = testing.get('usage_contract') if testing else None
+    if contract:
+        if contract['turn_id'] is None:
+            raise StageContextError('受控试跑要求先计量：准确 turn 尚未知，保留要求并补合法用量证据，不得继续准备。')
+        if getattr(args, 'usage_boundaries_json', None) or getattr(args, 'usage_turn_id', None) != contract['turn_id']:
+            raise StageContextError('受控试跑计量须使用已登记准确 turn；不能省略或改用另一边界。')
+        for key, limit in contract['limits'].items():
+            provided = getattr(args, key, None)
+            if provided is not None and provided > limit:
+                raise StageContextError('不能通过命令行提高已登记计量预算。')
     logs = getattr(args, "usage_log", None)
     turn = getattr(args, "usage_turn_id", None)
     boundaries = getattr(args, "usage_boundaries_json", None)
     limits = {key: getattr(args, key, None) for key in ("max_input", "max_total", "max_requests")}
+    if contract:
+        limits = {key: contract['limits'][key] if value is None else value for key, value in limits.items()}
     if not logs and not turn and not boundaries and not any(value is not None for value in limits.values()):
         return None
     if not any(value is not None for value in limits.values()):
@@ -1202,10 +1240,10 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
             json.dumps(revision, ensure_ascii=False, indent=2), "```", "",
             "仅修改目标候选及其直接派生物；不得覆盖已确认版本、派发下一 Skill 或自行批准。", "",
         ]
-    input_versions = {
+    input_versions = _normalize_source_alias({
         key: value for key, value in request.items()
-        if key.startswith("source_") or key in {"inputs", "material_output_ids"}
-    }
+        if key.startswith("source_") or key in {"sources", "inputs", "material_output_ids"}
+    })
     review_profile_path, review_profile = _load_review_profile(args.skill)
     request_checks = request.get("review_checks") or []
     if not isinstance(request_checks, list) or any(not isinstance(item, str) or not item.strip() for item in request_checks):
@@ -1851,6 +1889,7 @@ def parser() -> argparse.ArgumentParser:
     testing.add_argument("--run-id", required=True)
     testing.add_argument("--authorization-ref", required=True)
     testing.add_argument("--input-artifact", action="append", default=[])
+    testing.add_argument("--usage-contract-json", help="明确受控试跑的持久计量要求；缺真实 turn 可登记 null 并阻止准备")
     testing.add_argument("--skill", help="显式设置本轮候选阶段；须为现有 Skill，不设置生产 next_stage 或确认")
     source_index = commands.add_parser("candidate-source-index", help="只读核验 profile 固定的候选来源快照并列出可试用规则")
     source_index.add_argument("--skill", required=True)
@@ -1940,7 +1979,11 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "adopt-package":
         result = adopt_package(args)
     elif args.command == "candidate-test":
-        result = configure_test(Path(args.project), args.run_id, args.authorization_ref, args.input_artifact, current_stage=args.skill)
+        usage_contract = None
+        if args.usage_contract_json:
+            usage_contract = _read_json(Path(args.usage_contract_json), default=None)
+            validate_usage_contract(usage_contract)
+        result = configure_test(Path(args.project), args.run_id, args.authorization_ref, args.input_artifact, current_stage=args.skill, usage_contract=usage_contract)
     elif args.command == "candidate-source-index":
         result = candidate_source_index(args)
     elif args.command == "prepare":
