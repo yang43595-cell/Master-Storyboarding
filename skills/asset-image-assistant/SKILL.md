@@ -15,7 +15,14 @@ description: 在叙事包确认后按已登记 AST 需求制作和核对角色�
 - 从资产网页接收项目需求表时，同时执行 [modules/project-web-mode.md](modules/project-web-mode.md)，仍属于项目模式；由已采用叙事包的有效资产需求驱动制作项，逐项确认后正式回填项目。
 - 用户明确要求跨项目独立资产库时：执行 [modules/library-mode.md](modules/library-mode.md)。这是本 Skill 的独立入口，不是另一个 Skill；资产库需求代替叙事包 AST 输入，不能伪造项目事实。按 Web 受限读取合同读取共享红线/分类指南及动态知识，并执行本 Skill 的语言审查和确认门禁。
 
-读取 `PROJECT_RULES.md`、`../_shared/knowledge-access.md`、当前 `stage_startup.md`、`../_shared/draft-lifecycle.md` 等六项共享红线（含 `../_shared/prompt-language.md`）、`modules/asset-method.md`、`references/00-asset-production-workflow.md`、`references/00a-asset-complexity-routing-guide.md`、`references/05-asset-manifest-handoff-guide.md` 与 `../../schemas/visual-asset-manifest.schema.json`。只有当前 AST 类别需要时才读取 `references/01-style-master-guide.md`（含**整片色彩统一色卡工作流**）、`references/02-character-master-guide.md`、`references/02a-body-character-master-guide.md`、`references/03-scene-master-guide.md` 或 `references/04-prop-product-master-guide.md` 的对应部分；**产出前必读** `../storyboard-director/references/image-continuity-hard-rules.md`（背景母版 + 多角度参考组，强制非"涉风险才读"）；涉及灯光风险时才读取 `../storyboard-planner/references/lighting-prompt-standard.md` 的对应小节；写本 Skill 提示词时必读 `../voiceover-to-video-script/references/prompt-language-hard-rules.md` 并以其为准；**产出前先 `ensure-prepared` 并命中 `modules/asset-method.md` 开头"本 Skill 产出须命中的规范"清单**。这些条件引用只提供资产实现约束，不扩大本 Skill 职责，也不加载其他阶段方法。
+先选资料入口，二者不叠加：
+
+- **普通对话**：按 `../_shared/knowledge-access.md` 执行 prepare，读取当前 `stage_startup.md` 与完整方法快照，实际阅读后登记，产出前通过 `ensure-prepared`。
+- **两种 Web 入口**：按 [modules/web-input-contract.md](modules/web-input-contract.md) 读取本次 task-package；不执行 stage prepare / ensure-prepared，不额外登记普通对话的阅读声明。
+
+两种入口均须读到 `PROJECT_RULES.md`、`../_shared/draft-lifecycle.md` 等适用共享规范（含 `../_shared/prompt-language.md`）、`modules/asset-method.md`、`references/00-asset-production-workflow.md`、`references/00a-asset-complexity-routing-guide.md`、`references/05-asset-manifest-handoff-guide.md` 与 `../../schemas/visual-asset-manifest.schema.json`；Web 的单项写词裁剪以受限读取合同为准。
+
+分类指南只读本轮适用部分：`references/01-style-master-guide.md`（含整片色卡）、`references/02-character-master-guide.md`、`references/02a-body-character-master-guide.md`、`references/03-scene-master-guide.md`、`references/04-prop-product-master-guide.md`。产出前必读 `../storyboard-director/references/image-continuity-hard-rules.md`；写提示词必读并遵守 `../voiceover-to-video-script/references/prompt-language-hard-rules.md`；涉及灯光风险时核对 `../storyboard-planner/references/lighting-prompt-standard.md` 的对应条目。按 `modules/asset-method.md` 开头清单核对适用资料齐全，不因引用其他阶段文件扩大职责。
 
 ## 本轮执行 SOP
 
@@ -23,12 +30,12 @@ description: 在叙事包确认后按已登记 AST 需求制作和核对角色�
 
 按顺序完成适用步骤；核对对象和结论写回本模式现有制作项、候选/审核备注与清单，不另建执行表。只有本轮实际执行并有对应结果的步骤才可报完成。
 
-1. **锁定入口与范围。** 项目模式核对有效叙事包、AST 和已登记用户调整；独立库核对本次库需求，不创建项目 AST。普通对话实际读方法、登记并通过 `ensure-prepared`；两种 Web 入口实际读本次 task-package，不再 prepare。缺真实输入或规范只停止受影响项，返回本入口补齐。
+1. **锁定入口与范围。** 项目模式核对有效叙事包、AST 和已登记用户调整；独立库核对本次库需求，不创建项目 AST。按上节完成本入口的资料准备与实际阅读。缺真实输入或规范只停止受影响项，返回本入口补齐。
 2. **盘点并实看参考。** 定位准确 AST/output 或库内文件，核对确认依据、实际图与当前用途，记录覆盖及不足；足够时复用，转第 5 步，不为走流程生成。无需独立图、取消项与待定项不进入制作；需求矛盾返回上游。
 3. **确定实现并自查提示词。** 按类别及明确要求选择单图、身份板、场景视角或必要状态，核对继承/禁止项、实际参考、提示词与输出计划。生成前核实当前提示词、工具、具体模型及上传/额度的适用授权；已明确的有效授权不重复询问，缺授权停在待执行候选。
-4. **产出并做技术检查。** 在授权范围内生成/编辑或接入真实导入文件，保留准确路径、来源、参考、实际尺寸/格式及结果；失败回到相应参考或制作步骤，不自动重提、不覆盖确认图。Web 本地人物拼装沿已确认来源的现有例外执行。
+4. **产出并做技术检查。** 在授权范围内生成/编辑或接入真实导入文件，保留准确路径、来源、参考、实际尺寸/格式及结果；失败回到相应参考或制作步骤，不自动重提、不覆盖确认图。人物四格图统一由 AI 生成，使用已确认的独立服装图与头照；来源确认不等于新成图已确认。
 5. **实看本轮准确交付图。** 按 `asset-method` 对照当前明确要求、类别指南与原参考，记录 output/文件版本、具体可见事实、结论及未满足处理；技术通过和提示词审核不能替代此步。失败或无法判断的项保留待修/未验证，回第 2 至 4 步修受影响内容，不报合格或整项完成。
-6. **交审、确认与收尾。** 先交文件夹、准确文件名、AST/用途及视觉判断事项；用户确认准确文件后才按原入口登记确认，核对最终清单与实际导出选择并执行旧稿归档收尾。仅完成候选时说明待确认范围；库内确认不代替项目确认，已确认来源本地拼装不新增一次独立确认。不自动进入下一 Skill。
+6. **交审、确认与收尾。** 先交文件夹、准确文件名、AST/用途及视觉判断事项；用户确认准确文件后才按原入口登记确认，核对最终清单与实际导出选择并执行旧稿归档收尾。仅完成候选时说明待确认范围；库内确认不代替项目确认，最终人物四格图仍须对准确成图独立审查和用户确认。不自动进入下一 Skill。
 
 ## 专业方法适用条件
 
@@ -40,7 +47,7 @@ description: 在叙事包确认后按已登记 AST 需求制作和核对角色�
 
 ## Web 与普通对话的资料入口
 
-网页两种模式均按 [Web 受限读取合同](modules/web-input-contract.md) 完整读取本轮输入，不执行上文的 stage prepare / ensure-prepared，也不要求在模型读取前登记阅读声明。上文引用的本地合同、动态知识、分类方法和模板仍全部按适用性纳入本次资料；这只替代资料准备方式，不替代输入事实、授权和确认门槛。普通对话入口仍先读取 stage_startup 与完整方法快照，按既有阅读声明和 ensure-prepared 执行。
+资料准备只按上节所选入口执行；Web 替代的是准备方式，输入事实、适用方法、授权和确认门槛仍须满足。
 
 确认记录和文件存在只供机械筛选。普通对话可在同一有效上下文、同一用途复用已看过的对应输出；新的执行者或用途/版本变化必须实际查看该 AST/output。网页每次调用都是新的视觉上下文，按 Web 合同查看本次全部参考图，不能把旧调用或“已确认”当作已看图。
 
@@ -49,17 +56,16 @@ description: 在叙事包确认后按已登记 AST 需求制作和核对角色�
 - 制作入口是已正式采用的叙事包内结构化 AST 需求。canonical JSON（schema_version=2.0 且省略 human_readable_path）从已正式采用的 narrative.package 内 asset_requirements 读取，不要求独立 narrative.assets 或 Markdown；保留 human_readable_path 的历史包才沿原双文件及适用的同版独立资产表检查，不得删除该字段绕过差异。当前有效状态统一由项目核心产物读取代码核验登记与采用凭据；候选文件正文可保留采用前原文，不以正文状态重复裁决。历史 MD 与 JSON 的一致性在上游审查/采用时完成。网页读取同一有效来源中的必要背景和当前结构化条目，不重新从编导稿提取或解析另一份 AST。旧版未拆表项目兼容原已确认包；仅历史合同要求独立表而缺表时返回上游。可与导演规划并行。
 - 按 PROJECT_RULES.md 的“用户调整资产图需求”，由已确认资产表及用户明确、已核对出现位置并登记的调整建立本轮有效 AST 白名单。未经授权或尚未登记的表外项停止并报告；不得自行创建、改名或扩写 AST，不把用户新增需求伪称为原叙事包事实。
 - 读取资产表的处理结论与判断依据：无需独立图和待定不进入制作；复用只选用现有素材；需要制作才准备新图。只检查判断是否缺失，不重新详细审查。历史无字段的确认包保留兼容，返修时由上游补齐。
-- 先盘点现有确认资产与真实参考，能覆盖需求时直接复用，不为走流程重复生成。
 - 用户提供视觉资产库选用包 `selection.json` 时，先读取其中图片、来源与库内确认记录，再按当前 AST 逐项核对适用范围。库内确认不等于当前项目确认；只把匹配项登记为当前项目参考或候选，正式确认仍走本 Skill 原有清单流程。资产库执行入口见 `../../scripts/visual_asset_ui/README.md`；独立收藏和照片转通用资产使用本 Skill 的独立资产库模式，不创建项目 AST，也不触发短剧生产阶段。
 - 广告产品及明确要求还原的实物必须读取实际参考 manifest/brief 并查看所需图片；参考不足时阻塞该 AST。普通剧情物品按共享 product-reference 的例外执行，无参考不单独构成阻塞，候选外观由用户确认。
 
 ## 执行
 
-按“AST 白名单 → 参考盘点 → 充分覆盖与合理复杂度 → 母版/必要状态 → 技术与成图要求核对 → 候选交付 → 用户确认登记”执行。普通一次配角可用单张综合参考；已判断无需独立图时只保留镜内描述，不为人物类别另建资产。环境一致性优先，默认四图是合理起点；已有覆盖充分时可少补，但须给相机变化和空间连续性留出余量，不追求临界最少。复杂度只决定如何完成已登记 AST，不产生新资产需求。
+流程统一按上文六步 SOP。实现深度按 `references/00a-asset-complexity-routing-guide.md` 选择：普通一次配角可用单张综合参考；环境默认四图，已有充分覆盖时可少补并保留相机变化余量。复杂度不产生新资产需求。
 
 每个 AST 在 `visual-asset-manifest.json` 中登记：类别、名称、状态、来源 revision、事件范围、可选镜头范围、交互、展示面、朝向、所需状态、必须继承、不可继承、真实参考、候选和确认资产。不可继承内容用于阻止身份资产继承剧情布光、表情、动作、临时污损或特定镜头构图等错误状态。
 
-生成或编辑图片前，工具和具体模型必须分别得到用户明确确认；付费或有额度成本的动作遵守项目授权门槛。默认非破坏性生成，不覆盖确认资产。
+生成授权核对见 SOP 第 3 步；工具和具体模型须分别有用户明确确认，默认非破坏性生成。
 
 ## 候选与确认
 

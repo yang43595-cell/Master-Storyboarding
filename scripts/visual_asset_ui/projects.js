@@ -11,7 +11,7 @@ document.querySelector('main').append(projectSection);
 let projectData=null, projectId=localStorage.getItem('asset-workspace')||'', projectSelection=new Set(), projectLoading=null;
 const projectDrafts=new Map();
 function projectKey(job,index){return `${job.id}:${index}`;}
-function projectGenerationReady(job,step){return !(typeof automaticCharacterFinal==='function'&&automaticCharacterFinal(job,step))&&step.generation_enabled!==false&&step.required!==false&&projectReady(job,step)&&(!job.character_workflow||step.kind!=='服装'||job.steps.some(s=>s.key==='shared_head'&&s.status==='confirmed'&&s.project_confirmation));}
+function projectGenerationReady(job,step){return step.generation_enabled!==false&&step.required!==false&&projectReady(job,step)&&(!job.character_workflow||step.kind!=='服装'||job.steps.some(s=>s.key==='shared_head'&&s.status==='confirmed'&&s.project_confirmation));}
 function projectReady(job,step){return step.dependencies.every(k=>job.steps.some(s=>s.key===k&&s.project_confirmation&&s.status==='confirmed'));}
 function projectSlotList(){return (projectData?.rows||[]).flatMap(r=>(r.job?.steps||[]).map((s,i)=>({row:r,job:r.job,step:s,index:i,key:projectKey(r.job,i)})).filter(x=>x.step.required!==false));}
 function projectHasEdits(){return [...projectDrafts].some(([key,value])=>projectSlotList().some(x=>x.key===key&&x.step.prompt!==value));}

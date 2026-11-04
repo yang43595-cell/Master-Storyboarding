@@ -4,8 +4,7 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 const path=require('node:path');
 const all=fs.readFileSync(path.join(__dirname,'../visual_asset_ui/characters.js'),'utf8');
-const automaticSource=all.slice(all.indexOf('function automaticCharacterFinal('),all.indexOf('function eligibleWorkspaceSlots('));
-const source=automaticSource+all.slice(all.indexOf('const generationDirections='),all.indexOf('function openProjectTools('));
+const source=all.slice(all.indexOf('const generationDirections='),all.indexOf('function openProjectTools('));
 function render(steps,{busy=false,reset=true,selected=[],planning=false,batchMode='prepare'}={}){
  const slots=steps.map((step,i)=>({key:String(i),job:{title:'人物',steps},step}));let html;
  const ctx=vm.createContext({eligibleWorkspaceSlots:()=>slots.filter(x=>x.step.status==='waiting'&&x.step.generation_enabled!==false),projectSlotList:()=>slots,workspaceBusy:()=>busy,projectData:{planning:{status:planning?'running':'done'},batch:{mode:batchMode,status:busy?'running':'done',entries:[{status:busy?'running':'done'}]}},projectSelection:new Set(selected),projectDrafts:new Map(),modal:(title,s)=>html=s,esc:s=>String(s),assetStepLabel:s=>s.name,auditBusy:a=>['drafting','reviewing'].includes(a?.status),compactStep:()=>'<button>确认图片</button>'});
@@ -100,7 +99,7 @@ test('repeated output names include the actual prerequisite purpose',()=>{
 test('workspace dock keeps recovery accessible when only unresolved items remain',()=>{
  const code=all.slice(all.indexOf('function projectExportReady('),all.indexOf('function renderProductUsage('));
  let html;const ctx=vm.createContext({projectData:{id:'p',name:'项目',rows:[{job:{blockers:[]},requirement:{}}],narrative:{}},workspaceBusy:()=>false,projectSlotList:()=>[{step:{status:'unknown'}}],eligibleWorkspaceSlots:()=>[],deliverables:()=>[{status:'unknown'}],projectDrafts:new Map(),requirementCategory:()=>'',requirementFilter:'全部',esc:x=>x,renderProductUsage:()=>'',requirementCard:()=>'',pendingRequirementChoice:null,$:()=>({set innerHTML(v){html=v;}})});
- vm.runInContext(automaticSource+code,ctx);vm.runInContext('renderRequirementWorkspace()',ctx);
+ vm.runInContext(code,ctx);vm.runInContext('renderRequirementWorkspace()',ctx);
  assert.match(html,/data-w-batch >查看缺图原因/);
 });
 
@@ -129,4 +128,30 @@ test('explicitly excluding every image requirement allows an empty handoff with 
  ctx.projectData.source_error='';ctx.workspaceBusy=()=>true;assert.equal(vm.runInContext('projectExportReady()',ctx),false);
  ctx.workspaceBusy=()=>false;ctx.projectData.narrative.asset_requirements.push({image_decision:'待定'});
  assert.equal(vm.runInContext('projectExportReady()',ctx),false);
+});
+
+test('character final joins batch preparation and generation only after confirmed inputs',()=>{
+ const head={key:'shared_head',name:'共用大头照',kind:'大头照',status:'confirmed',project_confirmation:{},dependencies:[]};
+ const clothes={key:'outfit_wardrobe',name:'服装三视图',kind:'服装',status:'waiting',dependencies:[]};
+ const final={key:'outfit_final',name:'最终人物1×4',kind:'人物1x4',status:'waiting',generation_enabled:true,dependencies:['shared_head','outfit_wardrobe']};
+ const job={id:'job',title:'人物',blockers:[],character_workflow:{outfits:[{id:'outfit',route:'build'}]},steps:[head,clothes,final]};
+ let html;
+ const ctx=vm.createContext({projectData:{rows:[{job}],batch:{status:'done'}},projectKey:(j,i)=>`${j.id}:${i}`,projectSelection:new Set(),projectDrafts:new Map(),workspaceBusy:()=>false,auditBusy:()=>false,modal:(title,s)=>html=s,esc:String,assetStepLabel:s=>s.name,compactStep:()=>'<button>确认图片</button>'});
+ const projects=fs.readFileSync(path.join(__dirname,'../visual_asset_ui/projects.js'),'utf8');
+ vm.runInContext(projects.slice(projects.indexOf('function projectGenerationReady('),projects.indexOf('function projectHasEdits(')),ctx);
+ vm.runInContext(all.slice(all.indexOf('function eligibleWorkspaceSlots('),all.indexOf('function rowSceneSteps('))+source,ctx);
+ vm.runInContext('openBatchPanel()',ctx);
+ assert.equal(vm.runInContext("projectSelection.has('job:2')",ctx),false);
+ assert.match(html,/先生成并确认：服装三视图/);
+ clothes.status='confirmed';clothes.project_confirmation={};
+ vm.runInContext('openBatchPanel()',ctx);
+ assert.equal(vm.runInContext("projectSelection.has('job:2')",ctx),true);
+ assert.match(html,/data-w-batch-check="job:2" checked/);assert.match(html,/data-w-run="prepare"/);
+ final.prompt='图一服装，图二脸，生成人物1×4';final.audit={status:'passed',prompt:final.prompt};
+ vm.runInContext('openBatchPanel()',ctx);
+ assert.match(html,/data-w-run="generate">下一步：确认生成 1 张/);
+ final.generation_enabled=false;final.dependencies=[];job.character_workflow.outfits[0].route='reuse';
+ vm.runInContext('openBatchPanel()',ctx);
+ assert.equal(vm.runInContext("projectSelection.has('job:2')",ctx),false);
+ assert.doesNotMatch(html,/data-w-run="generate"/);
 });
