@@ -167,7 +167,9 @@ for number in range(8):
             assert proc.stdout.readline().strip() == 'ready'
         start.touch()
         for proc in processes:
-            out, err = proc.communicate(timeout=10)
+            # Leave startup/exit overhead beyond the production lock's 10s timeout,
+            # so contention reports its real error instead of racing the watchdog.
+            out, err = proc.communicate(timeout=30)
             assert proc.returncode == 0, (out, err)
     finally:
         for proc in processes:
@@ -416,3 +418,12 @@ def test_recovery_rejects_third_party_changes_before_writing_any_target(tmp_path
             artifacts.register_workspace_artifact(tmp_path, _candidate_record('C'))
 
     assert {relative: (tmp_path / relative).read_bytes() for relative in original} == original
+
+
+def test_candidate_configuration_does_not_initialize_a_missing_project(tmp_path):
+    from scripts.core import candidate_test
+    project = tmp_path / 'never-initialized'
+    with pytest.raises(ValueError, match='隔离测试项目不存在'):
+        candidate_test.configure(project, 'RUN-SYNTHETIC', 'synthetic authorization', [],
+                                 current_stage='creative-director')
+    assert not project.exists()
