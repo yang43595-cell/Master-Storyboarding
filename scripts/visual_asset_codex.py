@@ -170,7 +170,7 @@ def run(exe, folder, phase, request, draft, task_package):
                if phase == 'draft' and request.get('kind') in {'物品', '产品'} else '')
     task = ('执行 asset-image-assistant，当前轮次：' + phase + '。' + purpose + brevity +
             ('在本次执行内完成撰写、自查、修正和复核，prompt返回最终全文。' if phase == 'draft' else
-             '本轮仅审查，不改写正文。prompt逐字返回当前编辑稿；发现问题在issues提出具体修改建议，passed=false。用户修改优先于旧稿，不擅自撤销。文字长短、措辞和可选构图改进只写observations建议，不得作为issues阻断；只有明确违反用户要求、关键身份或不可执行的矛盾才判不通过。') +
+             '本轮仅审查，不改写正文。prompt逐字返回当前编辑稿；发现问题在issues提出具体修改建议，passed=false。用户修改优先于旧稿，不擅自撤销。文字长短、措辞和可选构图改进只写observations建议，不得作为issues阻断；明确违反当前用户要求或适用硬规则时判不通过，包括关键身份、真实参考、连续性、语言红线及不可执行的矛盾。') +
             'checks写具体检查结论，不得只写通过。passed针对最终返回的prompt。'
             '只处理下面任务包中的制作项；不生图、不改文件、不执行工具或其他阶段。'
             '实际阅读模板正文、适用规范和动态知识；已附带的参考图必须查看，文件不可读时passed=false。'
@@ -192,7 +192,7 @@ def run(exe, folder, phase, request, draft, task_package):
             '\n待处理草稿：\n' + json.dumps(draft['prompt'] if isinstance(draft, dict) else draft, ensure_ascii=False))
     if request.get('kind') == '物品':
         task = ('制作普通物品四视图。当前物品规则优先：提示词只写物品名称、用户明确外观及必要尺寸排版，少量润色即可。'
-                '默认一张16:9横图，2×2四格：左上正面、右上左侧、左下背面、右下俯视，大小一致、浅色背景。不要增加手部、受力、灯光等细节。'
+                '默认一张16:9横图，2×2四格：左上正面、右上左侧、左下背面、右下俯视，同一物品同一状态，大小一致、浅色背景。不要增加手部、受力、灯光等细节。'
                 '保留指定品牌；无参考也可生成，不要求补图或实际厘米数。'
                 + ('写出简短提示词并自查。' if phase == 'draft' else '仅审查，prompt逐字保留用户原文，不改写。')
                 + '逐项执行review_checks：checks必须使用原检查ID，例如“ASSET-SCOPE：具体名称与需求证据”“ASSET-QC：具体排版证据”，不可用中文标题替换ID。只有明确冲突才passed=false并写issues，其他润色建议写observations，建议可为空。'

@@ -91,31 +91,19 @@ def external_generation_provenance(source, record):
             'reference_images': references, 'image_sha256': record['image_sha256']}
 
 
-def template_prompt(kind, subject, notes, index=0):
+def template_prompt(kind, subject, notes, index=0, *, allow_unreferenced_design=False,
+                    reference_records=(), has_references=True):
     recipe = asset_skill.recipe(kind)
     index = asset_skill.template_step(kind, index=index)
     source = asset_skill.template_source(kind)
     if 'template' not in recipe:
-        return (f'从真实参考图制作「{subject}」的{recipe["steps"][index]}。' + recipe['description'] +
+        basis = '依据本次需求设计' if allow_unreferenced_design else '从真实参考图制作'
+        return (f'{basis}「{subject}」的{recipe["steps"][index]}。' + recipe['description'] +
                 '\n用户补充：' + notes, str(source))
-    block = asset_skill._template_excerpt(str(source), kind, index=index)['content']
-    if kind == '环境':
-        if index == 0:
-            block = block.replace('以图一【SC-XXX 场景母图】为唯一场景参考', '以用户所选照片为场景参考')
-            block += '\n本次45°图是这组场景的第一张母图和文件夹封面。'
-        elif index == 1:
-            block = block.replace('生成【SC-XXX 场景名称】的场景母图，用作后续所有机位的唯一空间锚点。', '以已确认的45°母图为唯一空间锚点，生成同一场景的正面平视图。')
-            block += '\n摄影机：正面自然平视高度；仅改变机位，不重新设计场景。'
-        elif index == 2:
-            block = block.replace('图一【SC-XXX 场景母图】', '图一【已确认的45°母图】与图二【已确认的正面图】')
-        else:
-            block = block.replace('图一【场景母图】、图二【反向平视回望图】和图三【45°斜俯视全景图】', '图一【45°母图】、图二【正面图】和图三【反面图】')
-    fields = {'永久固定项': '参考图中的空间边界、建筑、门窗、通道、家具数量和位置、材质、颜色与光源方向',
-              '状态编号与仅允许变化项': '保持参考图中的时间、光照与场景状态；只改变本步规定的视角'}
-    block = re.sub(r'【([^】]+)】', lambda m: '「' + subject + '」' if 'SC-XXX' in m[1] else fields.get(m[1], '参照输入图片中的' + m[1]), block)
-    prefix = f'从参考照片中提取「{subject}」。以所选照片的可见细节为准，不替换人物身份或重新设计服装与空间。\n'
-    suffix = '\n未展示的结构仅按可见线索保守补全；不把推测当作真实背面证据。'
-    return prefix + block.strip() + suffix + ('\n用户补充：' + notes if notes else ''), str(source)
+    template = asset_skill.executable_template(kind, subject, notes, raw=str(source), index=index,
+        allow_unreferenced_design=allow_unreferenced_design,
+        reference_records=reference_records, has_references=has_references)
+    return template['content'], str(source)
 
 
 def now():
@@ -1031,7 +1019,8 @@ class Library:
             if (source['category'] != '服装三视图' or secondary['category'] != '大头照' or
                     any(a['status'] != 'confirmed' or a.get('trashed_at') for a in [source, secondary])):
                 raise ValueError('人物1×4须选择已确认服装三视图及已确认大头照')
-        prompt, template = template_prompt(p['kind'], subject, str(p.get('notes', ''))[:3000])
+        roles = [{'role': '已确认服装三视图，服装及无头身体来源'}, {'role': '已确认大头照，唯一面部身份来源'}] if secondary else ()
+        prompt, template = template_prompt(p['kind'], subject, str(p.get('notes', ''))[:3000], reference_records=roles)
         job = dict(id=uid(), title=subject[:200], kind=p['kind'], source_id=source['id'],
                    provider=p.get('provider', 'imagegen'), model=p.get('model', '5.0'), created_at=now(), workflow_version=3,
                    notes=str(p.get('notes', ''))[:3000], secondary_id=secondary['id'] if secondary else None,
@@ -1074,6 +1063,11 @@ class Library:
                 refs.append(self.get(prior['selected'], require_file=True))
         if any(a.get('trashed_at') for a in refs):
             raise ValueError('参考图片已在垃圾桶，请先恢复')
+        records = [{k: a.get(k) for k in ('id', 'category', 'status', 'original')} for a in refs]
+        if job['kind'] == '人物1x4':
+            for i, record in enumerate(records):
+                record['role'] = ('已确认服装三视图，服装及无头身体来源' if i == 0 else
+                                  '已确认大头照，唯一面部身份来源' if i == 1 else '用户提供的补充参考，按可见内容采用')
         prompt = f"从参考图提取「{job['title']}」，制作{job['kind']}资产的{step['name']}独立图片。"
         if job['kind'] == '服装':
             prompt += '衣服使用同一中性无头人台展示，纯浅灰背景、均匀柔光，保留款式、剪裁、颜色、材质、图案与配饰关系。各视图比例一致。'
@@ -1084,14 +1078,17 @@ class Library:
             prompt += '\n用户补充：' + job['notes']
         template = ''
         if job.get('workflow_version', 0) >= 2:
-            prompt, template = template_prompt(job['kind'], job['title'], job['notes'], index)
+            prompt, template = template_prompt(job['kind'], job['title'], job['notes'], index,
+                reference_records=records,
+                has_references=bool(refs))
         prompt = step.get('prompt', prompt)
-        return {'job_id': job['id'], 'kind': job['kind'], 'index': index, 'view': step['name'], 'provider': job['provider'],
+        return {'job_id': job['id'], 'subject': job['title'], 'template_notes': job['notes'],
+                'kind': job['kind'], 'index': index, 'view': step['name'], 'provider': job['provider'],
                 'model': job['model'] if job['provider'] == 'dreamina' else 'Codex 内置 ImageGen（宿主管理模型）',
                 'reference_paths': [r['original'] for r in refs], 'prompt': prompt, 'count': 1,
                 'ratio': asset_skill.recipe(job['kind'])['ratio'], 'resolution': '2k', 'output_is_candidate': True,
                 'must_inherit': job.get('must_inherit', ''), 'must_not_inherit': job.get('must_not_inherit', ''),
-                'reference_records': [{k: a.get(k) for k in ('id', 'category', 'status', 'original')} for a in refs],
+                'reference_records': records,
                 'template_source': step.get('template_source', template)}
 
     def save_prompt(self, p):

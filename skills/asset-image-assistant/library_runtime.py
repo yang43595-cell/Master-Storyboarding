@@ -186,6 +186,57 @@ def _template_excerpt(raw, kind, view='', index=None):
             'content': blocks[index].strip(), 'status': 'loaded'}
 
 
+def executable_template(kind, subject='', notes='', *, raw='', view='', index=None,
+                        allow_unreferenced_design=False, reference_records=(), has_references=True):
+    """Render the same bounded template for the seed and the model's task package."""
+    template = _template_excerpt(raw, kind, view, index)
+    if template['status'] != 'loaded':
+        return template
+    block = template['content']
+    # Only these known legacy template sentences are rewritten, before inserting
+    # user names/notes. Never scrub a source name or a numeric product specification.
+    replacements = {
+        '超写实专业人物摄影，真实自然，4K，高细节': '人物摄影，皮肤纹理自然，发丝边缘和五官轮廓清楚',
+        '超写实服装电商棚拍，4K，高细节': '服装电商棚拍，织物纹理、缝线和配件边缘清楚',
+    }
+    for old, new in replacements.items():
+        block = block.replace(old, new)
+    if kind == '环境':
+        step = template_step(kind, view, index)
+        if step == 0:
+            block = block.replace('以图一【SC-XXX 场景母图】为唯一场景参考', '以用户所选照片为场景参考')
+            block += '\n本次45°图是这组场景的第一张母图和文件夹封面。'
+        elif step == 1:
+            block = block.replace('生成【SC-XXX 场景名称】的场景母图，用作后续所有机位的唯一空间锚点。',
+                                  '以图一（已确认的45°母图）为唯一空间锚点，生成同一场景的正面平视图。')
+            block += '\n摄影机：正面自然平视高度；仅改变机位，不重新设计场景。'
+        elif step == 2:
+            block = block.replace('以图一【SC-XXX 场景母图】为唯一场景参考',
+                                  '以图一（已确认的45°母图）和图二（已确认的正面图）为场景参考')
+        else:
+            block = block.replace('图一【场景母图】、图二【反向平视回望图】和图三【45°斜俯视全景图】',
+                                  '图一（45°母图）、图二（正面图）和图三（反面图）')
+    fields = {'永久固定项': '参考图中的空间边界、建筑、门窗、通道、家具数量和位置、材质、颜色与光源方向',
+              '状态编号与仅允许变化项': '保持参考图中的时间、光照与场景状态；只改变本步规定的视角'}
+    basis = '本次需求中的' if allow_unreferenced_design else '输入图片中的'
+    block = re.sub(r'【([^】]+)】', lambda m: '「' + subject + '」' if 'SC-XXX' in m[1]
+                   else fields.get(m[1], '参照' + basis + m[1]), block)
+    if allow_unreferenced_design:
+        prefix = f'依据当前需求设计「{subject}」尚未锁定的外观候选，保留已确认身份与故事约束。'
+        if has_references:
+            prefix += '已有参考只按各自职责继承，不把身份参考中的服装当作本次服装设计。'
+    else:
+        prefix = f'从参考照片中提取「{subject}」。以所选照片的可见细节及指定参考职责为准，不替换已锁定身份或实物外观。'
+    roles = [(i + 1, str(record['role'])) for i, record in enumerate(reference_records) if record.get('role')]
+    if roles:
+        prefix += '\n参考职责：' + '；'.join(f'图{i}：{role}' for i, role in roles) + '。'
+    suffix = ('\n未锁定且不可见的外观仅作待用户审核的设计选择，不冒充参考事实。'
+              if allow_unreferenced_design else '\n未展示的结构仅按可见线索保守补全；不把推测当作真实背面证据。')
+    template['content'] = prefix + '\n' + block.strip() + suffix + ('\n用户补充：' + notes if notes else '')
+    template['content_sha256'] = _digest(template['content'])
+    return template
+
+
 def _writing_rules(ref, content, single_item):
     """Remove named non-writing sections; all other source text passes through verbatim."""
     omitted = {
@@ -235,7 +286,11 @@ def build_task_package(request, refs=None, startup_text='', methods=()):
                    **({'template_path': m.template_path, 'template_sha256': m.template_checksum,
                        'template_content': m.template_content} if m.template_path else {})} for m in methods]}
     if not request.get('rows'):
-        template = _template_excerpt(request.get('template_source', ''), request['kind'], request.get('view', ''), request.get('index') if request.get('mode', 'asset-library') == 'asset-library' else None)
+        template = executable_template(request['kind'], request.get('subject', request.get('requirement', {}).get('name', '')),
+            request.get('template_notes', ''), raw=request.get('template_source', ''), view=request.get('view', ''),
+            index=request.get('index') if request.get('mode', 'asset-library') == 'asset-library' else None,
+            allow_unreferenced_design=request.get('allow_unreferenced_design', False),
+            reference_records=request.get('reference_records', []), has_references=bool(request.get('reference_paths')))
         if request['kind'] == '环境' and template['status'] == 'loaded' and not request.get('reference_paths'):
             raise ValueError('场景派生模板需要参考母图；首张场景请使用分类指南')
         if template['status'] == 'category-guide':

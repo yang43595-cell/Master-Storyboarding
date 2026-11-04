@@ -36,18 +36,46 @@ test('project references outside the collection still appear as inputs',()=>{
  assert.equal(ctx.state.assets.some(a=>a.id==='project-ref'),false);
 });
 
-test('new character final is an automatic preview instead of a manual generation slot',()=>{
- const ctx=setup();ctx.s={kind:'人物1x4',name:'最终人物1×4',status:'waiting',outfit_id:'outfit',generation_enabled:true,dependencies:['head','clothes'],reference_ids:['room']};
- ctx.j={character_workflow:{outfits:[{id:'outfit',route:'build'}]},steps:[ctx.s,{key:'head',status:'confirmed',project_confirmation:{}},{key:'clothes',status:'confirmed',project_confirmation:{}}]};
+function characterFinalContext(route='build'){
+ const ctx=setup();ctx.s={kind:'人物1x4',name:'最终人物1×4',status:'waiting',outfit_id:'outfit',generation_enabled:route==='build',dependencies:route==='build'?['head','clothes']:[],reference_ids:['room']};
+ ctx.j={id:'job',ast_id:'AST-PERSON',title:'人物',character_workflow:{outfits:[{id:'outfit',route}]},steps:[ctx.s,{key:'head',name:'共用大头照',status:'confirmed',project_confirmation:{}},{key:'clothes',name:'服装三视图',status:'confirmed',project_confirmation:{}}]};
  const projects=fs.readFileSync(path.join(__dirname,'../visual_asset_ui/projects.js'),'utf8');
  vm.runInContext(projects.slice(projects.indexOf('function projectGenerationReady('),projects.indexOf('function projectSlotList(')),ctx);
- assert.equal(vm.runInContext('projectGenerationReady(j,s)',ctx),false);
+ ctx.lookupProjectSlot=()=>({key:'job:0',job:ctx.j,step:ctx.s});ctx.workspaceBusy=()=>false;ctx.requirementScene='';
+ ctx.modal=(title,html)=>{ctx.html=html;};
+ vm.runInContext(full.slice(full.indexOf('function openStep('),full.indexOf('function openPrompt(')),ctx);
+ return ctx;
+}
+test('new character final uses the normal AI generation flow after both prerequisites are confirmed',()=>{
+ const ctx=characterFinalContext();
+ assert.equal(vm.runInContext('projectGenerationReady(j,s)',ctx),true);
  const waiting=vm.runInContext('compactStep(j,s)',ctx);
- assert.match(waiting,/disabled/);assert.match(waiting,/确认大头照和服装后自动合成/);
- assert.doesNotMatch(waiting,/参考已放入|\/media\/room\/thumbnail/);
- ctx.s.selected='output';ctx.s.status='confirmed';ctx.s.project_confirmation={method:'已确认大头照与服装三视图自动拼版'};
- const completed=vm.runInContext('compactStep(j,s)',ctx);
- assert.match(completed,/\/media\/output\/thumbnail/);assert.match(completed,/已自动合成/);assert.doesNotMatch(completed,/请看图确认/);
+ assert.doesNotMatch(waiting,/disabled|自动合成|重试合成/);
+ vm.runInContext("openStep('job:0')",ctx);
+ assert.match(ctx.html,/data-w-prompt="job:0" >查看待生成步骤/);
+ ctx.j.steps[2].status='waiting';delete ctx.j.steps[2].project_confirmation;
+ assert.equal(vm.runInContext('projectGenerationReady(j,s)',ctx),false);
+ vm.runInContext("openStep('job:0')",ctx);
+ assert.match(ctx.html,/先确认前面的图片/);assert.match(ctx.html,/data-w-prompt="job:0" disabled/);
+ ctx.j.steps[2].status='confirmed';ctx.j.steps[2].project_confirmation={};
+ ctx.s.selected='output';ctx.s.status='awaiting_review';
+ vm.runInContext("openStep('job:0')",ctx);
+ assert.match(ctx.html,/data-w-confirm="job:0"/);assert.match(ctx.html,/请看图确认/);
+});
+test('confirmed historical character final stays visible with its original confirmation',()=>{
+ const ctx=characterFinalContext();ctx.s.selected='output';ctx.s.status='confirmed';ctx.s.project_confirmation={method:'已确认大头照与服装三视图自动拼版'};
+ const before=JSON.stringify(ctx.s),completed=vm.runInContext('compactStep(j,s)',ctx);
+ assert.match(completed,/\/media\/output\/thumbnail/);assert.match(completed,/已确认/);
+ vm.runInContext("openStep('job:0')",ctx);
+ assert.match(ctx.html,/\/media\/output\/original/);assert.match(ctx.html,/已确认/);
+ assert.doesNotMatch(ctx.html,/data-w-compose|data-w-confirm|data-w-prompt/);
+ assert.equal(JSON.stringify(ctx.s),before);
+});
+test('reused character final keeps image selection and does not offer generation',()=>{
+ const ctx=characterFinalContext('reuse');
+ assert.equal(vm.runInContext('projectGenerationReady(j,s)',ctx),false);
+ vm.runInContext("openStep('job:0')",ctx);
+ assert.match(ctx.html,/data-w-pick="job:0"/);assert.doesNotMatch(ctx.html,/data-w-prompt|data-w-reference-upload|data-w-compose/);
 });
 
 test('step reference upload reaches its handler without selecting a finished asset',async()=>{

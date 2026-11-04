@@ -4,72 +4,28 @@ import json
 import re
 from datetime import datetime, timezone
 from uuid import uuid4
-from PIL import Image, ImageOps
 from core.character_assets import uses_wardrobe
-from core.artifacts import digest
-from pathlib import Path
 
 
-def automatic_final(job, step):
-    return step.get('kind') == '人物1x4' and any(
-        v['id'] == step.get('outfit_id') and v['route'] == 'build'
-        for v in job.get('character_workflow', {}).get('outfits', []))
-
-
-def compose_character_finals(service, project, job):
-    """Derive identity boards from project-confirmed inputs, without another model call."""
+def enable_character_ai_finals(job):
+    """Unblock pending legacy boards; preserve confirmed outputs and active runs."""
+    build_outfits = {v['id'] for v in job.get('character_workflow', {}).get('outfits', []) if v['route'] == 'build'}
+    changed = False
     for step in job['steps']:
-        if not automatic_final(job, step):
+        if step.get('kind') != '人物1x4' or step.get('outfit_id') not in build_outfits:
             continue
-        step['generation_enabled'] = False
-        if step['status'] == 'confirmed' or step['status'] in {'generating', 'submitting', 'submitted', 'querying'}:
+        if step['status'] in {'confirmed', 'generating', 'submitting', 'submitted', 'querying'} or step.get('project_confirmation'):
             continue
-        dependencies = [next(s for s in job['steps'] if s['key'] == key) for key in step['dependencies']]
-        if len(dependencies) != 2 or not all(s['status'] == 'confirmed' and s.get('project_confirmation') for s in dependencies):
-            continue
-        try:
-            inputs = service.dependencies(job, step)
-            head = next(a for a in inputs if a['category'] == '大头照')
-            clothes = next(a for a in inputs if a['category'] == '服装三视图')
-            source_receipts = [{'asset_id': s['selected'], 'output_key': s['key'],
-                                'confirmation_id': s['project_confirmation']['id']} for s in dependencies]
-            board = Image.new('RGB', (2048, 1152), 'white')
-            with Image.open(head['original']) as image:
-                panels = [ImageOps.exif_transpose(image).convert('RGBA')]
-            with Image.open(clothes['original']) as image:
-                image = ImageOps.exif_transpose(image).convert('RGBA')
-                panels.extend(image.crop((round(i * image.width / 3), 0, round((i + 1) * image.width / 3), image.height)) for i in range(3))
-            for i, panel in enumerate(panels):
-                panel = ImageOps.contain(panel, (512, 1152), Image.Resampling.LANCZOS)
-                board.paste(panel, (i * 512 + (512 - panel.width) // 2, (1152 - panel.height) // 2), panel)
-            path = service.lib.root / 'requests' / job['id'] / step['key'] / (uuid4().hex + '.png')
-            path.parent.mkdir(parents=True, exist_ok=True)
-            board.save(path)
-            check = service.skill.technical_check(path, '16:9')
-            if not check['passed']:
-                raise ValueError(check['message'])
-            asset, _ = service.lib.import_file(path, project=project['name'], role='母版', category='人物1x4',
-                provenance={'kind': 'character_composite', 'job_id': job['id'], 'project_id': project['id'],
-                            'ast_id': job['ast_id'], 'output_id': step['key'], 'state': step['state'],
-                            'source_narrative': project['source'], 'source_confirmations': source_receipts})
-            receipt = {'id': uuid4().hex[:16], 'at': datetime.now(timezone.utc).isoformat(),
-                       'asset_id': asset['id'], 'source': project['source'], 'technical_qc': check,
-                       'image_sha256': digest(Path(asset['original'])),
-                       'method': '已确认大头照与服装三视图自动拼版', 'source_confirmations': source_receipts}
-            asset.update(name=job['title'] + '_' + step['name'] + '_' + asset['id'][:6], group=job['title'],
-                         status='confirmed', confirmation=receipt, technical_check=check, backup={'status': 'pending'})
-            asset.setdefault('project_confirmations', []).append({'project_id': project['id'], 'ast_id': job['ast_id'], **receipt})
-            service.lib.save(asset)
-            service.lib.auto_group_character(asset['id'], f'project:{project["id"]}:{job["ast_id"]}', job['title'])
-            service.copy_to_project(project, service.lib.get(asset['id']))
-            if step.get('outputs'):
-                step.setdefault('history', []).append({k: copy.deepcopy(step.get(k)) for k in ('selected', 'outputs', 'project_confirmation', 'prompt', 'audit')})
-            step.update(selected=asset['id'], outputs=[asset['id']], status='confirmed', project_confirmation=receipt,
-                        ratio='16:9', message='', composition_error=False)
-            service.lib.backup_wakeup.set()
-        except Exception as exc:
-            step.update(composition_error=True, message='人物1×4自动合成未完成：' + str(exc)[:400])
-    service.lib.save(job, 'jobs')
+        if step.get('generation_enabled') is not True:
+            step['generation_enabled'] = True
+            changed = True
+        if 'composition_error' in step:
+            step.pop('composition_error')
+            changed = True
+        if step.get('message', '').startswith('人物1×4自动合成未完成：'):
+            step.pop('message')
+            changed = True
+    return changed
 
 
 def upstream_outfits(req):
@@ -249,7 +205,8 @@ def character_route(service, payload):
             for s in job['steps']:
                 if s['key'] == v['id'] + '_final':
                     s['dependencies'] = ['shared_head', v['id'] + '_wardrobe'] if v['route'] == 'build' else []
-                    s['generation_enabled'] = False
+                    if s['status'] != 'confirmed' and not s.get('project_confirmation'):
+                        s['generation_enabled'] = v['route'] == 'build'
                 if s['key'] == v['id'] + '_wardrobe':
                     s['required'] = v['route'] == 'build'
         for s in job['steps']:
@@ -261,5 +218,4 @@ def character_route(service, payload):
         service.invalidate_export(p, '人物制作路径或服装版本已调整，请重新核对交接')
         p.pop('export_pending', None)
         service.save(p)
-        compose_character_finals(service, p, job)
         return service.detail(p['id'])

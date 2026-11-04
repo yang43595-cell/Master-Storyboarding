@@ -16,7 +16,7 @@ from core.artifacts import artifact_is_confirmed, digest, verify_image_confirmat
 from visual_asset_choices import image_work_items, image_decision
 import visual_asset_product_usage as product_usage
 from visual_asset_characters import (character_route, prepare_character, choose_character_route, upstream_outfits,
-                                     automatic_final, compose_character_finals)
+                                     enable_character_ai_finals)
 from core.character_assets import uses_wardrobe, production_kinds, character_type
 from datetime import datetime, timezone
 from pathlib import Path
@@ -284,7 +284,10 @@ class Projects:
         except Exception as exc:
             p['source_error'] = str(exc)
         for row in p['rows']:
-            row['job'] = self.lib.get(row['job_id'], 'jobs') if row.get('job_id') else None
+            with self.lib.lock:
+                row['job'] = self.lib.get(row['job_id'], 'jobs') if row.get('job_id') else None
+                if row['job'] and enable_character_ai_finals(row['job']):
+                    self.lib.save(row['job'], 'jobs')
             row['uses_wardrobe'] = self.row_uses_wardrobe(row)
             if row['requirement']['category'] == 'CHARACTER':
                 row['character_type'] = character_type(row['requirement'])
@@ -650,6 +653,8 @@ class Projects:
             raise ValueError('此制作项属于旧版需求，请使用当前需求表')
         if not 0 <= index < len(job['steps']):
             raise ValueError('无效制作项')
+        if enable_character_ai_finals(job):
+            self.lib.save(job, 'jobs')
         return p, row, job['steps'][index]
 
     def dependency_basis(self, job, step):
@@ -813,8 +818,6 @@ class Projects:
 
     def request(self, job, index):
         p, row, step = self.context(job, index)
-        if automatic_final(job, step):
-            raise ValueError('最终人物1×4由已确认大头照和服装三视图自动合成，无需模型生成')
         if image_decision(row['requirement']) != '需要制作':
             raise ValueError('此需求未列为需要制作；复用项只选图，需新制时先更新需求判断')
         if step.get('required') is False or step.get('generation_enabled') is False:
@@ -841,18 +844,6 @@ class Projects:
                     raise ValueError('人物1×4需要已确认服装三视图和大头照，参考顺序为服装、脸')
                 ordered.append(asset)
             refs = ordered
-        recipe = self.skill.recipe(step['kind'])
-        template = recipe.get('template') or '依据分类指南编写：' + recipe['guide']
-        seed = '依据当前 AST 和分类指南，制作' + step['purpose'] + '；状态：' + step['state'] + '；视角：' + step['view']
-        if step['kind'] == '环境' and (not refs or step['view'] not in {'45°', '正面', '反面', '俯视'}
-                or len(step.get('dependencies', [])) != {'45°': 0, '正面': 1, '反面': 2, '俯视': 3}.get(step['view'], -1)):
-            template = str(ROOT / 'skills/asset-image-assistant/references' / recipe['guide'])
-        elif 'template' in recipe:
-            # Reuse the same knowledge-base templates, without imposing unrelated recipes.
-            view_index = {'45°': 0, '正面': 1, '反面': 2, '俯视': 3}.get(step['view'], 0) if step['kind'] == '环境' else 0
-            seed, template = self.lib.project_template(step['kind'], job['title'], seed, view_index)
-        if step['kind'] == '环境' and refs:
-            seed += '；输入参考可能是俯视、平视或其他视角，不代表目标视角；保留已展示的布局与固定陈设，按本步骤目标视角制作，未展示部分仅作待确认的设计补全。'
         reference_records = []
         prerequisite_keys = set(step.get('dependencies', []))
         if job.get('character_workflow') and step['kind'] == '服装':
@@ -868,9 +859,26 @@ class Projects:
                 'role': ('已确认大头照，唯一面部身份来源' if prior and prior['kind'] == '大头照' else
                          '已确认服装三视图，服装及无头身体来源' if prior and prior['kind'] == '服装' else
                          '本项目已确认前置图片' if prior else '用户提供的生成参考，按可见内容采用')})
+        allow_design = (row['requirement']['category'] == 'PROP' or step['kind'] == '角色外观'
+                        or (row['requirement']['category'] == 'CHARACTER' and step['kind'] in {'人物单图', '大头照', '服装'}))
+        recipe = self.skill.recipe(step['kind'])
+        template = recipe.get('template') or '依据分类指南编写：' + recipe['guide']
+        template_notes = '依据当前 AST 和分类指南，制作' + step['purpose'] + '；状态：' + step['state'] + '；视角：' + step['view']
+        if step['kind'] == '环境' and refs:
+            template_notes += '；输入参考可能是俯视、平视或其他视角，不代表目标视角；保留已展示的布局与固定陈设，按本步骤目标视角制作，未展示部分仅作待确认的设计补全。'
+        seed = template_notes
+        if step['kind'] == '环境' and (not refs or step['view'] not in {'45°', '正面', '反面', '俯视'}
+                or len(step.get('dependencies', [])) != {'45°': 0, '正面': 1, '反面': 2, '俯视': 3}.get(step['view'], -1)):
+            template = str(ROOT / 'skills/asset-image-assistant/references' / recipe['guide'])
+        elif 'template' in recipe:
+            # The seed and task-package template share the same executable rendering.
+            view_index = {'45°': 0, '正面': 1, '反面': 2, '俯视': 3}.get(step['view'], 0) if step['kind'] == '环境' else 0
+            seed, template = self.lib.project_template(step['kind'], job['title'], template_notes, view_index,
+                allow_unreferenced_design=allow_design, reference_records=reference_records, has_references=bool(refs))
         return {'mode': 'project', 'project_path': p['path'], 'project_id': p['id'], 'ast_id': job['ast_id'],
                 'source_narrative': p['source'], 'narrative': prompt_context(p['narrative'], [job['ast_id']]), 'requirement': row['requirement'],
-                'job_id': job['id'], 'index': index, 'kind': step['kind'], 'view': step['view'], 'purpose': step['purpose'],
+                'job_id': job['id'], 'subject': job['title'], 'template_notes': template_notes,
+                'index': index, 'kind': step['kind'], 'view': step['view'], 'purpose': step['purpose'],
                 'state': step['state'], 'character_outfit': next((v for v in job.get('character_workflow', {}).get('outfits', []) if v['id'] == step.get('outfit_id')), None), 'ratio': step['ratio'], 'provider': job['provider'],
                 'model': job['model'] if job['provider'] == 'dreamina' else 'Codex 内置 ImageGen（宿主管理模型）',
                 'prompt': step.get('prompt', seed), 'reference_paths': [str(self.copy_to_project(p, a)) for a in refs],
@@ -879,8 +887,7 @@ class Projects:
                 'must_inherit': row['requirement']['identity_constraints'], 'must_not_inherit': step.get('must_not_inherit', []),
                 'codex_model': 'gpt-6-luna',
                 'generation_direction': step.get('generation_direction', ''),
-                'allow_unreferenced_design': (row['requirement']['category'] == 'PROP' or step['kind'] == '角色外观'
-                    or (row['requirement']['category'] == 'CHARACTER' and step['kind'] in {'人物单图', '大头照', '服装'})),
+                'allow_unreferenced_design': allow_design,
                 'design_scope': '新制作所需的未锁定外观可作为设计候选；保留已确认身份与故事约束，明确要求还原真实外貌时仍须参考。',
                 'gap_resolution': job.get('resolved_blockers'),
                 **reference_evidence(p['path'], [row['requirement']], refs)}
@@ -889,8 +896,6 @@ class Projects:
         with self.lib.lock:
             job = self.lib.get(payload['job_id'], 'jobs')
             p, row, step = self.context(job, int(payload['index']), payload.get('project_id'))
-            if automatic_final(job, step):
-                raise ValueError('此人物1×4由已确认大头照和服装自动合成，无需另选成品')
             if step['status'] in BUSY or step.get('audit', {}).get('status') in {'drafting', 'reviewing'}:
                 raise ValueError('制作项正在处理，完成后再选择')
             if step.get('required') is False:
@@ -968,7 +973,6 @@ class Projects:
                 raise ValueError('请明确选择并确认本制作项的一张图片')
             if step.get('project_confirmation') or step['status'] == 'confirmed':
                 if step.get('project_confirmation') and step['status'] == 'confirmed' and step.get('selected') == ident:
-                    compose_character_finals(self, p, job)
                     return self.detail(p['id'])
                 raise ValueError('已确认图片保留原版本；请先点击重新选图 / 返工，再确认其他图片')
             if step['status'] != 'awaiting_review':
@@ -996,18 +1000,13 @@ class Projects:
             self.lib.save(asset)
             self.lib.save(job, 'jobs')
             self.lib.backup_wakeup.set()
-            compose_character_finals(self, p, job)
             return self.detail(p['id'])
 
     def compose_character(self, payload):
         with self.lib.lock:
             job = self.lib.get(payload['job_id'], 'jobs')
-            p, _, step = self.context(job, int(payload['index']), payload.get('project_id'))
-            if not automatic_final(job, step):
-                raise ValueError('此步骤不是人物自动合成项')
-            self.dependencies(job, step)
-            compose_character_finals(self, p, job)
-            return self.detail(p['id'])
+            self.context(job, int(payload['index']), payload.get('project_id'))
+            raise ValueError('人物1×4已改为AI生成；请确认脸与服装后准备提示词，另行授权生成并确认成图')
 
     def reopen(self, payload):
         with self.lib.lock:
@@ -1046,8 +1045,6 @@ class Projects:
                     raise ValueError('不能混用其他项目任务')
                 index = int(t['index'])
                 step = job['steps'][index]
-                if automatic_final(job, step):
-                    raise ValueError('最终人物1×4由已确认来源自动合成，不加入模型生成批次')
                 if step['status'] != 'waiting' or step.get('audit', {}).get('status') in {'drafting', 'reviewing'}:
                     raise ValueError('只可提交待制作且未在处理的项目')
                 direction = t.get('generation_direction', step.get('generation_direction', ''))
