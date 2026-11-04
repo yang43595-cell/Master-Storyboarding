@@ -167,7 +167,9 @@ for number in range(8):
             assert proc.stdout.readline().strip() == 'ready'
         start.touch()
         for proc in processes:
-            out, err = proc.communicate(timeout=10)
+            # Leave startup/exit overhead beyond the production lock's 10s timeout,
+            # so contention reports its real error instead of racing the watchdog.
+            out, err = proc.communicate(timeout=30)
             assert proc.returncode == 0, (out, err)
     finally:
         for proc in processes:
