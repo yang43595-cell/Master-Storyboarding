@@ -102,12 +102,13 @@ def test_escaped_pipe_and_legacy_speaker_prefix(tmp_path):
 
 @pytest.mark.parametrize('mutation', ['speaker', 'order', 'delete'])
 def test_asset_receiver_uses_same_dialogue_gate(tmp_path, mutation):
-    from test_visual_asset_projects import fixture, pmod
+    from test_visual_asset_projects import fixture, pmod, update_narrative_checksum
     _, project, _ = fixture(tmp_path)
     root = Path(project['path'])
     n = two_lines(root)
     n['project_id'] = '验收项目'
     pmod.write(root / 'narrative.json', n)
+    update_narrative_checksum(root)
     assert len(pmod.source_project(str(root))[2]['dialogues']) == 2
     if mutation == 'speaker': n['dialogues'][0]['speaker_id'] = 'CHR-WRONG'
     if mutation == 'order': n['dialogues'].reverse()

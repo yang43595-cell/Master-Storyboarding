@@ -17,6 +17,17 @@ description: 在叙事包确认后按已登记 AST 需求制作和核对角色�
 
 读取 `PROJECT_RULES.md`、`../_shared/knowledge-access.md`、当前 `stage_startup.md`、`../_shared/draft-lifecycle.md` 等六项共享红线（含 `../_shared/prompt-language.md`）、`modules/asset-method.md`、`references/00-asset-production-workflow.md`、`references/00a-asset-complexity-routing-guide.md`、`references/05-asset-manifest-handoff-guide.md` 与 `../../schemas/visual-asset-manifest.schema.json`。只有当前 AST 类别需要时才读取 `references/01-style-master-guide.md`（含**整片色彩统一色卡工作流**）、`references/02-character-master-guide.md`、`references/03-scene-master-guide.md` 或 `references/04-prop-product-master-guide.md` 的对应部分；**产出前必读** `../storyboard-director/references/image-continuity-hard-rules.md`（背景母版 + 多角度参考组，强制非"涉风险才读"）；涉及灯光风险时才读取 `../storyboard-planner/references/lighting-prompt-standard.md` 的对应小节；写本 Skill 提示词时必读 `../voiceover-to-video-script/references/prompt-language-hard-rules.md` 并以其为准；**产出前先 `ensure-prepared` 并命中 `modules/asset-method.md` 开头"本 Skill 产出须命中的规范"清单**。这些条件引用只提供资产实现约束，不扩大本 Skill 职责，也不加载其他阶段方法。
 
+## 本轮执行 SOP
+
+按顺序完成适用步骤；核对对象和结论写回本模式现有制作项、候选/审核备注与清单，不另建执行表。只有本轮实际执行并有对应结果的步骤才可报完成。
+
+1. **锁定入口与范围。** 项目模式核对有效叙事包、AST 和已登记用户调整；独立库核对本次库需求，不创建项目 AST。普通对话实际读方法、登记并通过 `ensure-prepared`；两种 Web 入口实际读本次 task-package，不再 prepare。缺真实输入或规范只停止受影响项，返回本入口补齐。
+2. **盘点并实看参考。** 定位准确 AST/output 或库内文件，核对确认依据、实际图与当前用途，记录覆盖及不足；足够时复用，转第 5 步，不为走流程生成。无需独立图、取消项与待定项不进入制作；需求矛盾返回上游。
+3. **确定实现并自查提示词。** 按类别及明确要求选择单图、身份板、场景视角或必要状态，核对继承/禁止项、实际参考、提示词与输出计划。生成前核实当前提示词、工具、具体模型及上传/额度的适用授权；已明确的有效授权不重复询问，缺授权停在待执行候选。
+4. **产出并做技术检查。** 在授权范围内生成/编辑或接入真实导入文件，保留准确路径、来源、参考、实际尺寸/格式及结果；失败回到相应参考或制作步骤，不自动重提、不覆盖确认图。Web 本地人物拼装沿已确认来源的现有例外执行。
+5. **实看本轮准确交付图。** 按 `asset-method` 对照当前明确要求、类别指南与原参考，记录 output/文件版本、具体可见事实、结论及未满足处理；技术通过和提示词审核不能替代此步。失败或无法判断的项保留待修/未验证，回第 2 至 4 步修受影响内容，不报合格或整项完成。
+6. **交审、确认与收尾。** 先交文件夹、准确文件名、AST/用途及视觉判断事项；用户确认准确文件后才按原入口登记确认，核对最终清单与实际导出选择并执行旧稿归档收尾。仅完成候选时说明待确认范围；库内确认不代替项目确认，已确认来源本地拼装不新增一次独立确认。不自动进入下一 Skill。
+
 ## 专业方法适用条件
 
 人物面容替换或年龄版本复用时，执行[身份替换与年龄版本检查](modules/asset-method.md#身份替换与年龄版本)。它检查参考职责，不自行扩大图片需求。

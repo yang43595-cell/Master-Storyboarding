@@ -110,6 +110,23 @@ def test_scene_identity_and_same_scene_segments(tmp_path):
 
 def test_local_cli_and_formal_adoption_chain(tmp_path):
     n, p = packages(tmp_path)
+    # This test formally adopts a newly authored synthetic narrative. Historical
+    # read-only fixtures above intentionally keep their original evidence shape.
+    evidence = {'sources': [], 'dialogues': [{
+        'dialogue_id': row['dialogue_id'], 'speaker_id': row['speaker_id'],
+        'speaker_status': 'verified', 'text': row['text'], 'source_ids': [],
+        'origin': {'kind': 'authored_addition', 'reference': 'synthetic original story request',
+                   'scope': 'synthetic formal adoption test', 'author': 'synthetic user',
+                   'purpose': 'exercise formal narrative and scoped storyboard checks', 'revision': n['revision']},
+        'verification': {'scope': 'dialogue', 'dialogue_id': row['dialogue_id'],
+                         'speaker_id': row['speaker_id'], 'text': row['text'],
+                         'method': 'user_confirmation', 'reference': 'synthetic exact text and speaker approval',
+                         'reviewer': 'synthetic user'},
+    } for row in n['dialogues']]}
+    evidence_path = tmp_path / 'synthetic-dialogue-review.json'
+    write_json(evidence_path, evidence)
+    n.update(dialogue_evidence_path=evidence_path.name,
+             dialogue_evidence_sha256=hashlib.sha256(evidence_path.read_bytes()).hexdigest())
     write_project_state(tmp_path, new_project_state(current_stage='storyboard-planner'))
     write_json(tmp_path / 'N.json', n)
     write_json(tmp_path / 'B.json', p)

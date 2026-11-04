@@ -423,12 +423,22 @@ def _candidate_text_source(narrative, root, evidence_id, paragraph_ids, storyboa
 
 def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, project_root: Path | None = None, candidate_test: bool = False,
                            candidate_paragraph_ids: list[str] | None = None,
-                           candidate_source_evidence: str | None = None) -> dict | None:
+                           candidate_source_evidence: str | None = None,
+                           require_dialogue_evidence: bool = False) -> dict | None:
+    """Validate sources, with an explicit stronger production boundary.
+
+    Read-only inspection retains historical unbound packages. Formal adoption
+    and revision submission must require dialogue evidence regardless of a
+    package's claimed age, status or human_readable_path. The existing explicit
+    isolated candidate routes remain blocked from production and keep their
+    declared unresolved-evidence handling.
+    """
     # Explicit read-only route, never inferred from missing coverage or open questions.
     local_candidate = candidate_paragraph_ids is not None
     if local_candidate and (storyboard is None or storyboard.get('status') != 'candidate'):
         raise ValueError('局部来源检查仅接受明确范围的 candidate 导演包')
     test_report = None
+    source_report = None
     if candidate_test:
         from .candidate_test import context, result_metadata
         if project_root is None or not context(project_root):
@@ -439,6 +449,9 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
     require_schema(narrative, 'narrative-package.schema.json', label='编导包')
     if narrative.get('schema_version') != '2.0':
         raise ValueError('新段落引用要求编导包 2.0；旧事件包须按原稿重新整理，不能自动换编号')
+    if (require_dialogue_evidence and not candidate_test and narrative['dialogues']
+            and not narrative.get('dialogue_evidence_path')):
+        raise ValueError('正式采用或返修提交的含对白叙事包必须绑定 dialogue_evidence_path/sha256；历史只读兼容不能用于新采用')
     if candidate_source_evidence is not None:
         if test_report is None:
             raise ValueError('有限正文来源仅用于显式隔离 candidate_test，不是正式采用入口')
@@ -477,6 +490,16 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
             test_report['unresolved_dialogue_ids'] = report['unresolved_ids']
         if [(r['dialogue_id'], r.get('speaker_id'), r['text']) for r in evidence['dialogues']] != [(r['dialogue_id'], r['speaker_id'], r['text']) for r in narrative['dialogues']]:
             raise ValueError('叙事包与对白审核记录的 ID、说话人、原文或顺序不一致')
+    elif test_report is not None and candidate_source_evidence is None:
+        test_report['dialogue_evidence_status'] = 'not_bound_unverified'
+        test_report['unresolved_dialogue_ids'] = [r['dialogue_id'] for r in narrative['dialogues']]
+    elif narrative['dialogues'] and not narrative.get('dialogue_evidence_path'):
+        source_report = {'verification': 'source_consistency_only',
+                         'dialogue_evidence_status': 'not_bound_unverified',
+                         'unresolved_dialogue_ids': [r['dialogue_id'] for r in narrative['dialogues']],
+                         'source_fidelity_checked': False, 'human_listening_verified': False,
+                         'formal_adoption_allowed': False,
+                         'limits': '历史兼容只检查正文与引用一致；未绑定对白证据，未证明原片覆盖、听核或身份，不可据此新采用；不改变已有用户批准及其范围。'}
     paragraphs = narrative['story_paragraphs']
     by_id = {p['paragraph_id']: p['text'] for p in paragraphs}
     if len(by_id) != len(paragraphs):
@@ -501,7 +524,7 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
         if not set(requirement['source_paragraph_ids']).issubset(by_id):
             raise ValueError('资产引用不存在的故事段落：' + requirement['asset_id'])
     if storyboard is None:
-        return test_report
+        return test_report or source_report
     require_schema(storyboard, 'storyboard-package.schema.json', label='导演包')
     from .quality_evidence import scene_state_requirements
     scene_state_requirements(storyboard)
@@ -641,7 +664,7 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
         adjacent = {ordered_ids[j] for i, key in enumerate(ordered_ids) if key in checked_ids
                     for j in (i - 1, i + 1) if 0 <= j < len(ordered_ids)
                     and ordered_ids[j] not in checked_ids}
-        return {**(test_report or {}),
+        return {**(test_report or source_report or {}),
                 'source_narrative_revision': narrative['revision'],
                 'source_narrative_canonical_sha256': hashlib.sha256(json.dumps(narrative,
                     ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest(), 'validation_scope': 'candidate_paragraphs',
@@ -652,7 +675,7 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
                 'cross_boundary_semantics_checked': False,
                 'whole_package_validated': False, 'formal_adoption_allowed': False,
                 'notice': '仅本轮已写段落的结构与来源自查；跨段衔接须人工核对，未写部分未检查，不构成整稿通过或用户确认。'}
-    return test_report
+    return test_report or source_report
 
 
 def validate_asset_decisions(path: Path) -> None:

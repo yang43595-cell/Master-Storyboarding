@@ -14,7 +14,7 @@ if __package__ == 'scripts.blender_previs':
     from ..core.candidate_test import require_production
     from ..core.revision_control import guard_action
     from ..core.asset_refs import require_images, scope_assets
-    from ..core.io import read_json, sha256_file, utc_now, write_json, write_text
+    from ..core.io import project_locked, read_json, sha256_file, utc_now, write_json, write_text
     from ..core.project_state import load_project_state, render_project_state_markdown
     from .output_contract import png_size
 else:
@@ -22,7 +22,7 @@ else:
     from core.candidate_test import require_production
     from core.revision_control import guard_action
     from core.asset_refs import require_images, scope_assets
-    from core.io import read_json, sha256_file, utc_now, write_json, write_text
+    from core.io import project_locked, read_json, sha256_file, utc_now, write_json, write_text
     from core.project_state import load_project_state, render_project_state_markdown
     from blender_previs.output_contract import png_size
 
@@ -160,6 +160,7 @@ def backup_metadata(root: Path) -> None:
             shutil.copy2(source, target)
 
 
+@project_locked
 def save_state_additions(root: Path, artifact_id: str, receipt: dict | None = None) -> None:
     path = root / '00_项目管理/project_state.json'
     # Keep unrelated fields verbatim, including legacy fields, and do not advance a stage.
@@ -190,6 +191,7 @@ def appearance_inputs(root: Path, requests: list[str]) -> list[dict]:
     return result
 
 
+@project_locked
 def register_scene(root: Path, scene_id: str, revision: str, blend: Path,
                    evidence: Path, references: list[str], recipe: Path | None = None) -> dict:
     identifier(scene_id); identifier(revision)
@@ -285,6 +287,7 @@ def render_runtime(spec: dict, evidence: dict, files: list[dict], shot_id: str) 
     return dict(runtime_location='cloud', blender_version=version)
 
 
+@project_locked
 def register_reference(root: Path, input_path: Path, spec_path: Path) -> dict:
     binding = read_json(input_path)
     check_binding(root, binding)
@@ -388,9 +391,8 @@ def confirm_reference(root: Path, artifact_id: str, approval_ref: str, user_quot
     if not approval_ref.strip() or not user_quote.strip():
         raise ProjectPrevisError('须填实际用户确认引用和原话；技术通过不等于用户确认')
     root = root.resolve()
-    require_production(root)
-    revision_control.recover_transactions(root)
-    with revision_control.file_lock(root / revision_control.LOCK_RELATIVE):
+    with revision_control.project_lock(root):
+        require_production(root)
         entry, data = reference_data(root, artifact_id)
         guard_action(root, logical_ids=[entry['logical_id']])
         receipt_path = project_file(root, entry['path_or_url']).parent / 'user-confirmation.json'

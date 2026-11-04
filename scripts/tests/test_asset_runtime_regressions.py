@@ -65,6 +65,104 @@ class AssetRuntimeRegressions(unittest.TestCase):
             self.confirm(index)
         library_module.visual_asset_backup.run(self.lib, library_module.management)
 
+    def test_failed_asset_registration_is_not_visible_to_downstream_images(self):
+        from core.asset_refs import confirmed_images, require_images
+        self.confirmed_scene()
+        with patch.object(project_module, 'register_workspace_artifact',
+                          side_effect=OSError('synthetic registration failure')):
+            with self.assertRaisesRegex(OSError, 'registration failure'):
+                self.service.export({'project_id': self.project['id'], 'confirm': True})
+        self.assertTrue(self.service.get(self.project['id']).get('export_pending'))
+        self.assertEqual(confirmed_images(self.root), {})
+        self.assertFalse(require_images(self.root, ['AST-ROOM@view0'])[0])
+        result = self.service.export({'project_id': self.project['id'], 'confirm': True})
+        self.assertEqual(result['count'], 4)
+        self.assertTrue(require_images(self.root, ['AST-ROOM@view0'])[0])
+
+    def test_completed_export_recovers_cache_without_rewriting_confirmed_files(self):
+        from core.artifacts import artifact_is_confirmed
+        self.confirmed_scene()
+        original_save = self.service.save
+        def fail_final_cache_save(project):
+            if project.get('export'):
+                raise OSError('synthetic final cache failure')
+            return original_save(project)
+        with patch.object(self.service, 'save', side_effect=fail_final_cache_save):
+            with self.assertRaisesRegex(OSError, 'final cache failure'):
+                self.service.export({'project_id': self.project['id'], 'confirm': True})
+        entry = next(item for item in load_manifest(self.root)['artifacts']
+                     if item.get('logical_id') == 'visual.asset.manifest')
+        self.assertTrue(artifact_is_confirmed(entry, load_project_state(self.root), self.root))
+        manifest_path, receipt_path = Path(entry['path_or_url']), Path(entry['confirmation_ref'])
+        original_manifest, original_receipt = manifest_path.read_bytes(), receipt_path.read_bytes()
+        self.assertFalse(self.service.get(self.project['id']).get('export'))
+        # A corrupt persisted receipt is an error, never permission to rebuild it.
+        project_module.write(receipt_path, {'id': 'damaged-receipt', 'items': None})
+        damaged_receipt = receipt_path.read_bytes()
+        with self.assertRaisesRegex(ValueError, '确认记录'):
+            self.service.export({'project_id': self.project['id'], 'confirm': True})
+        self.assertEqual(receipt_path.read_bytes(), damaged_receipt)
+        receipt_path.write_bytes(original_receipt)
+        # A legal library confirmation refreshes backup metadata, not image bytes.
+        self.lib.confirm(self.asset['id'])
+        self.assertEqual(library_module.visual_asset_backup.run(
+            self.lib, library_module.management)['status'], 'saved')
+        result = self.service.export({'project_id': self.project['id'], 'confirm': True})
+        self.assertEqual(result['artifact_id'], entry['artifact_id'])
+        self.assertEqual(manifest_path.read_bytes(), original_manifest)
+        self.assertEqual(receipt_path.read_bytes(), original_receipt)
+        self.assertTrue(Path(result['handoff']).is_file())
+        self.assertEqual(self.service.export({'project_id': self.project['id'], 'confirm': True}), result)
+
+    def test_candidate_export_retry_preserves_saved_confirmation_snapshot(self):
+        from core.asset_refs import confirmed_images
+        self.confirmed_scene()
+        with patch.object(project_module, 'promote_candidate',
+                          side_effect=OSError('synthetic promotion failure')):
+            with self.assertRaisesRegex(OSError, 'promotion failure'):
+                self.service.export({'project_id': self.project['id'], 'confirm': True})
+        entry = next(item for item in load_manifest(self.root)['artifacts']
+                     if item.get('logical_id') == 'visual.asset.manifest')
+        self.assertEqual(entry['status'], 'candidate')
+        self.assertEqual(confirmed_images(self.root), {})
+        manifest_path, receipt_path = Path(entry['path_or_url']), Path(entry['confirmation_ref'])
+        original_manifest, original_receipt = manifest_path.read_bytes(), receipt_path.read_bytes()
+        self.lib.confirm(self.asset['id'])
+        library_module.visual_asset_backup.run(self.lib, library_module.management)
+        self.service.export({'project_id': self.project['id'], 'confirm': True})
+        self.assertEqual(manifest_path.read_bytes(), original_manifest)
+        self.assertEqual(receipt_path.read_bytes(), original_receipt)
+        self.assertEqual(len(confirmed_images(self.root)['AST-ROOM']['outputs']), 4)
+
+    def test_current_pending_export_completes_missing_state_without_rewriting_files(self):
+        from core.artifacts import artifact_is_confirmed
+        self.confirmed_scene()
+        with patch.object(project_module, 'write_project_state',
+                          side_effect=OSError('synthetic project state failure')):
+            with self.assertRaisesRegex(OSError, 'project state failure'):
+                self.service.export({'project_id': self.project['id'], 'confirm': True})
+        entry = next(item for item in load_manifest(self.root)['artifacts']
+                     if item.get('logical_id') == 'visual.asset.manifest')
+        self.assertEqual(entry['status'], 'current')
+        self.assertFalse(artifact_is_confirmed(entry, load_project_state(self.root), self.root))
+        manifest_path, receipt_path = Path(entry['path_or_url']), Path(entry['confirmation_ref'])
+        original_manifest, original_receipt = manifest_path.read_bytes(), receipt_path.read_bytes()
+        self.lib.confirm(self.asset['id'])
+        library_module.visual_asset_backup.run(self.lib, library_module.management)
+        result = self.service.export({'project_id': self.project['id'], 'confirm': True})
+        self.assertEqual(result['artifact_id'], entry['artifact_id'])
+        self.assertTrue(artifact_is_confirmed(entry, load_project_state(self.root), self.root))
+        self.assertEqual(manifest_path.read_bytes(), original_manifest)
+        self.assertEqual(receipt_path.read_bytes(), original_receipt)
+
+    def test_web_asset_source_rejects_changed_confirmed_narrative_bytes(self):
+        path = self.root / 'narrative.json'
+        narrative = project_module.read(path)
+        narrative['objective'] = 'Changed without a new revision or user confirmation'
+        project_module.write(path, narrative)
+        with self.assertRaisesRegex(ValueError, '登记|版本|内容'):
+            project_module.source_project(self.root)
+
     def mode(self, mode):
         return self.service.scene_output_mode({'project_id': self.project['id'],
                                                'ast_id': 'AST-ROOM', 'mode': mode})

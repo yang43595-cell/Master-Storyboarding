@@ -3,6 +3,8 @@
 State and manifest stay the existing authorities. This is not a sandbox for direct
 browser/provider calls: those remain forbidden by the test task's scope.
 """
+from .io import project_locked
+
 from pathlib import Path
 
 
@@ -115,6 +117,7 @@ def validate_preview_registration(project, item, run_id):
         raise ValueError("preview-reference 来源未绑定准确文件路径与哈希")
 
 
+@project_locked
 def configure(project, run_id, authorization_ref, input_artifact_ids, *, current_stage=None, usage_contract=None):
     """One existing-state marker; caller must have explicit user test authorization."""
     from .project_state import load_project_state, write_project_state

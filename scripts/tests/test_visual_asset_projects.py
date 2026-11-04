@@ -17,7 +17,7 @@ from core.artifacts import load_manifest
 from core.project_state import new_project_state, write_project_state, load_project_state
 
 
-def fixture(base):
+def fixture(base, *, product=False):
     project = base / '测试项目'
     manage = project / '00_项目管理'
     manage.mkdir(parents=True)
@@ -26,9 +26,12 @@ def fixture(base):
         'events': [{'event_id': 'EVT-01', 'summary': '进入房间', 'start_state': '门外', 'change': '进入', 'end_state': '室内', 'participants': [], 'depends_on': []}],
         'dialogues': [], 'asset_requirements': [], 'change_summary': [], 'open_questions': []}
     for ast, cat, name in [('AST-ROOM', 'LOCATION', '采光房间'), ('AST-CUP', 'PROP', '蓝色杯子')]:
+        if product and ast == 'AST-CUP':
+            cat = 'REAL_PRODUCT'
         requirement = {'asset_id': ast, 'category': cat, 'name': name,
             'narrative_purpose': '保持房间与实物连续性', 'source_event_ids': ['EVT-01'], 'identity_constraints': ['保留真实形状'],
-            'required_states': ['常态'], 'interactions': [], 'reference_paths': [], 'unknowns': []}
+            'required_states': ['常态'], 'interactions': [],
+            'reference_paths': [str(base / '测试参考.png')] if cat == 'REAL_PRODUCT' else [], 'unknowns': []}
         if cat == 'LOCATION':
             requirement['spatial_scope'] = 'SINGLE_CONTIGUOUS_SPACE'
         narrative['asset_requirements'].append(requirement)
@@ -377,6 +380,7 @@ class ProjectTests(unittest.TestCase):
         narrative = pmod.read(path)
         narrative['asset_requirements'][1]['identity_constraints'].append('杯沿无缺口')
         pmod.write(path, narrative)
+        update_narrative_checksum(path.parent)
         with self.assertRaisesRegex(ValueError, '变化'):
             self.lib.projects.select({'job_id': self.job()['id'], 'index': 1, 'asset_id': self.asset['id']})
         result = self.lib.projects.sync(self.p['id'])
@@ -444,6 +448,45 @@ class ProjectTests(unittest.TestCase):
         self.lib.projects.reopen({'job_id': self.job()['id'], 'index': 0})
         self.assertTrue(Path(result['manifest']).is_file())
         self.assertTrue(all(not s['project_confirmation'] for s in self.job()['steps']))
+
+    def test_product_export_does_not_invent_fact_review_from_user_selection(self):
+        lib, project, reference = fixture(self.base / 'product-case', product=True)
+        service = lib.projects
+        p = service.get(project['id'])
+        for row in p['rows']:
+            row['reference_ids'] = [reference['id']]
+        service.save(p)
+        plan = plan_result()
+        plan['rows'][1]['outputs'][0]['kind'] = '产品'
+        service.apply_plan(p, p['rows'], plan,
+                           {'version': m.asset_skill.profile()['version'], 'mode': 'project'})
+        for row in service.detail(p['id'])['rows']:
+            job = row['job']
+            for index, step in enumerate(job['steps']):
+                width, height = [int(n) for n in step['ratio'].split(':')]
+                path = self.base / (job['ast_id'] + '-' + str(index) + '.png')
+                Image.new('RGB', (width * 100, height * 100), 'blue').save(path)
+                image, _ = lib.import_file(path, category=step['kind'])
+                service.select({'job_id': job['id'], 'index': index, 'asset_id': image['id']})
+                service.confirm({'job_id': job['id'], 'index': index, 'confirm': True})
+        lib.vault.mkdir(exist_ok=True)
+        with patch.object(m.management, 'guard'):
+            m.visual_asset_backup.run(lib, m.management)
+        result = service.export({'project_id': p['id'], 'confirm': True})
+        out = pmod.read(result['manifest'])
+        product = next(a for a in out['assets'] if a['category'] == 'REAL_PRODUCT')
+        self.assertTrue(product['confirmed_outputs'])
+        for candidate in product['candidates']:
+            self.assertTrue(candidate['technical_qc']['path_exists'])
+            self.assertNotIn('product_fact_check', candidate['technical_qc'])
+        scene = next(a for a in out['assets'] if a['category'] == 'LOCATION')
+        self.assertTrue(all(c['technical_qc']['product_fact_check'] == 'not_applicable'
+                            for c in scene['candidates']))
+        receipt = pmod.read(Path(result['manifest']).parent / '用户确认记录.json')
+        self.assertTrue(all(item['confirmation']['image_sha256'] for item in receipt['items']))
+        self.assertIn('未记录 Agent 产品事实核对结果', Path(result['handoff']).read_text())
+        pmod.validate(out, 'visual-asset-manifest.schema.json')
+        self.assertEqual(service.export({'project_id': p['id'], 'confirm': True}), result)
 
     def test_scene_mode_change_invalidates_existing_export(self):
         job = self.job()

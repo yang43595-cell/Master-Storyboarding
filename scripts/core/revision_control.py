@@ -18,7 +18,9 @@ from . import confirmation_scope
 from .artifacts import (dependency_closure, load_manifest, mark_impacted_artifacts_stale,
                         project_path, validate_candidate_submission)
 from .io import (
+    PROJECT_LOCK_RELATIVE,
     file_lock,
+    project_lock,
     normalized_text_sha256,
     read_json,
     sha256_file,
@@ -36,7 +38,7 @@ from .project_state import (
 MANAGE = Path("00_项目管理")
 CONTROL_RELATIVE = MANAGE / "change_control.json"
 TRANSACTION_ROOT = MANAGE / "revision_transactions"
-LOCK_RELATIVE = MANAGE / ".revision-control.lock"
+LOCK_RELATIVE = PROJECT_LOCK_RELATIVE
 CONTROL_SCHEMA_VERSION = "revision-control-1.0"
 TIER_VALUES = {"T0", "T1", "T2"}
 
@@ -382,12 +384,26 @@ def recover_transactions(project: Path) -> list[dict[str, Any]]:
                 write_json(result_path, {"state": "aborted", "recovered_at": utc_now()})
                 outcomes.append({"transaction_id": transaction.get("transaction_id"), "state": "aborted"})
                 continue
+            # Check every target before replacing any: older code could accept
+            # a later write while this intent was pending. Preserve that work.
+            recovery_files = []
             for record in transaction.get("files") or []:
                 relative = Path(str(record["path"]))
+                target = project / relative
                 after_path = tx_dir / "after" / relative
+                if (relative.is_absolute() or not target.resolve().is_relative_to(project)
+                        or not after_path.resolve().is_relative_to((tx_dir / "after").resolve())):
+                    raise RevisionControlError(f"事务恢复路径越出项目：{relative}")
                 if not after_path.is_file() or sha256_file(after_path) != record.get("after_sha256"):
                     raise RevisionControlError(f"事务恢复失败，暂存内容损坏：{relative}")
-                write_bytes(project / relative, after_path.read_bytes())
+                current_digest = sha256_file(target) if target.is_file() else None
+                allowed = {record.get("after_sha256")}
+                allowed.add(record.get("before_sha256") if record.get("before_exists") else None)
+                if (target.exists() and not target.is_file()) or current_digest not in allowed:
+                    raise RevisionControlError(f"事务目标已被其他任务更新，拒绝覆盖；请保留现场核对：{relative}")
+                recovery_files.append((target, after_path.read_bytes()))
+            for target, content in recovery_files:
+                write_bytes(target, content)
             write_json(result_path, {"state": "committed", "recovered_at": utc_now()})
             outcomes.append({"transaction_id": transaction.get("transaction_id"), "state": "committed"})
     return outcomes
@@ -443,7 +459,7 @@ def open_change(
     if len(set(logical_ids)) != 1:
         raise RevisionControlError("最小返工机制一次只处理一个目标逻辑 ID；请拆分为独立变更案")
     project = project.resolve()
-    with file_lock(project / LOCK_RELATIVE):
+    with project_lock(project):
         control = _load_control(project)
         if control.get("active_change") is not None:
             raise RevisionControlError("每个项目同时只能有一个活动变更案")
@@ -483,7 +499,7 @@ def materialize_t0(
     if transform not in {"canonical-json", "copy"}:
         raise RevisionControlError("T0 仅支持 canonical-json 或 copy")
     project = project.resolve()
-    with file_lock(project / LOCK_RELATIVE):
+    with project_lock(project):
         control = _load_control(project)
         change = _assert_active(control, change_id)
         if change.get("tier") != "T0" or change.get("status") != "awaiting_candidate":
@@ -511,7 +527,7 @@ def confirm_impact(project: Path, *, change_id: str, approval_ref: str) -> dict[
     if not approval_ref.strip():
         raise RevisionControlError("影响确认必须提供 approval_ref")
     project = project.resolve()
-    with file_lock(project / LOCK_RELATIVE):
+    with project_lock(project):
         control = _load_control(project)
         change = _assert_active(control, change_id)
         if change.get("status") != "awaiting_impact_confirmation":
@@ -542,7 +558,7 @@ def record_candidate(
     depends_on: list[str] | None = None,
 ) -> dict[str, Any]:
     project = project.resolve()
-    with file_lock(project / LOCK_RELATIVE):
+    with project_lock(project):
         control = _load_control(project)
         change = _assert_active(control, change_id)
         if change.get("status") != "awaiting_candidate":
@@ -637,7 +653,7 @@ def record_review(project: Path, *, change_id: str, verdict: str, report_ref: st
     if not report_ref.strip():
         raise RevisionControlError("审核必须提供准确 report_ref")
     project = project.resolve()
-    with file_lock(project / LOCK_RELATIVE):
+    with project_lock(project):
         control = _load_control(project)
         change = _assert_active(control, change_id)
         if change.get("status") != "awaiting_review":
@@ -690,9 +706,9 @@ def confirm_candidate(
     if not approval_ref.strip():
         raise RevisionControlError("候选确认必须提供 approval_ref")
     from .candidate_test import require_production
-    require_production(project)
     project = project.resolve()
-    with file_lock(project / LOCK_RELATIVE):
+    with project_lock(project):
+        require_production(project)
         control = _load_control(project)
         change = _assert_active(control, change_id)
         if change.get("status") != "awaiting_candidate_confirmation":
@@ -780,9 +796,9 @@ def record_scoped_confirmation(
         },
     )
     from .candidate_test import require_production
-    require_production(project)
     project = project.resolve()
-    with file_lock(project / LOCK_RELATIVE):
+    with project_lock(project):
+        require_production(project)
         control = _load_control(project)
         change = _assert_active(control, change_id)
         change.setdefault("scoped_confirmations", []).append(receipt)
@@ -797,9 +813,9 @@ def record_scoped_confirmation(
 
 def commit_change(project: Path, *, change_id: str) -> dict[str, Any]:
     from .candidate_test import require_production
-    require_production(project)
     project = project.resolve()
-    with file_lock(project / LOCK_RELATIVE):
+    with project_lock(project):
+        require_production(project)
         control = _load_control(project)
         change = _assert_active(control, change_id)
         if change.get("status") != "commit_ready":
@@ -856,7 +872,7 @@ def commit_change(project: Path, *, change_id: str) -> dict[str, Any]:
 
 def cancel_change(project: Path, *, change_id: str, reason: str) -> dict[str, Any]:
     project = project.resolve()
-    with file_lock(project / LOCK_RELATIVE):
+    with project_lock(project):
         control = _load_control(project)
         change = _assert_active(control, change_id)
         if change.get("status") in {"commit_ready", "completed"}:
@@ -883,9 +899,9 @@ def record_paid_approval(
     if not approval_ref.strip() or quantity <= 0:
         raise RevisionControlError("付费授权需要 approval_ref 和正数量")
     from .candidate_test import require_production
-    require_production(project)
     project = project.resolve()
-    with file_lock(project / LOCK_RELATIVE):
+    with project_lock(project):
+        require_production(project)
         control = _load_control(project)
         change = _assert_active(control, change_id)
         approval = {

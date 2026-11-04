@@ -29,6 +29,7 @@ if str(ROOT / 'scripts') not in sys.path:
     sys.path.insert(0, str(ROOT / 'scripts'))
 from core.artifacts import (load_manifest, save_manifest, register_workspace_artifact,
                             promote_candidate, mark_impacted_artifacts_stale)
+from core.io import project_lock
 from core.project_state import load_project_state, write_project_state
 from core.schema_contracts import require_schema
 
@@ -103,6 +104,8 @@ def source_project(path):
     validate_asset_requirement_granularity(narrative)
     if narrative['revision'] != entry['revision']:
         raise ValueError('叙事包正文状态或版本与项目登记不一致')
+    if entry.get('checksum') and digest(path) != entry['checksum']:
+        raise ValueError('已确认叙事包内容已变化，与登记版本不一致；请回上游核对')
     ids = [r['asset_id'] for r in narrative['asset_requirements']]
     if len(ids) != len(set(ids)):
         raise ValueError('叙事包有重复 AST 编号')
@@ -193,10 +196,11 @@ class Projects:
         if not p.get('export'):
             return
         root = Path(p['path'])
-        manifest = load_manifest(root)
-        mark_impacted_artifacts_stale(manifest, {'visual.asset.manifest'}, reason, p['source']['revision'])
-        save_manifest(root, manifest)
-        p.setdefault('export_history', []).append(p.pop('export'))
+        with project_lock(root):
+            manifest = load_manifest(root)
+            mark_impacted_artifacts_stale(manifest, {'visual.asset.manifest'}, reason, p['source']['revision'])
+            save_manifest(root, manifest)
+            p.setdefault('export_history', []).append(p.pop('export'))
 
     def sync(self, ident):
         with self.lib.lock:
@@ -1185,6 +1189,14 @@ class Projects:
             raise ValueError('请确认整张需求表后交接')
         with self.lib.lock:
             p = self.get(payload['project_id'])
+            with project_lock(Path(p['path'])):
+                return self._export_locked(payload)
+
+    def _export_locked(self, payload):
+        if payload.get('confirm') is not True:
+            raise ValueError('请确认整张需求表后交接')
+        with self.lib.lock:
+            p = self.get(payload['project_id'])
             self.fresh(p)
             if p.get('export'):
                 self.validate_export_basis(p)
@@ -1295,11 +1307,17 @@ class Projects:
                     actual_provider = provenance.get('provider') or authorization.get('provider') or job['provider']
                     actual_model = (provenance.get('model') or authorization.get('model') or
                                     ('Codex 内置 ImageGen' if actual_provider == 'imagegen' else job['model']))
+                    technical_qc = {'path_exists': True, 'format': check['format'].lower(),
+                                    'width': check['width'], 'height': check['height'],
+                                    'naming_valid': True, 'reference_traceable': True}
+                    # This route records technical checks and the user's exact
+                    # image selection, not an Agent product-fact inspection.
+                    # An absent optional result means unrecorded, never passed.
+                    if req['category'] != 'REAL_PRODUCT':
+                        technical_qc['product_fact_check'] = 'not_applicable'
                     record['candidates'].append({'candidate_id': candidate_id, 'path': str(target),
                         'status': 'awaiting_user_review', 'source_references': refs or [asset['source']],
-                        'technical_qc': {'path_exists': True, 'format': check['format'].lower(), 'width': check['width'],
-                            'height': check['height'], 'naming_valid': True, 'reference_traceable': True,
-                            'product_fact_check': 'passed' if req['category'] == 'REAL_PRODUCT' else 'not_applicable'},
+                        'technical_qc': technical_qc,
                         'generation_record': dict(external) if external else ({'tool': actual_provider, 'model': actual_model,
                             'user_authorization_ref': str(receipt_path) + '#' + step['key']} if step.get('authorization') and provenance.get('kind') != 'manual_result_import' else None)})
                     confirmed = {'candidate_id': candidate_id, 'path': str(target), 'user_confirmation_ref': confirm_ref}
@@ -1319,19 +1337,60 @@ class Projects:
             validate(out, 'visual-asset-manifest.schema.json')
             # Everything is copied and validated before updating the project's official state.
             self.fresh(p)
-            write(path, out)
-            write(receipt_path, receipt)
             artifact_id = 'visual-assets-' + transaction['id']
             manifest = load_manifest(root)
-            if not any(a['artifact_id'] == artifact_id for a in manifest['artifacts']):
-                register_workspace_artifact(root, {'artifact_id': artifact_id, 'logical_id': logical,
-                    'type': 'visual-asset-manifest', 'revision': revision, 'path_or_url': str(path),
-                    'checksum': digest(path),
-                    'depends_on': ['narrative.package'] + (['narrative.assets'] if p['narrative'].get('_asset_table') else []), 'user_approved': True, 'confirmation_ref': str(receipt_path)})
-            manifest = load_manifest(root)
-            mark_impacted_artifacts_stale(manifest, {logical}, '用户确认了新的资产表', revision)
-            save_manifest(root, manifest)
-            promote_candidate(root, logical, artifact_id)
+            registered = next((a for a in manifest['artifacts'] if a['artifact_id'] == artifact_id), None)
+            if registered is None:
+                # A failed export must never look like an unregistered legacy
+                # confirmation to downstream readers of the master directory.
+                registered = register_workspace_artifact(root, {'artifact_id': artifact_id,
+                    'logical_id': logical, 'type': 'visual-asset-manifest', 'revision': revision,
+                    'path_or_url': str(path),
+                    'depends_on': ['narrative.package'] + (['narrative.assets'] if p['narrative'].get('_asset_table') else []),
+                    'user_approved': True, 'confirmation_ref': str(receipt_path)})
+            if (registered.get('status') not in {'candidate', 'current'}
+                    or registered.get('logical_id') != logical or registered.get('revision') != revision
+                    or project_path(root, registered['path_or_url']) != path
+                    or project_path(root, registered.get('confirmation_ref', '')) != receipt_path):
+                raise ValueError('待恢复的资产导出登记不一致，请保留现场并核对')
+            if registered.get('checksum') and (not path.is_file() or digest(path) != registered['checksum']):
+                raise ValueError('待恢复的资产导出清单已变化或缺失，请保留原记录并核对')
+            if path.exists():
+                if read(path) != out:
+                    raise ValueError('已有资产导出清单与当前确认不一致，保留原文件；请重新交接新版本')
+            elif registered['status'] == 'current':
+                raise ValueError('已确认资产导出清单缺失，请保留登记并恢复原文件')
+            else:
+                write(path, out)
+            if receipt_path.exists():
+                saved_receipt = read(receipt_path)
+                # Backup timestamps/catalog metadata can change independently.
+                # The saved confirmation is immutable; compare the exact approved
+                # outputs and keep its original provenance and bytes on retry.
+                def confirmation_basis(value):
+                    if not isinstance(value, dict) or not isinstance(value.get('items'), list):
+                        raise ValueError('已有资产确认记录结构无效，请保留原文件并核对')
+                    try:
+                        return [(i['ast_id'], i['output_id'], i['confirmation']) for i in value['items']]
+                    except (KeyError, TypeError) as exc:
+                        raise ValueError('已有资产确认记录制作项无效，请保留原文件并核对') from exc
+                saved_basis = confirmation_basis(saved_receipt)
+                if (saved_receipt.get('id') != receipt['id']
+                        or saved_receipt.get('source_narrative') != receipt['source_narrative']
+                        or saved_basis != confirmation_basis(receipt)):
+                    raise ValueError('已有资产确认记录与当前制作项不一致，请保留原文件并核对')
+            elif registered['status'] == 'current':
+                raise ValueError('已确认资产记录缺失，请恢复原记录，不能重新编造确认')
+            else:
+                write(receipt_path, receipt)
+            if registered['status'] == 'candidate':
+                manifest = load_manifest(root)
+                next(a for a in manifest['artifacts'] if a['artifact_id'] == artifact_id)['checksum'] = digest(path)
+                mark_impacted_artifacts_stale(manifest, {logical}, '用户确认了新的资产表', revision)
+                save_manifest(root, manifest)
+                promote_candidate(root, logical, artifact_id)
+            # A current pending transaction already committed. Only complete its
+            # missing state/cache/handoff; never rewrite its manifest or receipt.
             state = load_project_state(root)
             previous_ids = {a['artifact_id'] for a in previous}
             current = state.get('current_artifacts', [])
@@ -1346,6 +1405,12 @@ class Projects:
             handoff.write_text('# 项目资产交接\n\n- 正式清单：' + str(path) + '\n- 用户确认记录：' + str(receipt_path) +
                 '\n- 上游版本：' + p['source']['revision'] + '\n\n仅使用清单中已确认的主图或 confirmed_outputs 对应用途、状态、视角的图片。\n'
                 '下一阶段按项目状态读取；本文件不自动执行下一阶段。\n', encoding='utf-8')
+            product_ids = [a['asset_id'] for a in out['assets'] if a['category'] == 'REAL_PRODUCT']
+            if product_ids:
+                with handoff.open('a', encoding='utf-8') as stream:
+                    stream.write('\n产品事实核对：' + '、'.join(product_ids) +
+                                 ' 的图片已有准确用户选图确认；本导出入口未记录 Agent 产品事实核对结果。'
+                                 '清单省略 product_fact_check 不表示通过，不得据此声称已核对产品事实。\n')
             if out.get('asset_requirement_decisions'):
                 choices = out['asset_requirement_decisions']
                 with handoff.open('a', encoding='utf-8') as stream:

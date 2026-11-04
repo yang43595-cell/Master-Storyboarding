@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+from copy import copy
 from pathlib import Path
 from typing import Any
 
-from .io import write_json, write_text
+from .io import project_locked, sha256_json, write_json, write_text
 
 
 SCHEMA_VERSION = "stage-1.0"
@@ -71,14 +72,21 @@ def normalize_project_state(value: dict[str, Any]) -> dict[str, Any]:
     return state
 
 
+class _ProjectState(dict):
+    """Read version kept outside the persisted project-state contract."""
+    def __init__(self, value, source_digest):
+        super().__init__(value)
+        self.source_digest = source_digest
+
+
 def load_project_state(project_root: Path) -> dict[str, Any]:
     path = project_root / "00_项目管理" / "project_state.json"
     if not path.is_file():
-        return new_project_state()
+        return _ProjectState(new_project_state(), None)
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
         raise ValueError("project_state.json 必须是对象")
-    return normalize_project_state(value)
+    return _ProjectState(normalize_project_state(value), sha256_json(value))
 
 
 def validate_project_state(state: dict[str, Any]) -> None:
@@ -134,14 +142,23 @@ def render_project_state_markdown(state: dict[str, Any]) -> str:
     return "\n".join([*lines, ""])
 
 
+@project_locked
 def write_project_state(project_root: Path, state: dict[str, Any]) -> None:
     validate_project_state(state)
+    original_state = state
+    manage = project_root / "00_项目管理"
+    path = manage / "project_state.json"
+    if hasattr(state, "source_digest"):
+        previous_digest = sha256_json(json.loads(path.read_text(encoding="utf-8"))) if path.is_file() else None
+        if state.source_digest != previous_digest:
+            raise ValueError("项目状态已被其他任务更新；重新读取后重试，不能覆盖新确认")
     from .artifacts import MANIFEST_PATH, load_manifest
     if (project_root / MANIFEST_PATH).is_file():
         state = reconcile_current_artifacts(state, load_manifest(project_root))
-    manage = project_root / "00_项目管理"
-    write_json(manage / "project_state.json", state)
+    write_json(path, state)
     write_text(manage / "project_state.md", render_project_state_markdown(state))
+    if hasattr(original_state, "source_digest"):
+        original_state.source_digest = sha256_json(state)
 
 
 def reconcile_current_artifacts(
@@ -162,9 +179,13 @@ def reconcile_current_artifacts(
         replacement = (replacements or {}).get(artifact_id, artifact_id)
         if replacement in valid and replacement not in selected:
             selected.append(replacement)
-    return {**state, "current_artifacts": selected}
+    # A shallow copy retains the read version for later optimistic writes.
+    reconciled = copy(state)
+    reconciled["current_artifacts"] = selected
+    return reconciled
 
 
+@project_locked
 def sync_current_artifacts(project_root: Path, manifest: dict[str, Any]) -> None:
     """Update an existing state after manifest validity changes; never create one."""
     path = project_root / "00_项目管理" / "project_state.json"

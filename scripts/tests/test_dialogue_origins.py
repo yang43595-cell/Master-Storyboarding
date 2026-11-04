@@ -199,11 +199,85 @@ def test_creation_permission_is_not_confirmation_or_adoption(tmp_path):
         artifacts.promote_candidate(tmp_path, 'narrative.package', 'N')
 
 
-# 11: Partial removal/tampering fails. Total removal is a documented legacy limit.
+# 11: Partial removal fails in every mode; total removal cannot pass production.
 @pytest.mark.parametrize('key', ['dialogue_evidence_path', 'dialogue_evidence_sha256'])
 def test_partial_evidence_unbinding_is_rejected(tmp_path, key):
     n = bind(tmp_path, fixture(tmp_path)); n.pop(key)
     with pytest.raises(ValueError): story_sources.validate_story_sources(n, project_root=tmp_path, candidate_test=True)
+
+
+@pytest.mark.parametrize('legacy_layout', [False, True])
+def test_production_requires_binding_even_when_package_claims_legacy_layout(tmp_path, legacy_layout):
+    n = narrative(tmp_path)
+    if not legacy_layout:
+        n.pop('human_readable_path')
+        n['asset_requirements'][0].update(image_decision='需要制作', image_reason='synthetic')
+    before = copy.deepcopy(n)
+    # A consistency-only read preserves historical bytes, without certifying production.
+    report = story_sources.validate_story_sources(n, project_root=tmp_path)
+    assert report['dialogue_evidence_status'] == 'not_bound_unverified'
+    assert report['unresolved_dialogue_ids'] == ['DLG-01']
+    assert not report['formal_adoption_allowed'] and not report['source_fidelity_checked']
+    with pytest.raises(ValueError, match='必须绑定 dialogue_evidence'):
+        story_sources.validate_story_sources(n, project_root=tmp_path, require_dialogue_evidence=True)
+    assert n == before
+
+
+def verified_package(root):
+    """A new synthetic record, not an upgrade of any historical confirmation."""
+    record = fixture(root)
+    for row in record['dialogues']:
+        row['speaker_status'] = 'verified'
+        row['verification'] = dict(scope='dialogue', dialogue_id=row['dialogue_id'],
+            speaker_id=row['speaker_id'], text=row['text'], method='user_confirmation',
+            reference='synthetic exact-text-and-speaker confirmation', reviewer='synthetic user')
+    return bind(root, record), record
+
+
+def test_valid_new_dialogue_binding_passes_production_source_validation(tmp_path):
+    n, _ = verified_package(tmp_path)
+    before = copy.deepcopy(n)
+    story_sources.validate_story_sources(n, project_root=tmp_path, require_dialogue_evidence=True)
+    assert n == before
+
+
+@pytest.mark.parametrize('fault', ['both_removed', 'bytes', 'review_text', 'unverified'])
+def test_new_bound_package_cannot_erase_or_replace_evidence_at_production_boundary(tmp_path, fault):
+    n, record = verified_package(tmp_path)
+    if fault == 'both_removed':
+        n.pop('dialogue_evidence_path')
+        n.pop('dialogue_evidence_sha256')
+    else:
+        if fault in {'bytes', 'review_text'}:
+            record['dialogues'][1]['text'] = '其他新增句。'
+            record['dialogues'][1]['verification']['text'] = '其他新增句。'
+        else:
+            record['dialogues'][0].pop('verification')
+        write_json(tmp_path/'review.json', record)
+        if fault != 'bytes':
+            n['dialogue_evidence_sha256'] = artifacts.digest(tmp_path/'review.json')
+    with pytest.raises(ValueError):
+        story_sources.validate_story_sources(n, project_root=tmp_path, require_dialogue_evidence=True)
+
+
+def test_silent_new_package_does_not_require_dialogue_record(tmp_path):
+    n = narrative(tmp_path)
+    n.pop('human_readable_path')
+    n['dialogues'] = []
+    n['story_paragraphs'][0]['text'] = '人物沉默。'
+    n['asset_requirements'][0].update(image_decision='需要制作', image_reason='synthetic')
+    story_sources.validate_story_sources(n, project_root=tmp_path, require_dialogue_evidence=True)
+
+
+def test_explicit_isolated_unbound_candidate_still_reports_missing_evidence(tmp_path):
+    n = bind(tmp_path, fixture(tmp_path))
+    n.pop('dialogue_evidence_path')
+    n.pop('dialogue_evidence_sha256')
+    report = story_sources.validate_story_sources(n, project_root=tmp_path,
+        candidate_test=True, require_dialogue_evidence=True)
+    assert report['production_blocked'] and report['review_status'] == 'unreviewed'
+    assert report['dialogue_evidence_status'] == 'not_bound_unverified'
+    assert report['unresolved_dialogue_ids'] == [r['dialogue_id'] for r in n['dialogues']]
 
 
 # 12: Provenance checks do not claim product/content truth or authentic approval.

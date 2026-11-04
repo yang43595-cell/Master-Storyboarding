@@ -4,7 +4,9 @@
 
 ## 来源白名单
 
-- `source_narrative` 保留兼容，指向同修订已确认叙事包。独立资产表来源 artifact、revision、路径和校验值写入用户确认记录的 `source_asset_table`；产物登记同时依赖 `narrative.assets`，表变化须重新核对交接。
+导出入口只记录实际文件技术检查和准确用户选图确认，不按 REAL_PRODUCT 类别写产品事实 `passed`；没有单独结果时省略可选 `product_fact_check`，表示未记录，不能解释为已通过。历史清单里的 `passed` 也不单独证明 Agent 实际核对过产品事实，须回查准确图片及真实观察依据；不补造证据、不原地改写已确认清单。
+
+- `source_narrative` 指向有效采用的准确叙事包。canonical JSON（schema_version=2.0 且省略 human_readable_path）直接使用包内 `asset_requirements`，登记依赖 `narrative.package`，不要求独立资产表。仅历史合同实际使用独立资产表时，保留其 artifact、revision、路径和校验值于原确认记录的 `source_asset_table`，并增加 `narrative.assets` 依赖；来源变化须重新核对受影响交接，不删除历史字段绕过差异。
 - `source_asset_requirement_ids` 是本轮有效 AST 白名单，由已确认资产表结合按 PROJECT_RULES.md 授权分支核对并登记的用户调整生成；保留原始来源与调整依据，不把新增项伪称为原叙事包事实。
 - `assets[].asset_id` 必须属于该白名单；未经授权或尚未核对登记的表外请求写入 `scope_gaps`，不得先创建资产条目；取消项按需求调整记录排除，不列作缺图。
 

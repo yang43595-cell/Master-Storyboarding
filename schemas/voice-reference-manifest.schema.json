@@ -12,7 +12,7 @@
     "assignments": {"type": "array", "items": {"$ref": "#/$defs/assignment"}}
   },
   "$defs": {
-    "nonEmptyString": {"type": "string", "minLength": 1},
+    "nonEmptyString": {"type": "string", "minLength": 1, "pattern": "\\S"},
     "scope": {"type": "string", "pattern": "^(?:project|(?:scene|segment):[A-Za-z0-9._-]+)$"},
     "assignment": {
       "type": "object",
@@ -27,6 +27,7 @@
         "character_name": {"$ref": "#/$defs/nonEmptyString"},
         "voice_id": {"$ref": "#/$defs/nonEmptyString"},
         "voice_name": {"$ref": "#/$defs/nonEmptyString"},
+        "intended_uses": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/nonEmptyString"}},
         "source": {
           "type": "object", "additionalProperties": false,
           "required": ["kind", "source_ref", "speaker_identity_basis"],

@@ -8,8 +8,8 @@
     {"id": "CONTRACT-LAYERS", "text": "Skill 合同审查与生产候选产物审查被明确分开"}
   ],
   "production_artifact_checks": [
-    {"id": "REVIEW-EVIDENCE", "text": "轻审每项发现使用 check_id、target、evidence、impact，复审核对未决项与声明改动；仅正式留档使用稳定 B-ID、基线实算 diff 和逐 ID 回复。两种模式都核对直接证据换版事实，由原审核者判断实际影响，不带全部历史、不无证据新增标准"},
-    {"id": "REVIEW-CONCLUSION", "text": "结论仅为通过、有条件通过或不通过，且有条件通过列明需用户接受的问题"},
+    {"id": "REVIEW-EVIDENCE", "text": "轻审每项发现使用 check_id、target、evidence、impact，复审核对未决项与声明改动；仅正式留档使用稳定 B-ID、基线实算 diff 和逐 ID 回复。两种模式都核对直接证据换版事实，由原审核者判断实际影响，不带全部历史、不无证据新增标准；报告覆盖目标清单适用项及 SOP 实际执行依据，可合并已核项说明，未执行/缺证与有依据的不适用分别说明，不以发现列表为空或旧通过推定其余通过"},
+    {"id": "REVIEW-CONCLUSION", "text": "结论仅为通过、有条件通过或不通过，覆盖范围限定于实际已核对象；必需项缺证不得判该范围全部通过，有条件通过列明需用户接受的问题且不代用户接受"},
     {"id": "REVIEW-READONLY", "text": "审核未修改候选、未路由下一阶段、未写批准事实"},
     {"id": "REVIEW-VISUAL", "text": "图片仅做技术与引用检查，视觉质量明确留给用户终审"}
   ]

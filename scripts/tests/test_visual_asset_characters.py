@@ -37,6 +37,7 @@ class CharacterRoutes(unittest.TestCase):
         req.update(character_type='ANIMAL', name='猫咪', identity_constraints=['公主的猫咪'],
                    required_states=['追逐', '奔跑', '床边休息'])
         path.write_text(json.dumps(n, ensure_ascii=False), encoding='utf8')
+        update_narrative_checksum(path.parent)
         service = self.lib.projects
         service.sync(self.project['id'])
         row = service.detail(self.project['id'])['rows'][0]
@@ -250,6 +251,7 @@ class CharacterRoutes(unittest.TestCase):
         req=n['asset_requirements'][0]
         req['identity_constraints']=['燕麦针织裙(前)→冰蓝缎面裙(后)','皮肤暗沉→水光肌']
         path.write_text(json.dumps(n,ensure_ascii=False),encoding='utf8')
+        update_narrative_checksum(path.parent)
         self.lib.projects.sync(self.project['id'])
         j=self.route('reuse')
         self.confirm(j,j['steps'][0]['key'],'人物1x4')
@@ -298,6 +300,7 @@ class CharacterRoutes(unittest.TestCase):
             {'name': '首次饭局', 'evidence': '两次会面'},
             {'name': '二次会面', 'evidence': '第二次换装'}]
         path.write_text(json.dumps(n, ensure_ascii=False), encoding='utf8')
+        update_narrative_checksum(path.parent)
         self.lib.projects.sync(self.project['id'])
         payload = {'project_id': self.project['id'], 'ast_id': 'AST-PERSON'}
         row = prepare_character(self.lib.projects, payload)['rows'][0]

@@ -15,7 +15,7 @@ from scripts.tests.source_fixture import copy_source_fixture
 
 
 def _current_narrative_package(root: Path, revision: str = "R01") -> dict:
-    from test_story_paragraph_sources import narrative
+    from test_formal_package_submission import narrative
     package = narrative(root)
     package["revision"] = revision
     package["status"] = "confirmed"
@@ -602,6 +602,33 @@ def test_handoff_keeps_video_skill_direct_read_exception(tmp_path: Path) -> None
 
     content = Path(report["path"]).read_text(encoding="utf-8")
     assert "不生成或校验 stage_startup.md" in content
+
+
+def test_formal_handoff_rejects_unbound_dialogue_while_historical_read_stays_valid(tmp_path):
+    from scripts.core.story_sources import validate_story_sources
+    from test_story_paragraph_sources import narrative as legacy_narrative
+    project = _project(tmp_path)
+    package = legacy_narrative(project)
+    artifact = project / "legacy-unbound.json"
+    write_json(artifact, package)
+    write_json(project / "00_项目管理/artifact_manifest.json", {"artifacts": [{
+        "artifact_id": "N-LEGACY", "logical_id": "narrative.package", "type": "narrative.package",
+        "revision": package["revision"], "status": "current", "user_approved": True,
+        "path_or_url": artifact.name, "checksum": cli.digest(artifact), "depends_on": [],
+    }]})
+    state = load_project_state(project)
+    state.update(current_artifacts=["N-LEGACY"], next_stage="storyboard-planner",
+                 user_confirmations=[{"artifact_ids": ["N-LEGACY"], "approval_ref": "synthetic historical text approval"}])
+    write_project_state(project, state)
+    original = artifact.read_bytes()
+    before = load_project_state(project)
+    report = validate_story_sources(package, project_root=project)
+    assert report["dialogue_evidence_status"] == "not_bound_unverified"
+    assert not report["formal_adoption_allowed"] and not report["source_fidelity_checked"]
+    with pytest.raises(cli.StageContextError, match="必须绑定 dialogue_evidence"):
+        cli.handoff(argparse.Namespace(project=str(project), to_skill="storyboard-planner"))
+    assert artifact.read_bytes() == original and load_project_state(project) == before
+    assert not (project / cli.CONTEXT_DIR / "next_stage_handoff.md").exists()
 
 
 def test_prepare_rejects_replaced_handoff_input_and_accepts_regenerated_card(tmp_path):
