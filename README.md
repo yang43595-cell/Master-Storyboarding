@@ -1,6 +1,8 @@
 # Master-Storyboarding
 
-Private source repository. Repository setup started on 2026-10-08 UTC.
+Private, self-contained source repository for the Master-Storyboarding workflow.
+
+New computer or agent: start with [standalone setup](docs/development/standalone-repository.md), then read `AGENTS.md` and the selected Skill. The selected method runtime is versioned in `knowledge/runtime/`; Obsidian and a Mac-mounted Vault are not startup prerequisites.
 
 ## Current status
 
@@ -19,4 +21,4 @@ Source, schemas, contracts, and reproducible tests belong in Git. Credentials, e
 
 Branch protections, CI, deployments, and credentials are not implied by this setup document.
 
-Runtime paths, vaults, browser sessions and external project data are environment-specific and must be passed explicitly. The adapter's pinned local website contract is for offline validation; it is not evidence of the live deployment version.
+The default knowledge root is bundled with this repository. Explicit external knowledge roots, browser sessions, output libraries and business project data remain environment-specific; they are not silently discovered from an old computer. The adapter's pinned local website contract is for offline validation; it is not evidence of the live deployment version.

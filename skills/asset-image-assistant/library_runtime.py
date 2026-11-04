@@ -140,7 +140,11 @@ def template_source(kind, raw=''):
     else:
         from stage_context_cli import _vault_root
         vault = _vault_root(None)
-        path = Path(raw) if raw else vault / 'wiki/reference/提示词模板' / spec['template']
+        if raw:
+            path = Path(raw)
+        else:
+            from core.knowledge_runtime import verify_selected_file
+            path = verify_selected_file(vault, 'wiki/reference/提示词模板/' + spec['template'])
     if not path.is_file():
         raise ValueError(('本次指定的' if raw else '') + '模板或分类合同文件不存在：' + str(path))
     return path.resolve()
@@ -227,7 +231,9 @@ def build_task_package(request, refs=None, startup_text='', methods=()):
     package = {'package_version': 'asset-task-package-v3', 'mode': request.get('mode', 'asset-library'),
                'request': context, 'rules': rules, 'review_checks': checks(request.get('mode', 'asset-library'), request.get('kind') if not request.get('rows') else None),
                'professional_methods': [{'id': m.id, 'path': m.vault_path, 'version': m.version,
-                   'sha256': m.checksum, 'content': m.content} for m in methods]}
+                   'sha256': m.checksum, 'content': m.content,
+                   **({'template_path': m.template_path, 'template_sha256': m.template_checksum,
+                       'template_content': m.template_content} if m.template_path else {})} for m in methods]}
     if not request.get('rows'):
         template = _template_excerpt(request.get('template_source', ''), request['kind'], request.get('view', ''), request.get('index') if request.get('mode', 'asset-library') == 'asset-library' else None)
         if request['kind'] == '环境' and template['status'] == 'loaded' and not request.get('reference_paths'):
@@ -254,7 +260,7 @@ def prepare(folder, request):
         'reading_route': 'web-bounded-input', 'input_complete': True,
         'attestation': 'input_assembled_not_agent_reading', 'vault_root': vault,
         'references': refs, 'required_rules': profile()['required_rules'],
-        'methods': [{k: v for k, v in m.items() if k != 'content'} for m in package['professional_methods']],
+        'methods': [{k: v for k, v in m.items() if k not in {'content', 'template_content'}} for m in package['professional_methods']],
         'check_ids': [c['id'] for c in checks(mode, request.get('kind') if not request.get('rows') else None)]}
     package_text = json.dumps(package, ensure_ascii=False, indent=2)
     (folder / 'task-package.json').write_text(package_text, encoding='utf-8')

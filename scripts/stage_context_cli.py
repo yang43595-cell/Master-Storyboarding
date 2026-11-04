@@ -21,6 +21,7 @@ try:
                                  register_workspace_artifact, adopt_initial_package,
                                  validate_candidate_submission)
     from .core.io import write_text, write_text_if_changed
+    from .core.knowledge_runtime import resolve_knowledge_root, is_bundled_root, verify_bundle, verify_selected_file
     from .core.knowledge_blocks import build_knowledge_index, load_policy, parse_knowledge_blocks
     from .core.knowledge_selector import render_knowledge_bundle, render_knowledge_candidates, render_candidate_trial_bundle, select_knowledge
     from .core.candidate_source_snapshot import CandidateSnapshotError, inspect_candidate_snapshot, load_candidate_snapshot_rules
@@ -36,6 +37,7 @@ except ImportError:  # direct CLI execution
                                 register_workspace_artifact, adopt_initial_package,
                                 validate_candidate_submission)
     from core.io import write_text, write_text_if_changed
+    from core.knowledge_runtime import resolve_knowledge_root, is_bundled_root, verify_bundle, verify_selected_file
     from core.knowledge_blocks import build_knowledge_index, load_policy, parse_knowledge_blocks
     from core.knowledge_selector import render_knowledge_bundle, render_knowledge_candidates, render_candidate_trial_bundle, select_knowledge
     from core.candidate_source_snapshot import CandidateSnapshotError, inspect_candidate_snapshot, load_candidate_snapshot_rules
@@ -62,8 +64,10 @@ class StageContextError(ValueError):
 
 
 def _vault_root(value: str | None) -> Path:
-    raw = value or os.environ.get("MSB_VAULT_ROOT")
-    return Path(raw).expanduser().resolve() if raw else Path.home() / "Documents" / "Obsidian Vault"
+    try:
+        return resolve_knowledge_root(value, repo_root=ROOT)
+    except ValueError as exc:
+        raise StageContextError(str(exc)) from exc
 
 
 def _read_json(path: Path, *, default: Any) -> Any:
@@ -213,8 +217,16 @@ def _revision_summary(project: Path, change_id: str | None, target_ids: list[str
 
 
 def _tombstone_fingerprints(vault: Path, policy: dict[str, Any]) -> set[str]:
+    if is_bundled_root(vault):
+        manifest = verify_bundle(vault)
+        if not manifest["dynamic_rule_ids"]:
+            return set()
     relative = (policy.get("discovery") or {}).get("tombstones")
     path = vault / relative if isinstance(relative, str) else None
+    if is_bundled_root(vault) and path is not None:
+        if relative not in {entry["path"] for entry in manifest["files"]}:
+            return set()  # Not packaged; no assertion about upstream history.
+        path = verify_selected_file(vault, relative)
     if path is None or not path.is_file():
         return set()
     result: set[str] = set()
@@ -967,11 +979,24 @@ def _validate_current_inputs(project: Path, basis: dict[str, Any]) -> dict[str, 
         raise StageContextError("当前来源、选定产物或确认依据已改变；请重新 prepare 并核对变更。")
     _current_handoff_text(project, basis["skill"])
     standards = basis["standards"]
+    knowledge_root = Path(basis["reading_manifest"]["vault_root"])
+    current_profile = _read_json(Path(basis["knowledge_profile"]["path"]), default={})
+    declared_methods = {entry.get("id"): entry for entry in current_profile.get("professional_methods", [])}
+    for item in standards.get("professional_methods", []):
+        verify_selected_file(knowledge_root, item["path"])
+        template_path = declared_methods.get(item["id"], {}).get("template_path")
+        if template_path:
+            if item.get("template_path") != template_path or not item.get("template_sha256"):
+                raise StageContextError("适用方法模板缺少冻结版本；请重新 prepare。")
+            verify_selected_file(knowledge_root, template_path)
     documents = [*standards.get("local_documents", []), standards.get("review_profile", {}), basis.get("knowledge_profile", {})]
     if standards.get("root_rules_sha256"):
         documents.append({"path": standards["root_rules"], "sha256": standards["root_rules_sha256"]})
     documents.extend({"path": str(Path(basis["reading_manifest"]["vault_root"]) / item["path"]), "sha256": item["sha256"]}
                      for item in standards.get("professional_methods", []))
+    documents.extend({"path": str(Path(basis["reading_manifest"]["vault_root"]) / item["template_path"]),
+                      "sha256": item["template_sha256"]}
+                     for item in standards.get("professional_methods", []) if item.get("template_path"))
     for item in documents:
         if not item.get("path") or not item.get("sha256"):
             raise StageContextError("任务规范缺少版本证据；请重新 prepare。")
@@ -979,6 +1004,8 @@ def _validate_current_inputs(project: Path, basis: dict[str, Any]) -> dict[str, 
         if not path.is_file() or digest(path) != item["sha256"]:
             raise StageContextError(f"当前方法、绑定或规范已改变：{path}；请重新 prepare。")
     vault = Path(basis["reading_manifest"]["vault_root"])
+    if is_bundled_root(vault):
+        verify_bundle(vault)
     constraints = basis["reading_manifest"].get("applicable_confirmed")
     if not isinstance(constraints, list):
         raise StageContextError("任务依据缺少预算外适用 confirmed 约束；请重新 prepare，不能沿用旧选择结果。")
@@ -998,6 +1025,11 @@ def _validate_current_inputs(project: Path, basis: dict[str, Any]) -> dict[str, 
 
 
 def _read_candidate_exact(vault: Path, record: dict[str, Any]) -> Any:
+    if is_bundled_root(vault):
+        manifest = verify_bundle(vault)
+        if record.get("id") not in manifest["dynamic_rule_ids"]:
+            raise StageContextError("动态规则未列入内置知识 manifest 允许列表")
+        verify_selected_file(vault, record.get("vault_relative_path"))
     relative = record.get("vault_relative_path")
     if not isinstance(relative, str) or not relative or Path(relative).is_absolute() or ".." in Path(relative).parts:
         raise StageContextError("候选目录路径无效；请重新 prepare。")
@@ -1249,7 +1281,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     if not isinstance(request_checks, list) or any(not isinstance(item, str) or not item.strip() for item in request_checks):
         raise StageContextError("request.review_checks 必须是非空文字检查项数组。")
     manual_checks = [{"id": f"MANUAL-{index:03d}", "text": text.strip()} for index, text in enumerate(request_checks, start=1)]
-    methods_records = [{"id": item.id, "path": item.vault_path, "version": item.version, "sha256": item.checksum, "promotion_basis": item.promotion_basis} for item in methods.required]
+    methods_records = [{"id": item.id, "path": item.vault_path, "version": item.version, "sha256": item.checksum, "promotion_basis": item.promotion_basis, **({"template_path": item.template_path, "template_sha256": item.template_checksum} if item.template_path else {})} for item in methods.required]
     base_packet = render_method_packet(methods.required) if methods.required else "# 本轮必读专业方法快照\n"
     trial_record = None
     if result.trial_candidates:
@@ -1280,7 +1312,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
             "root_rules": str(ROOT / "PROJECT_RULES.md"),
             "root_rules_sha256": digest(ROOT / "PROJECT_RULES.md"),
             "skill_entry": str(skill_dir / "SKILL.md"),
-            "professional_methods": [{"id": item.id, "path": item.vault_path, "version": item.version, "sha256": item.checksum, "promotion_basis": item.promotion_basis} for item in methods.required],
+            "professional_methods": [{"id": item.id, "path": item.vault_path, "version": item.version, "sha256": item.checksum, "promotion_basis": item.promotion_basis, **({"template_path": item.template_path, "template_sha256": item.template_checksum} if item.template_path else {})} for item in methods.required],
             "selected_knowledge": [_candidate_record(item) for item in result.selected],
             "applicable_confirmed": [_candidate_record(item) for item in result.applicable_confirmed],
             "review_profile": {"path": str(review_profile_path), "sha256": hashlib.sha256(review_profile_path.read_bytes()).hexdigest(), "schema_version": review_profile["schema_version"]},

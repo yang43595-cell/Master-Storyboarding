@@ -1,0 +1,2 @@
+# Preserve source-byte hashes across Windows/macOS/Linux checkouts.
+knowledge/runtime/** -text

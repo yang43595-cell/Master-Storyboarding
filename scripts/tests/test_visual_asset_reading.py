@@ -80,6 +80,9 @@ class WebReadingTests(unittest.TestCase):
             profile = json.loads((ROOT / 'skills' / skill / 'knowledge-profile.json').read_text(encoding='utf-8'))
             entry = next(x for x in profile['professional_methods'] if x['id'] == 'VGEN-CREATOR-POLISHING-MASK-USE')
             self.assertTrue((self.live / entry['template_path']).is_file())
+            template = self.vault / entry['template_path']
+            template.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(self.live / entry['template_path'], template)
             for selected in [None, False, True]:
                 with self.subTest(skill=skill, selected=selected):
                     request = {} if selected is None else {'creator_mask_face_effect': selected}

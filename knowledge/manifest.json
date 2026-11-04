@@ -1,0 +1,504 @@
+{
+  "schema_version": "1.0",
+  "source": {
+    "type": "selected_versioned_runtime",
+    "captured_at": "2026-10-23T17:14:56.750752+00:00",
+    "upstream_vault_revision": "df6e2a50468b3b0927da3da4f663c531a253773c",
+    "source_manifest_sha256": "d54b7e19b9e16b7b1d4158e09f0401092233f0ace8cd1ee94de7b75a28d2029f",
+    "selection_repository_revision": "6fdad89479a588802259550735377f0dc6c9c9c4",
+    "note": "Current repository commit defines the runtime copy. This does not assert the upstream Vault is current or its full dynamic rules are admitted."
+  },
+  "dynamic_rule_ids": [
+    "MSB-KB-PROMPT-002"
+  ],
+  "files": [
+    {
+      "path": "projects/Master-Storyboarding/应用知识/图片资产/人物资产方法.md",
+      "role": "method",
+      "sha256": "bd66017d8da4510bf9873bd2cce3af353ff141af1bbed8a00dd21de7d48b0cd1",
+      "size_bytes": 3429,
+      "approval_assessment": "existing_documentary_adoption_only",
+      "inclusion_basis": "current profile user_confirmed binding"
+    },
+    {
+      "path": "projects/Master-Storyboarding/应用知识/图片资产/图片连续性方法.md",
+      "role": "method",
+      "sha256": "3b258a9850e51659868bd58180f3c3159c0b584665749db7c85d95d57c1fd772",
+      "size_bytes": 1128,
+      "approval_assessment": "existing_documentary_adoption_only",
+      "inclusion_basis": "current profile user_confirmed binding"
+    },
+    {
+      "path": "projects/Master-Storyboarding/应用知识/图片资产/场景资产方法.md",
+      "role": "method",
+      "sha256": "a22eb08bf7317d98926bcd2d49419cb1146caa75afe2163e63555abbe1ecd91a",
+      "size_bytes": 4051,
+      "approval_assessment": "existing_documentary_adoption_only",
+      "inclusion_basis": "current profile user_confirmed binding"
+    },
+    {
+      "path": "projects/Master-Storyboarding/应用知识/图片资产/索引.md",
+      "role": "adoption_index",
+      "sha256": "55fd6a49a311db80ac320c2da758e78c536b95cde99f5a4a0ccd28dc4ea5ba54",
+      "size_bytes": 1716,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "existing method adoption provenance"
+    },
+    {
+      "path": "projects/Master-Storyboarding/应用知识/图片资产/视觉补充方法.md",
+      "role": "method",
+      "sha256": "2c3e0b451baaf82a2f92028dbd99323bace17a7b7245c63b50b2094338375bbd",
+      "size_bytes": 1921,
+      "approval_assessment": "existing_documentary_adoption_only",
+      "inclusion_basis": "current profile user_confirmed binding"
+    },
+    {
+      "path": "projects/Master-Storyboarding/应用知识/图片资产/道具与产品资产方法.md",
+      "role": "method",
+      "sha256": "7a78e279427a3565e858f38abdc334c5d238ad948d31867bbbdd3cba3644be46",
+      "size_bytes": 2799,
+      "approval_assessment": "existing_documentary_adoption_only",
+      "inclusion_basis": "current profile user_confirmed binding"
+    },
+    {
+      "path": "projects/Master-Storyboarding/应用知识/图片资产/风格资产方法.md",
+      "role": "method",
+      "sha256": "878f0df07383c10de693929dae0d2b4643ddc009ee3a5fb822809f89cee8823b",
+      "size_bytes": 3645,
+      "approval_assessment": "existing_documentary_adoption_only",
+      "inclusion_basis": "current profile user_confirmed binding"
+    },
+    {
+      "path": "projects/Master-Storyboarding/应用知识/导演规划/导演规划方法.md",
+      "role": "method",
+      "sha256": "ae5bb6d5483849a16fe8432525ee085a8d7900aeb8f103e44cf528540d7ed24c",
+      "size_bytes": 13583,
+      "approval_assessment": "existing_documentary_adoption_only",
+      "inclusion_basis": "current profile user_confirmed binding"
+    },
+    {
+      "path": "projects/Master-Storyboarding/应用知识/编导/编导方法.md",
+      "role": "method",
+      "sha256": "9dbaa9bda8fdc4f331b1de528d53f0e956570798c86a3da5236eed43a9a47114",
+      "size_bytes": 4162,
+      "approval_assessment": "exact_baseline_match",
+      "inclusion_basis": "current profile user_confirmed binding"
+    },
+    {
+      "path": "projects/Master-Storyboarding/应用知识/视频提示词/Seedance 2.5 受限表达与控制引用.md",
+      "role": "method",
+      "sha256": "d9a5520e173719532b86b808f5c0d319acfd8f2b68786c73223d9c5ba4bf8dc2",
+      "size_bytes": 3694,
+      "approval_assessment": "existing_documentary_adoption_only",
+      "inclusion_basis": "current profile user_confirmed binding"
+    },
+    {
+      "path": "projects/Master-Storyboarding/应用知识/视频提示词/提示词基础方法.md",
+      "role": "method",
+      "sha256": "575cd6a15d87ab0610744bcea484ff75af472303d49db52f2f0fa015ad6aada3",
+      "size_bytes": 4143,
+      "approval_assessment": "existing_documentary_adoption_only",
+      "inclusion_basis": "current profile user_confirmed binding"
+    },
+    {
+      "path": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法.md",
+      "role": "method",
+      "sha256": "2b89ba27e73c9cd54304455b414483ad2cad243d518ee0f6fd809612ccdba504",
+      "size_bytes": 3292,
+      "approval_assessment": "existing_documentary_adoption_git_status_modified_raw_bytes_equal_head",
+      "inclusion_basis": "current profile user_confirmed binding"
+    },
+    {
+      "path": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/方法.md",
+      "role": "method",
+      "sha256": "ca51ef2848888318a1fb9f6940e7d5fdac78addece7418c579e0a8f351cefd6a",
+      "size_bytes": 10142,
+      "approval_assessment": "existing_documentary_adoption_only",
+      "inclusion_basis": "current profile user_confirmed binding"
+    },
+    {
+      "path": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
+      "role": "reference_only",
+      "sha256": "91cc91a0bc2665bfdb71ae7196cb5132fb37d1ef88d6ec255397e0f5b355e9dc",
+      "size_bytes": 32943,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/concepts/02-镜头与剪辑/景别理论.md",
+      "role": "reference_only",
+      "sha256": "2b197c82070cdae2e88a25f7e7a1cb69402151d75f9c44bc8f4423c1fcec58f2",
+      "size_bytes": 10258,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/concepts/03-AI生成与视频/ai人物反向表演.md",
+      "role": "reference_only",
+      "sha256": "ba517c79582c6166886b79f2787ab5ed705bb7a104ce8c227b6234f139786258",
+      "size_bytes": 5268,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/concepts/03-AI生成与视频/ai人物活人感.md",
+      "role": "reference_only",
+      "sha256": "d24ef4ed4ce007adb4c99733e876b7f30c4e141ddde8a54505fce532090fd6c7",
+      "size_bytes": 5117,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/AI导演Agent专业影视分镜调研包.md",
+      "role": "reference_only",
+      "sha256": "6d112246fdee93c1253963d4b9d74b3c39f511ab21aca27bd5f5950ce7340abe",
+      "size_bytes": 5082,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/AI视频八种电影级打光-一帆.md",
+      "role": "reference_only",
+      "sha256": "2e7ed0a3155fc5b6394f5fdc979879d0f554c3666843cde118df25b9699df4b7",
+      "size_bytes": 2996,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/AI视频导演级打光方法-刺猬星球AI.md",
+      "role": "reference_only",
+      "sha256": "aec71b44cf9c98e706f7f3a5c04a3a799bc2f09fe60343f6c1d86822d05dbd1c",
+      "size_bytes": 3299,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/AI视频电影感-焦距光圈.md",
+      "role": "reference_only",
+      "sha256": "7f02ba971bcb903d53c264e872791b57871fcf0bbdaeab456cc891e635f0b995",
+      "size_bytes": 18447,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/ARRI-Girls-Will-Be-Girls摄影运动案例.md",
+      "role": "reference_only",
+      "sha256": "22386e1c78cf7fe8cb23f6245a2d1baff0cade1da14451e806c272466b0dda51",
+      "size_bytes": 1440,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/ARRI-Lighting-Handbook.md",
+      "role": "reference_only",
+      "sha256": "dfb6bc4081804623bdd4b144fd4eaff0d4d5549022f52c41cb03da2b313a84cd",
+      "size_bytes": 1343,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/Adobe-Tracking-Shot方法.md",
+      "role": "reference_only",
+      "sha256": "703e772f9beb8866ae4d8f598f207fb1896f6e598ac65ca99d970942112c2796",
+      "size_bytes": 1264,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/Adobe-Video-Lighting-Basics.md",
+      "role": "reference_only",
+      "sha256": "4e563c6ca12b09f8fbcf3e25634b804d54719b768415a850ea0e1c21949d014d",
+      "size_bytes": 1031,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/Adobe-电影剪切类型.md",
+      "role": "reference_only",
+      "sha256": "4ee6d25d23979ac5b4ca8e435c32758ccb7499f5dc3eaf0d2bdfd367b0c72cda",
+      "size_bytes": 1256,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/Bucknell-摄影机运动语言.md",
+      "role": "reference_only",
+      "sha256": "07bd93635e1d320af88695887df6aaf9e8c2072d344836db9cfcf3cd8b0062e5",
+      "size_bytes": 1445,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/HELL-GRIND长片工作流拆解.md",
+      "role": "reference_only",
+      "sha256": "8a7bb1d889157767b948b70feaa3c57b15e5f8393aa2ed92127049d32bf18989",
+      "size_bytes": 26458,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/Master-Storyboarding旧分镜写作专业参考.md",
+      "role": "reference_only",
+      "sha256": "17b3be0838fc05111259046e8dbb0ea4361f09b562e30b077c80171c183e3cf4",
+      "size_bytes": 1351,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/Nikon-视频Rack-Focus方法.md",
+      "role": "reference_only",
+      "sha256": "232616388163c87b7bd18c1af16dffe9c3953d31ffc899317f46438cb56142e6",
+      "size_bytes": 1390,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/Pitzer-电影语言关键术语.md",
+      "role": "reference_only",
+      "sha256": "5a02266d0cc100f6845ac9106fd1b9a5e5860cb4c645400cd0ba8cca7b28bab3",
+      "size_bytes": 1287,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/ai-分镜规范.md",
+      "role": "reference_only",
+      "sha256": "3ad7327d202410ffffe910d8deab313eb58a14d8ff9a143ff1fc13196586aba1",
+      "size_bytes": 1820,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/ai人物反向表演-刺猬星球ai.md",
+      "role": "reference_only",
+      "sha256": "b8902c4b63d4707edd345a88bda3d1bd8a8697e2cb8b5f6236803e00a009cac4",
+      "size_bytes": 13465,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/ai提示词过期-刺猬星球ai.md",
+      "role": "reference_only",
+      "sha256": "238fab5e5cd808cbd93e6e1fde870383cbe390054a7479fa011102c173fa574b",
+      "size_bytes": 21597,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/dramaclaw-焦距景深机位运动.md",
+      "role": "reference_only",
+      "sha256": "c132d1cd18064b5e95019393b4300e74da6e6a591fa04035c9d9de012619c657",
+      "size_bytes": 7807,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/seedance-2.5官方发布.md",
+      "role": "reference_only",
+      "sha256": "1fec31837ae26ad08681a36f523c879b2af53a7b079c36545caa898e6b29ebde",
+      "size_bytes": 2399,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/seedance-提示词写法.md",
+      "role": "reference_only",
+      "sha256": "d7e19d90214bd889f7c170a1491b5ef45bfaa0c732250062f52063ccb1b0b344",
+      "size_bytes": 18690,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/seedance模型选择-一帆老师.md",
+      "role": "reference_only",
+      "sha256": "4b77560274c8d66cda0785cde0a54f22d8b36e37be95750ba4729e14b54bce38",
+      "size_bytes": 21301,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/公主剧情面膜擦除提示词-用户提供.md",
+      "role": "reference_only",
+      "sha256": "6e7e06bb0251c98ba9ab1a7504647d448f076096d38901e57a952b9bb9a86e13",
+      "size_bytes": 1567,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/去除人物ai味-活人感.md",
+      "role": "reference_only",
+      "sha256": "eb2b54a192c02f18eede519ddc1815fd6bbce3300ed7a8f18acff6a7e9a6f256",
+      "size_bytes": 4255,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/小白AI短剧第12课-场景控制.md",
+      "role": "reference_only",
+      "sha256": "8efb348f97e0a80997913cf4bd7e60a55320e2b77c4d23c6e128f912505cfdf3",
+      "size_bytes": 7159,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/景别参考.md",
+      "role": "reference_only",
+      "sha256": "9873fddd8d322ccb6cf7592aded809ce674c4f3927f9305297089006ca316481",
+      "size_bytes": 1853,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/爱不是牺牲-导演分镜三方审查意见.md",
+      "role": "reference_only",
+      "sha256": "86889ee8f9d4ae30f93021505c1c357a9a92cc2063f48954eff54f84becab96d",
+      "size_bytes": 2295,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/电影分镜-分镜终极指南.md",
+      "role": "reference_only",
+      "sha256": "8d60b0d860edd41fbd859a865fbf7177c7deb4e5bf122c34fa1c3d45550890f7",
+      "size_bytes": 2401,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/电影感景别-九种景别.md",
+      "role": "reference_only",
+      "sha256": "804a38fa315dc7884e9e7a7404f0e043fe0327210783ec5962aa0870eb4b2e82",
+      "size_bytes": 2344,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/电影感构图-十一个维度.md",
+      "role": "reference_only",
+      "sha256": "c3d72e69250a983c7aea977feead47d2059d93e5ae5d96daf4dc30ed7c0d1c05",
+      "size_bytes": 2549,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/电影感镜头运动-运镜全解析.md",
+      "role": "reference_only",
+      "sha256": "d71871553365e8f817ed9077e45cf727387659fb85ad6a4d13d5f5579db7741c",
+      "size_bytes": 2453,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/电影镜头角度-角度全解析.md",
+      "role": "reference_only",
+      "sha256": "a2eaedc1f741aa2e2d3a91c97ddce9419cce46d681ab7af86e8da03410eef06d",
+      "size_bytes": 2206,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/sources/短剧-导演审查方法论.md",
+      "role": "reference_only",
+      "sha256": "466a817837cc4a9698d15629030c7919cc1aa00cf91c0a8f6717e07ff613ae0e",
+      "size_bytes": 2517,
+      "approval_assessment": "existing_source_declarations_only",
+      "inclusion_basis": "method explicit reference or recursively declared source; reference only"
+    },
+    {
+      "path": "wiki/concepts/03-AI生成与视频/提示词污染.md",
+      "role": "required_dynamic_source",
+      "sha256": "501fb52dea48a6f5a29e4fc06aea1e9e5681706dcfa3653eda16d737e51c7b09",
+      "size_bytes": 1341,
+      "inclusion_basis": "Current skills/asset-image-assistant/library-profile.json explicitly requires MSB-KB-PROMPT-002; other blocks in this page are not admitted.",
+      "source": {
+        "observed_on": "2026-11-04",
+        "upstream_updated": "2026-10-25",
+        "original_page_sha256": "7f35382b93c0df66859414228b801300d5e4d2e1a1677988bfc84a820368bd07",
+        "original_page_size_bytes": 15158,
+        "format": "exact_rule_excerpt",
+        "line_range": [
+          84,
+          106
+        ],
+        "thread_id": "01a19f19-5f11-7240-90a7-7ef812f60032",
+        "turn_id": "01a1a640-4219-7697-a882-5dc496bed8b1"
+      }
+    },
+    {
+      "path": "wiki/reference/提示词模板/1x4三视图模板提示词.md",
+      "sha256": "d311538d9a78f05059075814484a2908b84c7e61d9d759ad17fff669542b55ed",
+      "size_bytes": 9100,
+      "role": "template",
+      "inclusion_basis": "Existing asset-image-assistant library-profile recipe dependency; current upstream bytes read on 2026-11-04",
+      "source": {
+        "observed_on": "2026-11-04",
+        "thread_id": "01a19f19-5f11-7240-90a7-7ef812f60032",
+        "turn_id": "01a1a640-4219-7697-a882-5dc496bed8b1",
+        "format": "complete_original_utf8_lf"
+      }
+    },
+    {
+      "path": "wiki/reference/提示词模板/环境一致性模板提示词.md",
+      "sha256": "45cfacb12aeca9960b6c770b92c1e6a307347e28dcf7f10c157ce10ce4d7ee71",
+      "size_bytes": 5862,
+      "role": "template",
+      "inclusion_basis": "Existing asset-image-assistant library-profile recipe dependency; current upstream bytes read on 2026-11-04",
+      "source": {
+        "observed_on": "2026-11-04",
+        "thread_id": "01a19f19-5f11-7240-90a7-7ef812f60032",
+        "turn_id": "01a1a640-4219-7697-a882-5dc496bed8b1",
+        "format": "complete_original_utf8_lf"
+      }
+    }
+  ],
+  "conditional_gaps": [
+    {
+      "path": "wiki/concepts/08-模板/造物者抛光面膜_真人上脸半透明胶膜生图模板.md",
+      "condition": "creator_mask_face_effect in asset-image-assistant or storyboard-director",
+      "status": "absent_from_snapshot; source audit records upstream deletion",
+      "effect": "Block only the applicable face-effect template-dependent branch; do not fabricate a replacement."
+    },
+    {
+      "path": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/视频参考/索引.md",
+      "condition": "creator-polishing-mask real use action references selected",
+      "status": "not_in_source_snapshot",
+      "effect": "Block affected real-action reference validation until actual index and selected assets are supplied."
+    },
+    {
+      "path": "wiki/sources/造物者抛光面膜-动作参考视频.md",
+      "condition": "creator-polishing-mask action provenance required",
+      "status": "not_in_source_snapshot",
+      "effect": "Report missing provenance only for affected product-reference work."
+    },
+    {
+      "path": "raw/videos/动作参考/来源记录.md",
+      "condition": "creator-polishing-mask raw action source verification required",
+      "status": "excluded_from_source_snapshot",
+      "effect": "External source input; do not copy raw media or unrelated data automatically."
+    },
+    {
+      "path": "assets/product-references/creator-polishing-mask-2/PRODUCT_BRIEF.md",
+      "condition": "creator-polishing-mask real-use method selected",
+      "status": "external_input_not_in_repository",
+      "effect": "Block affected product-use production if absent or conflicting; not a global stage blocker."
+    },
+    {
+      "path": "projects/Master-Storyboarding/经验/经验索引.md",
+      "condition": "scale-change or cross-segment scale continuity experience lookup triggered",
+      "status": "not_in_source_snapshot",
+      "effect": "Only the conditional experience lookup is unavailable."
+    },
+    {
+      "path": "wiki/reference/master-storyboarding-invalid-rules.jsonl",
+      "condition": "production dynamic knowledge discovery enabled",
+      "status": "exact_upstream_path_absent_on_2026-11-04; FileNotFoundError errno 2; no claim that all historical tombstones are absent",
+      "effect": "Do not fabricate an empty tombstone file; direct confirmed methods remain separately usable."
+    },
+    {
+      "path": "wiki/concepts/03-AI生成与视频/视频提示词骨架与素材职责方法.md",
+      "condition": "historical provenance lookup explicitly requested",
+      "status": "historical_target_not_in_source_snapshot",
+      "effect": "Not an active production dependency; do not restore retired rules."
+    }
+  ]
+}

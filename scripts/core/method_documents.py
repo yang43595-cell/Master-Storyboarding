@@ -1,8 +1,6 @@
-"""Resolve user-confirmed, complete Vault method documents for one Skill.
+"""Resolve confirmed methods from commit-owned knowledge or an explicit Vault.
 
-The Vault remains the only editable source.  A stage packet may snapshot a
-method for one running task, but that snapshot is evidence, never a second
-method authority.
+Task snapshots are reading evidence, never a new method authority.
 """
 
 from __future__ import annotations
@@ -13,6 +11,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from .knowledge_runtime import KnowledgeRuntimeError, verify_selected_file
 
 
 class MethodDocumentError(ValueError):
@@ -44,6 +44,9 @@ class MethodDocument:
     applies_when: str
     content: str
     promotion_basis: str = "legacy_unspecified"
+    template_path: str = ""
+    template_checksum: str = ""
+    template_content: str = ""
 
 
 @dataclass(frozen=True)
@@ -110,9 +113,22 @@ def resolve_method_documents(
             basis = "legacy_unspecified"
         if method is None:
             method = _load_complete_method(vault, identifier, path, applies_when, test_only=test_only)
+        template_path = entry.get("template_path", "")
+        if "template_path" in entry and (not isinstance(template_path, str) or not template_path.strip()):
+            raise MethodDocumentError(f"专业方法模板路径无效：{identifier}")
+        template_checksum = template_content = ""
+        if template_path:
+            try:
+                template_file = verify_selected_file(vault, template_path)
+                template_raw = template_file.read_bytes()
+                template_content = template_raw.decode("utf-8-sig")
+                template_checksum = hashlib.sha256(template_raw).hexdigest()
+            except (KnowledgeRuntimeError, OSError, UnicodeDecodeError) as exc:
+                raise MethodDocumentError(f"专业方法适用模板不可用：{identifier}: {exc}") from exc
         required.append(MethodDocument(
             method.id, method.vault_path, method.title, method.version,
             method.checksum, method.applies_when, method.content, basis,
+            template_path, template_checksum, template_content,
         ))
     return MethodResolution(required=required, pending=pending)
 
@@ -192,7 +208,10 @@ def _safe_vault_file(vault: Path, relative: str, identifier: str) -> Path:
         raise MethodDocumentError(f"方法证据路径越出知识库：{identifier}") from exc
     if not target.is_file():
         raise MethodDocumentError(f"方法晋升证据文件缺失：{identifier}={relative}")
-    return target
+    try:
+        return verify_selected_file(vault, relative)
+    except KnowledgeRuntimeError as exc:
+        raise MethodDocumentError(str(exc)) from exc
 
 
 def _load_complete_method(vault: Path, identifier: str, relative: str, applies_when: str, *, test_only: bool = False) -> MethodDocument:
@@ -205,6 +224,10 @@ def _load_complete_method(vault: Path, identifier: str, relative: str, applies_w
         raise MethodDocumentError(f"专业方法路径越出知识库：{identifier}") from exc
     if not source.is_file():
         raise MethodDocumentError(f"专业方法文件缺失：{identifier}={relative}")
+    try:
+        source = verify_selected_file(vault, relative)
+    except KnowledgeRuntimeError as exc:
+        raise MethodDocumentError(str(exc)) from exc
     raw = source.read_bytes()
     try:
         content = raw.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
@@ -264,7 +287,7 @@ def _frontmatter(content: str, identifier: str) -> dict[str, str]:
 
 
 def render_method_packet(methods: list[MethodDocument]) -> str:
-    lines = ["# 本轮必读专业方法快照", "", "> 自动生成的只读任务依据；Vault 原页是唯一可编辑主版本。", ""]
+    lines = ["# 本轮必读专业方法快照", "", "> 自动生成的只读任务依据；内置知识由当前仓库提交定版；显式外部 Vault 为本轮指定来源。读取不自动同步或晋升。", ""]
     for method in methods:
         lines.extend([
             f"## {method.id}", "",
@@ -275,4 +298,11 @@ def render_method_packet(methods: list[MethodDocument]) -> str:
             f"- 适用条件：{method.applies_when}", "",
             "### 完整正文", "", method.content.rstrip(), "",
         ])
+        if method.template_path:
+            lines.extend([
+                "### 本方法适用模板", "",
+                f"- 来源：`{method.template_path}`",
+                f"- SHA-256：`{method.template_checksum}`", "",
+                method.template_content.rstrip(), "",
+            ])
     return "\n".join(lines).rstrip() + "\n"
