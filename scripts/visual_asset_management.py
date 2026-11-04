@@ -88,6 +88,36 @@ def write_index(root, index):
         write_bytes(root / '资产索引.csv', handle.getvalue().encode('utf-8-sig'))
 
 
+def project_asset_ids(library):
+    """Protect project inputs and outputs by identity, not just by file contents.
+
+    Read the saved rows even before they have a job. Keep the existing conservative
+    protection for all project jobs, including old jobs still retained for review.
+    Unreadable project/job records fail closed before any managed files are removed.
+    Callers hold library.lock across this read and the corresponding file operation.
+    """
+    jobs = {job['id']: job for job in library.items('jobs')}
+    project_jobs = {ident for ident, job in jobs.items() if job.get('project_id')}
+    used = set()
+    for summary in library.projects.summaries():
+        project = library.projects.get(summary['id'])
+        for row in project['rows']:
+            used.update(row.get('reference_ids', []))
+            if row.get('job_id'):
+                project_jobs.add(row['job_id'])
+    for ident in project_jobs:
+        if ident not in jobs:
+            raise ValueError('项目制作记录缺失，暂停资产清理：' + ident)
+        job = jobs[ident]
+        for record in [job, *job.get('steps', [])]:
+            for field in ('reference_ids', 'extra_reference_ids', 'outputs'):
+                used.update(record.get(field, []))
+            for field in ('source_id', 'secondary_id', 'upload_source_id', 'selected'):
+                if record.get(field):
+                    used.add(record[field])
+    return used
+
+
 def manage(library, ids, action, category=None, at=None, manual=False):
     if action not in {'move', 'trash', 'restore', 'purge'}:
         raise ValueError('未知资产操作')
@@ -108,6 +138,7 @@ def manage(library, ids, action, category=None, at=None, manual=False):
             root = (vault / '资产库').resolve()
             index = json.loads((root / '资产索引.json').read_text(encoding='utf-8'))
             rows = {r['library_asset_id']: r for r in index['assets']}
+        used = project_asset_ids(library) if action == 'purge' else set()
         operations = []
         for item in items:
             if action == 'move' and ((item.get('media_type') == 'video') != (category == '视频参考')):
@@ -118,8 +149,7 @@ def manage(library, ids, action, category=None, at=None, manual=False):
             if action == 'purge' and not manual and datetime.fromisoformat(item['expires_at']) > moment:
                 raise ValueError('图片尚未满 30 天，不能自动删除')
             if action == 'purge' and (item.get('status') == 'confirmed' or item.get('project_confirmations') or
-                any(item['id'] in step.get('outputs', []) for job in library.items('jobs') if job.get('project_id')
-                    for step in job.get('steps', []))):
+                                      item['id'] in used):
                 raise ValueError('已确认或被项目引用的资产不能永久清理：' + item['name'])
             current = inside((library.root / 'assets').resolve(), Path(item['thumbnail']).parent)
             if not current.is_dir():
@@ -230,12 +260,12 @@ def manage(library, ids, action, category=None, at=None, manual=False):
 
 def cleanup(library, at=None):
     moment = at or datetime.now(timezone.utc)
-    used = {ident for job in library.items('jobs') if job.get('project_id')
-            for step in job.get('steps', []) for ident in step.get('outputs', [])}
-    expired = [i['id'] for i in library.items() if i.get('expires_at') and
-               datetime.fromisoformat(i['expires_at']) <= moment and
-               i.get('status') != 'confirmed' and not i.get('project_confirmations') and i['id'] not in used]
-    return manage(library, expired, 'purge', at=moment) if expired else {'count': 0}
+    with library.lock:
+        used = project_asset_ids(library)
+        expired = [i['id'] for i in library.items() if i.get('expires_at') and
+                   datetime.fromisoformat(i['expires_at']) <= moment and
+                   i.get('status') != 'confirmed' and not i.get('project_confirmations') and i['id'] not in used]
+        return manage(library, expired, 'purge', at=moment) if expired else {'count': 0}
 
 
 ROLE_SCORE = {'母版': 500, '参考': 400, '候选': 300, '分镜': 200, '历史': 100, '待整理': 0}
@@ -274,16 +304,7 @@ def dedupe(library, at=None):
         groups = duplicate_groups(library)
         protected = {item['id'] for item in library.items()
                      if item.get('status') == 'confirmed' or item.get('project_confirmations')}
-        jobs = {job['id']: job for job in library.items('jobs')}
-        for summary in library.projects.summaries():
-            project = library.projects.get(summary['id'])
-            for row in project['rows']:
-                protected.update(row.get('reference_ids', []))
-                for step in jobs.get(row.get('job_id'), {}).get('steps', []):
-                    protected.update(step.get('outputs', []))
-                    protected.update(step.get('reference_ids', []))
-                    if step.get('selected'):
-                        protected.add(step['selected'])
+        protected.update(project_asset_ids(library))
         keep, trash = [], []
         for group in groups:
             canonical = max([item for item in group if item['id'] in protected] or group, key=_keep_score)

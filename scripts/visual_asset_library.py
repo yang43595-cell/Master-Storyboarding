@@ -865,7 +865,7 @@ class Library:
         source = Path(source).expanduser().resolve()
         if not source.exists() or source == self.root or source.is_relative_to(self.root):
             raise ValueError('来源不存在，或来源是资产库自身')
-        protected = [ROOT.resolve(), self.vault.resolve(),
+        protected = [self.root, ROOT.resolve(), self.vault.resolve(),
                      *(Path(p['path']).resolve() for p in self.projects.summaries())]
         if any(source.is_relative_to(path) for path in protected):
             raise ValueError('任务或知识库内的图片不回流到网页；请从知识库选择现有资产')
@@ -873,15 +873,24 @@ class Library:
         files = [source] if source.is_file() else sorted(source.rglob('*'))
         result = {'source': str(source), 'added': 0, 'existing': 0, 'errors': [], 'time': now()}
         for path in files:
-            if (path.suffix.lower() not in IMAGE_EXTS | VIDEO_EXTS or not path.is_file()
-                    or path.is_relative_to(self.root) or any(p in {'.git', '.claude', '.obsidian'} for p in path.parts)):
+            if path.suffix.lower() not in IMAGE_EXTS | VIDEO_EXTS:
                 continue
-            parts = path.parts
-            project = parts[parts.index('定稿项目') + 1] if '定稿项目' in parts else source.stem
             try:
-                _, added = self.import_file(path, project=project, provenance=provenance)
+                # The selected parent may contain protected projects/Vault files.
+                # Check both the walked path and the actual symlink target before
+                # import_file can read or copy bytes; retain hidden-source exclusions.
+                resolved = path.resolve(strict=True)
+                if any(p in {'.git', '.claude', '.obsidian'} for p in (*path.parts, *resolved.parts)):
+                    continue
+                if any(path.is_relative_to(root) or resolved.is_relative_to(root) for root in protected):
+                    raise ValueError('任务、知识库或资产库内的图片不回流到网页：' + str(resolved))
+                if not resolved.is_file():
+                    continue
+                parts = resolved.parts
+                project = parts[parts.index('定稿项目') + 1] if '定稿项目' in parts else source.stem
+                _, added = self.import_file(resolved, project=project, provenance=provenance)
                 result['added' if added else 'existing'] += 1
-            except (OSError, ValueError, Image.DecompressionBombError) as exc:
+            except (OSError, RuntimeError, ValueError, Image.DecompressionBombError) as exc:
                 result['errors'].append({'path': str(path), 'error': str(exc)})
         dump(self.root / 'imports' / (uid() + '.json'), result)
         return result
