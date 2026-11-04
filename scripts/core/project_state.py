@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .io import write_json, write_text
+from .io import project_locked, write_json, write_text
 
 
 SCHEMA_VERSION = "stage-1.0"
@@ -134,6 +134,7 @@ def render_project_state_markdown(state: dict[str, Any]) -> str:
     return "\n".join([*lines, ""])
 
 
+@project_locked
 def write_project_state(project_root: Path, state: dict[str, Any]) -> None:
     validate_project_state(state)
     from .artifacts import MANIFEST_PATH, load_manifest
@@ -165,6 +166,7 @@ def reconcile_current_artifacts(
     return {**state, "current_artifacts": selected}
 
 
+@project_locked
 def sync_current_artifacts(project_root: Path, manifest: dict[str, Any]) -> None:
     """Update an existing state after manifest validity changes; never create one."""
     path = project_root / "00_项目管理" / "project_state.json"

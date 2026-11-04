@@ -18,6 +18,7 @@ from . import confirmation_scope
 from .artifacts import (dependency_closure, load_manifest, mark_impacted_artifacts_stale,
                         project_path, validate_candidate_submission)
 from .io import (
+    PROJECT_LOCK_RELATIVE,
     file_lock,
     normalized_text_sha256,
     read_json,
@@ -36,7 +37,7 @@ from .project_state import (
 MANAGE = Path("00_项目管理")
 CONTROL_RELATIVE = MANAGE / "change_control.json"
 TRANSACTION_ROOT = MANAGE / "revision_transactions"
-LOCK_RELATIVE = MANAGE / ".revision-control.lock"
+LOCK_RELATIVE = PROJECT_LOCK_RELATIVE
 CONTROL_SCHEMA_VERSION = "revision-control-1.0"
 TIER_VALUES = {"T0", "T1", "T2"}
 

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import errno
 import hashlib
+import inspect
 import json
 import os
+import threading
 import time
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from functools import wraps
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -112,28 +116,79 @@ def sha256_json(value: Any) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+PROJECT_LOCK_RELATIVE = Path("00_项目管理") / ".revision-control.lock"
+
+
 @contextmanager
 def file_lock(lock_path: Path, *, timeout_seconds: float = 10.0) -> Iterator[None]:
-    """Small cross-process lock using an atomic lock file."""
+    """Reentrant thread/process lock; the OS releases it if its owner exits.
 
+    Keep the file in place: unlinking it would let another descriptor lock a
+    different inode. File age and leftover diagnostic text never grant ownership.
+    """
+    lock_path = Path(lock_path).resolve()
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    deadline = time.monotonic() + timeout_seconds
-    while True:
-        try:
-            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                handle.write(json.dumps({"pid": os.getpid(), "created_at": utc_now()}))
-            break
-        except FileExistsError:
-            if time.monotonic() >= deadline:
-                raise TimeoutError(f"无法获取黑箱状态锁：{lock_path}")
-            try:
-                if time.time() - lock_path.stat().st_mtime > 120:
-                    lock_path.unlink(missing_ok=True)
-            except FileNotFoundError:
-                pass
-            time.sleep(0.05)
-    try:
+    # Both `core.io` and `scripts.core.io` may be imported in one interpreter.
+    # Ownership must be shared across those aliases, but never across threads/PIDs.
+    thread = threading.current_thread()
+    if not hasattr(thread, "_msb_file_lock_handles"):
+        thread._msb_file_lock_handles = {}
+    held = thread._msb_file_lock_handles
+    key = (os.getpid(), str(lock_path))
+    if key in held:
         yield
-    finally:
-        lock_path.unlink(missing_ok=True)
+        return
+
+    fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o600)
+    with os.fdopen(fd, "r+b", buffering=0) as handle:
+        # msvcrt permits locking past EOF; do not write anything before ownership.
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            try:
+                handle.seek(0)
+                if os.name == "nt":
+                    import msvcrt
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError as exc:
+                if exc.errno not in {errno.EACCES, errno.EAGAIN, errno.EDEADLK}:
+                    raise
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(f"无法获取黑箱状态锁：{lock_path}") from exc
+                time.sleep(min(0.05, max(0, deadline - time.monotonic())))
+        held[key] = handle
+        try:
+            handle.seek(0)
+            handle.write(json.dumps({"pid": os.getpid(), "created_at": utc_now()}).encode())
+            handle.truncate()
+            yield
+        finally:
+            held.pop(key)
+            handle.seek(0)
+            if os.name == "nt":
+                import msvcrt
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def project_lock(project_root: Path):
+    """One lock for shared manifest, confirmation and project-state writers."""
+    return file_lock(Path(project_root) / PROJECT_LOCK_RELATIVE)
+
+
+def project_locked(function):
+    """Hold the project lock across a read/modify/write operation (first argument)."""
+    parameter = next(iter(inspect.signature(function).parameters))
+
+    @wraps(function)
+    def locked(*args, **kwargs):
+        root = args[0] if args else kwargs[parameter]
+        with project_lock(root):
+            return function(*args, **kwargs)
+
+    return locked
