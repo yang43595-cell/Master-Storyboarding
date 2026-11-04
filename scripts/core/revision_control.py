@@ -16,7 +16,7 @@ from typing import Any, Iterable
 
 from . import confirmation_scope
 from .artifacts import (dependency_closure, load_manifest, mark_impacted_artifacts_stale,
-                        project_path, validate_candidate_submission)
+                        project_path, validate_candidate_submission, validate_agent_submission)
 from .io import (
     PROJECT_LOCK_RELATIVE,
     file_lock,
@@ -453,6 +453,7 @@ def open_change(
     logical_ids: list[str],
     reason: str,
     evidence_refs: list[str] | None = None,
+    authorization_id: str | None = None,
 ) -> dict[str, Any]:
     if tier not in TIER_VALUES:
         raise RevisionControlError(f"未知 tier：{tier}")
@@ -465,6 +466,14 @@ def open_change(
             raise RevisionControlError("每个项目同时只能有一个活动变更案")
         manifest = load_manifest(project)
         bases = [_current_by_logical(manifest, item) for item in logical_ids]
+        authorization = None
+        if authorization_id is not None:
+            from .candidate_test import require_production
+            from .agent_acceptance import require_workflow_authorization, skill_for_artifact
+            require_production(project)
+            skill = skill_for_artifact(bases[0])
+            grant = require_workflow_authorization(project, authorization_id, skill)
+            authorization = {"id": authorization_id, "sha256": sha256_json(grant), "skill": skill}
         change = {
             "change_id": change_id,
             "tier": tier,
@@ -483,6 +492,10 @@ def open_change(
             "review": None,
             "paid_approvals": [],
         }
+        if authorization is not None:
+            change["workflow_authorization"] = authorization
+            change["impact_gate"] = "authorized"
+            change["status"] = "awaiting_candidate"
         control["active_change"] = change
         return _commit_json_transaction_unlocked(project, {project / CONTROL_RELATIVE: control}, reason="open revision change")
 
@@ -711,6 +724,8 @@ def confirm_candidate(
         require_production(project)
         control = _load_control(project)
         change = _assert_active(control, change_id)
+        if change.get("workflow_authorization"):
+            raise RevisionControlError("自主变更须使用 confirm_agent_candidate，不生成逐稿人工确认")
         if change.get("status") != "awaiting_candidate_confirmation":
             raise RevisionControlError("当前变更案不等待候选确认")
         _assert_review_current(project, change)
@@ -763,6 +778,66 @@ def confirm_candidate(
             project / CONTROL_RELATIVE: control,
             project / MANAGE / "project_state.json": state,
         }, reason="confirm revision candidate")
+
+
+def _assert_workflow_authorization(project: Path, change: dict[str, Any], entry: dict[str, Any],
+                                   state: dict[str, Any]) -> dict[str, Any]:
+    from .agent_acceptance import require_workflow_authorization, skill_for_artifact
+    binding = change.get("workflow_authorization")
+    skill = skill_for_artifact(entry)
+    if not isinstance(binding, dict) or binding.get("skill") != skill:
+        raise RevisionControlError("自主变更缺少本阶段准确流程授权")
+    grant = require_workflow_authorization(project, binding.get("id"), skill, state=state)
+    if sha256_json(grant) != binding.get("sha256"):
+        raise RevisionControlError("流程授权在变更期间发生变化；重新核定范围后开启变更")
+    return binding
+
+
+def confirm_agent_candidate(project: Path, *, change_id: str, report_path: str) -> dict[str, Any]:
+    """Accept the current self-checked revision, without recording human approval."""
+    from .candidate_test import require_production
+    from .agent_acceptance import build_agent_acceptance, validate_agent_acceptance
+    project = project.resolve()
+    with project_lock(project):
+        require_production(project)
+        control = _load_control(project)
+        change = _assert_active(control, change_id)
+        if change.get("status") not in {"awaiting_review", "awaiting_candidate_confirmation"}:
+            raise RevisionControlError("当前变更案不等待自主候选验收")
+        manifest = load_manifest(project)
+        _assert_manifest_head(change, manifest)
+        candidate = change.get("candidate_receipt") or {}
+        source, _ = _within_project(project, str(candidate.get("path") or ""))
+        item = next((row for row in manifest.get("artifacts", [])
+                     if row.get("artifact_id") == candidate.get("artifact_id")), None)
+        if (item is None or item.get("status") != "candidate" or item.get("user_approved") is not False
+                or item.get("logical_id") != candidate.get("logical_id")
+                or item.get("revision") != candidate.get("revision")
+                or item.get("checksum") != candidate.get("sha256")
+                or project_path(project, item.get("path_or_url", "")) != source
+                or sha256_file(source) != candidate.get("sha256")):
+            raise RevisionControlError("自主候选与登记的身份、修订、路径或 hash 不一致")
+        state = load_project_state(project)
+        grant = _assert_workflow_authorization(project, change, item, state)
+        checked = dict(item)
+        checked["agent_acceptance"] = build_agent_acceptance(project, checked, report_path, state=state)
+        if checked["agent_acceptance"]["authorization_id"] != grant["id"]:
+            raise RevisionControlError("自主验收报告不属于本变更流程授权")
+        report = validate_agent_acceptance(project, checked, state=state)
+        validate_agent_submission(project, checked, manifest, report)
+        acceptance = checked["agent_acceptance"]
+        change["candidate_acceptance"] = acceptance
+        change["review"] = {
+            "kind": "revision-agent-self-check", "change_id": change_id, "verdict": "approved",
+            "report_ref": acceptance["report_path"], "report_sha256": acceptance["report_sha256"],
+            **{key: candidate[key] for key in ("artifact_id", "revision", "sha256")}, "at": utc_now(),
+        }
+        change["status"] = "commit_ready"
+        state["review_report"] = dict(change["review"])
+        return _commit_json_transaction_unlocked(project, {
+            project / CONTROL_RELATIVE: control,
+            project / MANAGE / "project_state.json": state,
+        }, reason="accept agent revision candidate")
 
 
 def record_scoped_confirmation(
@@ -821,7 +896,10 @@ def commit_change(project: Path, *, change_id: str) -> dict[str, Any]:
         if change.get("status") != "commit_ready":
             raise RevisionControlError("当前变更案尚未具备提交条件")
         _assert_review_current(project, change)
-        if not confirmation_scope.is_whole_artifact(change.get("candidate_confirmation")):
+        agent_acceptance = change.get("candidate_acceptance")
+        if agent_acceptance is not None and not isinstance(agent_acceptance, dict):
+            raise RevisionControlError("自主候选验收依据必须是准确报告指针")
+        if agent_acceptance is None and not confirmation_scope.is_whole_artifact(change.get("candidate_confirmation")):
             raise RevisionControlError("只有整稿范围的用户确认才能提交采用")
         manifest = load_manifest(project)
         _assert_manifest_head(change, manifest)
@@ -833,6 +911,19 @@ def commit_change(project: Path, *, change_id: str) -> dict[str, Any]:
         candidate_item = next((item for item in manifest.get("artifacts") or [] if item.get("artifact_id") == candidate_id), None)
         if candidate_item is None or candidate_item.get("status") != "candidate":
             raise RevisionControlError("候选产物登记状态无效")
+        state = load_project_state(project)
+        if agent_acceptance is not None:
+            from .agent_acceptance import validate_agent_acceptance
+            _assert_workflow_authorization(project, change, candidate_item, state)
+            if agent_acceptance.get("authorization_id") != change["workflow_authorization"]["id"]:
+                raise RevisionControlError("自主候选验收授权与变更授权不一致")
+            if candidate_item.get("user_approved") is not False or change.get("candidate_confirmation"):
+                raise RevisionControlError("自主验收不得同时制造候选人工确认")
+            candidate_item["agent_acceptance"] = agent_acceptance
+            acceptance_report = validate_agent_acceptance(project, candidate_item, state=state)
+            validate_agent_submission(project, candidate_item, manifest, acceptance_report)
+        elif change.get("workflow_authorization"):
+            raise RevisionControlError("自主变更缺少本版验收，不用人工确认旁路")
         try:
             submission_sha256 = validate_candidate_submission(project, candidate_item, manifest)
             if candidate_item.get("logical_id") in {"narrative.package", "storyboard.package", "video.prompt"} and not submission_sha256:
@@ -850,9 +941,8 @@ def commit_change(project: Path, *, change_id: str) -> dict[str, Any]:
                 item["status"] = "superseded"
                 item["superseded_at"] = utc_now()
         candidate_item["status"] = "current"
-        candidate_item["user_approved"] = True
+        candidate_item["user_approved"] = agent_acceptance is None
         stale_downstream = sorted(set(report.stale_ids) - {str(candidate.get("logical_id"))})
-        state = load_project_state(project)
         state = reconcile_current_artifacts(state, manifest, replacements={
             item["artifact_id"]: candidate_id for item in change["targets"]
             if item["logical_id"] == candidate.get("logical_id")

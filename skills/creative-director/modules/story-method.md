@@ -12,7 +12,7 @@ python scripts/stage_context_cli.py prepare --project <项目> --skill creative-
 
 ## 第二层方法与第三层候选/案例
 
-**第一层**的运行与上下游边界见本 Skill 入口、`PROJECT_RULES.md` 和本轮启动包。**第二层**包括 `knowledge-profile.json` 绑定的已确认专业方法、本地执行合同/参考规范及交付模板；模板负责交付结构，合同负责稳定约束，专业方法负责经确认可复用的方法，三者各守职责。专业方法正文仍以 Vault 唯一来源为准。遇到具体故事或对白问题且本轮确需参考时，在请求写 `"use_story_method": true`；prepare 载入 `CREATIVE-DIRECTION-METHOD` 快照，完整阅读后用 `record-method-reading` 登记，再 `ensure-prepared`。本轮读取登记不代表方法晋升。
+**第一层**的运行与上下游边界见本 Skill 入口、`PROJECT_RULES.md` 和本轮启动包。**第二层**包括 `knowledge-profile.json` 绑定的已确认专业方法、本地执行合同/参考规范及交付模板；模板负责交付结构，合同负责稳定约束，专业方法负责经确认可复用的方法，三者各守职责。专业方法按[当前知识根](../../_shared/knowledge-access.md#本仓库的默认知识根)解析：默认读取仓库固定的运行副本，显式外部来源则读取指定知识根；来源原页仍作追溯，不要求另读同义正文或写回原库。遇到具体故事或对白问题且本轮确需参考时，在请求写 `"use_story_method": true`；prepare 载入 `CREATIVE-DIRECTION-METHOD` 快照，完整阅读后用 `record-method-reading` 登记，再 `ensure-prepared`。本轮读取登记不代表方法晋升。
 
 **第三层**提供按需候选规则、原始来源和项目案例证据。动态候选只按启动包 `knowledge_candidates.md` 中的精确路径与锚点读取；试用必须由 profile 明确列出规则 ID，并通过 `candidate-test`，正文单独写入 `candidate_trial_packet.md`，不进入正式知识选择集。已归档 Wiki 快照先运行 `python scripts/stage_context_cli.py candidate-source-index --skill creative-director --source-id MSB-WIKI-SNAPSHOT-20261023 --snapshot <已物化ZIP路径>` 校验固定 SHA-256、Vault head 和消费端 commit。白名单内的 Wiki `candidate` 或 `enabled` 块可仅在隔离试用副本中呈为 `candidate`；包仍保留原 Wiki 标签，`enabled` 不代表确认；`confirmed` 不通过此候选入口。当前正式快照白名单为空，常规查询返回零条可试用规则；NARR-003 未晋升。单次试用内容只验证来源接入与隔离，不证明知识效果。项目案例仅从 `knowledge-profile.json` 的 `optional_experience_scopes` 明确列出的 Vault 相对 Markdown 路径进入启动包，再由执行者依任务判断是否读取。禁止扫描全 Vault、凭其他 Skill 路径推断编导案例目录，或把“目录存在”说成“本轮已读取”。**当前没有已核实的编导案例路径，真实案例入口仍待接入，不得声称检索过第三层案例。**
 
@@ -57,7 +57,7 @@ python scripts/stage_context_cli.py prepare --project <项目> --skill creative-
 
 新JSON候选运行 `python -m scripts.core.story_sources --project <项目> --narrative <叙事包>`；按[对白契约](../references/dialogue-lineage-contract.md#送审前检查与确认范围)核对来源及确认范围。旧Markdown候选才走历史 `--markdown` 参数。程序只证明结构/文字/引用一致，不证明现场过程充分或用户确认。
 
-在真正采用或交接前，当前执行者核对准确修订的正文、来源和本轮自查结论，将关键发现、修复依据与尚未核范围简记现有任务记录；不新增强制质量侧档、逐段pass清单或审核身份。已发现叙事缺漏先返修，影响事实正确性的未知先答疑；不能拿程序ok代替读稿。完整稿送用户审定准确JSON后才按既有授权采用/交接，答疑、对白确认及候选试跑仍不等于整稿确认。试跑允许未确认输入，不允许把有语义问题的结果称为质量通过。
+在真正采用或交接前，当前执行者核对准确修订的正文、来源和本轮自查结论，将关键发现、修复依据与尚未核范围简记现有任务记录；不新增强制质量侧档、逐段pass清单或审核身份。已发现叙事缺漏先返修，影响事实正确性的未知先答疑；不能拿程序ok代替读稿。完整稿按当前入口送审准确JSON后，凭真实确认及既有授权采用/交接；统一入口的网站准确整稿通过同时授予继续执行，不再等待聊天重复确认，网站接口或回执不可得时保留待审缺口。答疑、对白确认及候选试跑仍不等于整稿确认。试跑允许未确认输入，不允许把有语义问题的结果称为质量通过。
 
 ## 场景资产粒度
 

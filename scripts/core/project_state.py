@@ -14,6 +14,7 @@ SCHEMA_VERSION = "stage-1.0"
 STATE_KEYS = (
     "schema_version", "current_stage", "project_status", "finalization",
     "current_artifacts", "user_confirmations", "review_report", "accepted_issues", "next_stage",
+    "workflow_authorizations",
 )
 
 
@@ -25,6 +26,7 @@ def new_project_state(*, current_stage: str = "") -> dict[str, Any]:
         "finalization": None,
         "current_artifacts": [],
         "user_confirmations": [],
+        "workflow_authorizations": [],
         "review_report": None,
         "accepted_issues": [],
         "next_stage": None,
@@ -64,6 +66,7 @@ def normalize_project_state(value: dict[str, Any]) -> dict[str, Any]:
         legacy=True,
     )
     state["user_confirmations"] = value.get("user_confirmations") or []
+    state["workflow_authorizations"] = value.get("workflow_authorizations", [])
     state["project_status"] = str(value.get("project_status") or "active")
     state["finalization"] = value.get("finalization") if isinstance(value.get("finalization"), dict) else None
     state["review_report"] = value.get("review_report")
@@ -90,9 +93,10 @@ def load_project_state(project_root: Path) -> dict[str, Any]:
 
 
 def validate_project_state(state: dict[str, Any]) -> None:
-    if set(state) - {"candidate_test"} != set(STATE_KEYS):
+    required = set(STATE_KEYS) - {"workflow_authorizations"}
+    if set(state) - {"candidate_test"} - {"workflow_authorizations"} != required:
         extra = sorted(set(state) - set(STATE_KEYS))
-        missing = sorted(set(STATE_KEYS) - set(state))
+        missing = sorted(required - set(state))
         raise ValueError(f"project_state 字段不符合最小契约：extra={extra}, missing={missing}")
     if "candidate_test" in state:
         from .candidate_test import validate_context
@@ -108,6 +112,12 @@ def validate_project_state(state: dict[str, Any]) -> None:
     for field in ("current_artifacts", "user_confirmations", "accepted_issues"):
         if not isinstance(state.get(field), list):
             raise ValueError(f"{field} 必须是数组")
+    authorizations = state.get("workflow_authorizations", [])
+    if (not isinstance(authorizations, list)
+            or any(not isinstance(item, dict) or not isinstance(item.get("id"), str)
+                   or not item["id"].strip() for item in authorizations)
+            or len({item["id"] for item in authorizations}) != len(authorizations)):
+        raise ValueError("workflow_authorizations 必须是带唯一非空 id 的授权对象数组")
     _artifact_ids(state["current_artifacts"])
     if state.get("review_report") is not None and not isinstance(state["review_report"], dict):
         raise ValueError("review_report 必须是对象或 null")
@@ -125,6 +135,7 @@ def render_project_state_markdown(state: dict[str, Any]) -> str:
         f"- 定稿记录：{(state['finalization'] or {}).get('record_path', '无')}",
         f"- 当前有效产物：{len(state['current_artifacts'])}",
         f"- 用户确认：{len(state['user_confirmations'])}",
+        f"- 流程授权：{len(state.get('workflow_authorizations', []))}",
         f"- 审核报告：{'有' if state['review_report'] else '无'}",
         f"- 已接受问题：{len(state['accepted_issues'])}",
         f"- 下一阶段：{state['next_stage'] or '未设置'}",

@@ -419,12 +419,12 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
     """
     import math
     try:
-        from .core.artifacts import load_manifest, artifact_is_confirmed, project_path, digest as file_digest, validate_current_dependencies
+        from .core.artifacts import load_manifest, artifact_is_adopted, project_path, digest as file_digest, validate_current_dependencies
         from .core.project_state import load_project_state
         from .core.candidate_test import require_production
         from .core.delivery_files import discover_dependencies
     except ImportError:
-        from core.artifacts import load_manifest, artifact_is_confirmed, project_path, digest as file_digest, validate_current_dependencies
+        from core.artifacts import load_manifest, artifact_is_adopted, project_path, digest as file_digest, validate_current_dependencies
         from core.project_state import load_project_state
         from core.candidate_test import require_production
         from core.delivery_files import discover_dependencies
@@ -475,7 +475,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             raise ValueError('missing/ambiguous exact reference artifact')
         item = found[0]
         if (item['artifact_id'] not in state['current_artifacts']
-                or not artifact_is_confirmed(item, state, project)
+                or not artifact_is_adopted(item, state, project)
                 or not item.get('revision') or item['revision'] != ref.get('revision')):
             raise ValueError('reference artifact is unconfirmed, stale or another revision')
         path = project_path(project, item['path_or_url'])
@@ -484,6 +484,18 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             raise ValueError('reference file/hash differs from current confirmed artifact')
         validate_current_dependencies(item, manifest, state, project)
         return path
+    agent_reports = {}
+    def agent_report(item):
+        if item.get('agent_acceptance') is None:
+            return None
+        ident = item['artifact_id']
+        if ident not in agent_reports:
+            try:
+                from .core.agent_acceptance import validate_agent_acceptance
+            except ImportError:
+                from core.agent_acceptance import validate_agent_acceptance
+            agent_reports[ident] = validate_agent_acceptance(project, item, state=state)
+        return agent_reports[ident]
     sources = frozen.get('source_artifacts')
     if not isinstance(sources, list) or not sources:
         raise ValueError('exact confirmed source_artifacts required')
@@ -552,17 +564,38 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             scope = classify(receipt)
             return (scope.kind == KIND_SEGMENT and not problems_for_write(receipt)
                     and {prior_id, current_id} <= set(scope.ids.get('segment_ids', [])))
-        groups = [(receipt, group) for receipt in state["user_confirmations"]
+        groups = [(set(receipt.get("artifact_ids", [])), group) for receipt in state["user_confirmations"]
                   if covers_usage(receipt) and receipt.get("approval_ref")
                   for group in receipt.get("reference_groups", []) if group.get("group_id") == group_id]
+        # Group claims belong to a validated adoption report and its exact source
+        # closure. They never become project_state user-confirmation receipts.
+        relevant = {ref["artifact_id"] for ref in sources} | {tail["artifact_id"], head["artifact_id"]}
+        for item in manifest['artifacts']:
+            if (item.get('artifact_id') not in relevant or item.get('agent_acceptance') is None
+                    or item.get('artifact_id') not in state['current_artifacts']
+                    or not artifact_is_adopted(item, state, project)):
+                continue
+            report = agent_report(item)
+            bindings = [report['artifact'], *report['upstreams']]
+            for group in report.get('reference_groups', []):
+                if group.get('group_id') != group_id:
+                    continue
+                members = group.get('members')
+                if not isinstance(members, list) or not members:
+                    return False
+                if any(not any(all(member.get(k) == binding.get(k)
+                                   for k in ('artifact_id', 'revision', 'sha256'))
+                               for binding in bindings) for member in members):
+                    return False
+                groups.append(({binding['artifact_id'] for binding in bindings}, group))
         if len(groups) != 1:
             return False
-        receipt, group = groups[0]
+        approved_ids, group = groups[0]
         if (group.get("event_id") != event or group.get("state_id") != tail["state_id"]
                 or set(group.get("entity_ids", [])) != set(tail["entity_ids"])):
             return False
         for ref, role, node in [(tail, "end_frame", prior_id), (head, "start_frame", current_id)]:
-            if ref["artifact_id"] not in receipt.get("artifact_ids", []):
+            if ref["artifact_id"] not in approved_ids:
                 return False
             members = [m for m in group.get("members", [])
                        if all(m.get(k) == ref[k] for k in ("artifact_id", "revision", "sha256"))
@@ -622,6 +655,14 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                 row_preview_usage(row, ref, media_item, slot)
             else:
                 item = next(a for a in manifest['artifacts'] if a['artifact_id'] == ref['artifact_id'])
+                if item.get('type') == 'visual-supplement-image' and item.get('agent_acceptance') is not None:
+                    try:
+                        from .core.confirmation_scope import image_usage_shots
+                    except ImportError:
+                        from core.confirmation_scope import image_usage_shots
+                    permitted = set(image_usage_shots(agent_report(item).get('usage'), required=True))
+                    if not set(reference_shot_ids(ref, row)) <= permitted:
+                        raise ValueError('agent image acceptance usage does not cover these source shots')
                 validate_registered_product_reference(project, ref, item)
                 # Bind actual native identities to source bytes in the existing source
                 # artifact registration, not a caller-provided parallel list of labels.
@@ -630,7 +671,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                     if sum(digest(b) == digest(expected_binding) for b in item.get('upload_bindings', [])) != 1:
                         raise ValueError('endpoint has no unique exact manifest upload mapping')
                     reverse_hashes = {b.get('sha256') for source in manifest['artifacts']
-                        if source.get('status') == 'current' and artifact_is_confirmed(source, state, project)
+                        if source.get('status') == 'current' and artifact_is_adopted(source, state, project)
                         for b in source.get('upload_bindings', [])
                         if b.get('identity_mode') == 'first_last_frame_download'
                         and b.get('target_url') == frozen['target_url']
@@ -650,7 +691,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                         raise ValueError('node/port has no unique exact registered upload binding')
                     verify_port_binding(project, bindings[0], expected_binding)
                     reverse_hashes = {b.get('sha256') for source in manifest['artifacts']
-                        if source.get('status') == 'current' and artifact_is_confirmed(source, state, project)
+                        if source.get('status') == 'current' and artifact_is_adopted(source, state, project)
                         for b in source.get('upload_bindings', [])
                         if b.get('identity_mode') == 'node_port_download'
                         and b.get('target_url') == frozen['target_url']
@@ -672,7 +713,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                     reverse_hashes = {binding['sha256']
                         for source in manifest['artifacts']
                         if source.get('status') == 'current'
-                        and artifact_is_confirmed(source, state, project)
+                        and artifact_is_adopted(source, state, project)
                         for binding in source.get('upload_bindings', [])
                         if binding.get('target_url') == frozen.get('target_url')
                         and binding.get('node_id') == media_item['node_id']

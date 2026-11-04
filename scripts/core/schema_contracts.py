@@ -102,6 +102,35 @@ def validate_visual_supplement_request(value: Any, *, project_root=None, candida
         if project_root is not None:
             require_production(project_root)
         require_schema(value, name, label="视觉补充请求")
+        if value["source_storyboard"]["status"] == "agent_accepted":
+            if project_root is None:
+                raise SchemaContractError("agent_accepted 导演来源须提供准确项目并核验采用依据")
+            from pathlib import Path
+            from .artifacts import (load_manifest, project_path, digest,
+                                    artifact_is_adopted, validate_current_dependencies)
+            from .project_state import load_project_state
+            from .agent_acceptance import validate_agent_acceptance
+            root = Path(project_root).resolve()
+            source = value["source_storyboard"]
+            manifest, state = load_manifest(root), load_project_state(root)
+            matches = [entry for entry in manifest["artifacts"]
+                       if entry.get("logical_id") == "storyboard.package" and entry.get("status") == "current"]
+            if len(matches) != 1 or matches[0].get("artifact_id") != source["artifact_id"]:
+                raise SchemaContractError("agent_accepted 导演来源缺失、非当前准确版本或不唯一")
+            entry = matches[0]
+            path = project_path(root, entry.get("path_or_url", ""))
+            if (entry.get("logical_id") != "storyboard.package"
+                    or entry.get("status") != "current"
+                    or entry["artifact_id"] not in state["current_artifacts"]
+                    or entry.get("revision") != source["revision"]
+                    or project_path(root, source["path"]) != path
+                    or not path.is_file() or not entry.get("checksum")
+                    or digest(path) != entry["checksum"]
+                    or not entry.get("agent_acceptance")
+                    or not artifact_is_adopted(entry, state, root)):
+                raise SchemaContractError("agent_accepted 导演来源身份、修订、路径、字节或采用依据无效")
+            validate_agent_acceptance(root, entry, state=state)
+            validate_current_dependencies(entry, manifest, state, root)
     result = {"schema_valid": True, "business_status": value["status"], "decision": value["decision"]}
     if candidate_test:
         result.update(result_metadata())
