@@ -22,7 +22,8 @@ def port_delivery(root, private):
         folder = root / ('synthetic-evidence-' + str(index)); folder.mkdir()
         binding, expected, reports = synthetic(folder)
         ref = row['reference_checks'][0]
-        row.update(native_entity_type='image', native_identity_mode='node_port_download', source_segment_id='SYNTHETIC-' + str(index))
+        row.update(native_entity_type='image', native_identity_mode='node_port_download',
+                   source_segment_id='SYNTHETIC-' + str(index), source_shot_ids=['SYNTHETIC-SHOT-' + str(index)])
         media = dict(node_id='frame-node', reference_port='image', sha256=ref['sha256'])
         row['ordered_media'] = [media]
         expected.update(target_url=frozen['target_url'], target_project_id='exact', draft_revision=frozen['revision'],
@@ -51,6 +52,9 @@ def port_delivery(root, private):
         if private:
             ref['upload_binding'] = binding
     (root / 'director.json').write_text(json.dumps({'fixture': 'synthetic only',
+        'scenes': [{'scene_id': 'SYNTHETIC-SCENE-' + str(index),
+                    'shots': [{'shot_id': row['source_shot_ids'][0]}]}
+                   for index, row in enumerate(frozen['drafts'])],
         'generation_segments': [{'segment_id': row['source_segment_id'], 'source_shot_ids': row['source_shot_ids']}
                                 for row in frozen['drafts']]}))
     manifest = artifacts.load_manifest(root)

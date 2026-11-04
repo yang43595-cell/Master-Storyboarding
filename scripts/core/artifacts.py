@@ -216,6 +216,8 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
             raise ValueError("视频提示词旧版不唯一；生成段续跑基线未知")
         if prior:
             revision_control._validate_segment_reconciliation(root, prior[0], payload)
+        from .generation_boundaries import validate_generation_boundaries
+        validate_generation_boundaries(payload, storyboard, root)
     if digest(path) != candidate_sha256:
         raise ValueError("候选稿件在提交校验期间发生变化；重新登记并审核")
     return candidate_sha256

@@ -45,7 +45,8 @@ def validate_required_files(project: Path, files: list[str], input_roots: list[P
     return errors
 
 
-def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=None, verify_hashes=False):
+def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=None, verify_hashes=False,
+                          json_projections=None):
     """Follow selected JSON path fields and exact manifest IDs, never scan prose.
 
     Paths are project-relative, as in artifact manifests; external absolute paths
@@ -59,6 +60,9 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
     testing = None
     seen_files, seen_ids = set(), set()
     hash_checked = set()
+    # Internal consumers may select an exact node from a historical snapshot.
+    # The original bytes remain checked; never expose projections as CLI input.
+    projections = json_projections or {}
 
     def error(location, message):
         report['errors'].append(f'{location}: {message}')
@@ -125,7 +129,13 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
             artifact(registered[0].get('artifact_id'), location)
         if path.suffix.lower() == '.json':
             try:
-                walk(json.loads(path.read_text(encoding='utf-8-sig')), str(path))
+                value = json.loads(path.read_text(encoding='utf-8-sig'))
+                if str(path) in projections:
+                    expected, selected = projections[str(path)]
+                    if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+                        raise ValueError('selected snapshot bytes changed')
+                    value = selected
+                walk(value, str(path))
             except (ValueError, OSError, UnicodeError, RecursionError) as exc:
                 error(str(path), f'cannot inspect JSON dependencies: {exc}')
 
@@ -170,6 +180,10 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
                     else:
                         for ident in child:
                             artifact(ident, here, logical=True)
+                elif key == 'project_path':
+                    # Context roots are directories; exact scope is checked by
+                    # the consuming authority, not treated as a required file.
+                    continue
                 elif key in PATH_KEYS or key.endswith(('_path', '_paths', '_file', '_files')):
                     # Empty optional paths in existing candidate records mean no
                     # selection. Explicit --require-file still rejects empty.

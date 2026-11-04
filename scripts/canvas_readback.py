@@ -85,7 +85,7 @@ def _endpoint_upload_expected(frozen, row, ref, media, slot):
                 role=('start_frame', 'end_frame')[slot - 1], control_evidence_sha256=digest(control['platform']))
 
 
-def preview_scope(frozen: dict, project: Path):
+def preview_scope(frozen: dict, project: Path, *, json_projections=None, context_node_ids=None):
     """Validate a caller's bounded declaration, NOT the authenticity of consent.
 
     The executor must establish permission and inspect pixels separately. This is
@@ -129,12 +129,13 @@ def preview_scope(frozen: dict, project: Path):
                  'preview_authorization','operations','cleanup', *flags}
     if set(frozen) - permitted:
         raise ValueError('unknown preview execution fields')
-    for row in frozen['drafts']:
+    scoped_rows = [row for row in frozen['drafts'] if context_node_ids is None or row['node_id'] in context_node_ids]
+    for row in scoped_rows:
         if set(row) - {'node_id','prompt','parameters','duration_bounds','shot_durations',
                       'native_entity_type','native_identity_mode','state_control','required_entities','required_reference_roles',
                       'ordered_media','reference_checks','continuity','timing_scope','source_shot_ids','source_shots','source_segment_id','quality_evidence','native_binding'}:
             raise ValueError('unknown preview draft execution fields')
-        if set(row['parameters']) - {'duration','aspect','aspect_ratio','ratio','resolution','model'}:
+        if set(row['parameters']) - {'duration','duration_seconds','aspect','aspect_ratio','ratio','resolution','model','reference_mode','mode'}:
             raise ValueError('unknown preview parameters; generation controls are forbidden')
     roots = auth.get('source_projects')
     if (not isinstance(roots, list) or not roots or any(not nonempty(p) or str(Path(p).resolve()) != p for p in roots)
@@ -144,7 +145,7 @@ def preview_scope(frozen: dict, project: Path):
     if (not isinstance(input_roots, list) or any(not nonempty(p) or str(Path(p).resolve()) != p
             or Path(p).parent == Path(p) for p in input_roots)):
         raise ValueError('exact narrow dependency input roots required')
-    all_refs = frozen.get('source_artifacts', []) + [ref for row in frozen['drafts'] for ref in row['reference_checks']]
+    all_refs = frozen.get('source_artifacts', []) + [ref for row in scoped_rows for ref in row['reference_checks']]
     checked, reports = {}, []
     def authority(ref):
         root = Path(ref['project_path']).resolve()
@@ -216,7 +217,8 @@ def preview_scope(frozen: dict, project: Path):
                 raise ValueError('actual display candidate file/hash mismatch')
             return record, {'_has_later_failure': failed}
         if key not in checked:
-            report = discover_dependencies(root, files=[record], input_roots=[Path(p) for p in roots + input_roots])
+            report = discover_dependencies(root, files=[record], input_roots=[Path(p) for p in roots + input_roots],
+                                           json_projections=json_projections)
             if not report['ok']:
                 raise ValueError('Candidate dependency readiness failed: ' + '; '.join(report['errors'] + report['uncheckable']))
             reports.append(report)
@@ -344,6 +346,71 @@ def preview_scope(frozen: dict, project: Path):
     return authority, usage, reports
 
 
+def predecessor_contexts(frozen, project, manifest, private_preview):
+    """Select only byte-bound prior nodes; never upload or recurse into history."""
+    from copy import deepcopy
+    try:
+        from .core.artifacts import project_path, digest as file_digest
+    except ImportError:
+        from core.artifacts import project_path, digest as file_digest
+    contexts, projections = {}, {}
+    current_ids = set(rows_by_id(frozen['drafts']))
+    for row in frozen['drafts']:
+        continuity = row.get('continuity', {})
+        evidence = continuity.get('previous_delivery')
+        if evidence is None:
+            continue
+        if (not isinstance(evidence, dict) or set(evidence) != {'artifact_id', 'revision', 'sha256'}
+                or not continuity.get('previous_node_id') or continuity['previous_node_id'] in current_ids):
+            raise ValueError('partial delivery requires an exact external predecessor snapshot reference')
+        refs = [ref for ref in frozen.get('source_artifacts', []) if
+                all(ref.get(k) == evidence[k] for k in evidence)]
+        entries = [item for item in manifest['artifacts'] if item.get('artifact_id') == evidence['artifact_id']]
+        if len(refs) != 1 or len(entries) != 1 or Path(refs[0].get('project_path', project)).resolve() != project:
+            raise ValueError('partial predecessor must be an exact same-project source_artifact')
+        path = project_path(project, entries[0]['path_or_url']).resolve()
+        if (not path.is_relative_to(project) or not path.is_file()
+                or file_digest(path) != evidence['sha256'] or entries[0].get('checksum') != evidence['sha256']
+                or entries[0].get('revision') != evidence['revision']):
+            raise ValueError('partial predecessor snapshot is missing, stale or another revision')
+        prior = json.loads(path.read_text(encoding='utf-8-sig'))
+        if (target_url(prior.get('target_url', '')) != target_url(frozen['target_url'])
+                or prior.get('target_project_id') != frozen.get('target_project_id')
+                or ('preview_authorization' in prior) != private_preview
+                or prior.get('revision') != evidence['revision']):
+            raise ValueError('partial predecessor target/project or formal/preview mode differs')
+        nodes = rows_by_id(prior.get('drafts'))
+        node = nodes.get(continuity['previous_node_id'])
+        if not node or node.get('continuity', {}).get('event_id') != continuity.get('event_id'):
+            raise ValueError('partial predecessor node/event is not the recorded prior node')
+        if node.get('continuity', {}).get('previous_node_id') in current_ids | {node['node_id']}:
+            raise ValueError('partial predecessor contains a current-node or self cycle')
+        if node['node_id'] in {c[1]['node_id'] for c in contexts.values()}:
+            raise ValueError('partial predecessor cannot be reused as a fork')
+        contexts[row['node_id']] = (prior, node, refs[0])
+        # Dependency walking checks this exact selected row, not unrelated old
+        # drafts or its own earlier predecessor chain. Original bytes stay intact.
+        selected = deepcopy(node)
+        selected.get('continuity', {}).pop('previous_delivery', None)
+        projected = projections.setdefault(str(path), (evidence['sha256'], {'drafts': []}))[1]
+        projected['drafts'].append(selected)
+    # Inspect only already selected nodes. Unknown older predecessors are outside
+    # this task, but cycles among the nodes we actually rely on cannot be hidden.
+    selected_nodes = {row['node_id']: row for row in frozen['drafts']}
+    selected_nodes.update({node['node_id']: node for _, node, _ in contexts.values()})
+    checked = set()
+    for ident in selected_nodes:
+        visiting = set()
+        cursor = ident
+        while cursor in selected_nodes and cursor not in checked:
+            if cursor in visiting:
+                raise ValueError('partial predecessor contexts contain a cycle')
+            visiting.add(cursor)
+            cursor = selected_nodes[cursor].get('continuity', {}).get('previous_node_id')
+        checked.update(visiting)
+    return contexts, projections
+
+
 def validate_submission(frozen: dict, project: Path, *, private_preview: bool = False) -> dict:
     """Check the existing frozen delivery JSON, using current project authority.
 
@@ -386,16 +453,17 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         from core.quality_evidence import (validate_native_binding_claims, scene_state_requirements,
                                            validate_scene_state_references, reference_shot_ids, validate_scene_source_mapping)
     validate_native_binding_claims(frozen, project)
+    manifest, state = load_manifest(project), load_project_state(project)
+    contexts, projections = predecessor_contexts(frozen, project, manifest, private_preview)
     if private_preview:
-        preview_authority, preview_usage, reports = preview_scope(frozen, project)
+        preview_authority, preview_usage, reports = preview_scope(frozen, project, json_projections=projections)
         dependencies = {'ok': True, 'candidate_reports': reports}
     else:
         if 'preview_authorization' in frozen:
             raise ValueError('preview scope cannot be used by formal delivery')
-        dependencies = discover_dependencies(project, payload=frozen)
+        dependencies = discover_dependencies(project, payload=frozen, json_projections=projections)
     if not dependencies['ok']:
         raise ValueError('Dependency readiness failed: ' + '; '.join(dependencies['errors'] + dependencies['uncheckable']))
-    manifest, state = load_manifest(project), load_project_state(project)
     rows_by_id(frozen['drafts'])
     if not isinstance(frozen.get('revision'), str) or not frozen['revision'].strip():
         raise ValueError('submission revision required')
@@ -436,7 +504,29 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                 scene_requirements.extend(scene_state_requirements(source_payload))
                 package_requirements.extend(packaging_requirements(source_payload))
                 scene_sources.append((ref, source_path.resolve(), source_payload))
-    validate_scene_source_mapping(frozen['drafts'], scene_sources, project)
+    external = validate_scene_source_mapping(frozen['drafts'], scene_sources, project) or {}
+    if set(contexts) != set(external):
+        raise ValueError('partial delivery requires exact prior-node evidence for every source continuation')
+    validation_rows, context_scopes = [], {}
+    for row in frozen['drafts']:
+        if row['node_id'] in contexts:
+            prior, node, ref = contexts[row['node_id']]
+            link = external[row['node_id']]
+            source = link['source']
+            if (node.get('source_segment_id') != link['previous_segment_id']
+                    or not any(all(old.get(k) == source.get(k) for k in ('artifact_id', 'revision', 'sha256'))
+                               and Path(old.get('project_path', project)).resolve() == Path(source.get('project_path', project)).resolve()
+                               for old in prior.get('source_artifacts', []))):
+                raise ValueError('partial predecessor does not bind the exact current source revision and segment')
+            authority(ref)  # Current manifest/confirmation or bounded candidate scope, not a stored PASS.
+            validate_native_binding_claims(node, project, prior['revision'], prior['target_url'], prior.get('target_project_id'))
+            context_scopes[node['node_id']] = prior
+            validation_rows.append(node)
+        validation_rows.append(row)
+    if contexts:
+        remaining = validate_scene_source_mapping(validation_rows, scene_sources, project) or {}
+        if set(remaining) - set(context_scopes):
+            raise ValueError('partial predecessor evidence leaves a current continuation unresolved')
     def seconds(value):
         if isinstance(value, bool) or not isinstance(value, (float, int)) or not math.isfinite(value) or value <= 0:
             raise ValueError('finite positive duration required')
@@ -481,7 +571,12 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                 return False
         return True
     endpoint_control_checks = {}
-    for row in frozen['drafts']:
+    for row in validation_rows:
+        row_frozen = context_scopes.get(row['node_id'], frozen)
+        row_authority, row_preview_usage = authority, preview_usage if private_preview else None
+        if private_preview and row['node_id'] in context_scopes:
+            prior_authority, row_preview_usage, _ = preview_scope(row_frozen, project, json_projections=projections, context_node_ids={row["node_id"]})
+            row_authority = lambda ref: prior_authority(ref)[0]
         endpoint_mode = row.get('native_identity_mode') == 'first_last_frame_download'
         if not endpoint_mode:
             if 'state_control' in row:
@@ -522,16 +617,16 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             raise ValueError('required reference roles must cover exactly the required entities')
         covered, covered_roles, frames = set(), {}, {}
         for slot, (media_item, ref) in enumerate(zip(media, refs), 1):
-            path = authority(ref)
+            path = row_authority(ref)
             if private_preview:
-                preview_usage(row, ref, media_item, slot)
+                row_preview_usage(row, ref, media_item, slot)
             else:
                 item = next(a for a in manifest['artifacts'] if a['artifact_id'] == ref['artifact_id'])
                 validate_registered_product_reference(project, ref, item)
                 # Bind actual native identities to source bytes in the existing source
                 # artifact registration, not a caller-provided parallel list of labels.
                 if endpoint_mode:
-                    expected_binding = _endpoint_upload_expected(frozen, row, ref, media_item, slot)
+                    expected_binding = _endpoint_upload_expected(row_frozen, row, ref, media_item, slot)
                     if sum(digest(b) == digest(expected_binding) for b in item.get('upload_bindings', [])) != 1:
                         raise ValueError('endpoint has no unique exact manifest upload mapping')
                     reverse_hashes = {b.get('sha256') for source in manifest['artifacts']
@@ -547,7 +642,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                     if reverse_hashes != {ref['sha256']}:
                         raise ValueError('conflicting endpoint upload source bytes')
                 elif identity_mode == 'node_port_download':
-                    expected_binding = _port_expected(frozen, row, ref, media_item, slot)
+                    expected_binding = _port_expected(row_frozen, row, ref, media_item, slot)
                     bindings = [b for b in item.get('upload_bindings', [])
                                 if b.get('identity_mode') == 'node_port_download'
                                 and all(b.get(k) == v for k, v in expected_binding.items())]
@@ -647,7 +742,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             control = row.get('state_control')
             if not isinstance(control, dict) or 'platform' not in control:
                 raise ValueError('endpoint mode requires actual platform evidence and source strategy')
-            proof = verify_endpoint_control(project, control['platform'], _endpoint_expected(frozen, row))
+            proof = verify_endpoint_control(project, control['platform'], _endpoint_expected(row_frozen, row))
             endpoint_control_checks[row['node_id']] = {
                 **proof, 'source_strategy': validate_endpoint_strategy(row, scene_sources, proof)}
         if any(not set(expected).issubset(covered_roles.get(e, set())) for e, expected in required_roles.items()):
@@ -658,6 +753,11 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         if not isinstance(continuity, dict) or not continuity.get('event_id'):
             raise ValueError('explicit event continuity required')
         event = continuity['event_id']
+        if row['node_id'] in context_scopes:
+            # Only its outgoing boundary is in this task. Preserve but do not
+            # recursively revalidate unrelated incoming history.
+            event_last[event] = row, frames
+            continue
         prior = event_last.get(event)
         if prior:
             prior_row, prior_frames = prior
@@ -694,6 +794,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             'revision': frozen['revision'], 'frozen_sha256': digest(frozen),
             'dependency_checks': dependencies,
             'endpoint_control_checks': endpoint_control_checks,
+            'predecessor_context_nodes': list(context_scopes),
             'quality_evidence_checks': 'image_evidence_only_not_draft_release' if private_preview else 'evidence_consistency_only',
             'packaging_checks': 'not_checked' if private_preview else 'declared_scope_and_evidence_consistency_only',
             'native_refresh_binding': 'not_checked',

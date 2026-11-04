@@ -150,11 +150,12 @@ def test_reference_scope_covers_required_packaging_shots(tmp_path):
 def test_real_preflight_binds_packaging_to_director_and_video_segment(tmp_path):
     frozen,manifest=product_fixture(tmp_path);row=frozen['drafts'][0]
     target=row['quality_evidence']['checks']['packaging_identity']['items'][0]
-    director={'scenes':[{'shots':[{'shot_id':'S1','packaging_requirements':[
+    director={'scenes':[{'scene_id':'SYNTHETIC-SCENE','shots':[{'shot_id':'S1','packaging_requirements':[
         {k:target[k] for k in ('entity_id','classification','source_basis','product_reference')}]},
         {'shot_id':'S2'}]}]}
     write_json(tmp_path/'director.json',director)
-    write_json(tmp_path/'video.json',{'generation_segments':[{'segment_id':'V1','source_shot_ids':['S1']}]})
+    write_json(tmp_path/'video.json',{'source_director':{'path':'director.json'},
+        'generation_segments':[{'segment_id':'V1','source_shot_ids':['S1']}]})
     state=json.loads((tmp_path/'00_项目管理/project_state.json').read_text())
     for ident,path in [('DIR','director.json'),('VID','video.json')]:
         sha=artifacts.digest(tmp_path/path)

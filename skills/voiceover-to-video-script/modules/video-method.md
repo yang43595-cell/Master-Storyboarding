@@ -24,6 +24,22 @@
 
 直接核对原始导演包、叙事包和实际素材，保留准确版本及确认事实。明确授权的试写可列缺口交候选，不能冒充正式确认。
 
+### 现行生成段的只读检查
+
+分段仍由本轮执行者按上面的方法判断，不运行固定秒数分组器。交付本轮候选前，用同一 JSON 与准确导演原稿运行 `python -m scripts.core.generation_boundaries --project <项目> --prompt <提示词JSON> --storyboard <导演JSON>`。缺依据的候选可以保留并明确阻塞，但不能把检查失败写成分段已核、正式采用或画布可提交。正式采用与画布 preflight 已调用同一检查；历史只读比较不改写旧稿，不恢复 production_plan。
+
+每段沿用 `source_shot_ids` / `source_shots` 映射，场景取自导演，不按片段标题猜。相邻段的边界落在同一来源场景时，在后段现有 JSON 内记 `same_scene_split`：`from_segment_id`、`reason`、具体 `evidence`，以及 `source_boundary` 的准确 `shot_id`、`field`、`quote`。字段可定位动作、节奏、切点或对白（如 `audio.dialogue.0.text`），不得为了填字段改导演。
+
+- `model_duration_exceeded`：填连续待承载内容的 `estimated_scene_duration_seconds` 与 `timing_basis`。沿用 `selected_video_model`，记录用户已选 `id`、`confirmed_by_user`、实际 `platform` / `entry_point` / `reference_mode`、本轮核实的 `max_duration_seconds`；`capability_evidence` 指向项目内保留的真实帮助/原生控件取证文件，写 `path` / `sha256` / `locator` / `checked_at`。两侧实际模型、模式和生成时长须一致且在该能力内。未知能力不得填经验值。
+- `execution_limit`：限有具体素材或执行限制，`limitation_evidence` 用同样四字段定位真实证据，不以“更稳妥”代替限制。它不豁免当前入口的模型/参数检查。
+- `event_complete` / `time_ellipsis`：仅限导演原文已有的完整事件或明确时间省略，不把普通切镜、话题变化或同镜对白中途当成新事件。程序只核原文定位，不判定语义成立。
+
+前两类连续事件拆段同时记录后段 `continuity.previous_segment_id` 及 `boundary` 的 `state_id`、具体 `description`、`previous_sha256s` / `current_sha256s`。所列图必须真实进入两侧 `materials` / `candidate_upload_order`，标同一 `state_id` 和 `state_reference` 职责；已核严格控制时也可分别使用 `end_frame` / `start_frame`。这只是准确尾态/动作前态引用，不声称多参考就是硬首尾帧控制。合格旧图可复用，同状态不同机位图仍走现有组别与视觉核验；基础环境图、人物身份图不能仅因复用就算切点。画布检查还核这些源图确在本次 `reference_checks` 中，原生字节、实际图片、用途确认与状态组继续按既有门禁验收。
+
+检查通过只说明所填来源、能力证据字节和引用职责一致，不证明证据内容正确/仍适用、估时真实、图片已确认、视觉接缝合格或用户批准。未知项不猜填；同一镜号跨段的连续子范围仍可保留，完整动作、对白与时间覆盖继续按现行自查及音频来源检查执行。未拆段的中立稿不因此强制选择模型，不自动生成或修改素材。
+
+实际交付的模型、参考模式和生成时长须逐段匹配准确源稿及已核上限，不让自填时长范围覆盖能力。只交付后段时保留真实前驱，按[交付快照检查](../../../docs/development/delivery-snapshot-checks.md)引用已有准确前次节点证据；不删除前驱另起事件、不重传前段或补造批准。
+
 ## 正文与素材
 
 入口负责读取与执行顺序，现行模板负责正文组织，适用知识参考负责具体判断。历史案例专用脚本（例如旧 build_case2_prompts.py）不是通用转写入口；不得将 framing/movement 的选择性拼接当成完整继承。局部试写的成功也不自动确认模板能覆盖全片。
