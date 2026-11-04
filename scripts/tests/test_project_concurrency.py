@@ -221,3 +221,12 @@ def test_voice_and_revision_share_the_same_project_lock(tmp_path):
     assert blocked, 'voice binding bypassed the project revision lock'
     assert not worker.is_alive() and not failure
     assert entered.is_set()
+
+
+def test_candidate_configuration_does_not_initialize_a_missing_project(tmp_path):
+    from scripts.core import candidate_test
+    project = tmp_path / 'never-initialized'
+    with pytest.raises(ValueError, match='隔离测试项目不存在'):
+        candidate_test.configure(project, 'RUN-SYNTHETIC', 'synthetic authorization', [],
+                                 current_stage='creative-director')
+    assert not project.exists()
