@@ -20,7 +20,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from . import confirmation_scope
-from .io import file_lock, read_json, utc_now, write_json
+from .io import file_lock, project_locked, read_json, sha256_json, utc_now, write_json
 from .project_state import load_project_state
 
 MANIFEST_PATH = Path("00_项目管理") / "artifact_manifest.json"
@@ -60,17 +60,24 @@ class PromotionReport:
         }
 
 
+class _Manifest(dict):
+    """In-memory read version; it adds no fields to the persisted JSON contract."""
+    def __init__(self, value):
+        super().__init__(value)
+        self._source_digest = sha256_json(value)
+
+
 def load_manifest(project_root: Path) -> dict[str, Any]:
     """读取桌面项目产物清单；不存在时返回空清单。"""
     path = project_root / MANIFEST_PATH
     if not path.exists():
-        return {"schema_version": "1.0", "artifacts": []}
+        return _Manifest({"schema_version": "1.0", "artifacts": []})
     value = read_json(path)
     if not isinstance(value, dict):
         raise ValueError("artifact_manifest.json 顶层必须是对象")
     value.setdefault("artifacts", [])
     _assert_unique_artifact_ids(value)
-    return value
+    return _Manifest(value)
 
 
 def _assert_unique_artifact_ids(manifest: dict[str, Any]) -> None:
@@ -88,6 +95,7 @@ def _assert_unique_artifact_ids(manifest: dict[str, Any]) -> None:
             seen.add(artifact_id)
 
 
+@project_locked
 def save_manifest(project_root: Path, manifest: dict[str, Any]) -> None:
     # The manifest writer is used by many non-manuscript asset workflows. Keep
     # it available for history/staleness updates, but never let it mint a new
@@ -113,12 +121,17 @@ def save_manifest(project_root: Path, manifest: dict[str, Any]) -> None:
         existing = prior_current.get(item.get("artifact_id"))
         if existing is None:
             raise ValueError("save_manifest 不能晋升或恢复正式稿件；请使用 adopt-package 或 revision_control.commit_change")
+    source_digest = getattr(manifest, "_source_digest", None)
+    if source_digest is not None and source_digest != sha256_json(previous):
+        raise ValueError("产物清单已被其他任务更新；重新读取后重试，不能覆盖新记录")
     manifest["updated_at"] = utc_now()
     write_json(project_root / MANIFEST_PATH, manifest)
     # The manifest owns validity; project_state only selects which valid IDs
     # the current task uses. Never select additional artifacts while syncing.
     from .project_state import sync_current_artifacts
     sync_current_artifacts(project_root, manifest)
+    if source_digest is not None:
+        manifest._source_digest = sha256_json(manifest)
 
 
 _FORMAL_PACKAGE_LOGICAL_IDS = {"narrative.package", "storyboard.package", "video.prompt"}
@@ -338,6 +351,7 @@ def dependency_closure(manifest: dict[str, Any], roots: set[str]) -> set[str]:
     return impacted
 
 
+@project_locked
 def register_workspace_artifact(project_root: Path, artifact: dict[str, Any]) -> dict[str, Any]:
     """登记一个新产物（默认 candidate）。不覆盖用户已有确认，不删除任何文件。"""
     required = {"artifact_id", "logical_id", "type", "path_or_url"}
@@ -395,6 +409,7 @@ def mark_impacted_artifacts_stale(
     return InvalidationReport(stale_ids, reason, revision)
 
 
+@project_locked
 def promote_candidate(project_root: Path, logical_id: str, artifact_id: str) -> PromotionReport:
     """确认新候选产物：新版本设 current，同一 logical_id 的旧版本变 superseded。"""
     from .candidate_test import require_production

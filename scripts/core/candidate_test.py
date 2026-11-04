@@ -3,6 +3,8 @@
 State and manifest stay the existing authorities. This is not a sandbox for direct
 browser/provider calls: those remain forbidden by the test task's scope.
 """
+from .io import project_lock
+
 from pathlib import Path
 
 
@@ -117,6 +119,17 @@ def validate_preview_registration(project, item, run_id):
 
 def configure(project, run_id, authorization_ref, input_artifact_ids, *, current_stage=None, usage_contract=None):
     """One existing-state marker; caller must have explicit user test authorization."""
+    project = Path(project).resolve()
+    if not project.is_dir():
+        raise ValueError("隔离测试项目不存在")
+    # Lock files may create parent directories, so preserve the existing-project
+    # guard before acquiring the lock. Other writers retain their creation APIs.
+    with project_lock(project):
+        return _configure_locked(project, run_id, authorization_ref, input_artifact_ids,
+                                 current_stage=current_stage, usage_contract=usage_contract)
+
+
+def _configure_locked(project, run_id, authorization_ref, input_artifact_ids, *, current_stage=None, usage_contract=None):
     from .project_state import load_project_state, write_project_state
     from .artifacts import load_manifest, save_manifest, project_path
     project = Path(project).resolve()
