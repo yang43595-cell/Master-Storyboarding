@@ -93,6 +93,7 @@ def test_composite_source_snapshot_keeps_existing_single_artifact_route(tmp_path
         row.pop("prompt")  # Source mapping snapshot, not the formal manuscript.
     rows = [dict(node_id="node-" + s["segment_id"], source_segment_id=s["segment_id"],
                  source_shot_ids=s["source_shot_ids"], reference_checks=copy.deepcopy(s["materials"]),
+                 parameters=dict(payload["platform"], duration=s["duration_seconds"]),
                  continuity=dict(event_id="synthetic-continuous-event", **(
                      {"previous_node_id": "node-" + payload["generation_segments"][index - 1]["segment_id"]}
                      if index else {}))) for index, s in enumerate(payload["generation_segments"])]
@@ -174,6 +175,7 @@ def delivery_fixture(tmp_path):
                (dict(artifact_id="B"), tmp_path / "board.json", board)]
     rows = [dict(node_id="node-" + s["segment_id"], source_segment_id=s["segment_id"],
                  source_shot_ids=s["source_shot_ids"], reference_checks=copy.deepcopy(s["materials"]),
+                 parameters=dict(payload["platform"], duration=s["duration_seconds"]),
                  continuity=dict(event_id="synthetic-continuous-event", **(
                      {"previous_node_id": "node-" + payload["generation_segments"][index - 1]["segment_id"]}
                      if index else {}))) for index, s in enumerate(payload["generation_segments"])]

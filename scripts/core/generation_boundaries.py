@@ -91,6 +91,35 @@ def _model_limit(payload, left, right, root):
     return model["max_duration_seconds"]
 
 
+def validate_delivery_parameters(rows, payload, project):
+    """Bind submission values to the exact source; caller bounds are not proof."""
+    sources = {row["segment_id"]: row for row in _rows(payload)}
+    for actual in rows:
+        source = sources.get(actual.get("source_segment_id", actual.get("node_id")))
+        if source is None:
+            continue  # The combined source mapping rejects unknown/ambiguous IDs.
+        expected = source.get("parameters", payload.get("platform", {}))
+        parameters = actual.get("parameters")
+        _need(isinstance(parameters, dict) and isinstance(expected, dict), "交付/源参数结构无效")
+        for aliases, label in ((("model",), "模型"), (("reference_mode", "mode"), "参考模式")):
+            values = [expected[k] for k in aliases if k in expected]
+            if values:
+                observed = [parameters[k] for k in aliases if k in parameters]
+                _need(all(_text(v) and v == values[0] for v in values) and observed
+                      and all(v == values[0] for v in observed), "实际交付" + label + "与准确源稿不一致")
+        duration = [source[k] for k in ("duration_seconds", "generation_seconds") if k in source]
+        duration += [expected[k] for k in ("duration_seconds", "duration") if k in expected]
+        if duration:
+            observed = [parameters[k] for k in ("duration_seconds", "duration") if k in parameters]
+            _need(all(_seconds(v) and v == duration[0] for v in duration) and observed
+                  and all(_seconds(v) and v == duration[0] for v in observed),
+                  "实际交付生成时长与准确源稿不一致，不能用自填 bounds 改时长")
+        if "selected_video_model" in payload:
+            limit = _model_limit(payload, source, source, Path(project).resolve())
+            _need(_seconds(parameters.get("duration")) and parameters["duration"] <= limit,
+                  "实际交付生成时长超过源已核能力上限")
+
+
 def _cutpoint(left, right):
     continuity = right.get("continuity")
     _need(isinstance(continuity, dict) and continuity.get("previous_segment_id") == left["segment_id"],
@@ -183,7 +212,7 @@ def validate_delivery_cutpoints(rows, segments):
     _need(len(by_id) == len(segments), "交付源生成段 ID 重复，不能猜来源")
     delivered = {row.get("source_segment_id"): row for row in rows}
     _need(len(delivered) == len(rows), "同一源生成段不能对应多个本次交付节点")
-    required = {}
+    required, external_predecessors = {}, {}
     for right in segments:
         split = right.get("same_scene_split", {})
         if not isinstance(split, dict) or split.get("reason") not in {"model_duration_exceeded", "execution_limit"}:
@@ -198,6 +227,12 @@ def validate_delivery_cutpoints(rows, segments):
                   and _text(previous.get("node_id")) and after.get("previous_node_id") == previous["node_id"]
                   and rows.index(previous) < rows.index(current),
                   "实际交付前驱/事件与源连续切点不一致，不能伪造新事件跳过切点核验")
+        elif right_id in delivered:
+            current = delivered[right_id]
+            continuity = current.get("continuity", {})
+            _need(_text(continuity.get("previous_node_id")),
+                  "部分交付必须保留源连续前驱，不能删前驱或伪造新事件")
+            external_predecessors[current["node_id"]] = left_id
         for ident, side in ((split["from_segment_id"], "previous"), (right["segment_id"], "current")):
             required.setdefault(ident, []).append((boundary["state_id"], set(boundary[side + "_sha256s"]), side))
     for row in rows:
@@ -214,6 +249,7 @@ def validate_delivery_cutpoints(rows, segments):
                       {"state_reference", "end_frame" if side == "previous" else "start_frame"}
                       and boundary_shot in reference_shot_ids(r, row)}
             _need(hashes <= actual, "源稿切点参考未进入本次实际输入，不能仅在文字中声明")
+    return external_predecessors
 
 
 def main(argv=None):

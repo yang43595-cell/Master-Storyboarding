@@ -607,6 +607,7 @@ def validate_scene_source_mapping(rows, sources, project):
     the state check to a legacy/no-change path.
     """
     videos = []
+    video_origins = {}
     all_shots = set()
     has_states = False
     has_packaging = False
@@ -650,6 +651,9 @@ def validate_scene_source_mapping(rows, sources, project):
                 linked_director = True
             if rows and not linked_director:
                 raise ValueError('generation_boundary: 生成段源必须绑定准确导演，不能删来源绕过分段检查')
+            from .generation_boundaries import validate_delivery_parameters
+            validate_delivery_parameters(rows, payload, Path(ref.get('project_path', project)))
+            video_origins.update({segment['segment_id']: ref for segment in segments})
             videos.extend(segments)
     if any(row.get('source_segment_id') for row in rows) and not videos:
         raise ValueError('scene_state: 已声明source_segment_id但缺准确视频源，不能退回无映射检查')
@@ -668,7 +672,7 @@ def validate_scene_source_mapping(rows, sources, project):
         replay_source_audio(videos, shot_audio)
     if videos:
         from .generation_boundaries import validate_delivery_cutpoints
-        validate_delivery_cutpoints(rows, videos)
+        external_predecessors = validate_delivery_cutpoints(rows, videos)
     if not has_states and not has_packaging and not videos:
         return
     if not videos:
@@ -682,6 +686,8 @@ def validate_scene_source_mapping(rows, sources, project):
             matches = [s for s in videos if s.get('segment_id') == segment]
             if len(matches) != 1 or source_shot_ids(matches[0]) != ids:
                 raise ValueError('scene_state: 提交 source_shots 必须逐镜匹配准确视频源 source_segment_id，不能换镜绕过后态')
+    return {node: {'previous_segment_id': ident, 'source': video_origins[ident]}
+            for node, ident in external_predecessors.items()}
 
 
 def replay_source_audio(segments, shot_audio):
