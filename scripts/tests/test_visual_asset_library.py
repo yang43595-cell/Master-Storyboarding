@@ -451,6 +451,78 @@ class LibraryTests(unittest.TestCase):
         self.lib.auto_group_character(ids[0], 'project:p:AST-PERSON', '公主')
         self.assertFalse(self.lib.get(ids[0]).get('folder_id'))
 
+    def test_purge_preserves_each_supported_project_reference(self):
+        at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        for kind in ('row_reference', 'step_reference', 'selected', 'outputs',
+                     'source_id', 'secondary_id', 'upload_source_id', 'extra_reference_ids', 'linked_legacy_job'):
+            with self.subTest(reference=kind):
+                source = self.root / (kind + '.png')
+                source.write_bytes(self.original_bytes)
+                item, _ = self.lib.import_file(source)
+                ident = item['id']
+                project_id, job_id = 'a' * 16, 'b' * 16
+                job = {'id': job_id, 'project_id': project_id, 'steps': [{}]}
+                row = {'job_id': job_id, 'reference_ids': []}
+                if kind == 'row_reference':
+                    row.update(job_id=None, reference_ids=[ident])
+                elif kind in {'step_reference', 'outputs'}:
+                    job['steps'][0]['reference_ids' if kind == 'step_reference' else kind] = [ident]
+                elif kind == 'selected':
+                    job['steps'][0]['selected'] = ident
+                elif kind == 'linked_legacy_job':
+                    job.pop('project_id')
+                    job['steps'][0]['reference_ids'] = [ident]
+                else:
+                    job[kind] = [ident] if kind == 'extra_reference_ids' else ident
+                self.lib.save(job, 'jobs')
+                self.lib.projects.save({'id': project_id, 'rows': [row]})
+                m.management.manage(self.lib, [ident], 'trash', at=at)
+                trashed = self.lib.get(ident)
+                index = self.lib.vault / '资产库/资产索引.json'
+                before = index.read_bytes()
+                with self.assertRaisesRegex(ValueError, '被项目引用'):
+                    m.management.manage(self.lib, [ident], 'purge', manual=True)
+                self.assertEqual(m.management.cleanup(self.lib, at=at + timedelta(days=31))['count'], 0)
+                self.assertEqual(Path(trashed['original']).read_bytes(), self.original_bytes)
+                self.assertTrue(Path(trashed['thumbnail']).is_file())
+                self.assertEqual(self.lib.get(ident), trashed)
+                self.assertEqual(index.read_bytes(), before)
+                self.assertFalse((self.lib.root / 'management-pending.json').exists())
+                # Restore the synthetic file before the next case changes its reference.
+                m.management.manage(self.lib, [ident], 'restore')
+
+    def test_cleanup_removes_only_unreferenced_expired_assets_and_batch_purge_is_atomic(self):
+        at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        source = self.root / 'protected-reference.png'
+        source.write_bytes(self.original_bytes)
+        protected, _ = self.lib.import_file(source)
+        ids = [self.asset['id'], protected['id']]
+        self.lib.projects.save({'id': 'a' * 16, 'rows': [{'reference_ids': [protected['id']]}]})
+        m.management.manage(self.lib, ids, 'trash', at=at)
+        before = {ident: self.lib.get(ident) for ident in ids}
+        with self.assertRaisesRegex(ValueError, '被项目引用'):
+            m.management.manage(self.lib, ids, 'purge', manual=True)
+        for item in before.values():
+            self.assertEqual(Path(item['original']).read_bytes(), self.original_bytes)
+        self.assertFalse((self.lib.root / 'management-pending.json').exists())
+        self.assertEqual(m.management.cleanup(self.lib, at=at + timedelta(days=31))['count'], 1)
+        self.assertEqual([item['id'] for item in self.lib.items()], [protected['id']])
+        self.assertEqual(Path(before[protected['id']]['original']).read_bytes(), self.original_bytes)
+        self.assertEqual(self.source.read_bytes(), self.original_bytes)
+
+    def test_unreadable_project_references_stop_cleanup_before_deleting_files(self):
+        at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        m.management.manage(self.lib, [self.asset['id']], 'trash', at=at)
+        trashed = self.lib.get(self.asset['id'])
+        self.lib.projects.save({'id': 'a' * 16, 'rows': [{'job_id': 'b' * 16, 'reference_ids': []}]})
+        with self.assertRaisesRegex(ValueError, '项目制作记录缺失'):
+            m.management.manage(self.lib, [self.asset['id']], 'purge', manual=True)
+        (self.lib.projects.root / ('a' * 16 + '.json')).write_text('{', encoding='utf-8')
+        with self.assertRaises(ValueError):
+            m.management.cleanup(self.lib, at=at + timedelta(days=31))
+        self.assertEqual(Path(trashed['original']).read_bytes(), self.original_bytes)
+        self.assertFalse((self.lib.root / 'management-pending.json').exists())
+
     def test_manual_purge_removes_managed_files_and_blocks_confirmed(self):
         item = self.lib.get(self.asset['id'])
         m.management.manage(self.lib, [item['id']], 'trash')
@@ -1151,6 +1223,61 @@ class LibraryTests(unittest.TestCase):
     def tearDown(self):
         self._synthetic_env.stop()
         self.temporary.cleanup()
+
+    def test_tree_import_checks_each_protected_descendant_and_keeps_allowed_siblings(self):
+        repository = self.root / 'repository'
+        project = self.root / 'nested/project'
+        self.lib.projects.save({'id': 'a' * 16, 'path': str(project), 'rows': []})
+        protected = [repository, project, self.lib.vault, self.lib.root]
+        pictures = []
+        for folder in protected + [self.root / 'repository-extra', self.root / 'nested/project-extra']:
+            folder.mkdir(parents=True, exist_ok=True)
+            picture = folder / 'input.png'
+            picture.write_bytes(self.original_bytes)
+            pictures.append(picture)
+        before = {p: p.read_bytes() for p in pictures}
+        with patch.object(m, 'ROOT', repository):
+            for folder in protected:
+                with self.assertRaises(ValueError):
+                    self.lib.import_tree(folder)
+            result = self.lib.import_tree(self.root)
+        self.assertEqual(result['added'], 2)
+        self.assertEqual(result['existing'], 1)
+        sources = {item['source'] for item in self.lib.items()}
+        self.assertTrue(all(str(p) not in sources for p in pictures[:4]))
+        self.assertTrue(all(str(p) in sources for p in pictures[4:]))
+        self.assertTrue(all(p.read_bytes() == contents for p, contents in before.items()))
+        self.assertTrue(all(item['status'] == 'unreviewed' for item in self.lib.items()))
+        self.assertTrue(all(item['confirmation'] is None for item in self.lib.items()))
+
+    def test_tree_import_resolves_symlinks_and_preserves_hidden_source_restrictions(self):
+        selected = self.root / 'selected'
+        selected.mkdir()
+        project, repository = self.root / 'project', self.root / 'repository'
+        self.lib.projects.save({'id': 'a' * 16, 'path': str(project), 'rows': []})
+        protected = [project, repository, self.lib.vault, self.lib.root, self.root / '.git']
+        for index, folder in enumerate(protected):
+            folder.mkdir(exist_ok=True)
+            picture = folder / 'input.png'
+            picture.write_bytes(self.original_bytes)
+            (selected / f'blocked-{index}.png').symlink_to(picture)
+        (selected / 'blocked-directory').symlink_to(project, target_is_directory=True)
+        (selected / 'missing.png').symlink_to(self.root / 'missing.png')
+        (selected / 'loop.png').symlink_to(selected / 'loop.png')
+        allowed = self.root / 'ordinary-reference.png'
+        allowed.write_bytes(self.original_bytes)
+        (selected / 'allowed.png').symlink_to(allowed)
+        (selected / '.obsidian').mkdir()
+        (selected / '.obsidian/hidden.png').write_bytes(self.original_bytes)
+        with patch.object(m, 'ROOT', repository):
+            with self.assertRaises(ValueError):
+                self.lib.import_tree(selected / 'blocked-0.png')
+            result = self.lib.import_tree(selected)
+        self.assertEqual(result['added'], 1)
+        self.assertEqual(len(result['errors']), 6)
+        self.assertEqual({a['source'] for a in self.lib.items()}, {str(self.source), str(allowed)})
+        self.assertEqual(allowed.read_bytes(), self.original_bytes)
+        self.assertTrue(all((folder / 'input.png').read_bytes() == self.original_bytes for folder in protected))
 
     def test_import_preserves_source_and_skips_unchanged(self):
         self.assertTrue(Path(self.asset['original']).is_relative_to(self.lib.vault / '资产库'))
