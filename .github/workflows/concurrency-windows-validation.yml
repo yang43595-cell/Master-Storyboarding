@@ -4,6 +4,8 @@ on:
     branches: [validation/concurrency-windows-20261104]
 permissions:
   contents: read
+env:
+  PYTHONUTF8: '1'
 jobs:
   project-metadata-locks:
     runs-on: windows-latest
