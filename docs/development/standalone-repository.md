@@ -22,6 +22,8 @@ python scripts/stage_context_cli.py --help
 
 仅运行核心 CLI 时可以只安装 `config/requirements.txt`；包含图片资产功能及测试时使用上述 dev 清单。依赖只从既定官方包源安装，不把 `.venv/` 或缓存提交到 Git。JavaScript 网页适配/测试使用 Node.js 24 与锁定的 Zod 3.25.76（`package-lock.json`）；Blender、ASR 和浏览器生成工具是按需能力，依各自 Skill 安装或连接，不要求普通文字阶段预装所有工具。
 
+完整音视频技术回归还需要测试进程能找到真实 `ffmpeg` 与 `ffprobe`。先核 `ffmpeg -version`、`ffprobe -version` 及实际合成媒体解码；仅当前 PATH 找不到不能断言本机未安装，已有工具可通过本轮进程 PATH 使用，不把某台机器的路径写成仓库默认。可选 ASR 兼容测试在具备原测试依赖及 FFmpeg 的隔离环境中按 `config/requirements-asr.txt` 补齐，不需要下载模型。缺工具、可选依赖、Windows 平台或指定私人来源时，按真实失败/跳过范围报告，不把未运行算通过。
+
 新业务项目放在源码仓库之外，不把素材、原片、生成结果和确认记录提交到源码仓库：
 
 ```sh

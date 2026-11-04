@@ -103,20 +103,25 @@ def save_manifest(project_root: Path, manifest: dict[str, Any]) -> None:
     # commit functions may perform that transition.
     _assert_unique_artifact_ids(manifest)
     previous = load_manifest(project_root)
-    prior_current = {item.get("artifact_id"): item for item in previous.get("artifacts", [])
-                     if item.get("logical_id") in _FORMAL_PACKAGE_LOGICAL_IDS
-                     and item.get("status") == "current"}
+    prior_protected = {item.get("artifact_id"): item for item in previous.get("artifacts", [])
+                       if item.get("agent_acceptance") or
+                       item.get("logical_id") in _FORMAL_PACKAGE_LOGICAL_IDS and item.get("status") == "current"}
+    prior_current = {ident: item for ident, item in prior_protected.items() if item.get("status") == "current"}
+    guarded_logical_ids = _FORMAL_PACKAGE_LOGICAL_IDS | {
+        item.get("logical_id") for item in prior_protected.values() if item.get("agent_acceptance")}
     new_by_id = {item.get("artifact_id"): item for item in manifest.get("artifacts", [])}
-    removed = set(prior_current) - set(new_by_id)
+    removed = set(prior_protected) - set(new_by_id)
     if removed:
         raise ValueError("save_manifest 不能删除 current 正式稿件历史记录")
-    immutable = ("logical_id", "type", "revision", "path_or_url", "checksum", "depends_on", "user_approved")
-    for artifact_id, existing in prior_current.items():
+    immutable = ("logical_id", "type", "revision", "path_or_url", "checksum", "depends_on", "user_approved", "agent_acceptance")
+    for artifact_id, existing in prior_protected.items():
         item = new_by_id[artifact_id]
-        if any(item.get(key) != existing.get(key) for key in immutable):
+        protected_fields = immutable + (("quality_evidence", "product_reference") if existing.get("agent_acceptance") else ())
+        if any(item.get(key) != existing.get(key) for key in protected_fields):
             raise ValueError("save_manifest 不能改写 current 正式稿件身份、来源或确认 hash；请创建经校验的新修订")
     for item in manifest.get("artifacts", []):
-        if item.get("logical_id") not in _FORMAL_PACKAGE_LOGICAL_IDS or item.get("status") != "current":
+        if (item.get("logical_id") not in guarded_logical_ids and not item.get("agent_acceptance")
+                or item.get("status") != "current"):
             continue
         existing = prior_current.get(item.get("artifact_id"))
         if existing is None:
@@ -245,7 +250,7 @@ def _confirmed_package_source(root: Path, manifest: dict[str, Any], state: dict[
     if len(matches) != 1:
         raise ValueError("正式稿件上游必须有唯一 current：" + logical_id)
     source = matches[0]
-    if not artifact_is_confirmed(source, state, root):
+    if not artifact_is_adopted(source, state, root):
         raise ValueError("正式稿件上游 current 缺少有效确认：" + logical_id)
     path = project_path(root, source.get("path_or_url", ""))
     if (not path.is_file() or not source.get("checksum")
@@ -317,6 +322,83 @@ def adopt_initial_package(project_root: Path, artifact_id: str, approval_ref: st
         if not artifact_is_confirmed(adopted, load_project_state(root), root):
             raise ValueError("登记事务已提交但确认回读未通过；不得交付或进入下游")
         return {"artifact": adopted, "confirmation": receipt, "transaction": transaction}
+
+
+def validate_agent_submission(project_root: Path, entry: dict[str, Any], manifest: dict[str, Any],
+                              report: dict[str, Any]) -> str:
+    """Reuse manuscript/source checks; supplemental images retain exact shot use."""
+    from .agent_acceptance import skill_for_artifact
+    skill_for_artifact(entry)
+    root = Path(project_root).resolve()
+    if entry.get("logical_id") in {"storyboard.package", "video.prompt"}:
+        return validate_candidate_submission(root, entry, manifest)
+    path = project_path(root, entry.get("path_or_url", ""))
+    if (entry.get("type") != "visual-supplement-image" or not path.is_relative_to(root)
+            or path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}
+            or not path.is_file() or not path.stat().st_size
+            or not entry.get("revision") or digest(path) != entry.get("checksum")):
+        raise ValueError("自主验收补图须是项目内准确修订、hash 的真实图片")
+    if "storyboard.package" not in (entry.get("depends_on") or []):
+        raise ValueError("自主验收补图须绑定当前导演包依赖")
+    state = load_project_state(root)
+    validate_current_dependencies(entry, manifest, state, root)
+    boards = [item for item in manifest.get("artifacts", [])
+              if item.get("logical_id") == "storyboard.package" and item.get("status") == "current"]
+    if len(boards) != 1:
+        raise ValueError("自主验收补图须有唯一有效导演包")
+    validate_candidate_submission(root, boards[0], manifest)
+    board = read_json(project_path(root, boards[0]["path_or_url"]))
+    shots = {shot["shot_id"] for scene in board.get("scenes", []) for shot in scene.get("shots", [])}
+    usage = confirmation_scope.image_usage_shots(report.get("usage"), required=True)
+    if not set(usage) <= shots:
+        raise ValueError("自主验收补图用途镜号不属于准确当前导演包")
+    from .quality_evidence import validate_image_evidence
+    validate_image_evidence(root, path, entry.get("quality_evidence"), usage,
+                            product_reference=entry.get("product_reference"))
+    return digest(path)
+
+
+def adopt_initial_agent_artifact(project_root: Path, artifact_id: str, report_path: str) -> dict[str, Any]:
+    """Adopt authorized downstream work without minting a human confirmation."""
+    from .candidate_test import require_production
+    from .agent_acceptance import build_agent_acceptance, validate_agent_acceptance, skill_for_artifact
+    from . import revision_control
+    root = Path(project_root).resolve()
+    with project_lock(root):
+        require_production(root)
+        manifest = load_manifest(root)
+        entry = next((item for item in manifest.get("artifacts", [])
+                      if item.get("artifact_id") == artifact_id), None)
+        if entry is None or entry.get("status") != "candidate" or entry.get("user_approved") is not False:
+            raise ValueError("自主首次采用只能从未获人审的准确 candidate 开始")
+        skill_for_artifact(entry)
+        if any(item.get("logical_id") == entry["logical_id"] and item.get("status") in {"current", "stale"}
+               for item in manifest.get("artifacts", [])):
+            raise ValueError("该逻辑产物已有 current/stale 版本；返修须使用 revision_control")
+        path = project_path(root, entry.get("path_or_url", ""))
+        if not path.is_file() or not path.is_relative_to(root):
+            raise ValueError("自主采用候选必须是项目内真实文件")
+        actual = digest(path)
+        if entry.get("checksum") and entry["checksum"] != actual:
+            raise ValueError("自主采用候选已偏离登记 hash")
+        entry["checksum"] = actual
+        state = load_project_state(root)
+        entry["agent_acceptance"] = build_agent_acceptance(root, entry, report_path, state=state)
+        report = validate_agent_acceptance(root, entry, state=state)
+        if validate_agent_submission(root, entry, manifest, report) != actual or digest(path) != actual:
+            raise ValueError("候选在自主采用检查期间发生变化")
+        validate_agent_acceptance(root, entry, state=state)
+        entry["status"] = "current"
+        entry["user_approved"] = False
+        state["current_artifacts"] = list(dict.fromkeys([*state.get("current_artifacts", []), artifact_id]))
+        transaction = revision_control._commit_json_transaction_unlocked(root, {
+            root / MANIFEST_PATH: manifest,
+            root / "00_项目管理" / "project_state.json": state,
+        }, reason="adopt initial agent-accepted artifact")
+        adopted = next(item for item in load_manifest(root)["artifacts"] if item.get("artifact_id") == artifact_id)
+        if not artifact_is_adopted(adopted, load_project_state(root), root):
+            raise ValueError("自主采用事务已提交但验收回读未通过；不得交付或进入下游")
+        return {"artifact": adopted, "agent_acceptance": entry["agent_acceptance"], "transaction": transaction}
 
 
 def current_artifacts(manifest: dict[str, Any]) -> list[dict[str, Any]]:
@@ -420,6 +502,9 @@ def promote_candidate(project_root: Path, logical_id: str, artifact_id: str) -> 
         raise ValueError(f"找不到产物：{artifact_id}")
     if new_item.get("logical_id") != logical_id:
         raise ValueError("候选的 logical_id 与替换目标不一致")
+    if (new_item.get("agent_acceptance") or
+            new_item.get("type") == "visual-supplement-image" and new_item.get("user_approved") is not True):
+        raise ValueError("通用 promote_candidate 不能自主采用；请使用自主采用或变更提交入口")
     if logical_id in _FORMAL_PACKAGE_LOGICAL_IDS and new_item.get("status") != "candidate":
         raise ValueError("只能正式采用 candidate 产物")
     submission_sha256 = validate_candidate_submission(project_root, new_item, manifest)
@@ -431,6 +516,8 @@ def promote_candidate(project_root: Path, logical_id: str, artifact_id: str) -> 
               if item.get("logical_id") == logical_id
               and item.get("artifact_id") != artifact_id
               and item.get("status") in {"current", "stale"}]
+    if any(item.get("agent_acceptance") for item in active):
+        raise ValueError("通用 promote_candidate 不能替换已自主采用产物；请使用 revision_control")
     if len(active) > 1:
         raise ValueError("同一 logical_id 对应多个有效/待返工产物，先明确独立替换对象，不能整组覆盖")
     # Compute on the adopted graph before replacement; existing manual callers
@@ -552,6 +639,22 @@ def artifact_is_confirmed(entry, state, root=None):
     return bool(root and formal_adoption(entry, root))
 
 
+def artifact_is_adopted(entry, state, root=None):
+    """Read human adoption or separately authorized, byte-bound agent acceptance."""
+    if artifact_is_confirmed(entry, state, root):
+        return True
+    if (root is None or entry.get('status') != 'current' or entry.get('user_approved') is not False
+            or entry.get('candidate_test') or entry.get('production_blocked') or state.get('candidate_test')
+            or not entry.get('agent_acceptance')):
+        return False
+    from .agent_acceptance import validate_agent_acceptance
+    try:
+        validate_agent_acceptance(root, entry, state=state)
+    except (ValueError, OSError, KeyError, TypeError):
+        return False
+    return True
+
+
 def validate_current_dependencies(entry, manifest, state, root):
     """Read-only consumption check; never resurrect historical files as current.
 
@@ -587,7 +690,7 @@ def validate_current_dependencies(entry, manifest, state, root):
             if len(matches) != 1:
                 raise ValueError('上游必须有唯一 current，不能回退历史：' + logical_id)
             source = matches[0]
-            if not artifact_is_confirmed(source, state, root):
+            if not artifact_is_adopted(source, state, root):
                 raise ValueError('上游 current 缺少有效确认：' + logical_id)
             source_path = project_path(root, source.get('path_or_url', ''))
             if not source_path.is_file() or (source.get('checksum') and digest(source_path) != source['checksum']):

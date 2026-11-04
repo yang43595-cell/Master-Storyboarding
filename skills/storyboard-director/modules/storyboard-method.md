@@ -1,6 +1,6 @@
 # 视觉补充执行合同
 
-本 Skill 必读 knowledge-profile 绑定的 `VISUAL-SUPPLEMENT-METHOD` 与 `IMAGE-CONTINUITY-METHOD` 完整正文；专业方法只在 Vault 保存。下文保留资料读取、来源镜头约束、请求数量与交付合同，不将回链当作已阅读。
+本 Skill 必读 knowledge-profile 绑定的 `VISUAL-SUPPLEMENT-METHOD` 与 `IMAGE-CONTINUITY-METHOD` 完整正文；按现行根解析读取仓库 `knowledge/runtime/` 运行副本或明确选定的 Vault 来源，固定副本不等于实时主库。下文保留资料读取、来源镜头约束、请求数量与交付合同，不将回链当作已阅读。
 
 ## 本 Skill 产出须命中的规范（缺即停）
 
@@ -16,7 +16,7 @@
 1. 逐项查看确认资产、动作参考、产品实拍和来源镜头文字状态。
 2. 按 `VISUAL-SUPPLEMENT-METHOD` 完成判断，在 `visual-supplement-request.json` 登记唯一目标状态、必须出现、禁止出现和保留项；补图填写 gap，复用填写 existing_references.coverage，返回上游填写 return_upstream.reason。
 3. 选择最小参考集合并限制候选数量；已足够时复用并停止生成。
-4. 技术核对文件和引用事实后，按下节对照本次要求实际看图，沿既有观察证据准入记录结论；客观要求自查不代替用户视觉终审。
+4. 技术核对文件和引用事实后，按下节对照本次要求实际看图，沿既有观察证据准入记录结论；统一入口自行验收且不送网站，兼容路径自查不代替用户视觉终审。采用与确认按 Skill 入口分支执行，未接通的 agent 验收不伪写为人审。
 
 ## 场景关系参考的交付约定
 

@@ -75,13 +75,39 @@
 
 用户要求代码修复后，针对实际正常入口和拒绝入口追加了隔离合成测试，不使用真实业务项目或伪造实际用户确认。正式采用/返修测试只在本测试文件创建明确标注 synthetic 的有效证据，原历史只读 fixture 保留；同一工作区其他任务已补的合法正式交接/迁移 fixture 也原样保留。声音失败回滚比较覆盖全部业务文件，精确排除允许刷新 owner 时间戳的共享锁文件，不排除管理 JSON、音频或确认记录。
 
-最后一次完整 Python 回归结果：**2373 passed，177 subtests passed，19 skipped，3 failed**，43.67 秒。19 个跳过项没有计作通过；3 个失败均为 `test_quality_evidence_consumers.py::test_xiaoyunque_probes_actual_video_not_internal_cuts` 的参数用例，直接报本机找不到 `ffmpeg`，未进入该视频测试的实际断言。本次未为凑全绿跳过失败、放宽测试或安装新的系统视频工具；整套测试不能称为全部通过。
+代码修复阶段当时的完整 Python 回归结果：**2373 passed，177 subtests passed，19 skipped，3 failed**，43.67 秒。19 个跳过项没有计作通过；3 个失败均为 `test_quality_evidence_consumers.py::test_xiaoyunque_probes_actual_video_not_internal_cuts` 的参数用例，直接报测试进程找不到 `ffmpeg`，未进入该视频测试的实际断言。当时未为凑全绿跳过失败、放宽测试或安装新的系统视频工具；该次整套测试不能称为全部通过。后续本机补验结果见下节。
 
 四处修复的正常及拒绝路径均通过当前工作树测试：产品事实不自动 passed；声音用途明确匹配；无旧计划的现代换声依赖失效及错误前不落业务文件；叙事/导演/视频三类采用和返修缺证拒绝；正式交接缺证不出交接卡、历史只读不改批准。声音与别名歧义负例复核通过；两份声音 schema、9 份审查 profile、文档链接及 CRLF 兼容差异检查通过。内置知识 52 文件验证仍通过。
 
 测试解释器仍为本次独占临时 Python 3.12 venv；仅在临时 venv 补齐其已有间接依赖 typing_extensions，以支持隔离 `-I -S` 检查，不改项目依赖或全局环境。完整回归命令为 `python -m pytest -q -c config/pytest.ini --tb=short`，临时目录、缓存与 Node PATH 按前述方式隔离。
 
-尚需另行处理的是本机 FFmpeg 可用性，以及真实媒体/页面/授权语义的实际验收；这不等于本次已执行真实看图、试听、视频生成或网页审查。程序修复和测试不授予这些操作的授权，也不修改历史已确认产物。保留工作区其他任务的并行代码变更，本次没有提交、发布或同步到远端。
+该阶段留下的项目是测试进程的 FFmpeg 可用性，以及真实媒体/页面/授权语义的实际验收；后续已在下节补齐前者，真实验收按用户答复暂不执行。程序修复和测试不授予这些操作的授权，也不修改历史已确认产物。该阶段保留工作区其他任务的并行代码变更，本任务当时没有提交、发布或同步到远端。
+
+## 本机技术补验（用户要求继续，暂不做真实验收）
+
+本轮范围按用户后续答复限定为本机技术验收，真实项目、私人案例、付费生成、线上页面和真实媒体验收均不进入本轮。
+
+已纠正环境判断：上一轮只能证明测试进程的 PATH 找不到工具，不能据此断言本机未安装。沿已登记本机工具入口定向核实后，`/Users/liuyang/Documents/AIGC/.runtime/bin/ffmpeg` 和同目录 `ffprobe` 均真实存在、可执行，版本均为 8.0。本轮仅给验收子进程提供该 PATH，不修改系统配置、项目依赖或 AIGC 项目。
+
+- 用现有工具生成 2 秒合成 H.264/AAC 媒体，ffprobe 读回 2.000 秒、64×64、16 kHz；`ffmpeg -v error -xerror -map 0 -f null -` 全量解码退出 0，stderr 为空。该样本只核工具，不代表真实成片质量。
+- 此前受工具环境影响的四个测试模块先补跑：174 passed、24 subtests passed、1 skipped。原 3 个失败及 15 个可补跑跳过项已通过；随后在临时环境补齐仓库已声明 ASR 依赖，精确兼容用例单跑 1 passed，最终完整回归也实际运行并通过该用例。
+- 最终完整 Python 回归：**2393 passed、177 subtests passed、0 failed、3 skipped**，45.47 秒。命令为 `python -m pytest -q -rs -c config/pytest.ini --tb=short`，本轮临时目录和缓存均隔离；精确命令、起止时间与版本保存在 `python-results.json`。仅为遵守本轮范围，在该子进程移除两个私人案例环境变量，没有改测试或将失败改成跳过。
+- Node 自动化：77 passed、0 failed、0 skipped。它验证前端逻辑和离线操作合同，不代表真实浏览器页面已人工操作。
+- 阶段、声音绑定、白模 CLI 的帮助入口均退出 0；这只说明命令可加载，不等于实际白模渲染或真实生产执行。
+
+最终 3 个未运行项逐项保留，均未计作通过：
+
+| 用例 | 未运行原因与范围 |
+|---|---|
+| `test_product_refs.py::test_project_validator_uses_product_category_boundary` | 需要 Windows 且能找到 `powershell.exe`；本机为 macOS，未模拟平台冒充通过 |
+| `test_prompt_source_review.py::test_real_sources_read_only[MSB_TEST_CASE2_R12-19]` | 需要指定私人案例；按用户“先不做真实验收”不提供、不读取 |
+| `test_prompt_source_review.py::test_real_sources_read_only[MSB_TEST_CASE3_R04-16]` | 同上，保留条件跳过 |
+
+运行时 HEAD 为 `303a9a4654ebdf25af16f8b0d2838dc031c81adb`。完整回归前后 HEAD 与已跟踪非 docs 文件的内容摘要一致；本轮只修改验收报告和独立仓库环境说明。Python 3.12.14；可选依赖包含 faster-whisper 1.2.1、av 19.0.1、ctranslate2 4.8.5、onnxruntime 1.31.1，`pip check` 无依赖冲突。依赖安装和测试均在独占临时 venv 中，不下载语音模型。
+
+验收证据目录：`/private/var/folders/hq/x035j8j52754y03_pys1s4nh0000gn/T/msb-acceptance-20261104-w5qekbsk/`，包含合成媒体、`tool-smoke.json`、`python-results.json`、完整 Python/ASR/Node 日志及 CLI 日志；该目录为本机临时证据，可能被系统清理，本文保留结论、版本、命令和未验范围。
+
+本轮可在本机运行的技术检查通过，原 3 个失败已消除，原 19 个跳过中 16 个已补跑通过。剩余 3 项条件检查、真实产物内容、真实页面操作和生产效果仍未验收；不据此宣布真实业务全部通过或所有宿主跳步出口已封闭。
 
 ## 联合验收与本地提交补充
 

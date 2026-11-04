@@ -16,10 +16,11 @@ from typing import Any
 
 try:
     from .core.candidate_test import context as test_context, configure as configure_test, resolve_inputs as test_inputs, result_metadata as test_metadata, require_production, validate_stage as validate_test_stage, validate_usage_contract
-    from .core.artifacts import (artifact_is_confirmed, project_path, digest,
+    from .core.artifacts import (artifact_is_adopted, project_path, digest,
                                  validate_current_dependencies, load_manifest,
                                  register_workspace_artifact, adopt_initial_package,
-                                 validate_candidate_submission)
+                                 adopt_initial_agent_artifact, validate_candidate_submission)
+    from .core.agent_acceptance import register_workflow_authorization
     from .core.io import write_text, write_text_if_changed
     from .core.knowledge_runtime import resolve_knowledge_root, is_bundled_root, verify_bundle, verify_selected_file
     from .core.knowledge_blocks import build_knowledge_index, load_policy, parse_knowledge_blocks
@@ -32,10 +33,11 @@ try:
     from .session_usage import measure, measure_boundaries, check_budget
 except ImportError:  # direct CLI execution
     from core.candidate_test import context as test_context, configure as configure_test, resolve_inputs as test_inputs, result_metadata as test_metadata, require_production, validate_stage as validate_test_stage, validate_usage_contract
-    from core.artifacts import (artifact_is_confirmed, project_path, digest,
+    from core.artifacts import (artifact_is_adopted, project_path, digest,
                                 validate_current_dependencies, load_manifest,
                                 register_workspace_artifact, adopt_initial_package,
-                                validate_candidate_submission)
+                                adopt_initial_agent_artifact, validate_candidate_submission)
+    from core.agent_acceptance import register_workflow_authorization
     from core.io import write_text, write_text_if_changed
     from core.knowledge_runtime import resolve_knowledge_root, is_bundled_root, verify_bundle, verify_selected_file
     from core.knowledge_blocks import build_knowledge_index, load_policy, parse_knowledge_blocks
@@ -108,6 +110,27 @@ def _selected_inputs(project, state):
 def _state_summary(raw: dict[str, Any]) -> dict[str, Any]:
     state = normalize_project_state(raw)
     return {key: value for key, value in state.items() if key != "schema_version"}
+
+
+def authorize_workflow(args: argparse.Namespace) -> dict[str, Any]:
+    """Record an existing project workflow authorization without approving artifacts."""
+    project = Path(args.project).expanduser().resolve()
+    authorization = register_workflow_authorization(
+        project, authorization_id=args.authorization_id,
+        authorization_ref=args.authorization_ref, skills=list(args.skill),
+    )
+    return {"ok": True, "authorization": authorization,
+            "notice": "仅登记所引用户流程授权；不确认稿件，不上传、生成或发布"}
+
+
+def accept_artifact(args: argparse.Namespace) -> dict[str, Any]:
+    """Adopt one registered candidate using its exact agent self-check evidence."""
+    project = Path(args.project).expanduser().resolve()
+    adoption = adopt_initial_agent_artifact(
+        project, args.artifact_id, project_path(project, args.self_check_json),
+    )
+    return {"ok": True, **adoption,
+            "notice": "已按流程授权及准确自查采用；未新增逐稿人审，未上传、生成、发布或自动流转"}
 
 
 def adopt_package(args: argparse.Namespace) -> dict[str, Any]:
@@ -464,7 +487,7 @@ def status(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _confirmed_project_inputs(project: Path, state: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Resolve the explicitly selected confirmed input versions from their sources."""
+    """Resolve selected versions with valid human confirmation or agent acceptance."""
     artifact_ids = state.get("current_artifacts") or []
     if not isinstance(artifact_ids, list) or not artifact_ids or any(not isinstance(item, str) or not item for item in artifact_ids):
         raise StageContextError("项目没有可交接的当前有效产物 ID")
@@ -476,10 +499,10 @@ def _confirmed_project_inputs(project: Path, state: dict[str, Any]) -> tuple[dic
     inputs: list[dict[str, Any]] = []
     for artifact_id in artifact_ids:
         item = indexed.get(artifact_id)
-        if not isinstance(item, dict) or item.get("status") != "current" or item.get("user_approved") is not True:
-            raise StageContextError(f"交接产物不是已确认 current：{artifact_id}")
-        if not artifact_is_confirmed(item, state, project):
-            raise StageContextError(f"当前有效产物缺少用户确认：{artifact_id}")
+        if not isinstance(item, dict) or item.get("status") != "current":
+            raise StageContextError(f"交接产物不是已确认 current 或有效自主验收 current：{artifact_id}")
+        if not artifact_is_adopted(item, state, project):
+            raise StageContextError(f"当前有效产物缺少用户确认或有效自主验收：{artifact_id}")
         path = project_path(project, str(item.get("path_or_url") or ""))
         if not path.is_file():
             raise StageContextError(f"交接产物文件不存在：{artifact_id}: {path}")
@@ -870,16 +893,22 @@ def _local_standard_documents(skill_dir: Path, request: dict[str, Any] | None = 
         excluded.update((skill_dir / "modules" / name).resolve() for name in
                         ("library-mode.md", "project-web-mode.md", "web-input-contract.md"))
         scopes = request.get("asset_method_scopes", {})
-        if not isinstance(scopes, dict) or any(key not in {"style", "character", "scene", "object"}
+        if not isinstance(scopes, dict) or any(key not in {"style", "character", "body", "scene", "object"}
                                              or type(value) is not bool for key, value in scopes.items()):
             raise StageContextError("asset_method_scopes 必须按现有类别填写布尔值。")
         if any(scopes.values()):
             conditional = {"style": ["01-style-master-guide.md"],
-                           "character": ["02-character-master-guide.md", "02a-body-character-master-guide.md"],
+                           "character": ["02-character-master-guide.md"],
+                           "body": ["02a-body-character-master-guide.md"],
                            "scene": ["03-scene-master-guide.md"],
                            "object": ["04-prop-product-master-guide.md"]}
+            # Existing character requests did not distinguish anatomy. Keep
+            # both guides until body is explicitly classified by this task.
+            selected = {scope for scope, enabled in scopes.items() if enabled}
+            if "body" not in scopes and scopes.get("character"):
+                selected.add("body")
             excluded.update((skill_dir / "references" / name).resolve()
-                            for scope, names in conditional.items() if not scopes.get(scope, False)
+                            for scope, names in conditional.items() if scope not in selected
                             for name in names)
     local = [skill_dir / "SKILL.md", *sorted((skill_dir / "modules").glob("*.md")),
              *sorted((skill_dir / "references").glob("*.md"))]
@@ -1907,6 +1936,15 @@ def parser() -> argparse.ArgumentParser:
     commands = root.add_subparsers(dest="command", required=True)
     state_cmd = commands.add_parser("status", help="只读查看项目状态与续跑阻塞；不执行事务恢复")
     state_cmd.add_argument("--project", required=True)
+    authorization = commands.add_parser("authorize-workflow", help="登记已有准确业务流程授权；不确认产物或生成")
+    authorization.add_argument("--project", required=True)
+    authorization.add_argument("--authorization-id", required=True)
+    authorization.add_argument("--authorization-ref", required=True, help="用户对本项目及列明阶段的准确流程授权依据")
+    authorization.add_argument("--skill", action="append", required=True, help="授权自行验收的阶段，可重复；范围由核心入口核验")
+    acceptance = commands.add_parser("accept-artifact", help="凭流程授权及准确自查采用已登记候选；不新增人工确认")
+    acceptance.add_argument("--project", required=True)
+    acceptance.add_argument("--artifact-id", required=True)
+    acceptance.add_argument("--self-check-json", required=True, help="项目内自查 JSON 的相对路径或绝对路径")
     adopt = commands.add_parser("adopt-package", help="登记并确认初次平台无关正式稿件；不上传或发布")
     adopt.add_argument("--project", required=True)
     adopt.add_argument("--artifact-id", required=True)
@@ -2008,6 +2046,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     if args.command == "status":
         result = status(args)
+    elif args.command == "authorize-workflow":
+        result = authorize_workflow(args)
+    elif args.command == "accept-artifact":
+        result = accept_artifact(args)
     elif args.command == "adopt-package":
         result = adopt_package(args)
     elif args.command == "candidate-test":

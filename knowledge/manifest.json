@@ -449,6 +449,66 @@
         "turn_id": "01a1a640-4219-7697-a882-5dc496bed8b1",
         "format": "complete_original_utf8_lf"
       }
+    },
+    {
+      "path": "wiki/sources/AI声音一致性-刺猬星球super-i.md",
+      "role": "reference_only",
+      "sha256": "e5c9911ea790a66cf02ada2dd16759ff58d3f4c0592a0c0d61fb56cf65271dd2",
+      "size_bytes": 6610,
+      "approval_assessment": "candidate_source_only_not_method_adoption",
+      "inclusion_basis": "Explicit conditional third-layer source references; does not change professional method bindings or dynamic rule admission.",
+      "source": {
+        "observed_on": "2026-11-05",
+        "upstream_updated": "2026-10-25",
+        "upstream_status": "candidate",
+        "format": "complete_original_markdown",
+        "note": "Source Markdown only; linked raw media and supplementary artifacts are not bundled or revalidated."
+      }
+    },
+    {
+      "path": "wiki/sources/ai动画制作流程-刺猬星球.md",
+      "role": "reference_only",
+      "sha256": "cb45e3fb93c7f53808d499121cac1b691c2b07668e97b3d01e20511449f562d4",
+      "size_bytes": 7984,
+      "approval_assessment": "candidate_source_only_not_method_adoption",
+      "inclusion_basis": "Explicit conditional third-layer source references; does not change professional method bindings or dynamic rule admission.",
+      "source": {
+        "observed_on": "2026-11-05",
+        "upstream_updated": "2026-10-25",
+        "upstream_status": "candidate",
+        "format": "complete_original_markdown",
+        "note": "Source Markdown only; linked raw media and supplementary artifacts are not bundled or revalidated."
+      }
+    },
+    {
+      "path": "wiki/sources/AI风格提取的不变条件与共性结构-刺猬星球super-i.md",
+      "role": "reference_only",
+      "sha256": "b40351cb425a381b0e70681f92ac07e18c6a74bff36b758f4bd84c1741516294",
+      "size_bytes": 6219,
+      "approval_assessment": "candidate_source_only_not_method_adoption",
+      "inclusion_basis": "Explicit conditional third-layer source references; does not change professional method bindings or dynamic rule admission.",
+      "source": {
+        "observed_on": "2026-11-05",
+        "upstream_updated": "2026-10-25",
+        "upstream_status": "candidate",
+        "format": "complete_original_markdown",
+        "note": "Source Markdown only; linked raw media and supplementary artifacts are not bundled or revalidated."
+      }
+    },
+    {
+      "path": "wiki/sources/超真实AI电影六技巧拆解-刺猬星球super-i.md",
+      "role": "reference_only",
+      "sha256": "b78eacc54f0c5ec1fb270ebece147f5c5ad1a84c534b61b0c3d5177e065b51c9",
+      "size_bytes": 16187,
+      "approval_assessment": "candidate_source_only_not_method_adoption",
+      "inclusion_basis": "Explicit conditional third-layer source references; does not change professional method bindings or dynamic rule admission.",
+      "source": {
+        "observed_on": "2026-11-05",
+        "upstream_updated": "2026-10-27",
+        "upstream_status": "candidate",
+        "format": "complete_original_markdown",
+        "note": "Source Markdown only; linked raw media and supplementary artifacts are not bundled or revalidated."
+      }
     }
   ],
   "conditional_gaps": [

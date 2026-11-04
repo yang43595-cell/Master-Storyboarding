@@ -146,3 +146,79 @@ def test_reverse_upload_mapping_conflict_but_same_bytes_reuse_allowed(tmp_path, 
     if different_bytes:
         with pytest.raises(ValueError, match='conflict'): validate_submission(frozen, tmp_path)
     else: assert validate_submission(frozen, tmp_path)['ok']
+
+
+def agent_group_fixture(root, *, mutation=None, conflicting_upload=False):
+    """Different real fixture images share a state through an agent report only."""
+    from scripts.tests.test_quality_evidence_consumers import agent_fixture, adopt_agent_fixture_entry
+    from scripts.core import quality_evidence as q
+    from PIL import Image
+    def observe_first_boundary(frozen, image):
+        first = frozen['drafts'][0]
+        first['reference_checks'][0].update(roles=['end_frame'], state_id='handoff',
+                                           reference_group_id='AGENT-BOUNDARY')
+        first['required_reference_roles'] = {'E1': ['end_frame']}
+        image['quality_evidence']['uses'].append(q.image_use(first['reference_checks'][0], first['source_shot_ids']))
+    frozen, _ = agent_fixture(root, image_setup=observe_first_boundary)
+    first = frozen['drafts'][0]
+    second = copy.deepcopy(first)
+    second.update(node_id='D2', source_shot_ids=['S01-020'])
+    second['continuity']['previous_node_id'] = first['node_id']
+    second['reference_checks'][0].update(artifact_id='OTHER-AGENT', roles=['start_frame'])
+    second['required_reference_roles'] = {'E1': ['start_frame']}
+    manifest = artifacts.load_manifest(root)
+    original = next(item for item in manifest['artifacts'] if item['artifact_id'] == 'IMG')
+    image = root / 'other-agent.png'
+    Image.new('RGB', (8, 8), 'red').save(image)
+    other = copy.deepcopy(original)
+    other.update(artifact_id='OTHER-AGENT', logical_id='image.other-agent', path_or_url=image.name,
+                 checksum=artifacts.digest(image), status='candidate', user_approved=False,
+                 depends_on=['storyboard.package', original['logical_id']])
+    other.pop('agent_acceptance')
+    if not conflicting_upload:
+        other['upload_bindings'][0].update(node_id='OTHER-NODE', media_id='OTHER-MEDIA')
+    other['upload_bindings'][0]['sha256'] = other['checksum']
+    second['reference_checks'][0]['sha256'] = other['checksum']
+    second['ordered_media'] = [{key: other['upload_bindings'][0][key] for key in ('node_id', 'media_id')}]
+    evidence = other['quality_evidence']
+    evidence.update(image_sha256=other['checksum'], source_shot_ids=['S01-020'],
+                    uses=[q.image_use(second['reference_checks'][0], second['source_shot_ids'])])
+    group = {'group_id': 'AGENT-BOUNDARY', 'event_id': 'E', 'state_id': 'handoff',
+             'entity_ids': ['E1'], 'members': [
+                 {'artifact_id': item['artifact_id'], 'revision': item['revision'], 'sha256': item['checksum'],
+                  'roles': [role], 'draft_node_ids': [row['node_id']]}
+                 for item, role, row in [(original, 'end_frame', first), (other, 'start_frame', second)]]}
+    if mutation in {'state_id', 'event_id'}: group[mutation] = 'WRONG'
+    elif mutation == 'entity_ids': group[mutation] = ['WRONG']
+    elif mutation in {'roles', 'draft_node_ids'}: group['members'][1][mutation] = ['WRONG']
+    artifacts.register_workspace_artifact(root, other)
+    other = adopt_agent_fixture_entry(root, other, usage={'source_shot_ids': ['S01-020']},
+                                     reference_groups=[] if mutation == 'missing' else [group])
+    frozen['drafts'].append(second)
+    # The group-bearing report is an explicit source, not an arbitrary report scan.
+    frozen['source_artifacts'].append({'artifact_id': other['artifact_id'], 'revision': other['revision'],
+                                       'sha256': other['checksum']})
+    for row in frozen['drafts']:
+        row['quality_evidence']['input_sha256'] = q.fingerprint(q.draft_binding(row))
+    return frozen
+
+
+def test_agent_same_state_different_angle_group_uses_exact_report_without_human_receipt(tmp_path):
+    frozen = agent_group_fixture(tmp_path)
+    assert validate_submission(frozen, tmp_path)['ok']
+    state = read_json(tmp_path / '00_项目管理/project_state.json')
+    assert state['user_confirmations'] == [{'artifact_ids': ['N']}]
+    assert all('reference_groups' not in receipt for receipt in state['user_confirmations'])
+
+
+@pytest.mark.parametrize('mutation', ['missing', 'state_id', 'event_id', 'entity_ids', 'roles', 'draft_node_ids'])
+def test_agent_group_still_requires_exact_boundary_usage(tmp_path, mutation):
+    frozen = agent_group_fixture(tmp_path, mutation=mutation)
+    with pytest.raises(ValueError, match='boundary'):
+        validate_submission(frozen, tmp_path)
+
+
+def test_reverse_upload_conflict_includes_agent_adopted_reference(tmp_path):
+    frozen = agent_group_fixture(tmp_path, conflicting_upload=True)
+    with pytest.raises(ValueError, match='conflicting upload'):
+        validate_submission(frozen, tmp_path)

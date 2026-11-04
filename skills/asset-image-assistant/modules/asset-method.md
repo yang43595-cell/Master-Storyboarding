@@ -8,7 +8,7 @@ Web 两种模式按 [Web 受限读取合同](web-input-contract.md) 替代下文
 
 - **色卡统一风格**（锁整片跨镜头配色）：见 `references/01-style-master-guide.md` 的"整片色彩统一（色卡）"工作流；有 `STYLE_REFERENCE` 或需锁整片配色时必做，它是与背景母版、多角度参考组并列的第三种一致性路线。
 - **图片连续性规则（背景母版 + 多角度参考图组）**：必读 `../storyboard-director/references/image-continuity-hard-rules.md`，不再视为"涉风险才读"；按需用背景母版锁固定层、用多角度参考组锁场景空间。
-- **对应类别 master-guide**：按当前 AST 类别必读 `references/01-style-master-guide.md`（风格/色卡）、`references/02-character-master-guide.md`（人物）、`references/03-scene-master-guide.md`（场景）、`references/04-prop-product-master-guide.md`（道具/产品）的对应部分（非可选），把抽象词落成可观察的拍摄/材质/光线条件。
+- **对应类别 master-guide**：按当前 AST 类别必读 `references/01-style-master-guide.md`（风格/色卡）、`references/02-character-master-guide.md`（人类/人形角色）或 `references/02a-body-character-master-guide.md`（动物/非人形/PET）、`references/03-scene-master-guide.md`（场景）、`references/04-prop-product-master-guide.md`（道具/产品）的对应部分（非可选），把抽象词落成可观察的拍摄/材质/光线条件。
 - **提示词语言合规**：写提示词必读 `../voiceover-to-video-script/references/prompt-language-hard-rules.md` 并以其为准；禁用 影视级/8K/唯美/高级 等炫技含糊词。人物/空间/产品/光线四项连续性分别检查。
 
 先从已正式采用叙事包内结构化资产需求（canonical JSON 不要求独立 narrative.assets；保留 human_readable_path 的历史包才按原双文件及适用独立表合同只读检查）结合按 PROJECT_RULES.md“用户调整资产图需求”核对并登记的用户调整，建立本轮（项目核心核对有效采用及完整性，旧版未拆表项目兼容叙事包入口） `AST-*` 白名单，再为每个登记需求建立稳定身份、状态、交互、展示面、朝向、适用范围、必须继承和不可继承字段。生成能稳妥覆盖实际用途并留有连续性余量的母版与必要状态；每个候选记录来源参考和单变量变化，人物、空间、产品与光线连续性分别检查；首次、返修和换装均执行上述图片连续性规则的“返修参考与固定基准”，不把失败图滚动继承为输入。
@@ -27,7 +27,7 @@ Web 两种模式按 [Web 受限读取合同](web-input-contract.md) 替代下文
 
 ## 角色类型与身体外观
 
-CHARACTER 是叙事角色类别。先按 character_type 选择：人类及人形角色沿用人物身份与服装方法；动物和非人形角色读取 references/02a-body-character-master-guide.md，使用角色外观母版，不加载人类脸部、无头人台及服装拆分方法。所有路线仍执行图片连续性方法、动态提示词规则与用户审图确认。旧版未登记类型保持旧路线；已明确的类型更正写入项目资产需求调整，不改已确认剧情。
+CHARACTER 是叙事角色类别。先按 character_type 选择：人类及人形角色沿用人物身份与服装方法；动物和非人形角色读取 references/02a-body-character-master-guide.md，使用角色外观母版，不套用人类脸部、无头人台及服装拆分要求。普通 prepare 与 Web 均支持 body：按本轮已明确角色类型填写 `asset_method_scopes`，纯非人形启用 body 且不启用 character，只读取非人形指南及共同连续性方法；人类/人形用 character，混合角色两键均启用。普通请求已启用 character 时，显式 `body: false` 排除非人形指南；旧请求仅 `character: true` 继续兼容两类指南，类型未知不凭名称猜测或缩小范围。普通 prepare 不自动扫描 AST，执行者须覆盖当前完整需求；这些条件不改变角色类别或出图授权。所有路线仍执行图片连续性方法、动态提示词规则与用户审图确认。旧版未登记类型保持旧路线；已明确的类型更正写入项目资产需求调整，不改已确认剧情。
 
 ## 本轮要求到实际成图的自查
 

@@ -15,9 +15,11 @@ description: 在叙事包确认后按已登记 AST 需求制作和核对角色�
 - 从资产网页接收项目需求表时，同时执行 [modules/project-web-mode.md](modules/project-web-mode.md)，仍属于项目模式；由已采用叙事包的有效资产需求驱动制作项，逐项确认后正式回填项目。
 - 用户明确要求跨项目独立资产库时：执行 [modules/library-mode.md](modules/library-mode.md)。这是本 Skill 的独立入口，不是另一个 Skill；资产库需求代替叙事包 AST 输入，不能伪造项目事实。按 Web 受限读取合同读取共享红线/分类指南及动态知识，并执行本 Skill 的语言审查和确认门禁。
 
-读取 `PROJECT_RULES.md`、`../_shared/knowledge-access.md`、当前 `stage_startup.md`、`../_shared/draft-lifecycle.md` 等六项共享红线（含 `../_shared/prompt-language.md`）、`modules/asset-method.md`、`references/00-asset-production-workflow.md`、`references/00a-asset-complexity-routing-guide.md`、`references/05-asset-manifest-handoff-guide.md` 与 `../../schemas/visual-asset-manifest.schema.json`。只有当前 AST 类别需要时才读取 `references/01-style-master-guide.md`（含**整片色彩统一色卡工作流**）、`references/02-character-master-guide.md`、`references/03-scene-master-guide.md` 或 `references/04-prop-product-master-guide.md` 的对应部分；**产出前必读** `../storyboard-director/references/image-continuity-hard-rules.md`（背景母版 + 多角度参考组，强制非"涉风险才读"）；涉及灯光风险时才读取 `../storyboard-planner/references/lighting-prompt-standard.md` 的对应小节；写本 Skill 提示词时必读 `../voiceover-to-video-script/references/prompt-language-hard-rules.md` 并以其为准；**产出前先 `ensure-prepared` 并命中 `modules/asset-method.md` 开头"本 Skill 产出须命中的规范"清单**。这些条件引用只提供资产实现约束，不扩大本 Skill 职责，也不加载其他阶段方法。
+读取 `PROJECT_RULES.md`、`../_shared/knowledge-access.md`、当前 `stage_startup.md`、`../_shared/draft-lifecycle.md` 等六项共享红线（含 `../_shared/prompt-language.md`）、`modules/asset-method.md`、`references/00-asset-production-workflow.md`、`references/00a-asset-complexity-routing-guide.md`、`references/05-asset-manifest-handoff-guide.md` 与 `../../schemas/visual-asset-manifest.schema.json`。只有当前 AST 类别需要时才读取 `references/01-style-master-guide.md`（含**整片色彩统一色卡工作流**）、`references/02-character-master-guide.md`、`references/02a-body-character-master-guide.md`、`references/03-scene-master-guide.md` 或 `references/04-prop-product-master-guide.md` 的对应部分；**产出前必读** `../storyboard-director/references/image-continuity-hard-rules.md`（背景母版 + 多角度参考组，强制非"涉风险才读"）；涉及灯光风险时才读取 `../storyboard-planner/references/lighting-prompt-standard.md` 的对应小节；写本 Skill 提示词时必读 `../voiceover-to-video-script/references/prompt-language-hard-rules.md` 并以其为准；**产出前先 `ensure-prepared` 并命中 `modules/asset-method.md` 开头"本 Skill 产出须命中的规范"清单**。这些条件引用只提供资产实现约束，不扩大本 Skill 职责，也不加载其他阶段方法。
 
 ## 本轮执行 SOP
+
+项目采用[网站审核到画布统一入口](../../PROJECT_RULES.md#网站审核到画布的统一入口)时，资产图仍须网站人审：实看候选后送准确 AST、output、文件版本与用途，读取已提交意见和附图、返修新版本并重审；该范围的真实通过回执即确认及继续授权，不再回聊天重复确认。本地制作网页与离线编译不代表审核站已接通；缺合法通道时保留候选并报告具体缺口，不预填 confirmed。独立库及兼容项目沿原确认路径。
 
 按顺序完成适用步骤；核对对象和结论写回本模式现有制作项、候选/审核备注与清单，不另建执行表。只有本轮实际执行并有对应结果的步骤才可报完成。
 
@@ -32,7 +34,7 @@ description: 在叙事包确认后按已登记 AST 需求制作和核对角色�
 
 人物面容替换或年龄版本复用时，执行[身份替换与年龄版本检查](modules/asset-method.md#身份替换与年龄版本)。它检查参考职责，不自行扩大图片需求。
 
-`IMAGE-CONTINUITY-METHOD` 为本 Skill 必读。分类方法按制作内容选择：风格/色卡=style，人物/服装/人物1×4=character，场景=scene，道具/产品=object。普通对话 prepare 请求中由执行者据当前 AST 设置 `asset_method_scopes` 对应键为 true，覆盖本轮全部实际类别；多类别同时设置，不凭任务关键词猜测。仅明确选定类别时排除未选分类指南，条件未知仍保守保留。新增适用本地合同在 prepare 请求的 `local_references` 列出仓库相对路径，只增加、不删除固有标准；重建 prepare 后再用 required-reference 核对，不现场补登记哈希。Web 由当前制作项与 AST 类别自动计算相同条件。逐项核对该类别方法已完整加载；未命中时不得只靠本地模板产出。
+`IMAGE-CONTINUITY-METHOD` 为本 Skill 必读。分类方法按制作内容选择：风格/色卡=style，人类/人形角色及服装/人物1×4=character，动物/非人形/PET 角色外观=body，场景=scene，道具/产品=object。普通对话 prepare 请求中由执行者据当前 AST 设置 `asset_method_scopes` 对应键为 true，覆盖本轮全部实际类别；多类别同时设置，不凭任务关键词猜测。仅明确选定类别时排除未选分类指南，条件未知仍保守保留。新增适用本地合同在 prepare 请求的 `local_references` 列出仓库相对路径，只增加、不删除固有标准；重建 prepare 后再用 required-reference 核对，不现场补登记哈希。已明确只有人类/人形时同时写 `body: false`，只有非人形时写 `body: true` 且不启用 character，混合角色两键均为 true；旧请求仅有 `character: true` 时兼容读取两类指南。范围未明确或全为 false 不用于排除规范。Web 由当前制作项与 AST 类别自动计算相同条件。body 的专项正文由本地非人形指南提供，并保留共同连续性方法，不新增专业方法绑定；其他类别逐项核对适用绑定方法完整加载，缺失时不得只靠本地模板产出。
 
 本轮明确制作、返修或核对造物者抛光面膜的真人上脸效果时，在当前请求设 `creator_mask_face_effect: true`，按 knowledge-profile 加载 `VGEN-CREATOR-POLISHING-MASK-USE` 全文，并读取该方法指定的现有真人上脸模板；把模板实际路径加入当前 `source_paths`，使准备依据包含其版本。普通资产、碗内搅拌和产品展示不设置此条件；这不新增效果图需求或阶段授权。现有Web仅登记效果需求而未建立对应制作入口时，不把通用大头照job当作上脸任务；仅已明确由普通会话执行的本项按原prepare流程准备，不宣称网页会自动传入该条件。
 
@@ -61,7 +63,7 @@ description: 在叙事包确认后按已登记 AST 需求制作和核对角色�
 
 ## 候选与确认
 
-- 候选、待确认、确认、过期、拒绝和阻塞是不同状态。生成成功、技术检查通过或审核通过都不能把候选升级为确认。
+- 候选、待确认、确认、过期、拒绝和阻塞是不同状态。生成成功、技术检查通过或 Agent 自查／独立审核通过都不能把候选升级为确认；统一入口的真实网站人审回执按上文登记。
 - Agent 检查真实路径、格式、尺寸、命名、AST 引用、参考来源和明显产品事实，并按 [本轮要求到实际成图的自查](modules/asset-method.md#本轮要求到实际成图的自查) 实看选定结果、核对当前明确要求及准确交付版本。提示词通过不代表成图通过；未满足或未验证项如实保留，不得把自身检查写成用户视觉确认。
 - 交用户审核时只提供候选文件夹绝对路径、准确文件名、对应 AST 和需要判断的视觉事项，不嵌入图片载荷。
 - 用户明确确认具体候选后，才登记 `confirmed_asset` 和确认引用；旧确认版本保留为过期或被替代，不覆盖历史文件。

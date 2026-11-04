@@ -55,7 +55,7 @@
         "logical_id": {"const": "storyboard.package"},
         "revision": {"type": "string", "pattern": "^R[0-9]{2,}$"},
         "path": {"$ref": "#/$defs/pathString"},
-        "status": {"const": "confirmed"}
+        "status": {"enum": ["confirmed", "agent_accepted"]}
       }
     },
     "gap": {
