@@ -13,14 +13,17 @@ python -m venv .venv
 # macOS/Linux:
 . .venv/bin/activate
 # Windows PowerShell 改用: .venv\Scripts\Activate.ps1
-python -m pip install -r config/requirements-dev.txt
+python -m pip install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: -r config/requirements-dev.txt
+python -m pip check
 # Node.js 24，用于已有网页契约的离线校验：
 npm ci --ignore-scripts --no-audit --no-fund
 python -m scripts.core.knowledge_runtime
 python scripts/stage_context_cli.py --help
 ```
 
-仅运行核心 CLI 时可以只安装 `config/requirements.txt`；包含图片资产功能及测试时使用上述 dev 清单。依赖只从既定官方包源安装，不把 `.venv/` 或缓存提交到 Git。JavaScript 网页适配/测试使用 Node.js 24 与锁定的 Zod 3.25.76（`package-lock.json`）；Blender、ASR 和浏览器生成工具是按需能力，依各自 Skill 安装或连接，不要求普通文字阶段预装所有工具。
+仅运行核心 CLI 时可以把安装命令的文件换成 `config/requirements.txt`；包含图片资产功能及测试时使用上述 dev 清单。三份 `config/requirements*.txt` 均固定直接和间接依赖版本及发行包 SHA256；对应 `.in` 文件只表达维护时的兼容范围，不作为日常安装入口。依赖只从既定官方包源安装，不把 `.venv/` 或缓存提交到 Git。JavaScript 网页适配/测试使用 Node.js 24 与锁定的 Zod 3.25.76（`package-lock.json`）；Blender、ASR 和浏览器生成工具是按需能力，依各自 Skill 安装或连接，不要求普通文字阶段预装所有工具。
+
+锁文件以 CPython 3.12 为验证基线，保留 Windows 等平台条件依赖，不能把一次 Linux 通过当成其他系统已实测。`--only-binary=:all:` 在缺少适用 wheel 时明确失败，不临时编译未知构建依赖；不要为安装成功而去掉哈希检查。Python、Node、FFmpeg 和系统库本身不包含在 Python 锁文件中。更新依赖与自动检查说明见 [依赖与自动检查](dependency-checks.md)。
 
 新业务项目放在源码仓库之外，不把素材、原片、生成结果和确认记录提交到源码仓库：
 
@@ -43,7 +46,7 @@ test_tmp=$(mktemp -d "${TMPDIR:-/tmp}/msb-tests.XXXXXX")
 (
   trap 'rm -rf -- "$test_tmp"' EXIT
   export TMPDIR="$test_tmp" PYTHONDONTWRITEBYTECODE=1
-  python -m pytest -q -c config/pytest.ini --basetemp="$test_tmp/pytest" -o cache_dir="$test_tmp/cache"
+  python -m pytest -q -ra -c config/pytest.ini scripts/tests tests --basetemp="$test_tmp/pytest" -o cache_dir="$test_tmp/cache"
 )
 node --test scripts/tests/*.cjs
 python -m scripts.core.knowledge_runtime
