@@ -79,10 +79,10 @@
     {
       "path": "projects/Master-Storyboarding/应用知识/编导/编导方法.md",
       "role": "method",
-      "sha256": "9dbaa9bda8fdc4f331b1de528d53f0e956570798c86a3da5236eed43a9a47114",
-      "size_bytes": 4162,
-      "approval_assessment": "exact_baseline_match",
-      "inclusion_basis": "current profile user_confirmed binding"
+      "sha256": "894f570fa9961388052ff7f8aff3156410e8851e4a66b19d593fc9298a77cf2a",
+      "size_bytes": 5172,
+      "approval_assessment": "user_directed_scoped_wording_revision_2026-11-05_not_experiment_validated",
+      "inclusion_basis": "current profile user_directed scoped revision; original upstream capture metadata retained"
     },
     {
       "path": "projects/Master-Storyboarding/应用知识/视频提示词/Seedance 2.5 受限表达与控制引用.md",

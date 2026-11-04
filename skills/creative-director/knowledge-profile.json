@@ -24,11 +24,17 @@
       "path": "projects/Master-Storyboarding/应用知识/编导/编导方法.md",
       "binding_status": "user_confirmed",
       "promotion_record": {
-        "basis": "legacy_unclassified",
-        "method_version": "2026-10-23",
-        "method_sha256": "9dbaa9bda8fdc4f331b1de528d53f0e956570798c86a3da5236eed43a9a47114",
-        "scope": "兼容现有 creative-director 编导方法绑定；历史晋升依据不重新分类。",
-        "source_ref": "libfile_d4bb8cef26508191a0aa202b4ff481c7 v1；精确字节基准。"
+        "basis": "user_directed",
+        "method_version": "2026-11-05",
+        "method_sha256": "894f570fa9961388052ff7f8aff3156410e8851e4a66b19d593fc9298a77cf2a",
+        "scope": "仅 creative-director：限定原创/改编/局部返修与可选植入方法的适用范围，保留既有事实、来源、确认及职责边界；本轮未做成稿效果实验。",
+        "source_ref": "docs/reviews/2026-11-05-creative-director-prompt-optimization.md；本仓库运行副本的对应修订，未同步外部 Vault。",
+        "user_instruction_ref": "2026-11-05 当前对话：用户在六项优化建议后明确要求“出一个详细的修改方案，然后执行”。此依据授权实施所列调整，不表示用户逐字审阅最终版本。",
+        "conflict_resolution": "局部返修保留最小充分改动；原创及获准重构允许必要事件设计；日常使用后揭示仅为可选路径。旧 2026-10-23 legacy 基准不扩张，原历史批准不重新分类。",
+        "rollback": "从版本历史恢复 2026-10-23 原正文及匹配的 knowledge-profile.json、knowledge/manifest.json；保留当前维护记录，不改历史批准。",
+        "supersedes": [
+          "CREATIVE-DIRECTION-METHOD@2026-10-23#sha256:9dbaa9bda8fdc4f331b1de528d53f0e956570798c86a3da5236eed43a9a47114"
+        ]
       },
       "applies_when": "当前编导任务遇到具体故事或对白问题，执行者选择参考编导方法时",
       "requires": {"skill": "creative-director", "request.use_story_method": true}
