@@ -15,6 +15,7 @@ import pytest
 
 from scripts import stage_context_cli as cli
 from scripts.tests.test_stage_context_cli import _project, _method_vault, _synthetic_method_profile
+from scripts.tests.source_fixture import copy_source_fixture
 
 
 @pytest.fixture(autouse=True)
@@ -260,9 +261,8 @@ def test_light_closures_cannot_escape_current_pending_scope(tmp_path, bad_closur
 @pytest.mark.parametrize("shared_name", ["draft-lifecycle.md", "knowledge-access.md", "product-usage-contract.md"])
 @pytest.mark.parametrize("change", ["changed", "missing"])
 def test_declared_shared_contracts_remain_live_dependencies(tmp_path, monkeypatch, shared_name, change):
-    import shutil
     copied = tmp_path / "repo"
-    shutil.copytree(cli.ROOT, copied, ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache"))
+    copy_source_fixture(cli.ROOT, copied)
     monkeypatch.setattr(cli, "ROOT", copied)
     project, vault, source, candidate, request, args, reading = fixture(tmp_path)
     before = basis(project)

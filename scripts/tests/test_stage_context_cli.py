@@ -11,6 +11,7 @@ from scripts import stage_context_cli as cli
 from scripts.core import revision_control
 from scripts.core.io import write_json
 from scripts.core.project_state import load_project_state, new_project_state, normalize_project_state, write_project_state
+from scripts.tests.source_fixture import copy_source_fixture
 
 
 def _current_narrative_package(root: Path, revision: str = "R01") -> dict:
@@ -120,9 +121,8 @@ lifecycle:
 
 def _synthetic_method_profile(tmp_path, vault, monkeypatch):
     """Bind test-only method bytes to a test-only explicit promotion record."""
-    import shutil
     repo = tmp_path / "synthetic-repo"
-    shutil.copytree(cli.ROOT, repo, ignore=shutil.ignore_patterns('__pycache__', '.pytest_cache', '.git', 'regression_evidence'))
+    copy_source_fixture(cli.ROOT, repo)
     monkeypatch.setattr(cli, 'ROOT', repo)
     _bind_synthetic_method_revision(vault)
 
