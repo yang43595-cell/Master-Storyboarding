@@ -292,10 +292,10 @@ def test_archived_native_receipt_is_not_current_claim(tmp_path):
 
 
 def test_director_actual_method_snapshot_changes_in_isolation(tmp_path,monkeypatch):
-    import shutil
+    from scripts.tests.source_fixture import copy_source_fixture
     from scripts import stage_context_cli as cli
     root=Path(__file__).resolve().parents[2]
-    replica=tmp_path/'repo';shutil.copytree(root,replica,ignore=shutil.ignore_patterns('__pycache__','.pytest_cache'))
+    replica=copy_source_fixture(root,tmp_path/'repo')
     monkeypatch.setattr(cli,'ROOT',replica)
     method=replica/'skills/storyboard-planner/modules/shot-planning.md'
     documents=cli._local_standard_documents(replica/'skills/storyboard-planner')

@@ -30,6 +30,27 @@ python scripts/init_desktop_project.py --path ../my-film
 
 该命令只创建空项目，拒绝覆盖已有目录。之后读取 `PROJECT_RULES.md` 和对应 `skills/<skill>/SKILL.md`，提供真实需求与输入，按本阶段入口继续。正常阶段的 `prepare` 可以省略 `--vault`；视频提示词仍走现行直接读取入口，不恢复旧 prepare 流程。
 
+## 隔离测试目录
+
+规则/方法变更测试通过 `scripts/tests/source_fixture.py` 复制所需源码根目录，不复制整个工作树。它使用当前工作文件，保留未提交修改、新增源码、原始字节和缺失引用，不用 `git archive HEAD` 掩盖本地变化；缺失必需根目录、读取失败和源码符号链接会直接报错。新测试需要白名单之外的源码时，应明确扩展输入范围。项目素材、依赖、凭据和测试输出不能加入源码快照。
+
+`.venv/`、`node_modules/` 等根目录本地状态不在白名单内，所选源码目录内的同名依赖/缓存也不复制。子进程使用当前 Python 解释器，依赖仍在原安装位置，不从测试副本重新安装。只复制指定知识目录、网页契约或合成项目的现有测试不改成源码快照，以免漏掉它们实际要检查的数据。
+
+普通 pytest 的 `tmp_path` 已按运行和测试隔离。需要显式指定位置时，每次新建独占目录，不复用共享固定 `--basetemp`（pytest 会清空该路径）。macOS/Linux 示例，在已激活上述 `.venv` 的终端运行：
+
+```sh
+test_tmp=$(mktemp -d "${TMPDIR:-/tmp}/msb-tests.XXXXXX")
+(
+  trap 'rm -rf -- "$test_tmp"' EXIT
+  export TMPDIR="$test_tmp" PYTHONDONTWRITEBYTECODE=1
+  python -m pytest -q -c config/pytest.ini --basetemp="$test_tmp/pytest" -o cache_dir="$test_tmp/cache"
+)
+node --test scripts/tests/*.cjs
+python -m scripts.core.knowledge_runtime
+```
+
+只清理本次创建的临时目录，不清空共享 `/tmp`，不碰真实项目、素材或其他任务目录。某项失败仍须按日志处理；不得把磁盘耗尽的连锁失败当成独立产品缺陷，或跳过失败测试来换取通过。
+
 ## 第二层方法与第三层来源
 
 - `knowledge/runtime/` 保留上游相对路径，profile 不需要换成机器绝对路径。已绑定专业方法按职责属于 Skill 第二层；目录名不决定层次。
