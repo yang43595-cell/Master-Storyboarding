@@ -611,6 +611,7 @@ def validate_scene_source_mapping(rows, sources, project):
     has_states = False
     has_packaging = False
     for ref, path, payload in sources:
+        linked_director = False
         if not isinstance(payload, dict):
             continue
         for scene in payload.get('scenes', []):
@@ -633,10 +634,22 @@ def validate_scene_source_mapping(rows, sources, project):
                     (upstream.get('sha256') and upstream['sha256'] != r.get('sha256')) or
                     not isinstance(value, dict) or not isinstance(value.get('scenes'), list)):
                 raise ValueError('scene_state: 视频源与导演修订/字节不一致')
+            if rows and ('generation_segments' in payload or 'creative_sections' in payload):
+                from .generation_boundaries import validate_generation_boundaries
+                validate_generation_boundaries(payload, value, Path(ref.get('project_path', project)))
+                linked_director = True
         segments = payload.get('generation_segments')
         if segments is None and isinstance(payload.get('creative_sections'), list):
             segments = [s for section in payload['creative_sections'] for s in section.get('generation_segments', [])]
         if segments:
+            if rows and not linked_director and isinstance(payload.get('scenes'), list) and payload['scenes']:
+                # Existing composite source snapshots carry their director and
+                # segment mapping in the same byte-checked artifact.
+                from .generation_boundaries import validate_generation_boundaries
+                validate_generation_boundaries(payload, payload, Path(ref.get('project_path', project)))
+                linked_director = True
+            if rows and not linked_director:
+                raise ValueError('generation_boundary: 生成段源必须绑定准确导演，不能删来源绕过分段检查')
             videos.extend(segments)
     if any(row.get('source_segment_id') for row in rows) and not videos:
         raise ValueError('scene_state: 已声明source_segment_id但缺准确视频源，不能退回无映射检查')
@@ -653,7 +666,10 @@ def validate_scene_source_mapping(rows, sources, project):
                     shot_audio[key] = shot['audio']['dialogue']
     if videos and (shot_audio or any('source_audio' in s for s in videos)):
         replay_source_audio(videos, shot_audio)
-    if not has_states and not has_packaging:
+    if videos:
+        from .generation_boundaries import validate_delivery_cutpoints
+        validate_delivery_cutpoints(rows, videos)
+    if not has_states and not has_packaging and not videos:
         return
     if not videos:
         raise ValueError('scene_state/packaging: 场景后态或包装交付必须携带准确视频源generation_segments，不能省略视频源绕过镜号映射')

@@ -380,6 +380,13 @@ def test_commit_rechecks_confirmed_candidate_bytes(tmp_path):
 def video_project(root):
     story, _ = confirmed_narrative(root)
     board = board_candidate(root, story)
+    # Synthetic second scene: the reconciliation test must also retain real
+    # source mappings rather than treating two unmapped prompts as a full film.
+    second = copy.deepcopy(board["scenes"][0])
+    second["scene_id"] = "S02"
+    second["shots"][0].update(shot_id="S02-010", source_dialogue_ids=[])
+    second["shots"][0]["audio"]["dialogue"] = []
+    board["scenes"].append(second)
     board_path = root / "B.json"
     write_json(board_path, board)
     board_entry = {"artifact_id": "B", "logical_id": "storyboard.package", "type": "storyboard.package",
@@ -391,8 +398,8 @@ def video_project(root):
     source_board = {"artifact_id": "B", "logical_id": "storyboard.package",
                     "revision": board["revision"], "path": board_path.name}
     old_prompt = {"revision": "R01", "source_storyboard": source_board,
-                  "generation_segments": [{"segment_id": "G-01", "prompt": "Alice close-up: stop at the door."},
-                                          {"segment_id": "G-02", "prompt": "She turns back."}]}
+                  "generation_segments": [{"segment_id": "G-01", "prompt": "Alice close-up: stop at the door.", "source_shot_ids": ["S01-010"]},
+                                          {"segment_id": "G-02", "prompt": "She turns back.", "source_shot_ids": ["S02-010"]}]}
     old_path = root / "P-OLD.json"
     write_json(old_path, old_prompt)
     manifest["artifacts"].append({"artifact_id": "P-OLD", "logical_id": "video.prompt", "type": "video.prompt",
@@ -434,7 +441,7 @@ def test_formal_video_prompt_accepts_reasoned_generation_segment_change(tmp_path
     payload = copy.deepcopy(baseline)
     payload["revision"] = "R02"
     payload["generation_segments"] = [baseline["generation_segments"][0],
-                                      {"segment_id": "G-03", "prompt": "Continue after the turn."}]
+                                      {"segment_id": "G-03", "prompt": "Continue after the turn.", "source_shot_ids": ["S02-010"]}]
     payload["segment_reconciliation"] = {
         "baseline": {"artifact_id": "P-OLD", "sha256": artifacts.digest(tmp_path / "P-OLD.json")},
         "changes": [{"action": "remove", "segment_id": "G-02", "reason": "Move the return glance to a later continuation."},
