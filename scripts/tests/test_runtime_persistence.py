@@ -52,9 +52,24 @@ def test_library_vault_uses_env_and_explicit_fixture_override(tmp_path, monkeypa
     monkeypatch.setenv('USERPROFILE', str(tmp_path))
     monkeypatch.setenv('MSB_VAULT_ROOT', '~/knowledge')
     library = Library(tmp_path / 'env-library')
-    assert library.vault == stage_context_cli._vault_root(None) == tmp_path / 'knowledge'
+    assert library.vault == tmp_path / 'knowledge'
+    # Writable backup destinations may be new; knowledge inputs must exist.
+    with pytest.raises(stage_context_cli.StageContextError, match='does not exist'):
+        stage_context_cli._vault_root(None)
+    library.vault.mkdir()
+    assert stage_context_cli._vault_root(None) == library.vault
     explicit = Library(tmp_path / 'isolated-library', vault=tmp_path / 'isolated-vault')
     assert explicit.vault == tmp_path / 'isolated-vault'
     monkeypatch.delenv('MSB_VAULT_ROOT')
     legacy = Library(tmp_path / 'legacy/library')
     assert legacy.vault == tmp_path / 'legacy/vault'
+
+
+def test_library_cannot_write_into_bundled_knowledge(tmp_path, monkeypatch):
+    from core.knowledge_runtime import bundled_root
+    monkeypatch.delenv('MSB_VAULT_ROOT', raising=False)
+    with pytest.raises(ValueError, match='内置知识包'):
+        Library(tmp_path / 'library', vault=bundled_root())
+    library = Library(tmp_path / 'library')
+    assert library.vault == tmp_path / 'vault'
+    assert library.vault != bundled_root()

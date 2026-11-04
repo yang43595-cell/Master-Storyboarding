@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .knowledge_runtime import is_bundled_root, verify_bundle
+
 
 RULE_BLOCK_RE = re.compile(
     r"<!--\s*msb-knowledge[ \t]*\r?\n"
@@ -110,15 +112,26 @@ def build_knowledge_index(
     vault_root: Path, policy: dict[str, Any]
 ) -> list[KnowledgeBlock]:
     vault_root = Path(vault_root).resolve()
+    bundled = is_bundled_root(vault_root)
+    manifest = verify_bundle(vault_root) if bundled else None
+    allowed = set(manifest["dynamic_rule_ids"]) if manifest is not None else None
+    if allowed == set():
+        return []
+    paths = ([vault_root / item["path"] for item in manifest["files"] if item["path"].endswith(".md")]
+             if manifest is not None else _discovered_markdown_files(vault_root, policy))
     blocks: list[KnowledgeBlock] = []
     discovered_blocks: list[KnowledgeBlock] = []
-    for path in _discovered_markdown_files(vault_root, policy):
+    for path in paths:
         parsed = parse_knowledge_blocks(path, vault_root)
+        if allowed is not None:
+            parsed = [block for block in parsed if block.id in allowed]
         discovered_blocks.extend(parsed)
         for block in parsed:
             _validate_active_contract(block, policy)
             if block.authority == "wiki":
                 blocks.append(block)
+    if allowed is not None and allowed != {block.id for block in blocks}:
+        raise KnowledgeIndexError("manifest dynamic rules are missing or not wiki-authority")
     _validate_unique_ids(discovered_blocks)
     _validate_unique(blocks)
     return blocks

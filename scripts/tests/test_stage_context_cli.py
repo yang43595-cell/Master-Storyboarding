@@ -893,7 +893,7 @@ def test_ensure_prepared_distinguishes_empty_selection_and_missing_evidence(tmp_
 def test_three_layer_prepare_keeps_unmigrated_skill_compatible(tmp_path: Path, skill: str) -> None:
     project = _project(tmp_path)
     original = (project / "00_项目管理/project_state.json").read_bytes()
-    args = argparse.Namespace(project=str(project), skill=skill, objective="隔离兼容性检查", request_json=None, vault=str(tmp_path / "missing-vault"))
+    args = argparse.Namespace(project=str(project), skill=skill, objective="隔离兼容性检查", request_json=None, vault=None)
     report = cli.prepare(args)
     assert report["required_method_count"] == 0
     assert cli.ensure_prepared(args)["ok"] is True
@@ -908,6 +908,7 @@ def test_third_batch_stage_requires_method_files_and_reading_before_production(t
     request.write_text(json.dumps({'asset_method_scopes': dict.fromkeys(['style', 'character', 'scene', 'object'], True)}), encoding='utf-8')
     args = argparse.Namespace(project=str(project), skill=skill, objective='隔离第三批读取测试',
         request_json=str(request), vault=str(tmp_path/'missing-vault'), actor_id='test-agent', task_id='test-method-binding')
+    (tmp_path / 'missing-vault').mkdir()  # Explicit existing root, missing method bytes.
     with pytest.raises(cli.StageContextError, match='专业方法文件缺失'):
         cli.prepare(args)
     vault = _method_vault(tmp_path/'method-vault')

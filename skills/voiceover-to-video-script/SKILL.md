@@ -19,7 +19,7 @@ description: 根据已有导演包、原文对白和真实素材编写完整分�
 
 先读[视频方法](modules/video-method.md)、[语言规范](references/prompt-language-hard-rules.md)及相关原始资料。候选返修遵守[未确认稿生命周期](../_shared/draft-lifecycle.md)；使用图片控制开场与衔接时读取[图片连续性](../storyboard-director/references/image-continuity-hard-rules.md)，涉及灯光表达时读取[灯光提示词规范](../storyboard-planner/references/lighting-prompt-standard.md)的适用小节。涉及真实外观时实际查看本段选中的确认输出，不从文件名推断；已核验且用途未变的图片复用既有结论，只在新用途、版本变化或结论不足时补看。声音参考仅在用户明确提出或选用时读取，按[项目可选边界](../../PROJECT_RULES.md#导演稿之后的生产顺序)处理；视觉补充只在使用时读取。Blender、白模和正式分镜图不是必需输入。
 
-专项方法按 [knowledge-profile.json](knowledge-profile.json) 的 `direct_read_when` 和明确路径直接读取 Vault 原文，根使用本轮明确指定的 Vault；未指定时读取环境变量 `MSB_VAULT_ROOT`，再缺省为当前用户目录下的 `Documents/Obsidian Vault`。基础和素材职责方法用于匹配任务；Seedance 2.5 方法仅在选择该模型时读；造物者方法仅在对应产品且确有使用过程时读。缺失或状态冲突报告具体缺口，不以模板替代，不全库搜索或复制方法正文。同任务同版本已读内容复用；长资料按自然章节补读，不生成事件包。
+专项方法按 [knowledge-profile.json](knowledge-profile.json) 的 `direct_read_when` 和明确路径直接读取。默认根为本仓库 `knowledge/runtime/`，先运行 `python -m scripts.core.knowledge_runtime` 核验本 commit 的选择清单和字节。调用者明确指定的知识根优先，其次为显式 `MSB_VAULT_ROOT`；无配置时使用内置包，绝不猜本机 `Documents/Obsidian Vault`。外部根是本轮显式来源，不会更新内置版本。基础和素材职责方法用于匹配任务；Seedance 2.5 方法仅在选择该模型时读；造物者方法仅在对应产品且确有使用过程时读。缺失或状态冲突报告具体缺口，不以模板替代，不全库搜索或复制方法正文。同任务同版本已读内容复用；长资料按自然章节补读，不生成事件包。
 
 经验只按 `knowledge-profile.json` 的 `conditional_experiences` / `direct_read_when` 触发条件定位经验索引并按需直读；未命中不加载，不加入专业方法必读包。区分已核实事实、推断与待验证处理，不把一次试验参数或未验证方案当通则；检索到经验也不等于本次素材已确认。
 

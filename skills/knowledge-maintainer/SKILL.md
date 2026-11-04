@@ -11,7 +11,7 @@ description: 用于 Master-Storyboarding 项目知识治理、知识入口审计
 
 ## 职责
 
-维护 Master-Storyboarding 的知识入口、状态和仓库合同边界。专业方法正文由 Obsidian Vault 主库维护；本 Skill 维护仓库内的 profiles、来源声明、稳定合同及审计入口，不搬运或同步 Vault 正文。云端执行者只能使用实际提供的输入：显式物化的固定快照是只读的时间点副本，不是实时挂载，也不支持写回 Mac。缺少真实 Vault 时可以审查仓库合同与快照证据，但不得声称完成了需要完整 Vault 的确定性审计。
+维护 Master-Storyboarding 的知识入口、状态和仓库合同边界。专业方法的上游原文可由 Obsidian Vault 维护；本仓库的已选运行版本位于 `knowledge/runtime/`，由当前 Git commit 与 manifest 固定。本 Skill 按明确授权维护仓库 profiles、选定运行副本、来源声明、稳定合同及审计入口，不镜像整个 Vault、不自动同步或写回 Mac。云端执行者只能使用实际提供的输入：显式物化的固定快照是只读的时间点副本，不是实时挂载，也不支持写回 Mac。缺少真实 Vault 时可以审查仓库合同与快照证据，但不得声称完成了需要完整 Vault 的确定性审计。
 
 开始前完整读取 [references/audit-contract.md](references/audit-contract.md) 与 [modules/maintenance-method.md](modules/maintenance-method.md)。
 
@@ -50,7 +50,7 @@ description: 用于 Master-Storyboarding 项目知识治理、知识入口审计
 
 1. 判断内容属于 Vault 专业知识还是仓库稳定合同。
 2. 按维护方法执行来源检查、规则去重与 topic 定位。
-3. 只更新唯一真相，不复制知识正文。
+3. 区分上游原文与本项目运行版本。更新运行副本须按[独立仓库说明](../../docs/development/standalone-repository.md)核准精确选择、原字节与差异，经过分支审查；不把候选或来源页顺带升级。
 4. 真实 Vault 可读时运行：`python scripts/audit-knowledge-entrypoints.py --vault <Vault路径>`。只有固定快照或仓库文件时，不以其冒充完整 Vault 审计；报告未执行范围，并继续完成不依赖 Vault 的仓库合同核查。
 5. 逐项解释非零退出结果；授权修复后重新审计。
 

@@ -203,9 +203,13 @@ class Library:
     def __init__(self, root, *, vault=None):
         self.root = Path(root).resolve()
         self.categories = CATEGORIES
-        from stage_context_cli import _vault_root
-        fallback = (ROOT.parent / 'Obsidian Vault') if self.root == DEFAULT_LIBRARY.resolve() else self.root.parent / 'vault'
-        self.vault = _vault_root(str(vault or os.environ.get('MSB_VAULT_ROOT') or fallback))
+        # Asset backup is a writable destination, not the read-only knowledge input.
+        # Preserve explicit destinations, including ones that do not exist yet.
+        fallback = self.root.parent / 'vault'
+        self.vault = Path(vault or os.environ.get('MSB_VAULT_ROOT') or fallback).expanduser().resolve()
+        from core.knowledge_runtime import bundled_root
+        if self.vault.is_relative_to(bundled_root()) or self.root.is_relative_to(bundled_root()):
+            raise ValueError('资产输出目录不能写入仓库内置知识包')
         self.cleanup_error = ''
         self.backup_wakeup = threading.Event()
         self.root.mkdir(parents=True, exist_ok=True)

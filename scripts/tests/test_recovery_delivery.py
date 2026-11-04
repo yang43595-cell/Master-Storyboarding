@@ -29,6 +29,7 @@ def chain(project):
 
 def test_required_external_method_fails_before_startup(tmp_path):
     project = _project(tmp_path)
+    (tmp_path / 'missing-vault').mkdir()
     request = tmp_path/'request.json'
     write_json(request, {'use_story_method': True})
     before = snapshot(project)
@@ -41,6 +42,7 @@ def test_required_external_method_fails_before_startup(tmp_path):
 
 
 def test_optional_external_method_is_not_made_mandatory(tmp_path):
+    (tmp_path / 'absent').mkdir()
     project = _project(tmp_path)
     result = cli.prepare(cli.parser().parse_args(['prepare', '--project', str(project), '--skill',
         'creative-director', '--objective', 'synthetic optional method', '--vault', str(tmp_path/'absent')]))
