@@ -1,5 +1,6 @@
 """Source snapshots stay small without hiding source drift or copy failures."""
 from pathlib import Path
+import stat
 
 import pytest
 
@@ -29,7 +30,7 @@ def test_only_required_sources_are_copied_without_dependencies(source, tmp_path)
     required = {
         "PROJECT_RULES.md": b"working rules\r\n",
         "skills/new-uncommitted-method.md": "新增方法\r\n".encode(),
-        "references/synthetic-fixture.bin": bytes(range(256)),
+        "references/synthetic-fixture.json": b'{"synthetic": true}\r\n',
         "scripts/.env.example": b"EXAMPLE=placeholder\n",
     }
     for relative, data in required.items():
@@ -49,6 +50,56 @@ def test_only_required_sources_are_copied_without_dependencies(source, tmp_path)
     copied = {p.relative_to(replica).as_posix(): p.read_bytes()
               for p in replica.rglob("*") if p.is_file()}
     assert copied == required
+
+
+def test_nested_credentials_media_and_project_state_are_never_copied(source, tmp_path):
+    excluded = (
+        "config/credentials-synthetic.json", "config/local.env", "config/synthetic.key",
+        "config/private.pem", "config/certificate.p12", "config/certificate.pfx",
+        "config/.git-credentials", "scripts/.aws/credentials", "scripts/.ssh/id_rsa",
+        "scripts/.claude/settings.local.json", "skills/inputs/story.md",
+        "skills/history/old.json", "references/evidence_sources/source.txt",
+        "references/product-references/notes.md", "references/private-transcript.txt",
+        "knowledge/runtime/.master-storyboarding/local.json",
+        "config/CREDENTIALS-UPPER.JSON", "config/LOCAL.ENV",
+    )
+    for relative in excluded:
+        write(source, relative)
+    media = ("mp4", "mov", "mkv", "avi", "wav", "mp3", "blend", "glb", "gltf",
+             "png", "jpg", "jpeg", "webp", "gif", "MP4")
+    for suffix in media:
+        write(source, "references/private-media." + suffix)
+    with (source / "references/private-media.mp4").open("wb") as handle:
+        handle.truncate(8 * 1024 * 1024)
+    write(source, "config/schema.json", b'{"type":"object"}')
+    write(source, "scripts/.env.example", b"SYNTHETIC_EXAMPLE=placeholder\n")
+    replica = source_fixture.copy_source_fixture(source, tmp_path / "safe")
+    copied = {path.relative_to(replica).as_posix() for path in replica.rglob("*") if path.is_file()}
+    assert copied == {"PROJECT_RULES.md", "config/schema.json", "scripts/.env.example"}
+
+
+def test_unknown_source_type_fails_instead_of_disappearing(source, tmp_path):
+    write(source, "references/new-required-fixture.bin", bytes(range(256)))
+    with pytest.raises(ValueError, match="unsupported source fixture file"):
+        source_fixture.copy_source_fixture(source, tmp_path / "unsupported")
+
+
+def test_read_only_source_remains_read_only_and_replica_is_writable(source, tmp_path):
+    original = write(source, "skills/read-only.md", b"original")
+    original.chmod(0o444)
+    (source / "skills").chmod(0o555)
+    try:
+        replica = source_fixture.copy_source_fixture(source, tmp_path / "writable")
+        copied = replica / "skills/read-only.md"
+        assert copied.stat().st_mode & stat.S_IWUSR
+        assert (replica / "skills").stat().st_mode & stat.S_IWUSR
+        copied.write_bytes(b"isolated edit")
+        assert original.read_bytes() == b"original"
+        assert not original.stat().st_mode & stat.S_IWUSR
+        assert not (source / "skills").stat().st_mode & stat.S_IWUSR
+    finally:
+        (source / "skills").chmod(0o755)
+        original.chmod(0o644)
 
 
 def test_recopy_keeps_working_edits_new_files_and_missing_files(source, tmp_path):
