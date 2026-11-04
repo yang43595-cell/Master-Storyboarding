@@ -1,5 +1,11 @@
 # 单一业务 JSON → 网页 ContentPackage（离线适配）
 
+## 当前统一入口的适用范围
+
+2026-11-04 用户指定审核网站为 `https://review.yangyangyang.click/workbench/`，只人工审核编导稿和资产图；导演、分镜与提示词改为授权范围内自行检查，不再需要为本 SOP 增设提示词画布前的网页正式批准能力。完整操作与待接接口见 [审核到画布入口](review-to-canvas-entry.md)，审核与授权规则以 [PROJECT_RULES.md](../../PROJECT_RULES.md#网站审核到画布的统一入口) 为准。
+
+下文 v78 是历史固定离线合同，不能当成当前工作台的上传 API。用户计划后续开放 API；本仓库尚无该 API 的已核地址、鉴权和上传／回拉实现。资产候选首次送审仍超出此旧适配的已确认输出路径。历史案例 ID、必须附广告对标资料及媒体限制须对照新站真实合同核实，不扩展为所有新故事项目的前置。
+
 实际网页包：Library `libfile_50d8ae386fac8191a9723472939b35ef`，404,312,480 字节，SHA256 `607421269da75dd3e9ee877690cbd48f7a28780b26aba8eb37ed2526f83a0977`。本轮只读取该包，未访问站点、发 POST、上传、发布或部署。
 
 `references/web-contract-v78/` 保存原样的 `content-contract.ts`、`package-metadata.cjs` 与实际 `script-template.js` 阅读器，逐文件 hash 见 PROVENANCE.json。这是实际 v78 可执行契约的固定验证快照，不称为当前线上部署或另写一套 schema。调用方已有更新的已核网站源码时可传 contractRoot，回执报告实际使用的两个文件 hash。

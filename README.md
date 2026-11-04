@@ -4,6 +4,8 @@ Private, self-contained source repository for the Master-Storyboarding workflow.
 
 New computer or agent: start with [standalone setup](docs/development/standalone-repository.md), then read `AGENTS.md` and the selected Skill. The selected method runtime is versioned in `knowledge/runtime/`; Obsidian and a Mac-mounted Vault are not startup prerequisites.
 
+For website review of the script and asset images, followed by agent self-checks and a saved canvas draft, use the [review-to-canvas entry](docs/development/review-to-canvas-entry.md). It records the agreed SOP and the integration work still required; it is not a working upload API or an automatic runner.
+
 ## Current status
 
 `main` is the formal source branch. Check out its current commit with `git rev-parse HEAD`; this README does not pin a commit that becomes stale as soon as `main` advances. A source branch or passing local checks does not by itself mean production adoption, deployment, or a project artifact has been confirmed.
