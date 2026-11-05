@@ -449,6 +449,47 @@ class ProjectTests(unittest.TestCase):
         self.assertTrue(Path(result['manifest']).is_file())
         self.assertTrue(all(not s['project_confirmation'] for s in self.job()['steps']))
 
+    def test_image_observations_follow_selection_and_reopen_preserves_history(self):
+        from test_imagegen_visual_self_check import observations
+        asset = self.lib.get(self.asset['id'])
+        asset['provenance']['visual_self_check'] = observations(Path(asset['original']), 'Synthetic prompt')
+        self.lib.save(asset)
+        job = self.job()
+        self.lib.projects.select({'job_id': job['id'], 'index': 0, 'asset_id': asset['id']})
+        self.assertEqual(self.job()['steps'][0]['visual_self_check']['status'], 'pass')
+        replacement = self.base / 'replacement.png'
+        Image.new('RGB', (400, 300), 'green').save(replacement)
+        other, _ = self.lib.import_file(replacement, category='场景')
+        self.lib.projects.select({'job_id': job['id'], 'index': 0, 'asset_id': other['id']})
+        self.assertNotIn('visual_self_check', self.job()['steps'][0])
+        self.lib.projects.select({'job_id': job['id'], 'index': 0, 'asset_id': asset['id']})
+        self.lib.projects.confirm({'job_id': job['id'], 'index': 0, 'confirm': True})
+        checked = self.job()['steps'][0]['visual_self_check']
+        self.lib.projects.reopen({'job_id': job['id'], 'index': 0})
+        reset = self.job()['steps'][0]
+        self.assertNotIn('visual_self_check', reset)
+        self.assertEqual(reset['history'][-1]['visual_self_check'], checked)
+        self.assertIsNone(reset['project_confirmation'])
+
+    def test_export_keeps_observations_in_existing_confirmation_provenance(self):
+        from test_imagegen_visual_self_check import observations
+        asset = self.lib.get(self.asset['id'])
+        evidence = observations(Path(asset['original']), 'Synthetic prompt')
+        asset['provenance']['visual_self_check'] = evidence
+        self.lib.save(asset)
+        for row in self.lib.projects.detail(self.p['id'])['rows']:
+            for index in range(len(row['job']['steps'])):
+                self.select_confirm(row['job'], index)
+        self.backup()
+        result = self.lib.projects.export({'project_id': self.p['id'], 'confirm': True})
+        receipt = pmod.read(Path(result['manifest']).parent / '用户确认记录.json')
+        preserved = [item['provenance']['visual_self_check'] for item in receipt['items']
+                     if item['library_asset_id'] == asset['id']]
+        self.assertTrue(preserved)
+        self.assertTrue(all(item == evidence for item in preserved))
+        # Existing human confirmation is still a separate exact-byte receipt.
+        self.assertTrue(all(item['confirmation']['image_sha256'] for item in receipt['items']))
+
     def test_product_export_does_not_invent_fact_review_from_user_selection(self):
         lib, project, reference = fixture(self.base / 'product-case', product=True)
         service = lib.projects

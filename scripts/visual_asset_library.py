@@ -967,6 +967,7 @@ class Library:
                     if step['status'] != 'confirmed' and ident in step.get('outputs', []):
                         step['selected'] = ident
                         step['status'] = 'confirmed'
+                        self.sync_visual_self_check(step, item)
                         changed = True
                 if changed:
                     self.save(job, 'jobs')
@@ -1250,7 +1251,28 @@ class Library:
             return {**request, 'path': str(path), 'handoff': text if approved else '',
                     'audit': audit, 'approved': approved}
 
-    def attach(self, ident, index, paths, *, project_id=_UNSCOPED_PROJECT, manual=False):
+    def sync_visual_self_check(self, step, asset):
+        evidence = asset.get('provenance', {}).get('visual_self_check')
+        if evidence is None:
+            step.pop('visual_self_check', None)
+        else:
+            step['visual_self_check'] = codex_bridge.visual_self_check(evidence, asset['original'])
+
+    @staticmethod
+    def visual_self_check_message(evidence):
+        summary = {'pass': '执行者成图自查通过，仍待用户审核准确图片',
+                   'fail': '成图自查未通过，作为待修候选保留',
+                   'unknown': '成图自查未验证，作为未核候选保留'}[evidence['status']]
+        problems = list(evidence.get('binding_issues', []))
+        checks = evidence.get('checks') if isinstance(evidence.get('checks'), dict) else {}
+        for key, check in checks.items():
+            if isinstance(check, dict) and check.get('result') in {'fail', 'unknown'}:
+                problems.append(key + '：' + check.get('observation', '') + '（' + check.get('locator', '') + '）')
+        if evidence['status'] != 'pass' and not problems and isinstance(evidence.get('limitations'), list):
+            problems.extend(evidence.get('limitations', []))
+        return summary + ('；' + '；'.join(problems)[:800] if problems else '')
+
+    def attach(self, ident, index, paths, *, project_id=_UNSCOPED_PROJECT, manual=False, visual_self_check=None):
         with self.lock:
             job = self.operation_job(ident, project_id)
             if not isinstance(index, int) or not 0 <= index < len(job['steps']):
@@ -1268,10 +1290,14 @@ class Library:
             if not job.get('project_id'):
                 self.step_request(job, index)
             step = job['steps'][index]
+            if visual_self_check is None:
+                step.pop('visual_self_check', None)
             kind = step['kind'] if job.get('project_id') else job['kind']
             ratio = step['ratio'] if job.get('project_id') else asset_skill.recipe(kind)['ratio']
             for path in paths:
                 resolved = Path(path).resolve()
+                evidence = (codex_bridge.visual_self_check(visual_self_check, resolved)
+                            if visual_self_check is not None else None)
                 if any(resolved.is_relative_to(Path(p['path']).resolve()) for p in self.projects.summaries()):
                     raise ValueError('任务目录中的图片不回流到网页资产库；请在任务内使用该图')
                 provenance = {'job_id': ident, 'view': step['name'], 'inferred_hidden_surfaces': True,
@@ -1279,6 +1305,9 @@ class Library:
                               'source_narrative': job.get('source_narrative'), 'state': step.get('state'), 'prompt': step.get('prompt'),
                               'audit': step.get('audit'), 'authorization': step.get('authorization'),
                               'provider': job['provider'], 'model': job['model'] if job['provider'] == 'dreamina' else 'Codex 内置 ImageGen'}
+                if evidence is not None:
+                    provenance['visual_self_check'] = evidence
+                    provenance['generation_run_id'] = step.get('generation_run_id')
                 if manual:
                     provenance['kind'] = 'manual_result_import'
                     for key in ('provider', 'model', 'authorization'):
@@ -1296,8 +1325,26 @@ class Library:
                         resolved = fitted
                     visual_asset_upload.validate_dimensions(resolved, category)
                     provenance['dimension_adjustment'] = adjustment
+                # Import may create a new byte sequence when upload normalization is required.
+                # Such a candidate must be looked at again; the pre-crop observation cannot pass it.
+                source_sha256 = digest(resolved)
+                if evidence is not None:
+                    evidence = codex_bridge.visual_self_check(evidence, resolved)
+                    provenance['visual_self_check'] = evidence
                 item, _ = self.import_file(resolved, project=job.get('project_name', '照片转资产'), role='候选', category=asset_skill.recipe(kind)['category'],
                                           provenance=provenance)
+                if evidence is not None:
+                    if digest(resolved) != source_sha256 or digest(Path(item['original'])) != source_sha256:
+                        item.setdefault('provenance', {})['visual_self_check'] = codex_bridge.visual_self_check(evidence, item['original'])
+                        self.save(item)
+                        raise ValueError('导入前后图片字节变化，未绑定成图观察；保留候选等待核对。')
+                    evidence.update(stored_path=item['original'], stored_image_sha256=source_sha256)
+                    # A duplicate import never overwrites a prior human confirmation.
+                    if item.get('status') == 'confirmed':
+                        raise ValueError('此生成结果已是确认资产，保留原确认；请核对原任务。')
+                    item.setdefault('provenance', {}).update(visual_self_check=evidence,
+                        generation_run_id=step.get('generation_run_id'))
+                    step['visual_self_check'] = evidence
                 item['group'] = job['title']
                 item['name'] = job['title'] + '_' + step['name'] + '_' + item['id'][:6]
                 item['backup'] = {'status': 'pending'}
@@ -1420,11 +1467,12 @@ class Library:
             if outputs:
                 step.setdefault('result_history', []).append({'at': now(), 'outputs': outputs,
                     'prompt': step.get('prompt'), 'audit': step.get('audit'),
-                    'generation_run_id': step.get('generation_run_id'), 'submit_id': step.get('submit_id')})
+                    'generation_run_id': step.get('generation_run_id'), 'submit_id': step.get('submit_id'),
+                    'visual_self_check': step.get('visual_self_check')})
             step.update(outputs=[], status='waiting' if redo else 'discarded',
                         audit={'status': 'stale'},
                         message='旧图已移入垃圾桶；修改提示词并重新审查后再生成。' if redo else '不满意的结果已移入垃圾桶，30天内可恢复。')
-            for key in ('prompt_approval', 'generation_run_id', 'submit_id', 'selected', 'authorization'):
+            for key in ('prompt_approval', 'generation_run_id', 'submit_id', 'selected', 'authorization', 'visual_self_check'):
                 step.pop(key, None)
             self.save(job, 'jobs')
             return {'message': '已准备重做，尚未提交生图' if redo else '已移入垃圾桶，30天内可恢复'}
@@ -1443,12 +1491,9 @@ class Library:
             if not run_id or not authorization.get('at') or not authorization.get('request'):
                 raise ValueError('缺少原生成记录，不能自动回填；没有重复生图。')
             folder = self.root / 'requests' / job['id'] / str(index) / 'imagegen' / run_id
-            path = codex_bridge.generated_image_result(folder, authorization['request'],
+            result = codex_bridge.generated_image_result(folder, authorization['request'],
                       datetime.fromisoformat(authorization['at']).timestamp())
-            self.attach(job['id'], index, [path])
-            job = self.get(job['id'], 'jobs')
-            job['steps'][index]['message'] = '已核对原任务并回填已有图片，没有重复生图；请确认图片。'
-            self.save(job, 'jobs')
+            job = self.attach_imagegen_result(job['id'], index, run_id, result, recovered=True)
             return {'message': job['steps'][index]['message']}
 
     def reset_imagegen(self, p):
@@ -1460,10 +1505,11 @@ class Library:
             if step['status'] != 'unknown' or step['outputs']:
                 raise ValueError('只有无图片结果的异常任务可以重新准备')
             step.setdefault('generation_history', []).append({k: step.get(k) for k in
-                ('generation_run_id', 'authorization', 'message')})
+                ('generation_run_id', 'authorization', 'message', 'visual_self_check')})
             step.update(status='waiting', message='已重新准备；请核对提示词并再次同意生成。')
             step.pop('prompt_approval', None)
             step.pop('generation_run_id', None)
+            step.pop('visual_self_check', None)
             self.save(job, 'jobs')
             return {'message': '已重新准备，尚未提交生图'}
 
@@ -1487,6 +1533,7 @@ class Library:
                 raise ValueError('未找到本机Codex CLI')
             request = self.prepare(job['id'], index)
             run_id = uid()
+            step.pop('visual_self_check', None)
             step.update(status='generating', generation_run_id=run_id,
                         message='ImageGen正在生成，完成后自动显示图片，无需复制或导入。',
                         authorization={'at': now(), 'request': request})
@@ -1494,18 +1541,29 @@ class Library:
             threading.Thread(target=self._imagegen_worker, args=(exe, job['id'], index, run_id, request), daemon=True).start()
             return {'message': 'ImageGen已开始生成1张图片，结果将自动回填当前资产组'}
 
+    def attach_imagegen_result(self, ident, index, run_id, result, *, recovered=False):
+        """Persist agent observations with the imported bytes, never a human approval."""
+        result = codex_bridge.image_result(result)
+        job = self.attach(ident, index, [result['output_path']],
+                          visual_self_check=result['visual_self_check'])
+        step = job['steps'][index]
+        evidence = step['visual_self_check']
+        step.setdefault('generation_history', []).append({
+            'generation_run_id': run_id, 'output_path': result['output_path'],
+            'visual_self_check': evidence, 'finished_at': now(), 'recovered': recovered})
+        step['message'] = ('已核对原任务并回填已有图片，没有重复生图；' if recovered else 'ImageGen图片已导入；') + self.visual_self_check_message(evidence)
+        self.save(job, 'jobs')
+        return job
+
     def _imagegen_worker(self, exe, ident, index, run_id, request):
         folder = self.root / 'requests' / ident / str(index) / 'imagegen' / run_id
         try:
-            path = codex_bridge.generate_image(exe, folder, request)
+            result = codex_bridge.generate_image(exe, folder, request)
             with self.lock:
                 job = self.get(ident, 'jobs')
                 if job['steps'][index].get('generation_run_id') != run_id:
                     return
-                self.attach(ident, index, [path])
-                job = self.get(ident, 'jobs')
-                job['steps'][index]['message'] = 'ImageGen生成完成，图片已导入；点击图片核对并确认。'
-                self.save(job, 'jobs')
+                self.attach_imagegen_result(ident, index, run_id, result)
         except Exception as exc:
             with self.lock:
                 job = self.get(ident, 'jobs')

@@ -388,6 +388,7 @@ class Projects:
                                     project_confirmation=None, reference_ids=[])
                         for key in ('selected', 'audit', 'prompt', 'prompt_approval', 'history',
                                     'generation_run_id', 'submit_id', 'authorization',
+                                    'visual_self_check', 'generation_history', 'result_history', 'message',
                                     'query_failures', 'query_blocked', 'query_retry_after'):
                             step.pop(key, None)
                         job['steps'].append(step)
@@ -680,11 +681,11 @@ class Projects:
                 continue
             step.setdefault('history', []).append({k: copy.deepcopy(step.get(k)) for k in (
                 'selected', 'outputs', 'project_confirmation', 'prompt', 'audit',
-                'generation_run_id', 'submit_id', 'authorization')})
+                'generation_run_id', 'submit_id', 'authorization', 'visual_self_check')})
             step.update(status='waiting', outputs=[], project_confirmation=None, audit={'status': 'stale'})
             step.pop('selected', None)
             for key in ('prompt_approval', 'generation_run_id', 'submit_id', 'authorization',
-                        'query_failures', 'query_blocked', 'query_retry_after', 'composition_error', 'message'):
+                        'query_failures', 'query_blocked', 'query_retry_after', 'composition_error', 'message', 'visual_self_check'):
                 step.pop(key, None)
 
     @staticmethod
@@ -925,6 +926,11 @@ class Projects:
                 if step.get('project_confirmation'):
                     raise ValueError('已确认图片保留原版本；先点击重新选图')
                 step.update(selected=asset['id'], status='awaiting_review')
+                self.lib.sync_visual_self_check(step, asset)
+                if step.get('visual_self_check'):
+                    step['message'] = self.lib.visual_self_check_message(step['visual_self_check'])
+                else:
+                    step.pop('message', None)
                 if job.get('direct_reuse') and step.get('generation_enabled') is False:
                     step['ratio'] = str(asset['width']) + ':' + str(asset['height'])
                 if asset['id'] not in step['outputs']:
@@ -994,6 +1000,7 @@ class Projects:
                        'image_sha256': digest(Path(asset['original'])),
                        'dependency_confirmations': self.dependency_basis(job, step)}
             step.update(selected=ident, status='confirmed', project_confirmation=receipt)
+            self.lib.sync_visual_self_check(step, asset)
             asset.update(status='confirmed', confirmation=receipt)
             asset.setdefault('project_confirmations', []).append({'project_id': p['id'], 'ast_id': job['ast_id'], **receipt})
             asset['backup'] = {'status': 'pending'}
