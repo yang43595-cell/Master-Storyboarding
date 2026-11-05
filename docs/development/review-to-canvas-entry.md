@@ -15,12 +15,16 @@
 | 顺序 | 执行者及格式入口 | 检查与交接 |
 | --- | --- | --- |
 | 1 | [编导](../../skills/creative-director/SKILL.md)，[narrative 2.0 schema](../../schemas/narrative-package.schema.json) | 同一叙事 JSON 保存故事、对白、来源与 AST 需求；格式及内容自查后送网站，按标注返修，准确整稿通过后采用 |
-| 2 | [导演](../../skills/storyboard-planner/SKILL.md)，[storyboard 4.0 schema](../../schemas/storyboard-package.schema.json)；[资产](../../skills/asset-image-assistant/SKILL.md)，[manifest 2.0 schema](../../schemas/visual-asset-manifest.schema.json) | 均承接有效编导输入，可按既有依赖并行。导演自行完成检查；资产候选由 agent 实看后送网站，按准确 AST、输出文件和用途确认，不把已确认输出展示器当成候选送审入口 |
-| 3 | [按需分镜](../../skills/storyboard-director/SKILL.md)，[补图请求 schema](../../schemas/visual-supplement-request.schema.json) | 先盘点已核素材；复用充分则不出新图。需要补图时在已有生成授权范围内制作、实看、修正并验收准确镜号用途，不返回网站逐图停等 |
+| 2 | [导演](../../skills/storyboard-planner/SKILL.md)，[storyboard 4.0 schema](../../schemas/storyboard-package.schema.json)；[资产](../../skills/asset-image-assistant/SKILL.md)，[manifest 2.0 schema](../../schemas/visual-asset-manifest.schema.json) | 均承接有效编导输入，可按既有依赖并行。导演自行完成检查；资产生产交干净图片批次执行者完成提示词、生成、实看与修正，阶段负责人核准确结果后送网站，按 AST、输出文件和用途确认，不把已确认输出展示器当成候选送审入口 |
+| 3 | [按需分镜](../../skills/storyboard-director/SKILL.md)，[补图请求 schema](../../schemas/visual-supplement-request.schema.json) | 先盘点已核素材；复用充分则不出新图。需要补图时由干净图片批次执行者在已有授权内制作、实看、修正和自查，阶段负责人核镜号覆盖及跨批关系后按准确用途采用，不返回网站逐图停等 |
 | 4 | [视频提示词](../../skills/voiceover-to-video-script/SKILL.md)，[当前正文模板](../../skills/voiceover-to-video-script/templates/video-script-template.md) | 同一业务 JSON 保存完整正文、参数、实际素材顺序与职责；运行现有来源、分段、引用检查，完成动作链、内容及全片接续自查；不恢复退役 production_plan |
 | 5 | 视频 Skill 的 [画布交付](../../skills/voiceover-to-video-script/references/seedance-delivery-package.md) 与 [快照核对](delivery-snapshot-checks.md) | 所需人审和自主检查均通过且正式采用接线有效后，再写指定画布、排版、保存、刷新回读并查看截图。交付草稿后停止，由用户点击生成 |
 
 图片二进制与参考原件按原目录、文件和输出 ID 管理，JSON 保存其实际引用；网站阅读视图只是同版投影，不维护第二份可编辑正文。白模、声音等可选分支沿原 Skill 条件进入，不因本入口而默认开启。
+
+图片委派、数量、依赖与责任唯一规则见 [图片生产批次](../../PROJECT_RULES.md#图片生产批次)；普通对话按[批次隔离准备](../../skills/_shared/knowledge-access.md#图片批次的隔离准备)执行。协调方直接派单层干净图片子 agent，每批最多 8 张目标图，同批返修续用；按参考依赖组织并行，不为凑满数量合并 Web 独立会话，也不改变网页并发 3 项或补图单状态候选上限。阶段负责人先分配独占目标及文件路径，图片执行者从读取到自查交接完整执行，共享 manifest、正式采用和阶段状态由阶段负责人统一更新。
+
+回执沿现有制作／请求与观察记录保存，指向绝对文件夹、准确文件名、AST/output 或 artifact/请求和镜号身份、revision/字节、实际参考及用途、自查事实与缺口。后续按登记身份到目录取准确文件，不能只凭文件夹或“最新”选图。跨批需合看的准确图由明确受派的图片执行者实看，主协调方核依赖、完整覆盖和回执，不默认重复加载全量图片；资产仍须网站人审，分镜自查仍须满足下文合法采用要求。
 
 ## 网站往返
 
@@ -124,7 +128,7 @@ python scripts/stage_context_cli.py authorize-workflow \
 
 该命令只登记授权，不确认任何稿件、不启动下一 Skill，不授权额外生图、上传、付费或视频生成。候选试跑项目不能借此转成生产。
 
-生产执行者完成本职检查后，复用 `scripts.core.artifacts.register_workspace_artifact()` 登记准确候选；采用命令不代登记候选，不猜文件或修订。自查保存在项目内同一份 JSON，使用 `scripts.core.agent_acceptance.acceptance_binding(project, entry)` 返回的完整实际绑定，包括 `artifact`、`upstreams` 和该产物适用的附加绑定；`review_profile_sha256` 取目标 Skill 当前 `review-profile.json` 的原字节 SHA256。报告必须完整覆盖该 profile 的 `production_artifact_checks`：每项有真实观察与正文／图片定位；不适用项使用 `not_applicable` 并给出理由，不能用不适用掩盖未检查或失败。核心检查必须通过，不可标为不适用；准确 ID 以 [agent_acceptance.py 的 CORE_CHECKS](../../scripts/core/agent_acceptance.py) 为准。源稿仍为 `blocked`／`rejected`、尚有未闭合 `open_questions` 或生产阻塞时，不能用自报 `pass` 覆盖，仍保留候选。
+生产执行者完成本职检查后，由阶段负责人复用 `scripts.core.artifacts.register_workspace_artifact()` 统一登记准确候选；采用命令不代登记候选，不猜文件或修订。图片批次自查须保留实际观察者及准确范围，阶段负责人核完整覆盖和跨批关系，不能把一句“各批通过”当成整阶段检查，也不冒写为自己已看图。自查保存在项目内同一份 JSON，使用 `scripts.core.agent_acceptance.acceptance_binding(project, entry)` 返回的完整实际绑定，包括 `artifact`、`upstreams` 和该产物适用的附加绑定；`review_profile_sha256` 取目标 Skill 当前 `review-profile.json` 的原字节 SHA256。报告必须完整覆盖该 profile 的 `production_artifact_checks`：每项有真实观察与正文／图片定位；不适用项使用 `not_applicable` 并给出理由，不能用不适用掩盖未检查或失败。核心检查必须通过，不可标为不适用；准确 ID 以 [agent_acceptance.py 的 CORE_CHECKS](../../scripts/core/agent_acceptance.py) 为准。源稿仍为 `blocked`／`rejected`、尚有未闭合 `open_questions` 或生产阻塞时，不能用自报 `pass` 覆盖，仍保留候选。
 
 以下仅展示字段形状和两种检查结果，不是完整自查报告，也不是任何业务通过证据。完整报告须补齐当前 profile 的全部检查 ID，并以实际绑定、观察及时间替换示例值，不照抄通过：
 

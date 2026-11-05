@@ -11,6 +11,8 @@ import re
 import subprocess
 import sys
 import time
+from contextvars import ContextVar
+from functools import wraps
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
@@ -63,6 +65,66 @@ BANNED = {
 
 class StageContextError(ValueError):
     pass
+
+
+_CONTEXT_ID: ContextVar[str | None] = ContextVar("stage_context_id", default=None)
+IMAGE_SKILLS = {"asset-image-assistant", "storyboard-director"}
+
+
+def _context_dir(project: Path, *parts: str) -> Path:
+    """Resolve only the selected execution context; business state stays shared."""
+    context_id = _CONTEXT_ID.get()
+    path = project / CONTEXT_DIR
+    if context_id is None:
+        return path.joinpath(*parts)
+    path = (path / "批次" / context_id).joinpath(*parts)
+    # Do not let an existing parent or batch symlink redirect isolated writes.
+    current = project
+    for part in path.relative_to(project).parts:
+        current = current / part
+        if current.is_symlink():
+            raise StageContextError(f"批次上下文路径不得含符号链接：{current}")
+    if not path.resolve().is_relative_to(project.resolve()):
+        raise StageContextError("批次上下文路径越出项目")
+    return path
+
+
+def _context_scoped(function):
+    """Scope both CLI and direct Python calls without mutable global paths."""
+    @wraps(function)
+    def scoped(args, *values, **kwargs):
+        context_id = getattr(args, "context_id", None)
+        if context_id is not None and (not isinstance(context_id, str)
+                or re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", context_id) is None):
+            raise StageContextError("--context-id 须为 1–64 位规范小写 ID（小写字母、数字、下划线或连字符）；不接受大小写别名")
+        token = _CONTEXT_ID.set(context_id)
+        try:
+            if context_id is not None:
+                _context_dir(Path(args.project).expanduser().resolve())
+            return function(args, *values, **kwargs)
+        finally:
+            _CONTEXT_ID.reset(token)
+    return scoped
+
+
+def _image_batch_targets(skill: str, request: dict[str, Any]) -> list[str] | None:
+    if _CONTEXT_ID.get() is None or skill not in IMAGE_SKILLS:
+        return None
+    targets = request.get("image_targets")
+    if not isinstance(targets, list) or not 1 <= len(targets) <= 8:
+        raise StageContextError("隔离生图批次的 image_targets 须包含 1..8 个准确输出身份")
+    for target in targets:
+        if (not isinstance(target, str) or not target or target != target.strip()
+                or any(ord(char) < 32 for char in target)
+                or any(char in target for char in ("/", "\\", "*", "?"))):
+            raise StageContextError("image_targets 必须为准确输出 ID，不得使用空值、目录或通配符")
+        if skill == "asset-image-assistant":
+            asset_id, separator, output_id = target.partition("@")
+            if not asset_id.startswith("AST-") or len(asset_id) <= 4 or not separator or not output_id.strip():
+                raise StageContextError("资产 image_targets 须逐项指定 AST-ID@output_id")
+    if len(targets) != len(set(targets)):
+        raise StageContextError("image_targets 不得重复")
+    return list(targets)
 
 
 def _vault_root(value: str | None) -> Path:
@@ -294,7 +356,7 @@ def _load_review_profile(skill: str) -> tuple[Path, dict[str, Any]]:
 
 
 def _handoff_path(project: Path) -> Path:
-    return project / CONTEXT_DIR / "next_stage_handoff.md"
+    return _context_dir(project, "next_stage_handoff.md")
 
 
 def _confirmed_handoff_inputs(project: Path, target_skill: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -678,6 +740,8 @@ def _candidate_manifest_matches(block: Any, record: dict[str, Any]) -> bool:
 
 def _reading_manifest(project: Path) -> dict[str, Any] | None:
     basis = _read_json(_task_basis_path(project), default={})
+    if isinstance(basis, dict) and basis.get("context_id") != _CONTEXT_ID.get():
+        return None
     value = basis.get("reading_manifest") if isinstance(basis, dict) else None
     return value if isinstance(value, dict) else None
 
@@ -685,16 +749,16 @@ def _reading_manifest(project: Path) -> dict[str, Any] | None:
 def _evidence_current(project: Path, requested_skill: str | None = None) -> tuple[dict[str, Any], dict[str, Any], Path] | None:
     manifest = _reading_manifest(project)
     try:
-        evidence = _read_json(project / CONTEXT_DIR / "method_reading_evidence.json", default=None)
+        evidence = _read_json(_context_dir(project, "method_reading_evidence.json"), default=None)
     except StageContextError:
         return None  # Broken optional reading state is unread, not a preparation failure.
-    packet = project / CONTEXT_DIR / "method_reading_packet.md"
+    packet = _context_dir(project, "method_reading_packet.md")
     if not isinstance(manifest, dict) or not isinstance(evidence, dict) or not packet.is_file():
         return None
     key = _read_json(_task_basis_path(project), default={}).get('reading_reuse_key')
     if key and evidence.get('reading_reuse_key') != key:
         return None
-    keys = ("skill", "project_path", "actor_id", "task_id", "vault_root", "test_only_proposed_method_ids", "methods", "selected")
+    keys = ("skill", "project_path", "actor_id", "task_id", "context_id", "vault_root", "test_only_proposed_method_ids", "methods", "selected")
     if requested_skill and manifest.get("skill") != requested_skill:
         return None
     if any(evidence.get(key) != manifest.get(key) for key in keys):
@@ -729,7 +793,7 @@ def _evidence_current(project: Path, requested_skill: str | None = None) -> tupl
 def _reading_cache_path(project: Path, skill: str) -> Path:
     if not re.fullmatch(r'[a-z0-9-]+', skill):
         raise StageContextError('无效的缓存 Skill 名称')
-    return project / CONTEXT_DIR / 'stage_reading_cache' / (skill + '.json')
+    return _context_dir(project, 'stage_reading_cache', skill + '.json')
 
 
 def _save_reading_cache(project: Path) -> None:
@@ -754,8 +818,8 @@ def _restore_reading_cache(project: Path, skill: str, key: str) -> bool:
             return False
     except (StageContextError, AttributeError):
         return False  # An unusable cache never authorizes reading or blocks fresh preparation.
-    write_text_if_changed(project / CONTEXT_DIR / 'method_reading_packet.md', packet)
-    write_text_if_changed(project / CONTEXT_DIR / 'method_reading_evidence.json', json.dumps(evidence, ensure_ascii=False, indent=2) + '\n')
+    write_text_if_changed(_context_dir(project, 'method_reading_packet.md'), packet)
+    write_text_if_changed(_context_dir(project, 'method_reading_evidence.json'), json.dumps(evidence, ensure_ascii=False, indent=2) + '\n')
     return _evidence_current(project, skill) is not None
 
 
@@ -983,6 +1047,8 @@ def _reading_reuse_key(project, basis, request, state, handoff):
     manifest = basis["reading_manifest"]
     identity = {key: manifest.get(key) for key in ("skill", "project_path", "actor_id", "task_id", "vault_root",
                                                  "test_only_proposed_method_ids", "methods", "selected", "method_packet_sha256")}
+    if manifest.get("context_id") is not None:
+        identity["context_id"] = manifest["context_id"]
     return _identity_hash({"reading": identity, "task": _review_identity(basis)})
 
 
@@ -1116,7 +1182,7 @@ def _check_run_budget(args: argparse.Namespace) -> dict[str, Any] | None:
 
 def _task_basis_path(project: Path) -> Path:
     """The one per-task source for scope and standards used by work and review."""
-    return project / CONTEXT_DIR / "task_basis.json"
+    return _context_dir(project, "task_basis.json")
 
 
 def _load_task_basis(project: Path, skill: str) -> tuple[Path, dict[str, Any]]:
@@ -1124,6 +1190,8 @@ def _load_task_basis(project: Path, skill: str) -> tuple[Path, dict[str, Any]]:
     basis = _read_json(path, default=None)
     if not isinstance(basis, dict) or basis.get("schema_version") != "1.0" or basis.get("skill") != skill:
         raise StageContextError(f"缺少与当前 Skill 匹配的任务依据：{path}；先运行 prepare，不能由审核包另选标准。")
+    if basis.get("context_id") != _CONTEXT_ID.get():
+        raise StageContextError("任务依据属于另一批次上下文；请在本批次重新 prepare。")
     for key in ("objective", "deliverables", "non_goals", "input_versions", "standards"):
         if key not in basis:
             raise StageContextError(f"任务依据缺少 {key}：{path}；请重新 prepare。")
@@ -1178,6 +1246,7 @@ def _producer_response_value(raw: str) -> Path | dict[str, Any]:
     return value
 
 
+@_context_scoped
 def prepare(args: argparse.Namespace) -> dict[str, Any]:
     _require_preparation_skill(args.skill)
     usage = _check_run_budget(args)
@@ -1207,6 +1276,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
             raise StageContextError(f"无法读取请求 JSON：{request_path}: {exc}") from exc
     if not isinstance(request, dict):
         raise StageContextError("request JSON 必须是对象")
+    image_targets = _image_batch_targets(args.skill, request)
     testing = _test_request(args, project)
     candidate_rule_ids = set(getattr(args, "candidate_rule", None) or [])
     candidate_source_id = getattr(args, "candidate_source_id", None)
@@ -1335,7 +1405,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "task_request": _semantic_request(request),
         "request_path": str(Path(args.request_json).resolve()) if args.request_json else None,
         "knowledge_profile": fingerprint(profile_path),
-        "scope": {key: request[key] for key in ("task_kind", "scope", "source_shot_ids", "generation_authorized", "model_selected") if key in request},
+        "scope": {key: request[key] for key in ("task_kind", "scope", "source_shot_ids", "generation_authorized", "model_selected", "image_targets") if key in request},
         "delivery_contract": delivery_contract,
         "standards": {
             "root_rules": str(ROOT / "PROJECT_RULES.md"),
@@ -1352,6 +1422,8 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "candidate_trial": trial_record,
         "revision": revision,
     }
+    if _CONTEXT_ID.get() is not None:
+        task_basis["context_id"] = reading_manifest["context_id"] = _CONTEXT_ID.get()
     if testing:
         task_basis.update(test_metadata())
     task_basis['reading_reuse_key'] = _reading_reuse_key(project, task_basis, request, raw_state, handoff_text)
@@ -1366,6 +1438,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         f"- Skill 入口：`{skill_dir / 'SKILL.md'}`",
         "- 执行分工：遵守根规则的干净上下文启动规则；新一轮编导等创作生产或实质重跑由全新专属生产 agent 执行，不继承长主会话；本轮执行者读取、准备、产出并自查。其他任务按根规则执行。",
         "- 上下文边界：交接当前有效规则、原始素材、本轮约束与已确认决定及依据、现行版本、未决事项、范围和停止点；不得以摘要替代原片。已在本轮专属 agent 内的逐段推进和局部返修可继续；目标、来源或基线重大变化时新开，不按修订号机械重开。",
+        *([f"- 图片批次：`{_CONTEXT_ID.get()}`，本批冻结 {len(image_targets)} 个 image_targets；阶段负责人统筹整体方向、跨批连续性和正式交接，本批执行者读取真实参考、完成获准图片及实看自查，只回传准确路径与检查摘要。批次目录不构成已生成、已检查、人工确认或正式采用。"] if image_targets is not None else []),
         "- prepare 只生成文件，不清空宿主对话。读取规则见共享 knowledge-access.md；计量和停止条件见 docs/development/token-budget.md。",
         "## 本轮范围", "",
         "- 交付对象、非目标、输入版本、范围字段和适用标准仅维护在上列 `task_basis.json`；本启动包不复制第二份范围记录。", "",
@@ -1383,11 +1456,10 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         f"- 延后知识块：{len(result.deferred)}",
         f"- 知识正文字符：{result.total_chars}", "",
     ])
-    output = project / CONTEXT_DIR / "stage_startup.md"
+    output = _context_dir(project, "stage_startup.md")
     report = validate_text("startup", output, content)
     _save_reading_cache(project)
     write_text_if_changed(output, content)
-    context = project / CONTEXT_DIR
     write_text_if_changed(_task_basis_path(project), json.dumps(task_basis, ensure_ascii=False, indent=2) + "\n")
     if methods.required or result.candidates:
         restored = False
@@ -1395,20 +1467,20 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
             restored = _restore_reading_cache(project, args.skill, task_basis['reading_reuse_key'])
         report['stage_reading_restored'] = restored
         if _evidence_current(project) is None:
-            write_text_if_changed(context / "method_reading_packet.md", base_packet)
-            stale = context / "method_reading_evidence.json"
+            write_text_if_changed(_context_dir(project, "method_reading_packet.md"), base_packet)
+            stale = _context_dir(project, "method_reading_evidence.json")
             if stale.is_file(): stale.unlink()
-        index_path = context / "knowledge_candidates.md"
+        index_path = _context_dir(project, "knowledge_candidates.md")
         if result.candidates: write_text_if_changed(index_path, candidate_index)
         elif index_path.is_file(): index_path.unlink()
     else:
         for name in ("method_reading_packet.md", "method_reading_evidence.json", "knowledge_candidates.md"):
-            stale = context / name
+            stale = _context_dir(project, name)
             if stale.is_file(): stale.unlink()
     for name in ("method_reading_manifest.json", "candidate_reading_manifest.json", "candidate_reading_packet.md", "candidate_reading_evidence.json"):
-        stale = context / name
+        stale = _context_dir(project, name)
         if stale.is_file(): stale.unlink()
-    trial_path = context / "candidate_trial_packet.md"
+    trial_path = _context_dir(project, "candidate_trial_packet.md")
     if trial_record:
         write_text_if_changed(trial_path, trial_bundle)
     elif trial_path.is_file():
@@ -1427,6 +1499,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     return report
 
 
+@_context_scoped
 def handoff(args: argparse.Namespace) -> dict[str, Any]:
     project = Path(args.project).expanduser().resolve()
     if not project.is_dir():
@@ -1474,6 +1547,7 @@ def handoff(args: argparse.Namespace) -> dict[str, Any]:
         ("- 仅按独立测试授权继续候选试写；保留所有未核对事实和素材阻塞。视频 Skill 仍直接读取，不重建准备包。" if testing else startup_requirement),
         "- 编导交接须实际读准确正文、核来源和本轮自查结论；关键发现及未核范围复用现有任务记录，程序 ok 不代表叙事充分。",
         "- 创作新轮按根规则使用干净专属生产 agent，候选试跑与视频直接读取分支同样适用；同轮返修可继续原执行者。核对执行环境、仓库与当前规则；无法创建时如实报告，不冒称独立执行。生产委派不等于独立审核授权，仅用户明确要求时另行独立审核。",
+        "- 图片由阶段负责人按准确输出身份汇总；生图批次执行者完成获准图片与实看自查，回传文件路径、版本及用途摘要。下游从有效登记取准确文件，同用途可引用已有观察；新增用途、版本变化或结论不足时定向实看。资产人审与下游补图自主采用仍按各自入口，不因批次完成互相替代。",
         ("- 只消费以上未确认候选及准确稳定 ID；不得读取旧案例答案，不得写入确认记录。" if testing else "- 只消费以上已确认产物及其稳定 ID；不得读取旧生产对话或未列入启动包的历史内容。"),
         "- 本交接不等于下一阶段已启动，也不替代下一阶段的输入门禁。", "",
     ])
@@ -1489,6 +1563,7 @@ def handoff(args: argparse.Namespace) -> dict[str, Any]:
     return report
 
 
+@_context_scoped
 def review_pack(args: argparse.Namespace) -> dict[str, Any]:
     _require_preparation_skill(args.skill)
     project = Path(args.project).expanduser().resolve()
@@ -1555,7 +1630,7 @@ def review_pack(args: argparse.Namespace) -> dict[str, Any]:
             else:
                 delta = lightweight_revision(
                     Path(previous).expanduser().resolve(),
-                    _read_json(project / CONTEXT_DIR / "review_scope.json", default={}), artifacts,
+                    _read_json(_context_dir(project, "review_scope.json"), default={}), artifacts,
                     args.skill, review_kind, required_checks, manual_checks,
                     getattr(args, "change_summary", None) or [], external_evidence,
                 )
@@ -1589,7 +1664,7 @@ def review_pack(args: argparse.Namespace) -> dict[str, Any]:
     if delta is not None and delta["current_direct_evidence"] != scope["direct_evidence"]:
         raise StageContextError("直接证据在增量计算与审核范围登记之间变化；重新生成，不混用版本。")
     round_key = hashlib.sha256(json.dumps([scope, delta], ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()[:16]
-    round_dir = project / CONTEXT_DIR / "review_rounds" / round_key if formal else project / CONTEXT_DIR
+    round_dir = _context_dir(project, "review_rounds", round_key) if formal else _context_dir(project)
     scope_path, delta_path = round_dir / "review_scope.json", round_dir / "review_delta.json"
     review_boundary = (
         "本包仅用于用户明确要求的独立审核；生成文件本身不构成派发授权。默认自查在当前对话完成，不新建审核agent。已获独立审核授权时只读检查，不继承生产对话，不修改产物。"
@@ -1637,10 +1712,10 @@ def review_pack(args: argparse.Namespace) -> dict[str, Any]:
         lines.append(f"- {'缺少：' if not state_path.is_file() else ''}`{state_path}`")
         candidate_evidence = _evidence_current(project, args.skill)
         lines.extend(["", "## 本轮按需知识依据", ""])
-        raw_candidate_evidence = _read_json(project / CONTEXT_DIR / "method_reading_evidence.json", default=None)
+        raw_candidate_evidence = _read_json(_context_dir(project, "method_reading_evidence.json"), default=None)
         if candidate_evidence:
             _, _, candidate_packet = candidate_evidence
-            lines.extend([f"- 完整方法/已采用知识快照：`{candidate_packet}`", f"- 读取声明与版本证据：`{project / CONTEXT_DIR / 'method_reading_evidence.json'}`"])
+            lines.extend([f"- 完整方法/已采用知识快照：`{candidate_packet}`", f"- 读取声明与版本证据：`{_context_dir(project, 'method_reading_evidence.json')}`"])
         elif isinstance(raw_candidate_evidence, dict) and raw_candidate_evidence.get("skill") == args.skill and raw_candidate_evidence.get("adopted_candidates"):
             lines.append("- 已登记候选证据无效：`method_reading_evidence.json`（不得作为本轮依据）")
         else:
@@ -1670,7 +1745,7 @@ def review_pack(args: argparse.Namespace) -> dict[str, Any]:
     lines.extend(["- 只传本轮结论、未决发现和必要证据，不传完整聊天。",
                   "- 结论只允许“通过”“有条件通过”“不通过”。没有新证据不新增审美标准；图片视觉质量由用户终审。", ""])
     content = "\n".join(lines)
-    output = project / CONTEXT_DIR / "review_packet.md"
+    output = _context_dir(project, "review_packet.md")
     report = validate_text("review", output, content)
     write_text(scope_path, json.dumps(scope, ensure_ascii=False, indent=2) + "\n")
     if delta is not None:
@@ -1709,7 +1784,7 @@ def _ensure_prepared_base(args: argparse.Namespace) -> dict[str, Any]:
         raise StageContextError(f"项目目录不存在：{project}")
     requested = getattr(args, "skill", None)
     _require_preparation_skill(requested)
-    startup = project / CONTEXT_DIR / "stage_startup.md"
+    startup = _context_dir(project, "stage_startup.md")
     if not startup.is_file():
         message = f"未发现阶段启动包：{startup}。生产前必须先 prepare 拿到本 Skill 知识包；请先运行 prepare。"
         if requested:
@@ -1731,7 +1806,7 @@ def _ensure_prepared_base(args: argparse.Namespace) -> dict[str, Any]:
     validate_text("startup", startup, text)
     reading_manifest = _reading_manifest(project)
     trial = reading_manifest.get("candidate_trial") if isinstance(reading_manifest, dict) else None
-    trial_packet = project / CONTEXT_DIR / "candidate_trial_packet.md"
+    trial_packet = _context_dir(project, "candidate_trial_packet.md")
     if trial is not None:
         if not test_context(project) or "execution_mode: candidate_test" not in text:
             raise StageContextError("隔离候选试用包只能保留在 candidate-test 项目中。")
@@ -1800,6 +1875,7 @@ def _ensure_prepared_base(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+@_context_scoped
 def ensure_prepared(args: argparse.Namespace) -> dict[str, Any]:
     project = Path(args.project).expanduser().resolve()
     testing = _test_request(args, project)
@@ -1807,6 +1883,9 @@ def ensure_prepared(args: argparse.Namespace) -> dict[str, Any]:
     if testing:
         result.update(test_metadata())
         result["candidate_checks_passed"] = result.get("ok") is True
+    if getattr(args, "show_task_basis", False) and result.get("ok") is True:
+        _, basis = _load_task_basis(project, args.skill)
+        result["task_basis"] = _task_reading_view(basis)
     return result
 
 
@@ -1816,10 +1895,10 @@ def _ensure_prepared(args: argparse.Namespace) -> dict[str, Any]:
     project = Path(args.project).expanduser().resolve()
     if usage is not None:
         result["run_usage"] = usage
-    startup_text = (project / CONTEXT_DIR / "stage_startup.md").read_text(encoding="utf-8")
+    startup_text = (_context_dir(project, "stage_startup.md")).read_text(encoding="utf-8")
     manifest = _reading_manifest(project)
     if not isinstance(manifest, dict):
-        startup_text = (project / CONTEXT_DIR / "stage_startup.md").read_text(encoding="utf-8")
+        startup_text = (_context_dir(project, "stage_startup.md")).read_text(encoding="utf-8")
         if "以下全文已写入 `method_reading_packet.md`" in startup_text:
             raise StageContextError("必读专业方法任务清单缺失或无效，请重新 prepare。")
         if "本启动包含显式测试候选方法" in startup_text:
@@ -1837,7 +1916,7 @@ def _ensure_prepared(args: argparse.Namespace) -> dict[str, Any]:
     # A candidate directory is discoverability only. With no mandatory method it cannot
     # turn optional reading into a production gate.
     if not manifest["methods"]:
-        evidence = _read_json(project / CONTEXT_DIR / "method_reading_evidence.json", default=None)
+        evidence = _read_json(_context_dir(project, "method_reading_evidence.json"), default=None)
         adopted = evidence.get("adopted_candidates") if isinstance(evidence, dict) else []
         if adopted:
             result["candidate_reading_evidence"] = "recorded" if _evidence_current(project, skill) else "invalid"
@@ -1859,6 +1938,7 @@ def _ensure_prepared(args: argparse.Namespace) -> dict[str, Any]:
         result["production_blocked"] = "test_only_proposed_method_binding"
     return result
 
+@_context_scoped
 def record_method_reading(args: argparse.Namespace) -> dict[str, Any]:
     project = Path(args.project).expanduser().resolve()
     skill = str(args.skill or "").strip()
@@ -1905,7 +1985,7 @@ def record_method_reading(args: argparse.Namespace) -> dict[str, Any]:
                 raise StageContextError(f"候选知识与当前知识重复同一规范：{left['id']} / {right['id']}。")
             if right["canonical_key"] in left["conflicts_with"] or left["canonical_key"] in right["conflicts_with"]:
                 raise StageContextError(f"候选知识与当前已选知识冲突：{left['id']} / {right['id']}。")
-    packet = project / CONTEXT_DIR / "method_reading_packet.md"
+    packet = _context_dir(project, "method_reading_packet.md")
     if not packet.is_file():
         raise StageContextError("必读方法全文快照缺失；请重新 prepare，不能登记读取。")
     existing = packet.read_bytes()
@@ -1919,8 +1999,10 @@ def record_method_reading(args: argparse.Namespace) -> dict[str, Any]:
         "test_only_proposed_method_ids": manifest.get("test_only_proposed_method_ids", []),
         "adopted_candidates": records, "candidate_scopes": scopes, "packet_sha256": hashlib.sha256(packet.read_bytes()).hexdigest(),
         "attestation": "agent_reported_complete_reading"}
+    if _CONTEXT_ID.get() is not None:
+        evidence["context_id"] = _CONTEXT_ID.get()
     evidence['reading_reuse_key'] = _read_json(_task_basis_path(project), default={}).get('reading_reuse_key')
-    output = project / CONTEXT_DIR / "method_reading_evidence.json"
+    output = _context_dir(project, "method_reading_evidence.json")
     write_text_if_changed(output, json.dumps(evidence, ensure_ascii=False, indent=2) + "\n")
     _save_reading_cache(project)
     return {"kind": "reading_evidence", "path": str(output), "packet_path": str(packet), "skill": skill, "method_count": len(methods), "candidate_count": len(records), "evidence": "agent_reported_not_program_verified", "ok": True}
@@ -2036,6 +2118,8 @@ def parser() -> argparse.ArgumentParser:
     handoff_cmd.add_argument("--candidate-test", action="store_true")
     handoff_cmd.add_argument("--project", required=True)
     handoff_cmd.add_argument("--to-skill", required=True)
+    for command in (start, gate, receipt, review, handoff_cmd):
+        command.add_argument("--context-id", help="可选独立批次上下文 ID；仅隔离准备/阅读/交接文件，不隔离项目状态或批准")
     check = commands.add_parser("validate")
     check.add_argument("--kind", choices=sorted(LIMITS), required=True)
     check.add_argument("--path", required=True)
@@ -2064,9 +2148,6 @@ def main(argv: list[str] | None = None) -> int:
         result = prepare(args)
     elif args.command == "ensure-prepared":
         result = ensure_prepared(args)
-        if args.show_task_basis and result.get('ok') is True:
-            _, basis = _load_task_basis(Path(args.project).expanduser().resolve(), args.skill)
-            result['task_basis'] = _task_reading_view(basis)
     elif args.command == "record-method-reading":
         result = record_method_reading(args)
     elif args.command == "record-candidate-reading":

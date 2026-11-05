@@ -372,6 +372,9 @@ class LibraryTests(unittest.TestCase):
             self.lib.recover_imagegen({'id': job['id'], 'index': 0})
             generate.assert_not_called()
         self.assertEqual(self.lib.get(job['id'], 'jobs')['steps'][0]['status'], 'awaiting_review')
+        restored = self.lib.get(job['id'], 'jobs')['steps'][0]
+        self.assertEqual(restored['visual_self_check']['status'], 'unknown')
+        self.assertIn('未验证', restored['message'])
         # A reference path cannot be passed off as a fresh generated result.
         request['reference_paths'] = [str(output)]
         with patch.dict(m.os.environ, {'CODEX_HOME': str(output_dir.parent)}):

@@ -41,7 +41,7 @@ def test_only_required_sources_are_copied_without_dependencies(source, tmp_path)
     for directory in (".venv", "venv", "node_modules", "__pycache__", ".pytest_cache",
                       ".blender-previs-cache", ".master-storyboarding", ".tmp_session"):
         write(source, f"scripts/{directory}/do-not-copy")
-    for name in (".env", ".env.local", "cached.pyc"):
+    for name in (".env", ".env.local", "cached.pyc", ".DS_Store"):
         write(source, "skills/" + name)
     # Sparse dependency data reproduces amplification without consuming RAM/disk.
     with (source / ".venv/large-dependency").open("wb") as handle:
