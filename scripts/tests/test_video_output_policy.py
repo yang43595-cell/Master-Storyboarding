@@ -154,6 +154,11 @@ def test_scoped_text_negation_and_timing_control_are_allowed(body):
     '不叠加画外字幕。',
     '画面不添加画外字幕、片尾文字。',
     '显示器内问题与答案按所配参考呈现，不叠加画外字幕。',
+    '手机屏幕显示：“通话中”。',
+    '电脑显示器内显示：“审核中”。',
+    '手机屏幕上显示文字：“通话中”。',
+    '画面不添加叠加字幕。',
+    '画面不添加叠加文字。',
 ])
 def test_offscreen_subtitle_negation_is_local_and_allowed(body):
     assert not generated_overlay_issues(body)
@@ -165,6 +170,13 @@ def test_offscreen_subtitle_negation_is_local_and_allowed(body):
     '不叠加画外字幕。画面添加说明字卡。',
     '人物看画外，同时添加字幕。',
     '不看画外，添加字幕。',
+    '画面浮现文字。',
+    '手机屏幕上叠加字幕：“通话中”。',
+    '手机屏幕上浮现：“通话中”。',
+    '手机屏幕显示：“通话中”并添加字幕：“稍后”。',
+    '手机屏幕显示：“通话中”，同时画面浮现文字：“稍后”。',
+    '手机屏幕显示：“通话中”。屏幕显示：“稍后”。',
+    '手机屏幕显示：“通话中”。画面显示时间码。',
 ])
 def test_offscreen_modifier_does_not_hide_affirmative_overlay(body):
     assert generated_overlay_issues(body)

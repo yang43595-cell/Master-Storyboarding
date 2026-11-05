@@ -103,10 +103,10 @@
     {
       "path": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法.md",
       "role": "method",
-      "sha256": "2b89ba27e73c9cd54304455b414483ad2cad243d518ee0f6fd809612ccdba504",
-      "size_bytes": 3292,
-      "approval_assessment": "existing_documentary_adoption_git_status_modified_raw_bytes_equal_head",
-      "inclusion_basis": "current profile user_confirmed binding"
+      "sha256": "a265ce76baa27427f84a8c068e3f9c25e64db6ad1dc3fc5b040e0171142d39b6",
+      "size_bytes": 4281,
+      "approval_assessment": "user_directed_scoped_wording_revision_2026-11-05_not_experiment_validated",
+      "inclusion_basis": "current profile user_directed scoped revision; original upstream capture metadata retained"
     },
     {
       "path": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/方法.md",

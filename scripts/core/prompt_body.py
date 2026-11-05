@@ -32,9 +32,11 @@ def generated_overlay_issues(body: str) -> list[str]:
     # “人物不动” or “不要改变机位” cancel a subsequent overlay instruction.
     modifiers = r'(?:\s|再|重新|自动|额外|任何|新的|新|其他|全部|一律|均|都|画外|在画面(?:上|中)?|在屏幕(?:上|中)?)*'
     negative = r'(?:不(?:需要|需|必|应当|应该|应)?|禁止|不得|不要|无需|不可)'
+    negated_prefix = negative + modifiers + r'(?:(?:' + action + r'|渲染)' + modifiers + r')*'
+    device_screen = r'(?:手机|电脑|平板|电视|监视器)(?:的)?(?:屏幕|显示器)(?:内|上|中)?'
 
     def negated_action(prefix):
-        return bool(re.search(negative + modifiers + r'$', prefix))
+        return bool(re.search(negated_prefix + r'$', prefix))
 
     issues = []
     visible = re.sub(r'[“「"]([^”」"]*)[”」"]', '“内容”', visible)
@@ -43,14 +45,18 @@ def generated_overlay_issues(body: str) -> list[str]:
             before, after = clause[:match.start()], clause[match.end():]
             intrinsic = re.search(r'(?:包装|商标|道具|实物|招牌|盒子|盒)(?:上|的|原有|固有){0,3}$', before)
             forbidden = (intrinsic or
-                         re.search(negative + modifiers + r'(?:' + action + r'|渲染)?' + modifiers + r'(?:(?:' + target + r'|片头|片尾|文字|其他)(?:、|或|及|和)*)*$', before)
+                         re.search(negated_prefix + r'(?:(?:' + target + r'|片头|片尾|文字|其他)(?:、|或|及|和)*)*$', before)
                          or re.match(r'\s*(?:均|都|一律)?' + negative + modifiers + r'(?:' + action + r'|渲染)', after)
                          or re.search(r'(?:^|[：:])\s*无(?!声)' + modifiers + r'$', before))
             if not forbidden and (re.search(action, before[-16:]) or re.search(action, after[:16])):
                 issues.append('生成正文含叠加文字指令；原文、顺序与时机应移至正文外的后期安排')
-        # Also catch quoted display text that omits the word 字幕/字卡.
-        for display in re.finditer(r'(?:画面|屏幕|片尾|片头).{0,8}?(?P<action>'+action+r')\s*[：:]?\s*[“「"]', clause):
-            if not negated_action(clause[:display.start('action')]):
+        # Device-anchored UI is intrinsic text, not a blanket screen exemption.
+        # Explicit 字幕/字卡 above and overlay verbs still remain checked.
+        for display in re.finditer(r'(?:画面|屏幕|片尾|片头).{0,8}?(?P<action>'+action+r')\s*(?:[：:]?\s*[“「"]|文字)', clause):
+            prefix = clause[:display.start('action')]
+            device_ui = (display.group('action') in {'显示', '呈现', '出现'}
+                         and re.search(device_screen + r'$', prefix))
+            if not device_ui and not negated_action(prefix):
                 issues.append('生成正文含画面显示文字指令；只生成底画面，文字交后期')
     timed = re.search(r'(?:\d+(?:\.\d+)?|[零一二三四五六七八九十百两半]+)\s*(?:秒|s\b)|(?<!\d)\d{2}:\d{2}(?::\d{2})?(?!\d)', visible, re.I)
     # A timing-only declaration may put its no-text instruction after a comma.
