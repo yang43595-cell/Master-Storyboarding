@@ -23,6 +23,6 @@ Image production runs in clean-context child agents, with up to 8 target images 
 
 Source, schemas, contracts, and reproducible tests belong in Git. Credentials, environment secrets, raw footage, customer project inputs, generated media, and asset-library files stay outside this repository. Recovering those external assets is a separate prerequisite for production.
 
-Branch protections, CI, deployments, and credentials are not implied by this setup document.
+The proposed [repository checks](docs/development/dependency-checks.md) run existing synthetic Python/Node tests on pull requests, once the workflow is published and Actions use is authorized. Local passes do not establish a GitHub Actions result. Branch protections, deployments, and credentials are not configured by this source change.
 
 The default knowledge root is bundled with this repository. Explicit external knowledge roots, browser sessions, output libraries and business project data remain environment-specific; they are not silently discovered from an old computer. The adapter's pinned local website contract is for offline validation; it is not evidence of the live deployment version.

@@ -9,14 +9,16 @@ import zipfile
 import pytest
 from scripts import stage_context_cli as cli
 from scripts.core import artifacts, candidate_test as mode
-from scripts.core.io import write_json
+from scripts.core.io import PROJECT_LOCK_RELATIVE, write_json
 from test_candidate_test_mode import setup, add
 from test_stage_context_cli import _project
 
 
 def snapshot(project):
+    # A lock records its latest owner and is not part of the delivery snapshot.
     return {p.relative_to(project).as_posix(): p.read_bytes()
-            for p in project.rglob('*') if p.is_file()}
+            for p in project.rglob('*')
+            if p.is_file() and p.relative_to(project) != PROJECT_LOCK_RELATIVE}
 
 
 def chain(project):

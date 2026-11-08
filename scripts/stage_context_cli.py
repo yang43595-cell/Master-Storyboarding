@@ -1053,7 +1053,9 @@ def _local_standard_documents(skill_dir: Path, request: dict[str, Any] | None = 
     shared_root = (ROOT / "skills/_shared").resolve()
     # These are the common redlines named collectively by Skill entries; their
     # presence must not depend on whether prose spells each link separately.
-    shared = sorted(_local_knowledge_path(path) for path in shared_root.glob("*.md"))
+    # RedFrame instructions apply only when referenced by the task or Skill.
+    shared = sorted(_local_knowledge_path(path) for path in shared_root.glob("*.md")
+                    if path.name != "redframe-operations.md")
     seen: set[Path] = set([*local, *shared])
     visited: set[Path] = set()
     pending = [_local_knowledge_path(ROOT / "PROJECT_RULES.md"), *local, *shared]
