@@ -13,6 +13,150 @@ from scripts.canvas_readback import validate_submission
 from test_delivery_preflight import delivery
 
 
+def _image_qa_sources(path):
+    import hashlib
+    from scripts.core.quality_evidence import IMAGE_ASPECTS
+    return {'status': 'pass', 'observer': 'synthetic-fixture',
+            'checked_at': '2026-11-06T00:00:00+08:00', 'image_sha256': '1'*64,
+            'view': {'resolution': 'original'}, 'uses': [{'roles': ['layout']}],
+            'checks': {aspect: {} for aspect in IMAGE_ASPECTS},
+            'source_files': [{'path': str(path),
+                              'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}]}
+
+
+def test_image_qa_checks_plan_bytes_without_requiring_historical_outputs(tmp_path):
+    plan = tmp_path/'original-plan.json'
+    write_json(plan, {'output_path': 'failed-v001.png', 'source_image': 'historical.jpg'})
+    image = tmp_path/'selected-v002.png'; image.write_bytes(b'current image')
+    payload = {'image_path': image.name, 'quality_evidence': _image_qa_sources(plan)}
+    result = discover_dependencies(tmp_path, payload=payload, verify_hashes=True)
+    assert result['ok'] and set(result['checked_files']) == {str(plan), str(image)}
+    image.unlink()
+    assert not discover_dependencies(tmp_path, payload=payload)['ok']
+
+
+def test_historical_prompt_observation_does_not_select_old_media(tmp_path):
+    prompt = tmp_path/'historical.json'
+    write_json(prompt, {'image_path': 'old-missing.png'})
+    evidence = {'quality_evidence': {'source_prompt': {
+        'path': prompt.name, 'sha256': artifacts.digest(prompt), 'segment_id': 'V01', 'material_order': 2}}}
+    assert discover_dependencies(tmp_path, payload=evidence)['ok']
+    assert not discover_dependencies(tmp_path, files=[prompt], payload=evidence)['ok']
+    prompt.write_text('{}')
+    assert not discover_dependencies(tmp_path, payload=evidence)['ok']
+
+
+def test_method_versions_resolve_only_within_recorded_and_explicit_roots(tmp_path):
+    project = tmp_path/'project'; project.mkdir()
+    methods = tmp_path/'methods'; methods.mkdir()
+    method = methods/'method.md'; method.write_text('recorded method')
+    record = {'path': 'method.md', 'version': '2026-11-06', 'sha256': artifacts.digest(method)}
+    payload = {'method_basis': {'professional_methods_root': str(methods),
+                                'professional_method_versions': [record]}}
+    assert not discover_dependencies(project, payload=payload)['ok']
+    assert discover_dependencies(project, input_roots=[methods], payload=payload, verify_hashes=True)['ok']
+    (tmp_path/'outside.md').write_text('existing file outside the recorded method root')
+    record['path'] = '../outside.md'
+    assert not discover_dependencies(project, input_roots=[tmp_path], payload=payload)['ok']
+
+
+def test_candidate_logical_dependency_uses_declared_exact_source(tmp_path):
+    from scripts.core.candidate_test import configure
+    source_kind = 'narrative.package'
+    for i in (1, 2):
+        name = f'narrative-{i}.json'
+        write_json(tmp_path/name, {'status': 'candidate', 'revision': f'R0{i}'})
+        artifacts.register_workspace_artifact(tmp_path, {
+            'artifact_id': f'N{i}', 'logical_id': source_kind, 'type': source_kind,
+            'revision': f'R0{i}', 'path_or_url': name})
+    path = tmp_path/'director.json'
+    source = {'artifact_id': 'N2', 'revision': 'R02', 'path': 'narrative-2.json'}
+    write_json(path, {'status': 'candidate', 'revision': 'R01', 'source_narrative': source})
+    artifacts.register_workspace_artifact(tmp_path, {
+        'artifact_id': 'D1', 'logical_id': 'storyboard.package', 'type': 'storyboard.package',
+        'revision': 'R01', 'path_or_url': path.name, 'depends_on': [source_kind]})
+    configure(tmp_path, 'test-run', 'synthetic authorization', ['N1', 'N2', 'D1'])
+    result = discover_dependencies(tmp_path, files=[path])
+    assert result['ok'] and str(tmp_path/'narrative-1.json') not in result['checked_files']
+    source['revision'] = 'R01'
+    write_json(path, {'status': 'candidate', 'revision': 'R01', 'source_narrative': source})
+    assert not discover_dependencies(tmp_path, files=[path])['ok']
+
+
+def test_image_qa_still_rejects_missing_or_changed_source_record(tmp_path):
+    plan = tmp_path/'original-plan.json'; write_json(plan, {'output_path': 'future.png'})
+    payload = {'quality_evidence': _image_qa_sources(plan)}
+    plan.write_text('{}')
+    assert not discover_dependencies(tmp_path, payload=payload, verify_hashes=True)['ok']
+    plan.unlink()
+    assert not discover_dependencies(tmp_path, payload=payload)['ok']
+
+
+@pytest.mark.parametrize('evidence_first', [True, False])
+def test_qa_byte_source_cannot_hide_same_file_selected_as_active_input(tmp_path, evidence_first):
+    plan = tmp_path/'plan.json'; write_json(plan, {'file': 'required-but-missing.png'})
+    qa = {'quality_evidence': _image_qa_sources(plan)}
+    active = {'file': plan.name}
+    payload = [qa, active] if evidence_first else [active, qa]
+    assert not discover_dependencies(tmp_path, payload=payload)['ok']
+    assert not discover_dependencies(tmp_path, payload={'source_files': qa['quality_evidence']['source_files']})['ok']
+
+
+def test_image_qa_source_json_is_still_parsed_for_corruption(tmp_path):
+    plan = tmp_path/'broken.json'; plan.write_text('{')
+    assert not discover_dependencies(tmp_path, payload={'quality_evidence': _image_qa_sources(plan)})['ok']
+
+
+def test_superseded_qa_does_not_override_current_source_bytes(tmp_path):
+    plan = tmp_path/'source.json'; write_json(plan, {'output_path': 'old-failed.png'})
+    previous = _image_qa_sources(plan)
+    plan.write_text('{}')
+    current = _image_qa_sources(plan)
+    payload = {'quality_evidence': current,
+               'metadata': {'previous_quality_evidence_records': [{'quality_evidence': previous}]}}
+    assert discover_dependencies(tmp_path, payload=payload, verify_hashes=True)['ok']
+    plan.write_text('{"changed": true}')
+    assert not discover_dependencies(tmp_path, payload=payload, verify_hashes=True)['ok']
+
+
+def test_structured_diff_json_pointer_is_not_a_file(tmp_path):
+    payload = {'diff': [{'path': '/scenes/0/shots/0/take/end', 'before': 'old', 'after': 'new'},
+                        {'path': '/revision', 'before': 'R01', 'after': 'R02'}]}
+    result = discover_dependencies(tmp_path, payload=payload, verify_hashes=True)
+    assert result['ok'] and not result['checked_files']
+    payload['diff'][0]['after'] = {'file_path': 'missing.png'}
+    assert not discover_dependencies(tmp_path, payload=payload)['ok']
+    assert not discover_dependencies(tmp_path, payload={'path': '/revision'})['ok']
+
+
+def test_pdf_page_locator_checks_actual_file_and_hash(tmp_path):
+    import hashlib
+    pdf = tmp_path/'product manual.pdf'
+    pdf.write_bytes(b'%PDF synthetic source')
+    payload = {'reference': {'path': 'product manual.pdf#page=2',
+                             'sha256': hashlib.sha256(pdf.read_bytes()).hexdigest()}}
+    result = discover_dependencies(tmp_path, payload=payload, verify_hashes=True)
+    assert result['ok'] and result['checked_files'] == [str(pdf)]
+    payload['reference']['sha256'] = '0'*64
+    assert not discover_dependencies(tmp_path, payload=payload, verify_hashes=True)['ok']
+    pdf.unlink()
+    assert not discover_dependencies(tmp_path, payload=payload)['ok']
+
+
+def test_pdf_page_locator_keeps_root_boundary(tmp_path):
+    project = tmp_path/'project'; project.mkdir()
+    (tmp_path/'outside.pdf').write_bytes(b'%PDF fixture')
+    result = discover_dependencies(project, payload={'path': '../outside.pdf#page=1'})
+    assert not result['ok'] and result['errors']
+
+
+def test_existing_filename_with_page_suffix_is_not_reinterpreted(tmp_path):
+    literal = tmp_path/'source.pdf#page=1'
+    literal.write_bytes(b'literal name')
+    result = discover_dependencies(tmp_path, payload={'path': literal.name})
+    assert result['ok'] and result['checked_files'] == [str(literal)]
+
+
 def test_nested_unlisted_dependencies_and_cycles_are_read_only(tmp_path):
     write_json(tmp_path/'root.json', {'references': [{'path': 'nested.json'}],
                                     'description': 'missing-prose.mp4'})
@@ -71,6 +215,33 @@ def test_manifest_dependency_not_in_manual_list(tmp_path):
     (tmp_path/'unlisted.png').write_bytes(b'fixture')
     assert discover_dependencies(tmp_path, payload={'depends_on': ['source']})['ok']
     assert not discover_dependencies(tmp_path, payload={'depends_on': ['absent']})['ok']
+
+
+def test_reused_file_requires_exact_identity_and_digest(tmp_path):
+    import hashlib
+    image = tmp_path / 'reused.png'
+    image.write_bytes(b'synthetic unchanged image')
+    digest = hashlib.sha256(image.read_bytes()).hexdigest()
+    write_json(tmp_path / artifacts.MANIFEST_PATH, {'artifacts': [
+        {'artifact_id': 'OLD', 'logical_id': 'image', 'path_or_url': image.name,
+         'status': 'superseded', 'checksum': digest},
+        {'artifact_id': 'NEW', 'logical_id': 'image', 'path_or_url': image.name,
+         'status': 'current', 'checksum': digest}]})
+    payload = {'artifact_id': 'NEW', 'path': image.name, 'sha256': digest}
+    assert discover_dependencies(tmp_path, payload=payload, verify_hashes=True)['ok']
+    old_binding = {**payload, 'artifact_id': 'OLD'}
+    assert discover_dependencies(tmp_path, payload=[payload, old_binding])['ok']
+    assert discover_dependencies(tmp_path, payload=[old_binding, payload])['ok']
+    for unbound in [{'path': image.name}, {**old_binding, 'sha256': '0' * 64}]:
+        for references in ([payload, unbound], [unbound, payload]):
+            report = discover_dependencies(tmp_path, payload={'references': references})
+            assert not report['ok'] and 'ambiguous manifest entries' in str(report['errors'])
+            assert report['checked_files'] == [str(image)]
+    for invalid in [{'path': image.name}, {**payload, 'artifact_id': 'MISSING'},
+                    {**payload, 'sha256': '0' * 64}]:
+        assert not discover_dependencies(tmp_path, payload=invalid, verify_hashes=True)['ok']
+    image.write_bytes(b'changed image')
+    assert not discover_dependencies(tmp_path, payload=payload, verify_hashes=True)['ok']
 
 
 def test_submission_calls_dependency_discovery(tmp_path):

@@ -45,29 +45,24 @@ def test_failed_catalog_update_preserves_saved_assets_then_retries(tmp_path, mon
     assert Path(restarted.get(asset["id"])["original"]).read_bytes() == original_image
 
 
-def test_library_vault_uses_env_and_explicit_fixture_override(tmp_path, monkeypatch):
-    import stage_context_cli
+def test_library_vault_uses_dedicated_asset_storage_setting(tmp_path, monkeypatch):
     monkeypatch.setenv('HOME', str(tmp_path))
     # Windows expanduser uses USERPROFILE; keep this fixture inside tmp_path.
     monkeypatch.setenv('USERPROFILE', str(tmp_path))
-    monkeypatch.setenv('MSB_VAULT_ROOT', '~/knowledge')
+    monkeypatch.setenv('MSB_VAULT_ROOT', '~/old-external-knowledge')
+    monkeypatch.delenv('MSB_ASSET_VAULT_ROOT', raising=False)
+    local = Library(tmp_path / 'local/library')
+    assert local.vault == tmp_path / 'local/vault'
+    monkeypatch.setenv('MSB_ASSET_VAULT_ROOT', '~/media')
     library = Library(tmp_path / 'env-library')
-    assert library.vault == tmp_path / 'knowledge'
-    # Writable backup destinations may be new; knowledge inputs must exist.
-    with pytest.raises(stage_context_cli.StageContextError, match='does not exist'):
-        stage_context_cli._vault_root(None)
-    library.vault.mkdir()
-    assert stage_context_cli._vault_root(None) == library.vault
+    assert library.vault == tmp_path / 'media'
     explicit = Library(tmp_path / 'isolated-library', vault=tmp_path / 'isolated-vault')
     assert explicit.vault == tmp_path / 'isolated-vault'
-    monkeypatch.delenv('MSB_VAULT_ROOT')
-    legacy = Library(tmp_path / 'legacy/library')
-    assert legacy.vault == tmp_path / 'legacy/vault'
 
 
 def test_library_cannot_write_into_bundled_knowledge(tmp_path, monkeypatch):
     from core.knowledge_runtime import bundled_root
-    monkeypatch.delenv('MSB_VAULT_ROOT', raising=False)
+    monkeypatch.delenv('MSB_ASSET_VAULT_ROOT', raising=False)
     with pytest.raises(ValueError, match='内置知识包'):
         Library(tmp_path / 'library', vault=bundled_root())
     library = Library(tmp_path / 'library')

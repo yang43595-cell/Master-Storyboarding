@@ -156,6 +156,27 @@ def acceptance_binding(project, entry):
     return result
 
 
+def _unchanged_image_director(project, entry, report, expected, state):
+    from .artifacts import (artifact_is_adopted, load_manifest, supplement_director_shots,
+                            unchanged_director_usage)
+    before = report.get("upstreams")
+    if not isinstance(before, list) or len(before) != len(expected):
+        return False
+    different = [(old, new) for old, new in zip(before, expected) if old != new]
+    if len(different) != 1:
+        return False
+    old, new = different[0]
+    if (not isinstance(old, dict) or old.get("logical_id") != "storyboard.package"
+            or new["logical_id"] != "storyboard.package"):
+        return False
+    records = {item["artifact_id"]: item for item in load_manifest(project)["artifacts"] if item.get("artifact_id")}
+    baseline, current = records.get(old.get("artifact_id")), records.get(new["artifact_id"])
+    return (baseline is not None and baseline.get("status") == "superseded"
+            and current is not None and artifact_is_adopted(current, state, project)
+            and _binding(project, baseline) == old and _binding(project, current) == new
+            and unchanged_director_usage(project, baseline, current, supplement_director_shots(entry, report)))
+
+
 def _validate_report(project, entry, report, state, pointer=None):
     from .candidate_test import require_production
     from .confirmation_scope import SCOPE_ID_FIELDS, image_usage_shots
@@ -174,6 +195,11 @@ def _validate_report(project, entry, report, state, pointer=None):
                     or pointer.get("authorization_sha256") != _json_digest(authorization)):
         raise ValueError("自主验收所依据的流程授权已改变")
     binding = acceptance_binding(project, entry)
+    if (pointer and entry.get("status") == "current" and skill == "storyboard-director"
+            and report.get("upstreams") != binding["upstreams"]
+            and _unchanged_image_director(project, entry, report, binding["upstreams"], state)):
+        # The old receipt remains intact. Only its unchanged director scope is reusable.
+        binding["upstreams"] = report["upstreams"]
     if any(report.get(key) != value for key, value in binding.items()):
         raise ValueError("自查未绑定本版产物/修订/hash或当前准确上游")
     if skill != "storyboard-director":

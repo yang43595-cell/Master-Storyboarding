@@ -9,9 +9,12 @@ from scripts.canvas_readback import validate_submission
 from scripts.core import artifacts, candidate_test as mode, revision_control, story_sources
 from scripts.core.io import write_json
 from scripts.core.project_state import load_project_state, new_project_state, write_project_state
-from test_stage_context_cli import _method_vault, _record_methods
+from test_stage_context_cli import _method_vault, _record_methods, isolated_stage_knowledge
 from test_story_paragraph_sources import narrative
 from test_director_compact import compact_package
+
+
+pytestmark = pytest.mark.usefixtures("isolated_stage_knowledge")
 
 
 def setup(project):
@@ -20,6 +23,23 @@ def setup(project):
     write_project_state(project, state)
     mode.configure(project, 'synthetic-run', 'synthetic user: candidate text test only', [])
     return project
+
+
+@pytest.mark.parametrize('confirmed,adopted,allowed', [(False, False, True), (True, False, False), (False, True, False)])
+def test_unconfirmed_product_reference_is_evidence_not_package_approval(tmp_path, confirmed, adopted, allowed):
+    project = setup(tmp_path/'product-reference')
+    write_json(project/'ref.json', dict(revision='R01', status='reference_only_unconfirmed',
+                                      user_confirmed=confirmed, formal_adoption=adopted))
+    artifacts.register_workspace_artifact(project, dict(artifact_id='REF', logical_id='reference.product',
+        type='reference', path_or_url='ref.json', revision='R01'))
+    mode.configure(project, 'synthetic-run', 'synthetic user: candidate text test only', ['REF'])
+    if allowed:
+        assert mode.resolve_inputs(project)
+        with pytest.raises(ValueError):
+            mode.require_production(project)
+    else:
+        with pytest.raises(ValueError):
+            mode.resolve_inputs(project)
 
 
 def add(project, ident, logical, payload, dependencies=()):

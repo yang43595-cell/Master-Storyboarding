@@ -38,6 +38,28 @@
       },
       "applies_when": "当前编导任务遇到具体故事或对白问题，执行者选择参考编导方法时",
       "requires": {"skill": "creative-director", "request.use_story_method": true}
+    },
+    {
+      "id": "VGEN-CREATOR-POLISHING-MASK-USE",
+      "path": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/方法.md",
+      "binding_status": "user_confirmed",
+      "applies_when": "本轮明确选用造物者温泉酸抛光面膜 2.0，且产品实际出镜展示或按真实方法使用；按本 Skill 职责读取。",
+      "requires": {
+        "skill": "creative-director",
+        "request.product_id": "creator-polishing-mask-2",
+        "request.product_usage": ["display", "real_use"]
+      },
+      "promotion_record": {
+        "basis": "user_directed",
+        "method_version": "2026-11-09-r6",
+        "method_sha256": "c365e647df76edc9bb5b9039d11cbaa1eae7df0d8cf4994ea1508ea554ddede0",
+        "scope": "明确选定该商品后的编导职责：确定展示范围、真实使用事件与参考需求；未实测生成效果。",
+        "source_ref": "既有第二层造物者抛光面膜真实使用过程方法 2026-09-30-r2 与 2026-11-06 当前用户指定修订。",
+        "user_instruction_ref": "2026-11-06 用户要求温泉酸面膜专用要求放在第二层；2026-11-07 明确要求商品名称直接关联一套可用模板。",
+        "conflict_resolution": "纯展示不增加真实使用步骤或真人膜态模板；镜头与拍法由导演阶段确定。",
+        "rollback": "恢复原版本的专项方法正文、manifest 和受影响 profile；历史交付仍保留原依据。",
+        "supersedes": []
+      }
     }
   ]
 }

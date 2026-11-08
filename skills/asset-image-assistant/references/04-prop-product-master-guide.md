@@ -1,6 +1,6 @@
 # 道具与产品母版构建指南
 
-> 本文件保留类别字段、模板、执行顺序与交付检查。专业判断完整读取 knowledge-profile 绑定的 `ASSET-OBJECT-METHOD`（Vault：`projects/Master-Storyboarding/应用知识/图片资产/道具与产品资产方法.md`）；不得只读本文件代替方法。
+> 本文件保留类别字段、模板、执行顺序与交付检查。专业判断完整读取 knowledge-profile 绑定的 `ASSET-OBJECT-METHOD`（仓库内置包相对路径 `projects/Master-Storyboarding/应用知识/图片资产/道具与产品资产方法.md`）；不得只读本文件代替方法。
 
 > 用途：实现当前有效资产表已登记的 `PROP`、`REAL_PRODUCT` 或相关 `AST-*`，锁定真实参考和状态逻辑。未登记 AST 的道具、包装、工具或质地不得自行生产。
 

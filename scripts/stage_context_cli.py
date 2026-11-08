@@ -22,6 +22,7 @@ try:
                                  validate_current_dependencies, load_manifest,
                                  register_workspace_artifact, adopt_initial_package,
                                  adopt_initial_agent_artifact, validate_candidate_submission)
+    from .core.asset_refs import check_output_plan
     from .core.agent_acceptance import register_workflow_authorization
     from .core.io import write_text, write_text_if_changed
     from .core.knowledge_runtime import resolve_knowledge_root, is_bundled_root, verify_bundle, verify_selected_file
@@ -29,7 +30,11 @@ try:
     from .core.knowledge_selector import render_knowledge_bundle, render_knowledge_candidates, render_candidate_trial_bundle, select_knowledge
     from .core.candidate_source_snapshot import CandidateSnapshotError, inspect_candidate_snapshot, load_candidate_snapshot_rules
     from .core.method_documents import MethodDocumentError, render_method_packet, resolve_method_documents
+    from .core.product_reference_pack import resolve_product_pack
     from .core.project_state import load_project_state, normalize_project_state
+    from .core.project_kickoff import REQUEST_PATH, bind_stage_request, load_kickoff, validate_kickoff
+    from .core.review_publication import require_script_approval
+    from .core.io import project_lock, write_json
     from .core.revision_control import RevisionControlError, guard_action, show_change
     from .core.review_delta import fingerprint, revision_delta, lightweight_revision
     from .session_usage import measure, measure_boundaries, check_budget
@@ -39,6 +44,7 @@ except ImportError:  # direct CLI execution
                                 validate_current_dependencies, load_manifest,
                                 register_workspace_artifact, adopt_initial_package,
                                 adopt_initial_agent_artifact, validate_candidate_submission)
+    from core.asset_refs import check_output_plan
     from core.agent_acceptance import register_workflow_authorization
     from core.io import write_text, write_text_if_changed
     from core.knowledge_runtime import resolve_knowledge_root, is_bundled_root, verify_bundle, verify_selected_file
@@ -46,7 +52,11 @@ except ImportError:  # direct CLI execution
     from core.knowledge_selector import render_knowledge_bundle, render_knowledge_candidates, render_candidate_trial_bundle, select_knowledge
     from core.candidate_source_snapshot import CandidateSnapshotError, inspect_candidate_snapshot, load_candidate_snapshot_rules
     from core.method_documents import MethodDocumentError, render_method_packet, resolve_method_documents
+    from core.product_reference_pack import resolve_product_pack
     from core.project_state import load_project_state, normalize_project_state
+    from core.project_kickoff import REQUEST_PATH, bind_stage_request, load_kickoff, validate_kickoff
+    from core.review_publication import require_script_approval
+    from core.io import project_lock, write_json
     from core.revision_control import RevisionControlError, guard_action, show_change
     from core.review_delta import fingerprint, revision_delta, lightweight_revision
     from session_usage import measure, measure_boundaries, check_budget
@@ -134,6 +144,23 @@ def _vault_root(value: str | None) -> Path:
         raise StageContextError(str(exc)) from exc
 
 
+def _recorded_knowledge_root(manifest: dict[str, Any]) -> Path:
+    value = manifest.get("vault_root")
+    if not isinstance(value, str) or not value:
+        raise StageContextError("任务依据缺少本项目知识根；请重新 prepare。")
+    try:
+        return _vault_root(value)
+    except StageContextError as exc:
+        raise StageContextError(f"任务依据的知识根已失效；请用仓库内置知识重新 prepare：{exc}") from exc
+
+
+def _local_knowledge_path(path: Path) -> Path:
+    resolved = path.resolve()
+    if not resolved.is_relative_to(ROOT.resolve()):
+        raise StageContextError(f"本地知识或规范路径越出仓库：{path}；请重新 prepare。")
+    return resolved
+
+
 def _read_json(path: Path, *, default: Any) -> Any:
     if not path.is_file():
         return default
@@ -195,7 +222,7 @@ def accept_artifact(args: argparse.Namespace) -> dict[str, Any]:
             "notice": "已按流程授权及准确自查采用；未新增逐稿人审，未上传、生成、发布或自动流转"}
 
 
-def adopt_package(args: argparse.Namespace) -> dict[str, Any]:
+def adopt_package(args: argparse.Namespace, *, website_approval=None) -> dict[str, Any]:
     """Register and adopt an initial platform-neutral manuscript package."""
     project = Path(args.project).expanduser().resolve()
     if not project.is_dir():
@@ -204,6 +231,8 @@ def adopt_package(args: argparse.Namespace) -> dict[str, Any]:
     logical_id = args.logical_id
     if logical_id not in {"narrative.package", "storyboard.package", "video.prompt"}:
         raise StageContextError("仅支持正式叙事包、导演包或视频提示词包")
+    if logical_id != "narrative.package" and load_kickoff(project):
+        raise StageContextError("统一入口的导演和视频提示词走自主采用 accept-artifact，无需逐稿人工确认")
     if not args.approval_ref.strip():
         raise StageContextError("正式稿采用必须绑定准确用户确认依据 --approval-ref")
     source = project_path(project, args.path)
@@ -228,14 +257,16 @@ def adopt_package(args: argparse.Namespace) -> dict[str, Any]:
         raise StageContextError("首次正式采用视频提示词必须绑定已确认 source_storyboard")
     relative = source.relative_to(project).as_posix()
     try:
+        checksum = digest(source)
+        entry = {"artifact_id": args.artifact_id, "logical_id": logical_id, "type": logical_id,
+                 "revision": args.revision, "path_or_url": relative, "checksum": checksum}
+        require_script_approval(project, entry, args.approval_ref, website_approval)
         manifest = load_manifest(project)
         existing = next((item for item in manifest.get("artifacts", [])
                          if item.get("artifact_id") == args.artifact_id), None)
         if existing is None:
             register_workspace_artifact(project, {
-                "artifact_id": args.artifact_id, "logical_id": logical_id, "type": logical_id,
-                "revision": args.revision, "path_or_url": relative,
-                "depends_on": list(args.depends_on), "checksum": digest(source), "user_approved": False,
+                **entry, "depends_on": list(args.depends_on), "user_approved": False,
             })
         elif (existing.get("status") != "candidate" or not existing.get("checksum")
               or existing.get("logical_id") != logical_id
@@ -243,7 +274,7 @@ def adopt_package(args: argparse.Namespace) -> dict[str, Any]:
               or existing.get("depends_on", []) != list(args.depends_on)):
             raise StageContextError("同 ID 已登记为不同稿件；保留现状并使用新 artifact_id")
         adoption = adopt_initial_package(project, args.artifact_id, args.approval_ref,
-                                        scope_description=args.scope_description)
+                                        scope_description=args.scope_description, website_approval=website_approval)
     except (ValueError, OSError, KeyError, TypeError) as exc:
         raise StageContextError(f"稿件保持候选，正式采用未完成：{exc}") from exc
     return {"ok": True, **adoption,
@@ -271,6 +302,8 @@ def _state_reading_view(summary: dict[str, Any]) -> dict[str, Any]:
 def _task_reading_view(basis: dict[str, Any]) -> dict[str, Any]:
     """Keep frozen requirements; omit machine catalogs and fingerprints, not decisions."""
     result = {k: v for k, v in basis.items() if k not in {'reading_manifest', 'standards', 'reading_reuse_key', 'input_snapshot', 'request_path', 'task_request', 'knowledge_profile'}}
+    if kickoff := basis.get("task_request", {}).get("kickoff"):
+        result["kickoff"] = kickoff
     standards = dict(basis.get('standards') or {})
     standards.pop('local_documents', None)
     result['standards'] = standards
@@ -329,7 +362,7 @@ def _tombstone_fingerprints(vault: Path, policy: dict[str, Any]) -> set[str]:
 
 
 def _load_review_profile(skill: str) -> tuple[Path, dict[str, Any]]:
-    profile_path = ROOT / "skills" / skill / "review-profile.json"
+    profile_path = _local_knowledge_path(ROOT / "skills" / skill / "review-profile.json")
     profile = _read_json(profile_path, default=None)
     if not isinstance(profile, dict):
         raise StageContextError(f"Skill 审核 profile 不存在或无效：{profile_path}")
@@ -575,7 +608,7 @@ def _confirmed_project_inputs(project: Path, state: dict[str, Any]) -> tuple[dic
         try:
             validate_current_dependencies(item, manifest, state, project)
             if item.get("logical_id") in {"narrative.package", "storyboard.package", "video.prompt"}:
-                if not validate_candidate_submission(project, item, manifest):
+                if not validate_candidate_submission(project, item, manifest, reading_existing=True):
                     raise ValueError("旧稿件/未识别结构仅保留历史读取，不能作为正式交接输入")
         except ValueError as exc:
             raise StageContextError(str(exc)) from exc
@@ -942,12 +975,21 @@ def _input_snapshot(project: Path, inputs: dict[str, Any], state: dict[str, Any]
     }
 
 
-def _local_standard_documents(skill_dir: Path, request: dict[str, Any] | None = None) -> list[Path]:
-    """Freeze applicable contracts plus exact linked dependencies, never a skip list.
+def _recovery_check_text() -> str:
+    """Project one authoritative section; do not maintain a second checklist."""
+    path = _local_knowledge_path(ROOT / "skills/_shared/knowledge-access.md")
+    text = path.read_text(encoding="utf-8")
+    match = re.search(r"(?ms)^## 压缩后的主动恢复核对\n.*?(?=^## |\Z)", text)
+    if not match:
+        raise StageContextError(f"主动恢复核对正文缺失：{path}")
+    return match.group(0).rstrip()
 
-    Unknown conditions retain the historical conservative local set. The asset
-    scopes already used by method resolution are the only category exclusions.
-    Explicit local_references can add dependencies, never remove required ones.
+
+def _local_standard_documents(skill_dir: Path, request: dict[str, Any] | None = None) -> list[Path]:
+    """Freeze applicable contracts plus exact linked dependencies.
+
+    Unknown conditions retain the conservative local set. References for
+    explicitly selected branches do not become mandatory through links alone.
     """
     request = request or {}
     excluded: set[Path] = set()
@@ -976,7 +1018,7 @@ def _local_standard_documents(skill_dir: Path, request: dict[str, Any] | None = 
                             for name in names)
     local = [skill_dir / "SKILL.md", *sorted((skill_dir / "modules").glob("*.md")),
              *sorted((skill_dir / "references").glob("*.md"))]
-    local = [path.resolve() for path in local if path.resolve() not in excluded]
+    local = [_local_knowledge_path(path) for path in local if path.resolve() not in excluded]
     extra = request.get("local_references", [])
     if not isinstance(extra, list):
         raise StageContextError("local_references 必须是本轮实际采用的仓库相对规范路径数组。")
@@ -990,13 +1032,31 @@ def _local_standard_documents(skill_dir: Path, request: dict[str, Any] | None = 
         if path in excluded:
             raise StageContextError(f"本地规范与当前普通 prepare 入口或 asset_method_scopes 不一致：{reference}；先核对实际入口和类别。")
         local.append(path)
+    if skill_dir.name == "creative-director":
+        legacy = (skill_dir / "references/dialogue-legacy-workflows.md").resolve()
+        candidates = (skill_dir / "references/knowledge-candidates.md").resolve()
+        maintenance = (ROOT / "skills/knowledge-maintainer/modules/maintenance-method.md").resolve()
+        selected_references = {(ROOT / reference).resolve() for reference in extra}
+        if legacy not in selected_references:
+            excluded.add(legacy)
+        if candidates not in selected_references:
+            excluded.add(candidates)
+            if maintenance not in selected_references:
+                excluded.add(maintenance)
+        local = [path for path in local if path not in excluded]
+    # These branches require explicit selection, even if a compatibility note
+    # elsewhere links to them. The root rule table is navigation, not opt-in.
+    for name in ("legacy-review.md", "experiments.md", "project-layout.md"):
+        path = (ROOT / "docs/rules" / name).resolve()
+        if path not in local:
+            excluded.add(path)
     shared_root = (ROOT / "skills/_shared").resolve()
     # These are the common redlines named collectively by Skill entries; their
     # presence must not depend on whether prose spells each link separately.
-    shared = sorted(shared_root.glob("*.md"))
+    shared = sorted(_local_knowledge_path(path) for path in shared_root.glob("*.md"))
     seen: set[Path] = set([*local, *shared])
     visited: set[Path] = set()
-    pending = [(ROOT / "PROJECT_RULES.md").resolve(), *local, *shared]
+    pending = [_local_knowledge_path(ROOT / "PROJECT_RULES.md"), *local, *shared]
     while pending:
         document = pending.pop()
         if document in visited:
@@ -1004,28 +1064,41 @@ def _local_standard_documents(skill_dir: Path, request: dict[str, Any] | None = 
         visited.add(document)
         if document.suffix != ".md":
             continue
-        text = document.read_text(encoding="utf-8")
+        text = _local_knowledge_path(document).read_text(encoding="utf-8")
         references = re.findall(r"(?:skills/|\.\./)*_shared/[A-Za-z0-9_-]+\.md", text)
         if document.parent == shared_root:
             references.extend(re.findall(r"\]\(([A-Za-z0-9_-]+\.md)(?=[#)])", text))
         dependencies = []
         for reference in references:
-            path = shared_root / Path(reference).name
+            path = _local_knowledge_path(shared_root / Path(reference).name)
             if not path.is_file():
                 raise StageContextError(f"必需共享规范缺失：{path}")
             dependencies.append(path)
         # Root-wide links describe other stages, not this task's contracts.
         # Follow explicit module/reference links from the selected contracts.
         if document != (ROOT / "PROJECT_RULES.md").resolve():
-            refs = re.findall(r"(?:`|\]\()((?:\.\./|\./|skills/|references/|modules/|templates/|schemas/)[^`\s)#]+\.(?:md|json))", text)
+            refs = re.findall(r"(?:`|\]\()((?:\.\./|\./|skills/|docs/rules/|references/|modules/|templates/|schemas/)[^`\s)#]+\.(?:md|json))", text)
             for reference in refs:
                 choices = [(document.parent / reference).resolve(),
                            (skill_dir / reference).resolve(), (ROOT / reference).resolve()]
+                if document.is_relative_to((ROOT / "skills").resolve()):
+                    owner = document.relative_to((ROOT / "skills").resolve()).parts[0]
+                    choices.insert(1, (ROOT / "skills" / owner / reference).resolve())
                 target = next((path for path in choices if path.is_relative_to(ROOT.resolve()) and path.is_file()), None)
+                # A rule may point to an optional or downstream Skill. Freeze
+                # this stage's contracts, not that other Skill's entire tree.
+                rules_root = (ROOT / "docs/rules").resolve()
+                linked = target or choices[0]
+                if (document.is_relative_to(rules_root)
+                        and linked.is_relative_to((ROOT / "skills").resolve())
+                        and not linked.is_relative_to(skill_dir.resolve())
+                        and linked.parent != shared_root):
+                    continue
+                is_rule = any(path.is_relative_to((ROOT / "docs/rules").resolve()) for path in choices)
                 if (target is None and not any(path in excluded for path in choices)
-                        and {"references", "modules", "templates", "schemas"}.intersection(Path(reference).parts)):
+                        and (is_rule or {"references", "modules", "templates", "schemas"}.intersection(Path(reference).parts))):
                     raise StageContextError(f"明确引用的本地规范缺失：{document}: {reference}")
-                if target and target not in excluded and (target.parent == shared_root
+                if target and target not in excluded and (target.is_relative_to((ROOT / "docs/rules").resolve()) or target.parent == shared_root
                         or "references" in target.parts or "modules" in target.parts or "templates" in target.parts or "schemas" in target.parts):
                     dependencies.append(target)
         for path in dependencies:
@@ -1039,7 +1112,7 @@ def _review_identity(basis: dict[str, Any], adopted: list[dict[str, Any]] | None
     # Rebuild the substantive projection, never trust a stored hash or include
     # actor IDs, reading cache/catalog metadata, request location or packet bytes.
     fields = ("schema_version", "skill", "objective", "deliverables", "non_goals", "input_versions",
-              "scope", "delivery_contract", "standards", "review_acceptance", "revision", "task_request", "input_snapshot")
+              "scope", "delivery_contract", "standards", "review_acceptance", "revision", "task_request", "input_snapshot", "character_output_requirements")
     return _identity_hash({**{key: basis[key] for key in fields if key in basis}, "adopted_knowledge": adopted or []})
 
 
@@ -1054,16 +1127,28 @@ def _reading_reuse_key(project, basis, request, state, handoff):
 
 def _validate_current_inputs(project: Path, basis: dict[str, Any]) -> dict[str, Any]:
     """Recheck known dependencies at consumption time; never grants execution authority."""
-    if basis.get("reading_manifest", {}).get("project_path") != str(project):
+    manifest = basis.get("reading_manifest", {})
+    if not isinstance(manifest, dict) or manifest.get("project_path") != str(project):
         raise StageContextError("任务依据属于另一项目；请在当前项目重新 prepare。")
+    knowledge_root = _recorded_knowledge_root(manifest)
     snapshot = basis.get("input_snapshot")
     if not isinstance(snapshot, dict):
         raise StageContextError("任务依据缺少当前输入版本证据；请重新 prepare。")
     request_path = basis.get("request_path")
-    if request_path:
-        current_request = _read_json(Path(request_path), default=None)
-        if not isinstance(current_request, dict) or _semantic_request(current_request) != basis.get("task_request"):
-            raise StageContextError("当前请求缺失或实质范围已改变；请重新 prepare。")
+    current_request = _read_json(Path(request_path), default=None) if request_path else {}
+    if not isinstance(current_request, dict):
+        raise StageContextError("当前阶段请求缺失；请重新 prepare。")
+    kickoff = None if snapshot.get("candidate_test") else load_kickoff(project)
+    if _semantic_request(bind_stage_request(current_request, kickoff)) != basis.get("task_request"):
+        raise StageContextError("开工决定或阶段请求已改变；请重新 prepare。")
+    if basis.get("skill") == "asset-image-assistant":
+        try:
+            output_requirements = check_output_plan(project, basis.get("task_request", {}),
+                                                    **({"candidate_test_mode": True} if snapshot.get("candidate_test") else {}))
+        except ValueError as exc:
+            raise StageContextError(str(exc)) from exc
+        if output_requirements != basis.get("character_output_requirements", {}):
+            raise StageContextError("本批人物最终输出规格已变化；请重新 prepare 并核对受影响范围。")
     inputs = basis["input_versions"]
     if "sources" in basis.get("task_request", {}):
         # Old preparations omitted this alias entirely. Reopen the declaration
@@ -1074,44 +1159,48 @@ def _validate_current_inputs(project: Path, basis: dict[str, Any]) -> dict[str, 
         raise StageContextError("当前来源、选定产物或确认依据已改变；请重新 prepare 并核对变更。")
     _current_handoff_text(project, basis["skill"])
     standards = basis["standards"]
-    knowledge_root = Path(basis["reading_manifest"]["vault_root"])
-    current_profile = _read_json(Path(basis["knowledge_profile"]["path"]), default={})
+    profile = basis.get("knowledge_profile", {})
+    if not isinstance(profile, dict) or not profile.get("path") or not profile.get("sha256"):
+        raise StageContextError("任务规范缺少版本证据；请重新 prepare。")
+    profile_path = Path(profile["path"])
+    if not manifest.get("test_only_proposed_method_ids"):
+        profile_path = _local_knowledge_path(profile_path)
+    if not profile_path.is_file() or digest(profile_path) != profile["sha256"]:
+        raise StageContextError(f"当前方法、绑定或规范已改变：{profile_path}；请重新 prepare。")
+    current_profile = _read_json(profile_path, default={})
     declared_methods = {entry.get("id"): entry for entry in current_profile.get("professional_methods", [])}
-    for item in standards.get("professional_methods", []):
-        verify_selected_file(knowledge_root, item["path"])
-        template_path = declared_methods.get(item["id"], {}).get("template_path")
-        if template_path:
-            if item.get("template_path") != template_path or not item.get("template_sha256"):
-                raise StageContextError("适用方法模板缺少冻结版本；请重新 prepare。")
-            verify_selected_file(knowledge_root, template_path)
-    documents = [*standards.get("local_documents", []), standards.get("review_profile", {}), basis.get("knowledge_profile", {})]
+    local_documents = [*standards.get("local_documents", []), standards.get("review_profile", {})]
     if standards.get("root_rules_sha256"):
-        documents.append({"path": standards["root_rules"], "sha256": standards["root_rules_sha256"]})
-    documents.extend({"path": str(Path(basis["reading_manifest"]["vault_root"]) / item["path"]), "sha256": item["sha256"]}
-                     for item in standards.get("professional_methods", []))
-    documents.extend({"path": str(Path(basis["reading_manifest"]["vault_root"]) / item["template_path"]),
-                      "sha256": item["template_sha256"]}
-                     for item in standards.get("professional_methods", []) if item.get("template_path"))
-    for item in documents:
+        local_documents.append({"path": standards["root_rules"], "sha256": standards["root_rules_sha256"]})
+    documents = []
+    for item in local_documents:
         if not item.get("path") or not item.get("sha256"):
             raise StageContextError("任务规范缺少版本证据；请重新 prepare。")
-        path = Path(item["path"])
-        if not path.is_file() or digest(path) != item["sha256"]:
+        documents.append((_local_knowledge_path(Path(item["path"])), item["sha256"]))
+    for item in standards.get("professional_methods", []):
+        method_path = verify_selected_file(knowledge_root, item["path"])
+        documents.append((method_path, item.get("sha256")))
+        template_path = declared_methods.get(item["id"], {}).get("template_path")
+        if template_path != item.get("template_path") or (template_path and not item.get("template_sha256")):
+            raise StageContextError("适用方法模板缺少冻结版本；请重新 prepare。")
+        if template_path:
+            documents.append((verify_selected_file(knowledge_root, template_path), item["template_sha256"]))
+    for path, checksum in documents:
+        if not checksum:
+            raise StageContextError("任务规范缺少版本证据；请重新 prepare。")
+        if not path.is_file() or digest(path) != checksum:
             raise StageContextError(f"当前方法、绑定或规范已改变：{path}；请重新 prepare。")
-    vault = Path(basis["reading_manifest"]["vault_root"])
-    if is_bundled_root(vault):
-        verify_bundle(vault)
-    constraints = basis["reading_manifest"].get("applicable_confirmed")
+    constraints = manifest.get("applicable_confirmed")
     if not isinstance(constraints, list):
         raise StageContextError("任务依据缺少预算外适用 confirmed 约束；请重新 prepare，不能沿用旧选择结果。")
-    records = list(basis["reading_manifest"].get("selected", [])) + constraints
+    records = list(manifest.get("selected", [])) + constraints
     evidence = _evidence_current(project, basis["skill"])
     if evidence:
         records.extend(evidence[1].get("adopted_candidates", []))
     if records:
-        tombstones = _tombstone_fingerprints(vault, load_policy(ROOT))
+        tombstones = _tombstone_fingerprints(knowledge_root, load_policy(ROOT))
         for item in records:
-            block = _read_candidate_exact(vault, item)
+            block = _read_candidate_exact(knowledge_root, item)
             if block.fingerprint in tombstones:
                 raise StageContextError(f"当前知识已被禁用：{block.id}；请重新 prepare。")
     return {"current_input_validation": "matched_at_check", "execution_authorization": "not_granted",
@@ -1260,8 +1349,8 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     test_profile_path = getattr(args, "test_profile_json", None)
     if test_profile_path and not test_method_ids:
         raise StageContextError("--test-profile-json 只能与 --test-proposed-method 一起用于隔离测试。")
-    if test_profile_path:
-        profile_path = Path(test_profile_path).expanduser().resolve()
+    profile_path = (Path(test_profile_path).expanduser().resolve() if test_profile_path
+                    else _local_knowledge_path(profile_path))
     profile = _read_json(profile_path, default=None)
     if not isinstance(profile, dict) or profile.get("skill") != args.skill:
         raise StageContextError(f"Skill 知识 profile 无效：{profile_path}")
@@ -1276,8 +1365,17 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
             raise StageContextError(f"无法读取请求 JSON：{request_path}: {exc}") from exc
     if not isinstance(request, dict):
         raise StageContextError("request JSON 必须是对象")
-    image_targets = _image_batch_targets(args.skill, request)
     testing = _test_request(args, project)
+    kickoff = None if testing else load_kickoff(project)
+    request = bind_stage_request(request, kickoff)
+    product_pack = resolve_product_pack(kickoff["product"]) if kickoff and args.skill in {
+        "creative-director", "storyboard-planner", "asset-image-assistant", "storyboard-director",
+    } else None
+    image_targets = _image_batch_targets(args.skill, request)
+    try:
+        output_requirements = check_output_plan(project, request, **({"candidate_test_mode": True} if testing else {})) if args.skill == "asset-image-assistant" else {}
+    except ValueError as exc:
+        raise StageContextError(str(exc)) from exc
     candidate_rule_ids = set(getattr(args, "candidate_rule", None) or [])
     candidate_source_id = getattr(args, "candidate_source_id", None)
     candidate_source_archive = getattr(args, "candidate_source_snapshot", None)
@@ -1340,7 +1438,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     trial_bundle = render_candidate_trial_bundle(args.skill, result)
     method_lines = ["## 必读专业方法", ""]
     if methods.required:
-        method_lines.append("- 以下全文已写入 `method_reading_packet.md`；生产者必须逐份完整读取后登记读取证据。")
+        method_lines.append("- 以下必读内容已写入 `method_reading_packet.md`；生产者必须读完整个必读包后登记读取证据。")
         method_lines.extend(
             f"- `{item.id}`：`{item.vault_path}`；版本 `{item.version}`；SHA-256 `{item.checksum}`；适用条件：{item.applies_when}"
             for item in methods.required
@@ -1375,12 +1473,23 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         key: value for key, value in request.items()
         if key.startswith("source_") or key in {"sources", "inputs", "material_output_ids"}
     })
+    if product_pack:
+        input_versions["product_reference_files"] = [product_pack["manifest_path"],
+                                                     *(item["path"] for item in product_pack["references"])]
     review_profile_path, review_profile = _load_review_profile(args.skill)
     request_checks = request.get("review_checks") or []
     if not isinstance(request_checks, list) or any(not isinstance(item, str) or not item.strip() for item in request_checks):
         raise StageContextError("request.review_checks 必须是非空文字检查项数组。")
     manual_checks = [{"id": f"MANUAL-{index:03d}", "text": text.strip()} for index, text in enumerate(request_checks, start=1)]
-    methods_records = [{"id": item.id, "path": item.vault_path, "version": item.version, "sha256": item.checksum, "promotion_basis": item.promotion_basis, **({"template_path": item.template_path, "template_sha256": item.template_checksum} if item.template_path else {})} for item in methods.required]
+    methods_records = []
+    for item in methods.required:
+        record = {"id": item.id, "path": item.vault_path, "version": item.version,
+                  "sha256": item.checksum, "promotion_basis": item.promotion_basis}
+        if item.template_path:
+            record.update(template_path=item.template_path, template_sha256=item.template_checksum)
+        if item.reading_scope:
+            record["reading_scope"] = item.reading_scope
+        methods_records.append(record)
     base_packet = render_method_packet(methods.required) if methods.required else "# 本轮必读专业方法快照\n"
     trial_record = None
     if result.trial_candidates:
@@ -1394,6 +1503,8 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         }
     reading_manifest = {"schema_version": "1.0", "skill": args.skill, "project_path": str(project), "vault_root": str(vault), **_reading_identity(args), "methods": methods_records, "method_packet_sha256": hashlib.sha256(base_packet.encode("utf-8")).hexdigest(), "method_packet_bytes": len(base_packet.encode("utf-8")), "test_only_proposed_method_ids": sorted(test_method_ids), "selected": [_candidate_record(item) for item in result.selected], "candidate_catalog": [_candidate_record(item) for item in result.candidates], "candidate_reasons": result.candidate_reasons, "applicable_confirmed": [_candidate_record(item) for item in result.applicable_confirmed], "candidate_trial": trial_record}
     local_documents = _local_standard_documents(skill_dir, request)
+    rule_documents = [path for path in local_documents
+                      if path.is_relative_to((ROOT / "docs/rules").resolve())]
     task_basis = {
         "schema_version": "1.0",
         "skill": args.skill,
@@ -1403,6 +1514,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "input_versions": input_versions,
         "input_snapshot": _input_snapshot(project, input_versions, raw_state),
         "task_request": _semantic_request(request),
+        **({"character_output_requirements": output_requirements} if output_requirements else {}),
         "request_path": str(Path(args.request_json).resolve()) if args.request_json else None,
         "knowledge_profile": fingerprint(profile_path),
         "scope": {key: request[key] for key in ("task_kind", "scope", "source_shot_ids", "generation_authorized", "model_selected", "image_targets") if key in request},
@@ -1431,15 +1543,21 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "# 阶段启动包", "",
         f"- Skill：`{args.skill}`",
         f"- 目标：{objective}",
+        *([f"- 本轮开工决定：`{project / REQUEST_PATH}` 的 `kickoff` 已纳入任务依据；阶段沿用已登记的产品、画布及生图授权范围。"] if kickoff else []),
+        *([f"- 产品参考包：`{product_pack['manifest_path']}`，用 `kickoff --project` 读取本轮用途的准确文件、职责与缺口；逐镜选用。"] if product_pack else []),
         *(["- execution_mode: candidate_test；review_status: unreviewed；production_blocked: true。仅候选文本/结构试跑，不生成、不发布、不正式采用。"] if testing else []),
         f"- 本轮唯一任务依据：`{_task_basis_path(project)}`（机器完整记录；通过 ensure-prepared --show-task-basis 读取目标、输入与冻结验收项，不整份打印后台目录）",
         f"- 交付意图：`{json.dumps(delivery_contract, ensure_ascii=False)}`；按本轮交付对象及适用检查项审核。",
         f"- 根规则：`{ROOT / 'PROJECT_RULES.md'}`",
         f"- Skill 入口：`{skill_dir / 'SKILL.md'}`",
+        "- 上下文较长或压缩恢复后：重读根规则与当前 Skill；以下细则原文已不可用时重新读取。冻结与阅读记录不证明内容仍在上下文。",
+        *(["- 本轮适用细则（准确版本已冻结在 task_basis.json）：",
+           *[f"  - `{path}`" for path in rule_documents]] if rule_documents else []),
         "- 执行分工：遵守根规则的干净上下文启动规则；新一轮编导等创作生产或实质重跑由全新专属生产 agent 执行，不继承长主会话；本轮执行者读取、准备、产出并自查。其他任务按根规则执行。",
         "- 上下文边界：交接当前有效规则、原始素材、本轮约束与已确认决定及依据、现行版本、未决事项、范围和停止点；不得以摘要替代原片。已在本轮专属 agent 内的逐段推进和局部返修可继续；目标、来源或基线重大变化时新开，不按修订号机械重开。",
         *([f"- 图片批次：`{_CONTEXT_ID.get()}`，本批冻结 {len(image_targets)} 个 image_targets；阶段负责人统筹整体方向、跨批连续性和正式交接，本批执行者读取真实参考、完成获准图片及实看自查，只回传准确路径与检查摘要。批次目录不构成已生成、已检查、人工确认或正式采用。"] if image_targets is not None else []),
         "- prepare 只生成文件，不清空宿主对话。读取规则见共享 knowledge-access.md；计量和停止条件见 docs/development/token-budget.md。",
+        _recovery_check_text(), "",
         "## 本轮范围", "",
         "- 交付对象、非目标、输入版本、范围字段和适用标准仅维护在上列 `task_basis.json`；本启动包不复制第二份范围记录。", "",
         "## 当前项目事实", "", "```json",
@@ -1522,9 +1640,9 @@ def handoff(args: argparse.Namespace) -> dict[str, Any]:
         "# 下一阶段交接卡", "",
         f"- 来源阶段：`{current_stage}`",
         f"- 目标 Skill：`{target_skill}`",
-        ("- execution_mode: candidate_test；review_status: unreviewed；production_blocked: true。只试写，不生成、不发布、不采用。" if testing else "- 交接状态：上游当前输入的用户确认与依赖已核对；本卡不证明语义审核通过，不启动、路由或批准下一阶段。"), "",
+        ("- execution_mode: candidate_test；review_status: unreviewed；production_blocked: true。只试写，不生成、不发布、不采用。" if testing else "- 交接状态：上游当前输入的有效采用依据与依赖已核对；本卡不启动、路由或批准下一阶段。"), "",
         ("## 本轮未确认候选输入" if testing else "## 当前有效上游产物"), "",
-        "- 语义自查：本卡未读取结论；执行者须核当前修订的实际自查、未决问题及适用的独立审核，不能从用户确认推定通过。", "",
+        "- 语义自查：本卡未读取结论。沿用当前修订有效的检查结论，核对未决项及本阶段新增用途。独立审核仅在用户明确要求时执行。", "",
     ]
     for item in inputs:
         lines.extend([
@@ -1540,15 +1658,16 @@ def handoff(args: argparse.Namespace) -> dict[str, Any]:
     startup_requirement = (
         "- `voiceover-to-video-script` 直接按其 Skill 的原始资料读取例外建立本段输入范围；不生成或校验 stage_startup.md。"
         if target_skill == "voiceover-to-video-script" else
-        "- 用户已确认上游且明确要求继续时，按根规则为下一 Skill 建立本轮执行者；创作新轮使用干净专属生产 agent，由其生成并校验 stage_startup.md，在该 Skill 边界内执行和自查。"
+        "- 按根规则为已授权的下一 Skill 建立执行者。统一入口的网站通过或有效自主采用后，按已登记的流程授权继续；兼容人工流程才要求另行明确继续。创作新轮由专属生产 agent 准备并校验 stage_startup.md。"
     )
     lines.extend([
         "", "## 接收约束", "",
+        *([f"- 从 `{project / REQUEST_PATH}` 直接读取本轮 `kickoff`；已有决定随项目沿用，缺项只影响依赖它的动作。"] if not testing and load_kickoff(project) else []),
         ("- 仅按独立测试授权继续候选试写；保留所有未核对事实和素材阻塞。视频 Skill 仍直接读取，不重建准备包。" if testing else startup_requirement),
         "- 编导交接须实际读准确正文、核来源和本轮自查结论；关键发现及未核范围复用现有任务记录，程序 ok 不代表叙事充分。",
         "- 创作新轮按根规则使用干净专属生产 agent，候选试跑与视频直接读取分支同样适用；同轮返修可继续原执行者。核对执行环境、仓库与当前规则；无法创建时如实报告，不冒称独立执行。生产委派不等于独立审核授权，仅用户明确要求时另行独立审核。",
         "- 图片由阶段负责人按准确输出身份汇总；生图批次执行者完成获准图片与实看自查，回传文件路径、版本及用途摘要。下游从有效登记取准确文件，同用途可引用已有观察；新增用途、版本变化或结论不足时定向实看。资产人审与下游补图自主采用仍按各自入口，不因批次完成互相替代。",
-        ("- 只消费以上未确认候选及准确稳定 ID；不得读取旧案例答案，不得写入确认记录。" if testing else "- 只消费以上已确认产物及其稳定 ID；不得读取旧生产对话或未列入启动包的历史内容。"),
+        ("- 只消费以上未确认候选及准确稳定 ID；不得读取旧案例答案，不得写入确认记录。" if testing else "- 只消费以上有效采用产物及其稳定 ID；不得读取旧生产对话或未列入启动包的历史内容。"),
         "- 本交接不等于下一阶段已启动，也不替代下一阶段的输入门禁。", "",
     ])
     output = _handoff_path(project)
@@ -1583,6 +1702,9 @@ def review_pack(args: argparse.Namespace) -> dict[str, Any]:
     if missing_evidence:
         raise StageContextError(f"外部审核证据不存在或不是文件：{missing_evidence}")
     basis_path, task_basis = _load_task_basis(project, args.skill)
+    manifest = task_basis.get("reading_manifest")
+    if isinstance(manifest, dict) and manifest.get("test_only_proposed_method_ids"):
+        raise StageContextError("隔离测试方法不能用于正式审核；请重新 prepare。")
     input_validation = _validate_current_inputs(project, task_basis)
     delivery_contract = task_basis.get("delivery_contract")
     if not isinstance(delivery_contract, dict):
@@ -1818,7 +1940,7 @@ def _ensure_prepared_base(args: argparse.Namespace) -> dict[str, Any]:
         source_snapshot = trial.get("archive_path")
         source_id = trial.get("source_id")
         rule_ids = trial.get("rule_ids")
-        profile = _read_json(ROOT / "skills" / skill / "knowledge-profile.json", default=None)
+        profile = _read_json(_local_knowledge_path(ROOT / "skills" / skill / "knowledge-profile.json"), default=None)
         if not isinstance(profile, dict) or not isinstance(source_snapshot, str) or not isinstance(source_id, str) or not isinstance(rule_ids, list):
             raise StageContextError("隔离候选来源绑定无效；请重新 prepare。")
         try:
@@ -1895,16 +2017,9 @@ def _ensure_prepared(args: argparse.Namespace) -> dict[str, Any]:
     project = Path(args.project).expanduser().resolve()
     if usage is not None:
         result["run_usage"] = usage
-    startup_text = (_context_dir(project, "stage_startup.md")).read_text(encoding="utf-8")
     manifest = _reading_manifest(project)
     if not isinstance(manifest, dict):
-        startup_text = (_context_dir(project, "stage_startup.md")).read_text(encoding="utf-8")
-        if "以下全文已写入 `method_reading_packet.md`" in startup_text:
-            raise StageContextError("必读专业方法任务清单缺失或无效，请重新 prepare。")
-        if "本启动包含显式测试候选方法" in startup_text:
-            result["ok"] = False
-            result["production_blocked"] = "test_only_proposed_method_binding"
-        return result
+        raise StageContextError("启动包缺少仓库内置知识来源证据（阅读任务清单缺失或无效）；请重新 prepare。")
     skill = result["skill"]
     _, basis = _load_task_basis(project, skill)
     result.update(_validate_current_inputs(project, basis))
@@ -1956,9 +2071,10 @@ def record_method_reading(args: argparse.Namespace) -> dict[str, Any]:
     if sorted(requested) != sorted(methods) or len(requested) != len(set(requested)):
         raise StageContextError("读取证据必须一次列出且仅列出本轮全部必读专业方法 ID。")
     requested_candidates = list(getattr(args, "candidate_rule", None) or [])
-    vault = _vault_root(getattr(args, "vault", None)) if requested_candidates else Path(str(manifest.get("vault_root") or ""))
-    if requested_candidates and manifest.get("vault_root") != str(vault):
-        raise StageContextError("读取 Vault 根必须与 prepare 时解析的 Vault 根一致。")
+    supplied_root = getattr(args, "vault", None)
+    vault = Path(manifest["vault_root"])
+    if supplied_root is not None and _vault_root(supplied_root) != vault:
+        raise StageContextError("读取知识根必须与 prepare 时的仓库内置根一致。")
     catalog = {item.get("id"): item for item in manifest.get("candidate_catalog", []) if isinstance(item, dict)}
     if len(requested_candidates) != len(set(requested_candidates)) or any(rule not in catalog for rule in requested_candidates):
         raise StageContextError("候选读取只能列出当前 `knowledge_candidates.md` 中的非重复规则 ID。")
@@ -1987,11 +2103,11 @@ def record_method_reading(args: argparse.Namespace) -> dict[str, Any]:
                 raise StageContextError(f"候选知识与当前已选知识冲突：{left['id']} / {right['id']}。")
     packet = _context_dir(project, "method_reading_packet.md")
     if not packet.is_file():
-        raise StageContextError("必读方法全文快照缺失；请重新 prepare，不能登记读取。")
+        raise StageContextError("必读方法快照缺失；请重新 prepare，不能登记读取。")
     existing = packet.read_bytes()
     base_length = manifest.get("method_packet_bytes")
     if not isinstance(base_length, int) or base_length < 0 or len(existing) < base_length or hashlib.sha256(existing[:base_length]).hexdigest() != manifest.get("method_packet_sha256"):
-        raise StageContextError("必读方法全文快照已被修改；请重新 prepare，不能登记读取。")
+        raise StageContextError("必读方法快照已被修改；请重新 prepare，不能登记读取。")
     packet_text = existing[:base_length].decode("utf-8") + (_candidate_packet(adopted, scopes) if adopted else "")
     write_text_if_changed(packet, packet_text)
     evidence = {"schema_version": "1.0", "skill": skill, "project_path": str(project), "vault_root": str(vault), **identity,
@@ -2047,12 +2163,15 @@ def parser() -> argparse.ArgumentParser:
     source_index.add_argument("--skill", required=True)
     source_index.add_argument("--source-id", required=True)
     source_index.add_argument("--snapshot", required=True, help="显式提供已核验 Library 快照的本地物化路径")
+    kickoff = commands.add_parser("kickoff", help="核对或登记现有项目需求中的开工决定")
+    kickoff.add_argument("--project", required=True, type=Path)
+    kickoff.add_argument("--answers-json", type=Path, help="已确认的开工决定 JSON 对象；省略则只读")
     start = commands.add_parser("prepare")
     start.add_argument("--project", required=True)
     start.add_argument("--skill", required=True)
     start.add_argument("--objective", required=True)
     start.add_argument("--request-json")
-    start.add_argument("--vault")
+    start.add_argument("--vault", help="兼容旧命令；如提供，必须是本仓库 knowledge/runtime")
     start.add_argument("--actor-id", help="实际执行此任务的 agent 标识；缺失时阅读声明不能放行")
     start.add_argument("--task-id", help="稳定任务标识；同一任务重 prepare 可复用同版阅读声明")
     start.add_argument("--change-id")
@@ -2086,7 +2205,7 @@ def parser() -> argparse.ArgumentParser:
     receipt.add_argument("--method", action="append", default=[], help="已完整阅读的必读专业方法 ID，可重复")
     receipt.add_argument("--candidate-rule", action="append", default=[], help="实际采用并按精确目录读取的候选规则 ID，可重复")
     receipt.add_argument("--candidate-scope", action="append", default=[], help="跨职责候选的本职采用范围：ID=范围及适用理由；范围外内容不成为产出要求")
-    receipt.add_argument("--vault", help="必须与 prepare 时的 Vault 根相同")
+    receipt.add_argument("--vault", help="兼容旧命令；如提供，必须是本仓库 knowledge/runtime")
     candidate_receipt = commands.add_parser("record-candidate-reading")
     candidate_receipt.add_argument("--project", required=True)
     candidate_receipt.add_argument("--skill", required=True)
@@ -2144,6 +2263,33 @@ def main(argv: list[str] | None = None) -> int:
         result = configure_test(Path(args.project), args.run_id, args.authorization_ref, args.input_artifact, current_stage=args.skill, usage_contract=usage_contract)
     elif args.command == "candidate-source-index":
         result = candidate_source_index(args)
+    elif args.command == "kickoff":
+        project = args.project.resolve(strict=True)
+        if not project.is_dir():
+            raise StageContextError("开工决定必须从业务项目目录读取")
+        if args.answers_json:
+            answers = validate_kickoff(json.loads(args.answers_json.read_text(encoding="utf-8-sig")),
+                                       for_registration=True)
+            with project_lock(project):
+                require_production(project)
+                path = project / REQUEST_PATH
+                request = _read_json(path, default={})
+                if not isinstance(request, dict):
+                    raise StageContextError("项目需求必须是 JSON 对象")
+                previous = request.get("kickoff")
+                existing = previous.get("product") if isinstance(previous, dict) else None
+                selected = answers["product"]
+                if (isinstance(existing, dict) and existing.get("reference_pack_sha256")
+                        and selected.get("reference_pack_sha256")
+                        and (existing.get("product_id"), existing.get("reference_pack_revision"))
+                        == (selected["product_id"], selected["reference_pack_revision"])
+                        and existing["reference_pack_sha256"] != selected["reference_pack_sha256"]):
+                    raise StageContextError("已有项目锁定的同一参考包版本字节已变化，请还原文件或选择新版本")
+                write_json(path, {**request, "kickoff": answers})
+        kickoff = load_kickoff(project)
+        result = {"ok": kickoff is not None, "path": str(project / REQUEST_PATH), "kickoff": kickoff}
+        if kickoff and (pack := resolve_product_pack(kickoff["product"])):
+            result["product_reference_pack"] = pack
     elif args.command == "prepare":
         result = prepare(args)
     elif args.command == "ensure-prepared":

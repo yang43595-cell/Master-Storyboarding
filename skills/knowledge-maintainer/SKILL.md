@@ -7,7 +7,7 @@ description: 用于 Master-Storyboarding 项目知识治理、知识入口审计
 
 开始本职任务前读取[共用三层规范](../_shared/skill-layers.md)。本 Skill 适用边界：维护现有来源、绑定与生命周期；只读审计和授权维护分开，不进入生产，不把固定快照当可写主库。
 
-由当前执行者按 [PROJECT_RULES.md 的 Skill 执行分工](../../PROJECT_RULES.md#skill-执行分工) 执行本阶段；默认由主 agent 直接执行和自检，已明确委派时由受派执行者完成。维护仅按已授权范围和下列维护输入执行，不套用生产阶段启动包或自动进入生产链。
+由当前执行者按 [PROJECT_RULES.md 的 Skill 执行分工](../../docs/rules/execution.md#skill-执行分工) 执行本阶段；默认由主 agent 直接执行和自检，已明确委派时由受派执行者完成。维护仅按已授权范围和下列维护输入执行，不套用生产阶段启动包或自动进入生产链。
 
 ## 职责
 

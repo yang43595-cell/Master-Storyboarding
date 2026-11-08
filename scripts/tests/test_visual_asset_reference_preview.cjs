@@ -37,11 +37,11 @@ test('project references outside the collection still appear as inputs',()=>{
 });
 
 function characterFinalContext(route='build'){
- const ctx=setup();ctx.s={kind:'人物1x4',name:'最终人物1×4',status:'waiting',outfit_id:'outfit',generation_enabled:route==='build',dependencies:route==='build'?['head','clothes']:[],reference_ids:['room']};
+ const ctx=setup();ctx.s={kind:'人物1x4',key:'outfit_final',output_id:'HOME-FINAL',name:'最终人物1×4',status:'waiting',outfit_id:'outfit',generation_enabled:route==='build',dependencies:route==='build'?['head','clothes']:[],reference_ids:['room']};
  ctx.j={id:'job',ast_id:'AST-PERSON',title:'人物',character_workflow:{outfits:[{id:'outfit',route}]},steps:[ctx.s,{key:'head',name:'共用大头照',status:'confirmed',project_confirmation:{}},{key:'clothes',name:'服装三视图',status:'confirmed',project_confirmation:{}}]};
  const projects=fs.readFileSync(path.join(__dirname,'../visual_asset_ui/projects.js'),'utf8');
  vm.runInContext(projects.slice(projects.indexOf('function projectGenerationReady('),projects.indexOf('function projectSlotList(')),ctx);
- ctx.lookupProjectSlot=()=>({key:'job:0',job:ctx.j,step:ctx.s});ctx.workspaceBusy=()=>false;ctx.requirementScene='';
+ ctx.lookupProjectSlot=()=>({key:'job:0',job:ctx.j,step:ctx.s});ctx.workspaceBusy=()=>false;ctx.requirementScene='';ctx.projectData={review_workflow:'legacy'};
  ctx.modal=(title,html)=>{ctx.html=html;};
  vm.runInContext(full.slice(full.indexOf('function openStep('),full.indexOf('function openPrompt(')),ctx);
  return ctx;
@@ -52,7 +52,7 @@ test('new character final uses the normal AI generation flow after both prerequi
  const waiting=vm.runInContext('compactStep(j,s)',ctx);
  assert.doesNotMatch(waiting,/disabled|自动合成|重试合成/);
  vm.runInContext("openStep('job:0')",ctx);
- assert.match(ctx.html,/data-w-prompt="job:0" >查看待生成步骤/);
+ assert.match(ctx.html,/data-w-prompt="job:0" >查看待生成步骤/);assert.match(ctx.html,/输出 ID HOME-FINAL/);
  ctx.j.steps[2].status='waiting';delete ctx.j.steps[2].project_confirmation;
  assert.equal(vm.runInContext('projectGenerationReady(j,s)',ctx),false);
  vm.runInContext("openStep('job:0')",ctx);

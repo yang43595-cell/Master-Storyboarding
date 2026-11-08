@@ -97,6 +97,59 @@ def test_cli_fails_without_mutating_files(tmp_path):
     assert before=={str(p):p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}
 
 
+def required_shot_submission(tmp_path, *, source_seconds=5, declared_total=None):
+    frozen, manifest = fixture(tmp_path)
+    row = frozen['drafts'][0]
+    clause = 'Keep the lantern flame and the striker together in close view until ignition.'
+    segment = {'segment_id': 'SEG', 'prompt': clause, 'source_shot_ids': ['S1'], 'shot_durations': [source_seconds]}
+    if declared_total is not None:
+        segment['duration_seconds'] = declared_total
+    source_files = {
+        'BOARD': {'scenes': [{'scene_id': 'ROOM', 'shots': [{'shot_id': 'S1', 'required_visuals': [
+            {'prompt_clause': clause, 'min_seconds': 3}]}]}]},
+        'VIDEO': {'source_storyboard': {'path': 'board.json', 'revision': 'R1'}, 'generation_segments': [segment]},
+    }
+    state_path = tmp_path / '00_项目管理/project_state.json'
+    state = json.loads(state_path.read_text())
+    for ident, payload in source_files.items():
+        path = tmp_path / (ident.lower() + '.json')
+        write_json(path, payload)
+        reference = dict(artifact_id=ident, revision='R1', sha256=artifacts.digest(path))
+        frozen['source_artifacts'].append(reference)
+        logical_id = 'storyboard.package' if ident == 'BOARD' else 'synthetic.video'
+        manifest['artifacts'].append(dict(reference, logical_id=logical_id, type='document',
+            path_or_url=path.name, checksum=reference['sha256'], status='current', user_approved=True,
+            confirmation_ref='confirmation.json', depends_on=[]))
+        state['current_artifacts'].append(ident)
+        state['user_confirmations'][0]['artifact_ids'].append(ident)
+    write_json(state_path, state)
+    write_json(tmp_path / artifacts.MANIFEST_PATH, manifest)
+    row.update(source_segment_id='SEG', prompt=clause)
+    row['quality_evidence']['input_sha256'] = q.fingerprint(q.draft_binding(row))
+    return frozen
+
+
+def test_formal_preflight_checks_required_shot_in_actual_prompt_even_with_fresh_evidence(tmp_path):
+    frozen = required_shot_submission(tmp_path)
+    assert canvas_readback.validate_submission(frozen, tmp_path)['ok']
+
+    row = frozen['drafts'][0]
+    row['prompt'] = 'The lantern is already lit.'
+    row['quality_evidence']['input_sha256'] = q.fingerprint(q.draft_binding(row))
+    with pytest.raises(ValueError, match='required_visuals: S1.*正文缺少'):
+        canvas_readback.validate_submission(frozen, tmp_path)
+
+
+@pytest.mark.parametrize('source_seconds', [5, 6], ids=['matching', 'impossible'])
+def test_formal_preflight_checks_linked_source_shot_schedule_against_declared_total(tmp_path, source_seconds):
+    frozen = required_shot_submission(tmp_path, source_seconds=source_seconds, declared_total=5)
+    if source_seconds == 6:
+        with pytest.raises(ValueError, match=r'SEG.*(?:片段总长|逐镜合计)'):
+            canvas_readback.validate_submission(frozen, tmp_path)
+    else:
+        assert canvas_readback.validate_submission(frozen, tmp_path)['ok']
+
+
 def test_historical_compare_not_upgraded(tmp_path):
     frozen,_=fixture(tmp_path)
     legacy={k:copy.deepcopy(frozen[k]) for k in ('target_url','drafts')}

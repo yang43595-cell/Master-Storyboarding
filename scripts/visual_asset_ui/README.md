@@ -3,8 +3,8 @@
 入口：`scripts/打开视觉资产库.cmd`。默认地址 `http://127.0.0.1:8766`，仅本机访问。
 
 运行环境使用 Codex 内置 Python / Pillow；启动脚本只启动本次本地服务，不安装依赖、不设置开机启动。
-网页缓存和制作记录默认位于执行仓库 `.master-storyboarding/visual-library/`；收藏资产的原文件、索引和说明以知识库 `资产库/` 为准。新上传制作参考保存在本地库 `assets/<ID>/`，项目参考保存在项目内，均不进入 Git。
-可通过 `visual_asset_library.py --library <路径> serve` 指定其他数据目录；代码不绑定某部短剧。
+网页缓存和制作记录默认位于执行仓库 `.master-storyboarding/visual-library/`；收藏资产的原文件、索引和说明以素材存储根目录的 `资产库/` 为准。新上传制作参考保存在本地库 `assets/<ID>/`，项目参考保存在项目内，均不进入 Git。
+可通过 `visual_asset_library.py --library <路径> serve` 指定其他数据目录。已有资产库存放在独立位置时，在命令前部加 `--asset-vault <素材存储根目录>`，或设置 `MSB_ASSET_VAULT_ROOT`。此设置只指定其 `资产库/` 子目录的图片、视频和索引。资产 Skill 的方法和模板统一使用仓库内置资料。项目选用的图片、视频仍可来自素材库；项目任务引用的文字说明须登记在项目内或随仓库提供。
 
 ## 入库与项目选用
 

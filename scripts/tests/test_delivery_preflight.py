@@ -179,6 +179,61 @@ def test_delivery_pass_must_match_snapshot_and_current_registered_inputs(tmp_pat
         rc.confirm_candidate(tmp_path, change_id='DELIVERY', approval_ref='fixture:user')
 
 
+def test_delivery_revision_requires_report_with_observed_project_id(tmp_path):
+    frozen, observed = delivery(tmp_path)
+    frozen['target_project_id'] = observed['target_project_id'] = 'exact-platform-project'
+    observed['frozen_sha256'] = digest(frozen)
+    logical = 'canvas.delivery'
+    old = tmp_path / 'old-delivery.json'
+    old.write_text('{}')
+    manifest = artifacts.load_manifest(tmp_path)
+    manifest['artifacts'].append({'artifact_id': 'OLD', 'logical_id': logical, 'revision': 'R01',
+        'status': 'current', 'user_approved': True, 'path_or_url': old.name, 'checksum': artifacts.digest(old)})
+    write_json(tmp_path / artifacts.MANIFEST_PATH, manifest)
+    rc.open_change(tmp_path, change_id='DELIVERY', tier='T1', logical_ids=[logical], reason='fixture')
+    rc.confirm_impact(tmp_path, change_id='DELIVERY', approval_ref='fixture:impact')
+    candidate = tmp_path / 'delivery.json'
+    write_json(candidate, frozen)
+    rc.record_candidate(tmp_path, change_id='DELIVERY', artifact_id='NEW', logical_id=logical,
+                        artifact_type='json', candidate_path=candidate.name, revision=frozen['revision'])
+
+    report = compare(frozen, observed, tmp_path)
+    assert report['ok'] and report['observed_target_project_id'] == 'exact-platform-project'
+    report_path = tmp_path / 'report.json'
+    old_pass = {key: value for key, value in report.items() if key != 'observed_target_project_id'}
+    for invalid in [old_pass, {**report, 'observed_target_project_id': 'other-project'}]:
+        write_json(report_path, invalid)
+        with pytest.raises(rc.RevisionControlError, match='项目 ID'):
+            rc.record_review(tmp_path, change_id='DELIVERY', verdict='approved', report_ref=report_path.name)
+    write_json(report_path, report)
+    rc.record_review(tmp_path, change_id='DELIVERY', verdict='approved', report_ref=report_path.name)
+
+    def restore_pre_upgrade_receipt():
+        # Simulate the persisted receipt and exact bytes produced before this guard.
+        old_report_path = tmp_path / 'old-report.json'
+        write_json(old_report_path, old_pass)
+        control_path = tmp_path / rc.CONTROL_RELATIVE
+        control = read_json(control_path)
+        control['active_change']['review'].update(
+            report_ref=old_report_path.name, report_sha256=artifacts.digest(old_report_path))
+        write_json(control_path, control)
+
+    restore_pre_upgrade_receipt()
+    with pytest.raises(rc.RevisionControlError, match='项目 ID'):
+        rc.confirm_candidate(tmp_path, change_id='DELIVERY', approval_ref='fixture:user')
+    rc.record_review(tmp_path, change_id='DELIVERY', verdict='approved', report_ref=report_path.name)
+    rc.confirm_candidate(tmp_path, change_id='DELIVERY', approval_ref='fixture:user')
+    confirmation = read_json(tmp_path / rc.CONTROL_RELATIVE)['active_change']['candidate_confirmation']
+    restore_pre_upgrade_receipt()
+    with pytest.raises(rc.RevisionControlError, match='项目 ID'):
+        rc.commit_change(tmp_path, change_id='DELIVERY')
+    rc.record_review(tmp_path, change_id='DELIVERY', verdict='approved', report_ref=report_path.name)
+    change = read_json(tmp_path / rc.CONTROL_RELATIVE)['active_change']
+    assert change['status'] == 'commit_ready' and change['candidate_confirmation'] == confirmation
+    assert read_json(tmp_path / 'old-report.json') == old_pass
+    assert rc.commit_change(tmp_path, change_id='DELIVERY')['state'] == 'committed'
+
+
 def delivery_cli(root, *extra):
     import sys
     return subprocess.run([sys.executable, '-m', 'scripts.canvas_readback',

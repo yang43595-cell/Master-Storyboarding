@@ -13,8 +13,9 @@ def origin(kind='authored_addition', **kw):
                 author='synthetic writer', purpose='transition', revision='R01', **kw)
 
 
-def fixture(root):
-    setup(root)
+def fixture(root, *, isolated=True):
+    if isolated:
+        setup(root)
     sources, rows = [], []
     for i, text in [(1, '甲句。'), (2, '乙句。')]:
         path = root / f'raw{i}.json'
@@ -37,7 +38,8 @@ def bind(root, record):
     n = narrative(root)
     n.pop('human_readable_path')
     n['status'] = 'candidate'
-    n['asset_requirements'][0].update(image_decision='需要制作', image_reason='synthetic')
+    n['asset_requirements'][0].update(image_decision='需要制作', image_reason='synthetic',
+                                      character_output_kind='人物单图')
     n['dialogues'] = [dict(dialogue_id=r['dialogue_id'], text=r['text'], speaker_id='CHR-A',
         source_paragraph_id='STP-01', status='draft', source_ref='review.json') for r in record['dialogues']]
     n['story_paragraphs'][0]['text'] = '\n'.join(f'主角（{r["dialogue_id"]}）："{r["text"]}"' for r in record['dialogues'])
@@ -223,9 +225,9 @@ def test_production_requires_binding_even_when_package_claims_legacy_layout(tmp_
     assert n == before
 
 
-def verified_package(root):
+def verified_package(root, *, isolated=True):
     """A new synthetic record, not an upgrade of any historical confirmation."""
-    record = fixture(root)
+    record = fixture(root, isolated=isolated)
     for row in record['dialogues']:
         row['speaker_status'] = 'verified'
         row['verification'] = dict(scope='dialogue', dialogue_id=row['dialogue_id'],
@@ -265,7 +267,8 @@ def test_silent_new_package_does_not_require_dialogue_record(tmp_path):
     n.pop('human_readable_path')
     n['dialogues'] = []
     n['story_paragraphs'][0]['text'] = '人物沉默。'
-    n['asset_requirements'][0].update(image_decision='需要制作', image_reason='synthetic')
+    n['asset_requirements'][0].update(image_decision='需要制作', image_reason='synthetic',
+                                      character_output_kind='人物单图')
     story_sources.validate_story_sources(n, project_root=tmp_path, require_dialogue_evidence=True)
 
 

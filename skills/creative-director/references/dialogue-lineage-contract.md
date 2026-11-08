@@ -24,21 +24,21 @@
 - `authored_addition`：没有原片对应句的作者新增（也包括用户直接给出的新句）。`source_ids: []`，`origin` 同时记录 `reference`（真实创作要求/用户消息引用）、`scope`（允许创作范围）、`author`、`purpose`、`revision`（创作修订）。不得编造原片来源、`editorial_proposal.original_text`、`source_locator` 或 `verified_timing`。
 - `authorized_revision`：有原片对应句的授权修订/改编。`origin` 记录上述五项，`reference/scope` 指向真实授权及范围；复用 `editorial_proposal` 的原文→拟改文、理由、`source_ids`，保留原始来源。与听辨纠错区分，不把新措辞说成原片音轨。
 
-缺 `origin` 的旧行继续原来源规则和已有解释修订入口，不自动豁免。新增/改编的创作依据不等于逐字批准：未实际核对仍无 `verification`；用户可在整稿审核中确认其明确覆盖的准确修订和对白范围，不另强制逐句确认；实际逐字确认才用 `method: user_confirmation`，不允许 `human_listening` 或原片已核时码。程序只检查声明字段，不能验证消息真实、授权范围语义或产品客观功效；广告说法仍须对照真实产品资料，缺依据留未决，不以作者身份补证。
+缺 `origin` 的旧行继续原来源规则和已有解释修订入口。新增或改编对白有真实创作或授权依据、已明确说话人及其归属依据，且仅待用户审定措辞时，可随整稿首次送审。此时说话人状态为 `verified`，`verification` 留空，由用户审定准确修订及覆盖范围。只有真实逐字确认才能填写 `method: user_confirmation`。广告说法须另核真实产品资料，疑点留在对应位置。
 
 原片保真任务混入上述新来源时，以可选 `source_baseline: {"path": "已有原始抽取审核.json", "sha256": "原记录准确hash"}` 绑定已保留的抽取稿，不从当前创作稿倒抄基线、不增加平行业务稿或基线链。校验完整保留其原始 `sources`，再从当前完整表投影原片 DLG，比对 ID、来源、字词与顺序；作者新增不能复用原片 ID。基线本身仍可能有听辨/人物错误，绑定字节不是核对确认。纯原创任务不需要原片基线；旧记录缺此字段兼容，但报告 `source_fidelity_checked: false`，不得宣称已自动证明原片无遗漏或换序。
 
 原片改字走上述 `authorized_revision` + `editorial_proposal`。删除/换序只在同一记录可选 `source_changes[]` 留精确映射：`action: delete` + `dialogue_id`，或 `action: reorder` + 完整剩余原片 `dialogue_ids` 顺序；每项带真实授权 `reference`、`scope`、`reason`，不删除原始证据。缺授权不通过，空引用/布尔“已授权”不通过；引用真实性仍须执行者核对。
 
-审核表与叙事、正文依然全量全序一致；所有新增行同样要真实人物/STP、唯一 DLG、下游对白承载。测试态仅沿已存在的 `candidate_test` 允许未核候选推进，继续 `unreviewed` / `production_blocked`；正常生产仍须真实逐字核对及产物确认。正式采用和返修提交使用 `validate_story_sources(..., require_dialogue_evidence=True)`：含对白叙事包必须同时绑定 `dialogue_evidence_path` 与 `dialogue_evidence_sha256`，再核字节、原文、身份和未核状态；不能删除两字段或添加 `human_readable_path` 伪装历史包。历史未绑定包仅保留只读一致性检查，返回 `not_bound_unverified`、未核 DLG 及 `formal_adoption_allowed:false`，不证明完整来源或听核。当前确认产物的后续消费仍核登记字节；已有显式隔离候选及批准正文有限来源例外不变，不新增确认。程序不证明自由文本内容正确、真实听核或真人批准，不宣称全部外部手工改写出口已封闭。
+完整稿以 `dialogue_evidence_path` 和 `dialogue_evidence_sha256` 绑定审核记录，审核表、叙事包及正文的对白、说话人、段落和顺序须一致。候选整稿走[编导送审入口](../SKILL.md#本轮执行-sop)，该校验仅允许上段所述的待审定措辞。原片保真对白缺核验、说话人不明、授权或来源缺失时，仍须查实。正式采用须有覆盖该准确版本和范围的真实人工批准，按项目规则记录。网站发布或版本回读只说明送审状态，批准回执未能实际取得时保留待审。历史无绑定包只作一致性检查。显式 `candidate_test` 保留隔离试跑及现有生产阻塞。
 
-运行 `python -m scripts.core.story_sources --project <项目> --dialogue-review <审核记录>`，返回差异与未核行，不凭检查通过登记确认。新任务形成完整稿时以 `dialogue_evidence_path` 与 `dialogue_evidence_sha256` 绑定这份记录的准确字节，现有 `--narrative` 校验会核对行序、原文、speaker_id 及未核状态；历史未绑定记录的包沿原校验，不声称已补足来源核对，也不复制一份同义业务稿。
+仅做对白先行核对或诊断某份审核记录时，可运行 `python -m scripts.core.story_sources --project <项目> --dialogue-review <审核记录>`。完整叙事包校验已包含审核记录的校验。
 
 `source_locator` 的 `start/end` 仅用于找原片位置，ASR 时码默认属于此类；不得当导演精确对白时间。仅实际逐句对齐后记录 `verified_timing` 的 `start/end`、`verification_ref`、`reviewer`，且该行已有上述核对记录。没有已核时码不阻挡无精确时间承诺的故事创作；下游不得把定位时间自动升格。程序只检查显式数值与声明，不能听辨、判断转场或自动验证对齐准确性。
 
 对白先行核对属于完整叙事包形成前的审核步骤，可先在对话核对；仅对白核对不运行完整叙事包校验，故事尚未产出时来源 STP 可空，不为校验提前制造段落或事件。需持久保存时只保留一份必要的 JSON 审核记录，注明对白范围与阶段未完成，不登记为 narrative.package，不另维护同义 Markdown；该记录不是 schema 2.0 完整交付包。编导先完成可做的来源核对、剧情分析和正文，补齐真实 STP 后交完整候选稿给用户整稿审核；不以逐句用户确认作为写正文的前置条件。无法核实的内容原位标明并集中提问，不能为过校验编造 verification。正式生产仍受未核阻塞；候选试跑只用既有隔离路径。用户另行要求先审对白时才采用对白先行支路，其确认不扩展为整稿确认。
 
-新业务稿以 JSON 保存全部故事与对白，送审前运行 `python -m scripts.core.story_sources --project <项目> --narrative <叙事包>`。只有历史双文件或飞书核对分支实际成立时，才读 [旧交付与核对流程](./dialogue-legacy-workflows.md) 的对应部分，不要求新流程复刻 Markdown 和旧表格。
+新业务稿在同一 JSON 中保存全部故事与对白。历史双文件或飞书核对分支成立时，按[旧交付与核对流程](./dialogue-legacy-workflows.md)处理。
 
 引用获批对白依据时，不得用当前候选自身或倒抄候选制造批准基线。无新修改时复用有效核对结果；用户明确删改时在现有变更说明记录受影响 ID、原句、新句和授权，保留旧依据。首次原样提取还须核对来源的保留、拆分、授权删除或改写去向，以及原片的人物发言证据；不能用空依据或文件一致性代替真实核对。
 
@@ -64,6 +64,6 @@
 
 下游只能给对白附加承载方式，不得改写 `text`、`speaker_id` 或 `source_paragraph_id`。删改、合并、换说话人或无法承载时必须显式返回缺口；编导阶段不设计镜头、逐句时间窗或强制口型动作。
 
-结构化后沿用 `python -m scripts.core.story_sources --project <项目> --narrative <叙事包>`，双向核对完整对白依据、正文和 JSON 的文字、人物、顺序及来源段落，拒绝相对当前对白依据的遗漏、同一 DLG 的重复承载和未登记对白；不同发言事件即使文字相同也不去重。正文每次发言单独起行，写作 `人物名（DLG-001）："完整对白"`；也支持中文引号或同一行不加外层引号。人物名须对应 CHARACTER 资产的 `name`，或直接使用 `speaker_id`，不由程序猜昵称；兼容既有 `CHR-LINLIN` 实体对应 `LINLIN` 说话者的写法。动作另起段落，原句内的引号和换行保留。历史表格才按 [旧表格转义](./dialogue-legacy-workflows.md#旧表格转义)处理；正文已知人物的独立发言缺少 DLG 时会报错，非标准发言仍须自查。格式无法识别时报告具体行，不跳过核对。
+整包校验双向核对对白依据、正文和 JSON，拒绝相对当前对白依据的遗漏、同一 DLG 的重复承载和未登记对白。不同发言事件即使文字相同也分别保留。正文每次发言单独起行，写作 `人物名（DLG-001）："完整对白"`，也支持中文引号或同一行省略外层引号。人物名须对应 CHARACTER 资产的 `name`，或直接使用 `speaker_id`，兼容既有 `CHR-LINLIN` 实体对应 `LINLIN` 说话者的写法。动作另起段落，原句内的引号和换行保留。历史表格按[旧表格转义](./dialogue-legacy-workflows.md#旧表格转义)处理。非标准发言仍须自查，发现无法识别的格式时报告具体行。
 
 该检查证明文件间一致，不证明共同遗漏了原片句子、人物识别正确或外部产品说法属实；这些仍回到原片、获批对白及授权删改逐项核对。候选时的状态文字可因保留已审原文而继续存在；交付时同时给出当前修订和既有采用记录，不从旧 `draft/candidate` 字样重置确认，也不把采用文案说成事实核验。

@@ -44,7 +44,7 @@
       "id": "VGEN-CREATOR-POLISHING-MASK-USE",
       "path": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/方法.md",
       "binding_status": "user_confirmed",
-      "direct_read_when": "产品为造物者抛光面膜，且本轮确有已确认的真实使用过程时",
+      "direct_read_when": "明确选用造物者温泉酸面膜，即造物者抛光面膜（温泉酸 2.0，creator-polishing-mask-2）时，读取同一方法的「可直接套用的制作模板」及当前展示或真实使用适用部分",
       "applies_when": "当前直读视频提示词流程",
       "requires": {"skill": "voiceover-to-video-script", "direct_read": true}
     }
@@ -52,9 +52,9 @@
   "conditional_experiences": [
     {
       "id": "VGEN-SCALE-CONTINUITY-CASE-LOOKUP",
-      "path": "projects/Master-Storyboarding/经验/经验索引.md",
+      "path": "projects/Master-Storyboarding/经验/跨片段尺度连续性/缩放角色的共享尺度参照缺口.md",
       "status": "conditional-reference",
-      "direct_read_when": "本轮已明确角色放大、缩小、微缩，或巨人/巨物涉及的比例状态与跨片段连续性、跨段衔接问题时，按索引定位相应案例并按需直读；普通任务不加载，类比不代表已验证",
+      "direct_read_when": "本轮已明确角色放大、缩小、微缩，或巨人/巨物涉及的比例状态与跨片段连续性、跨段衔接问题时，按需直读内置对应案例；普通任务不加载，类比不代表已验证",
       "retrieval_keywords": [
         "放大",
         "缩小",

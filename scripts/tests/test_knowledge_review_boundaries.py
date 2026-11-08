@@ -9,6 +9,10 @@ from scripts import stage_context_cli as cli
 from scripts.core.knowledge_blocks import KnowledgeBlock, load_policy
 from scripts.core.knowledge_selector import select_knowledge, render_knowledge_candidates
 from scripts.core.review_delta import fingerprint, lightweight_revision, revision_delta
+from test_stage_context_cli import isolated_stage_knowledge
+
+
+pytestmark = pytest.mark.usefixtures("isolated_stage_knowledge")
 
 
 def block(i, **changes):
@@ -208,7 +212,7 @@ def test_asset_body_prepare_freezes_only_applicable_methods_and_requires_reading
     request = Path(prepare.request_json)
     original_request = request.read_bytes()
     request.write_text(json.dumps({'asset_method_scopes': {'character': True, 'body': False}}))
-    with pytest.raises(cli.StageContextError, match='实质范围已改变'):
+    with pytest.raises(cli.StageContextError, match='开工决定或阶段请求已改变'):
         cli.ensure_prepared(gate)
     request.write_bytes(original_request)
     if human:

@@ -125,15 +125,12 @@ def test_permission_denial_is_read_error_not_missing_file(tmp_path, monkeypatch)
 
 
 def test_omitted_request_option_keeps_explicit_objective_without_inference(tmp_path):
-    from test_stage_context_cli import _method_vault
     project = tmp_path / 'project'
     write_state(project, [])
     manage = project / '00_项目管理'
     (manage / 'project-entry.md').write_text('Synthetic candidate R13 is unconfirmed')
-    vault = _method_vault(tmp_path / 'vault')
     args = cli.parser().parse_args(['prepare', '--project', str(project),
-        '--skill', 'storyboard-planner', '--objective', 'synthetic explicit objective',
-        '--vault', str(vault)])
+        '--skill', 'storyboard-planner', '--objective', 'synthetic explicit objective'])
     cli.prepare(args)
     basis = json.loads((project / cli.CONTEXT_DIR / 'task_basis.json').read_text())
     assert basis['request_path'] is None

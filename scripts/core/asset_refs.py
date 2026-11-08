@@ -4,7 +4,7 @@
 `build_asset_list()`——该函数是唯一权威，别处不再复述口径：
 - 资产网页的每次改动（取消／恢复／新增）落盘后调用 `scan_and_write()`，产出受影响位置清单；
 - `当前资产清单.json` 只是可重建快照，供人查看；工具读取与门禁一律走 `load_asset_list()` 现场派生；
-- 视频提交前用 `--require-image AST-ID@OUTPUT-ID` 核对具体确认输出，无图、输出不存在或已被
+- 视频提交前用 `--require-final-image AST-ID@OUTPUT-ID` 核对具体确认输出，无图、输出不存在或已被
   项目明确拒用都直接阻塞。
 """
 from __future__ import annotations
@@ -16,7 +16,9 @@ import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from .character_assets import character_type, uses_wardrobe
+from .character_assets import (character_type, uses_wardrobe, scoped_output_requirements,
+                               validate_output_plan, final_output_problems)
+from .image_technical import character_board_image_problem
 
 if __package__ == "scripts.core":
     from ..visual_asset_choices import effective, read_choices  # type: ignore
@@ -233,6 +235,7 @@ def _confirmed_output(root: Path, asset_id: str, output: dict) -> dict | None:
     return {
         "output_id": output.get("output_id"),
         "purpose": output.get("purpose"),
+        **({"output_kind": output["output_kind"]} if "output_kind" in output else {}),
         "view": output.get("view"),
         "state": output.get("state"),
         "candidate_id": output.get("candidate_id"),
@@ -659,6 +662,72 @@ def scope_assets(root: Path, requests: list[str]) -> tuple[list[dict], list[str]
     return result, problems
 
 
+def character_output_contract(root: Path, requests: list[str]) -> dict:
+    """Resolve final requirements from the adopted narrative and legacy adjustments."""
+    if not requests:
+        return {}
+    choices = read_choices(root)
+    if not choices.get("character_output_requirements") and not any(
+        entry.get("logical_id") == "narrative.package" and entry.get("status") == "current"
+        for entry in load_manifest(root).get("artifacts", [])
+    ):
+        return {}
+    return scoped_output_requirements(current_narrative(root), choices, requests)
+
+
+def check_output_plan(root: Path, request: dict, *, candidate_test_mode: bool = False) -> dict:
+    """Final target declarations must match upstream; intermediate targets stay usable."""
+    targets = request.get("image_targets", [])
+    if candidate_test_mode:
+        # Only the plan-only isolated route may read its exact registered candidates.
+        # Final confirmation and ordinary consumption keep character_output_contract.
+        from .candidate_test import resolve_inputs as resolve_candidate_inputs
+        records = resolve_candidate_inputs(root)
+        choices = read_choices(root)
+        stories = [entry for entry in records if entry.get("logical_id") == "narrative.package"]
+        if targets and (stories or choices.get("character_output_requirements")):
+            if len(stories) != 1:
+                raise ValueError("候选人物规格必须绑定唯一已登记的 narrative.package")
+            narrative = _read(project_path(root, stories[0]["path_or_url"]))
+            requirements = scoped_output_requirements(narrative, choices, targets)
+        else:
+            requirements = {}
+    else:
+        requirements = character_output_contract(root, targets)
+    problems = validate_output_plan(requirements, targets, request.get("image_output_kinds", {}))
+    if problems:
+        raise ValueError("；".join(problems))
+    return requirements
+
+
+def require_final_images(root: Path, requests: list[str]) -> tuple[bool, list[str]]:
+    """Check only this delivery scope, retaining ordinary confirmation/file checks."""
+    try:
+        requirements = character_output_contract(root, requests)
+        images = confirmed_images(root) if requirements else {}
+        problems = final_output_problems(requirements, requests,
+                                        {ast: image.get("outputs", []) for ast, image in images.items()})
+        # A bare AST means all registered finals; never demand intermediate build files.
+        expanded = []
+        for request in requests:
+            ast, marker, _ = request.partition("@")
+            expanded.extend([ast + "@" + output for output in requirements[ast]]
+                            if not marker and ast in requirements else [request])
+        ok, ordinary = require_images(root, expanded)
+        problems.extend(ordinary)
+        if ok and not problems:
+            for request in dict.fromkeys(expanded):
+                ast, _, final_id = request.partition("@")
+                if final_id not in requirements.get(ast, {}):
+                    continue
+                output = next(item for item in images[ast]["outputs"] if item["output_id"] == final_id)
+                if issue := character_board_image_problem(output["path"]):
+                    problems.append(f"{request}：{issue}")
+        return ok and not problems, problems
+    except ValueError as exc:
+        return False, [str(exc)]
+
+
 def require_images(root: Path, asset_ids: list[str]) -> tuple[bool, list[str]]:
     from .revision_control import guard_action
     try:
@@ -797,6 +866,7 @@ def main() -> int:
     parser.add_argument("--scan", nargs="+", metavar="AST-ID", help="扫描这些资产的引用影响")
     parser.add_argument("--write", action="store_true", help="把扫描结果写入变更影响目录并标注资产表")
     parser.add_argument("--require-image", nargs="+", metavar="AST-ID[@OUTPUT-ID]", help="图片可用性门禁；上传所用版本必须指定 @OUTPUT-ID")
+    parser.add_argument("--require-final-image", nargs="+", metavar="AST-ID[@OUTPUT-ID]", help="最终交付检查：仅核本次范围内明确登记的最终输出；不要求复用板的过程图")
     parser.add_argument("--require-reference", nargs="+", metavar="ART-ID", help="核对明确的分镜图/白模参考版本；不证明切点状态或视觉用途正确")
     parser.add_argument("--for-shots", nargs="+", metavar="SHOT-ID", help="限定本次非AST参考的获准镜号范围；不判定视觉状态/比例是否正确")
     args = parser.parse_args()
@@ -831,8 +901,12 @@ def main() -> int:
             if asset["name_hit_total"] > len(asset["name_hits"]):
                 print(f"    （另有 {asset['name_hit_total'] - len(asset['name_hits'])} 处文字命中，见影响清单文件）")
         return 0
-    if args.require_image or args.require_reference:
+    if args.require_image or args.require_reference or args.require_final_image:
         ok, problems = require_images(root, args.require_image) if args.require_image else (True, [])
+        if args.require_final_image:
+            finals_ok, finals_problems = require_final_images(root, args.require_final_image)
+            ok = ok and finals_ok
+            problems += finals_problems
         if args.require_reference:
             refs_ok, refs_problems = require_references(root, args.require_reference, args.for_shots)
             ok = ok and refs_ok

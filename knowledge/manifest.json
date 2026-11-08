@@ -71,10 +71,10 @@
     {
       "path": "projects/Master-Storyboarding/应用知识/导演规划/导演规划方法.md",
       "role": "method",
-      "sha256": "ae5bb6d5483849a16fe8432525ee085a8d7900aeb8f103e44cf528540d7ed24c",
-      "size_bytes": 13583,
-      "approval_assessment": "existing_documentary_adoption_only",
-      "inclusion_basis": "current profile user_confirmed binding"
+      "sha256": "c66ad42dbd80412f8769613b2204ad08d3c94a26df441d18f14a464b36242e4f",
+      "size_bytes": 15261,
+      "approval_assessment": "user_directed_scoped_wording_revision_2026-11-06_not_experiment_validated",
+      "inclusion_basis": "existing profile binding; scoped handheld-phone method revision directed by user"
     },
     {
       "path": "projects/Master-Storyboarding/应用知识/编导/编导方法.md",
@@ -95,10 +95,10 @@
     {
       "path": "projects/Master-Storyboarding/应用知识/视频提示词/提示词基础方法.md",
       "role": "method",
-      "sha256": "575cd6a15d87ab0610744bcea484ff75af472303d49db52f2f0fa015ad6aada3",
-      "size_bytes": 4143,
-      "approval_assessment": "existing_documentary_adoption_only",
-      "inclusion_basis": "current profile user_confirmed binding"
+      "sha256": "b0271701325b2701f41a0423e479805aa4815cd2cda7128994b2a5b4ce07f34a",
+      "size_bytes": 5263,
+      "approval_assessment": "user_directed_scoped_wording_revision_2026-11-06_not_experiment_validated",
+      "inclusion_basis": "existing profile binding; scoped handheld-phone method revision directed by user"
     },
     {
       "path": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法.md",
@@ -111,10 +111,10 @@
     {
       "path": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/方法.md",
       "role": "method",
-      "sha256": "ca51ef2848888318a1fb9f6940e7d5fdac78addece7418c579e0a8f351cefd6a",
-      "size_bytes": 10142,
-      "approval_assessment": "existing_documentary_adoption_only",
-      "inclusion_basis": "current profile user_confirmed binding"
+      "sha256": "c365e647df76edc9bb5b9039d11cbaa1eae7df0d8cf4994ea1508ea554ddede0",
+      "size_bytes": 17147,
+      "approval_assessment": "user_directed_product_template_2026-11-07_not_experiment_validated",
+      "inclusion_basis": "existing method binding; user-directed reusable product template in the repository runtime; original upstream capture metadata retained"
     },
     {
       "path": "wiki/concepts/02-镜头与剪辑/专业影视分镜设计与执行方法.md",
@@ -509,21 +509,27 @@
         "format": "complete_original_markdown",
         "note": "Source Markdown only; linked raw media and supplementary artifacts are not bundled or revalidated."
       }
+    },
+    {
+      "path": "wiki/entities/products/造物者温泉酸抛光面膜/视觉模板/造物者抛光面膜_真人上脸半透明胶膜生图模板.md",
+      "role": "template",
+      "sha256": "b4870ca15f371745fb5c33814cd41a10bc077512e7b011f2cbef9b94ffdb4dc6",
+      "size_bytes": 5864,
+      "upstream_sha256": "f6651b5136573cec68f7be005cea648401554663570a154173cd14320c36da67",
+      "approval_assessment": "existing_user_confirmed_face_template",
+      "inclusion_basis": "active asset and visual-supplement profile dependency; identify real images by task-local media and original checksums"
+    },
+    {
+      "path": "projects/Master-Storyboarding/经验/跨片段尺度连续性/缩放角色的共享尺度参照缺口.md",
+      "role": "reference_only",
+      "sha256": "d2fa2621054fba56f6fdc210bd19af5a2fb08325119ce147c49e49bb1724c321",
+      "size_bytes": 9720,
+      "approval_assessment": "existing_conditional_case_not_validated_remediation",
+      "inclusion_basis": "existing video conditional case lookup; reference only",
+      "upstream_sha256": "05143b59971f78d266c4730c80a69a97490b9863187a954e7eeeb744c7cddb1c"
     }
   ],
   "conditional_gaps": [
-    {
-      "path": "wiki/concepts/08-模板/造物者抛光面膜_真人上脸半透明胶膜生图模板.md",
-      "condition": "creator_mask_face_effect in asset-image-assistant or storyboard-director",
-      "status": "absent_from_snapshot; source audit records upstream deletion",
-      "effect": "Block only the applicable face-effect template-dependent branch; do not fabricate a replacement."
-    },
-    {
-      "path": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/视频参考/索引.md",
-      "condition": "creator-polishing-mask real use action references selected",
-      "status": "not_in_source_snapshot",
-      "effect": "Block affected real-action reference validation until actual index and selected assets are supplied."
-    },
     {
       "path": "wiki/sources/造物者抛光面膜-动作参考视频.md",
       "condition": "creator-polishing-mask action provenance required",
@@ -541,12 +547,6 @@
       "condition": "creator-polishing-mask real-use method selected",
       "status": "external_input_not_in_repository",
       "effect": "Block affected product-use production if absent or conflicting; not a global stage blocker."
-    },
-    {
-      "path": "projects/Master-Storyboarding/经验/经验索引.md",
-      "condition": "scale-change or cross-segment scale continuity experience lookup triggered",
-      "status": "not_in_source_snapshot",
-      "effect": "Only the conditional experience lookup is unavailable."
     },
     {
       "path": "wiki/reference/master-storyboarding-invalid-rules.jsonl",

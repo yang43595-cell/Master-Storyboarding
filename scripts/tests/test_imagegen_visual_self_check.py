@@ -124,7 +124,8 @@ class ImportedVisualCheckTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        environment = patch.dict(os.environ, {'MSB_VAULT_ROOT': str(synthetic_vault(self.root / 'synthetic-vault'))})
+        environment = patch.object(m.asset_skill, 'resolve_knowledge_root',
+                                   return_value=synthetic_vault(self.root / 'synthetic-vault'))
         environment.start()
         self.addCleanup(environment.stop)
         self.lib = m.Library(self.root / 'library', vault=self.root / 'vault')

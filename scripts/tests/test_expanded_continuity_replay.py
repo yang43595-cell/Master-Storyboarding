@@ -36,6 +36,20 @@ def test_phone_counterexamples_rejected(mutation):
         q.replay_source_audio(seg,d['shot_audio'])
 
 
+def test_flat_source_audio_keeps_order_and_accounts_for_silent_shots():
+    d = data()
+    expected = q.replay_source_audio(d["segments"], d["shot_audio"])
+    for segment in d["segments"]:
+        segment["source_audio"] = [
+            dict(part, source_shot_id=row["shot_id"])
+            for row in segment["source_audio"] for part in row["dialogue"]
+        ]
+    assert q.replay_source_audio(d["segments"], d["shot_audio"]) == expected
+    d["segments"][0]["source_audio"].reverse()
+    with pytest.raises(ValueError, match="source_audio"):
+        q.replay_source_audio(d["segments"], d["shot_audio"])
+
+
 def test_same_shot_split_is_legal_without_duplicate_utterance():
     part=dict(dialogue_id='DLG-1',speaker_id='A',presentation='SYNC',text='再见，明天见。')
     shots={'S01-001':[part]}

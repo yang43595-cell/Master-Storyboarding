@@ -9,7 +9,7 @@ description: 承接已确认故事与对白，创作并自查完整的视听分�
 
 ## 承上启下的职责
 
-编导确定故事发生什么、人物关系、事件与对白；本 Skill 把已确认的故事设计成观众能够经历的情绪过程，决定这些内容怎样成为按顺序看到和听到的一段戏。按[逐场创作与确认](../../PROJECT_RULES.md#逐场创作与确认)逐段完善，最终主交付是完整、可阅读且可执行的视听分镜稿；验收与授权按本轮统一或兼容入口处理。
+编导确定故事发生什么、人物关系、事件与对白；本 Skill 把已确认的故事设计成观众能够经历的情绪过程，决定这些内容怎样成为按顺序看到和听到的一段戏。按[逐场创作与确认](../../docs/rules/execution.md#逐场创作与全片复核)逐段完善，最终主交付是完整、可阅读且可执行的视听分镜稿；验收与授权按本轮统一或兼容入口处理。
 
 - 承接已确认叙事，保留事实、事件顺序、对白和说话者；在输入允许的创作范围内作出具体的镜头、表演和声画设计。发现需要改写故事或补充事实的问题时返回编导，不自行补写。
 - 实质创作先按 [镜头规划加载与合同入口](modules/shot-planning.md#从整场意图想出画面) 完整阅读三份本地基础参考，再读 [画面构思与拍法选择](references/visual-conception.md)：从整场关系变化、观众体验和可见载体想出观看路线，在重要岔路比较后选定，再落到镜头；不逐句配镜。创作时及创作后按[状态与节拍的具体步骤](modules/shot-planning.md#把创作决定落实为可验证的状态与节拍)分别检查表达质量与执行连续性，不把具体判断推迟到成图质检。
@@ -19,7 +19,7 @@ description: 承接已确认故事与对白，创作并自查完整的视听分�
 
 本阶段同时验收“拍法可执行”和“重要情绪有视听表达”：整段拍法已经清楚，关键情绪与关系转折能从实际画面、表演和声音中读到，可供用户审定并被下游忠实实现。叙事与对白覆盖完整不等于表达充分。表格完整、引用正确与镜头数量只是辅助检查；本阶段不承诺模型生成效果，也不要求先制作全套分镜图。逐镜复刻须以原片证据核对；只依据故事创作的拍法明确标为候选导演设计。
 
-按 [PROJECT_RULES.md 的干净上下文启动规则](../../PROJECT_RULES.md#创作执行开始前干净上下文) 执行本阶段；新一轮导演创作或实质重跑由全新专属生产 agent 执行，同轮逐段推进与局部返修可继续原执行者。
+按 [PROJECT_RULES.md 的干净上下文启动规则](../../docs/rules/execution.md#创作执行开始前干净上下文) 执行本阶段；新一轮导演创作或实质重跑由全新专属生产 agent 执行，同轮逐段推进与局部返修可继续原执行者。
 
 纯错字、标点或排版维护先按 [共享局部维护边界](../_shared/knowledge-access.md#局部维护边界) 判断；符合时只做局部检查，下述整阶段准备适用于实质创作与修改。
 
@@ -72,7 +72,7 @@ description: 承接已确认故事与对白，创作并自查完整的视听分�
 
 - **统一入口：** 不送导演网页、不逐段等待人审；段落自查后继续，全片严格校验和完整自查通过后，按[本地流程授权与自主采用](../../docs/development/review-to-canvas-entry.md#本地流程授权与自主采用)绑定授权、准确 revision/hash 与自查结果。首次使用 `accept-artifact`，返修走该页的自主修订入口；它仍可合法使用 revision_control，禁止的是补造逐稿人工确认的旧 API 或直改 manifest。授权、证据或[接线](../../docs/development/review-to-canvas-entry.md#接线现状与开发交接)缺失时保持候选；有条件通过不等于正式采用。
 - **未迁移的既有人工路径：** 同一候选 JSON 自查校验后送现有审核网页，核准确版本、范围与用户确认；首次采用、返修及继续授权沿原合同。局部网页见下文，入口未核实只暂停对应网页动作，不虚构 URL 或已发布结果。
-- **阅读与历史兼容：** 按[JSON 交付与按需导出](../../PROJECT_RULES.md#json-交付与按需导出)，新包省略 human_readable_path；Markdown 仅用户明确要求时同版导出，不作前置、业务权威或依赖，也不反向覆盖 JSON。历史双文件仍按输入门禁核对；`storyboard-package-v1.schema.json`、`storyboard-package-v2.schema.json` 与 `storyboard-package-v3.schema.json` 仅用于旧项目的只读兼容。
+- **阅读与历史兼容：** 按[JSON 交付与按需导出](../../docs/rules/artifacts.md#json-交付与按需导出)，新包省略 human_readable_path；Markdown 仅用户明确要求时同版导出，不作前置、业务权威或依赖，也不反向覆盖 JSON。历史双文件仍按输入门禁核对；`storyboard-package-v1.schema.json`、`storyboard-package-v2.schema.json` 与 `storyboard-package-v3.schema.json` 仅用于旧项目的只读兼容。
 
 正式交接使用本轮合法验收与授权，由协调方承接。
 
@@ -116,3 +116,7 @@ python -m scripts.core.story_sources --project <项目> --narrative <完整已�
 运行 `python -m scripts.core.story_sources --project <隔离项目> --narrative <原JSON> --candidate-test --candidate-source-evidence <范围证据ID>` 先核输入；本轮导演候选再加 `--storyboard <候选JSON> --candidate-paragraph-id <准确STP>`（可重复，必须在证据范围内）。仍核原文、对白/说话者顺序、资产与镜号引用。缺历史对白证据明确报告 missing_unverified，全部原声核验仍未通过；存在但 hash 或对白不一致直接拒绝，不能抓住异常后忽略。
 
 此入口不修改普通正式 adopt-package/返修提交规则，不允许用局部来源检查充整稿交接或生成许可。若无法满足真实输入/范围绑定，保留缺口，不制作虚假附件、不删除原证据字段。
+
+## 视觉生产衔接细则
+
+本阶段涉及资产、按需分镜、场景状态或可选白模时，读取 [视觉生产与资产调整](../../docs/rules/visual-production.md)，仅执行本职及已授权分支。
