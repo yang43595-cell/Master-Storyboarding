@@ -21,7 +21,7 @@ Image production runs in clean-context child agents, with up to 8 target images 
 
 ## Source and assets
 
-Source, schemas, contracts, and reproducible tests belong in Git. Credentials, environment secrets, raw footage, customer project inputs, generated media, and asset-library files stay outside this repository. Recovering those external assets is a separate prerequisite for production.
+Source, schemas, contracts, and reproducible tests belong in Git. Credentials, environment secrets, raw footage, customer project inputs, generated media, and asset-library files stay outside this repository. Approved reusable product reference packs are bundled under `assets/product-references/`. Case-specific inputs and output libraries are supplied separately.
 
 The proposed [repository checks](docs/development/dependency-checks.md) run existing synthetic Python/Node tests on pull requests, once the workflow is published and Actions use is authorized. Local passes do not establish a GitHub Actions result. Branch protections, deployments, and credentials are not configured by this source change.
 

@@ -534,12 +534,6 @@
       "effect": "External source input; do not copy raw media or unrelated data automatically."
     },
     {
-      "path": "assets/product-references/creator-polishing-mask-2/PRODUCT_BRIEF.md",
-      "condition": "creator-polishing-mask real-use method selected",
-      "status": "external_input_not_in_repository",
-      "effect": "Block affected product-use production if absent or conflicting; not a global stage blocker."
-    },
-    {
       "path": "wiki/reference/master-storyboarding-invalid-rules.jsonl",
       "condition": "production dynamic knowledge discovery enabled",
       "status": "exact_upstream_path_absent_on_2026-11-04; FileNotFoundError errno 2; no claim that all historical tombstones are absent",
