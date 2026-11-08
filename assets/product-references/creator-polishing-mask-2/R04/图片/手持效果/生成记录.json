@@ -1,0 +1,186 @@
+[
+  {
+    "reference_id": "BOX-GOLD-EMBLEM",
+    "filename": "01_礼盒_手持.png",
+    "provider_source": "/Users/liuyang/.codex/generated_images/01a1bbbd-2a53-79b2-af79-ae863f61e369/exec-cd6a7271-0e16-4f5b-8d55-81ffb3968451.png",
+    "prompt": "参考1是闭盒外观、金徽和原包装印字依据；参考2只取盒和成人手的相对大小及盒身受托方式。白色横向硬礼盒，以轻微右侧透视显示完整正面与窄右侧，复刻参考1的宽高、厚度和版式。成人双手稳稳托住横跨两掌的礼盒，下面手掌承托底边，另一只手扶右下窄边，中央盒面与产品名完整清晰。忠实保留顶部「造物者 CREATOR」、中部原样小型椭圆浮雕金徽、下部「造物者极地奢养抛光面膜」「CREATOR POLAR LUXURY REPLENISHING POLISHING MASK」及原字的位置、比例和颜色。\n输出一张独立手持产品照片，横向 3:2，素浅灰无缝背景，左上侧大面积柔光，真实手部皮纹与自然短裸色指甲，产品和抓握处在同一焦平面，常规摄影透视，产品完整、周围留少许边距，取景只含指定产品和手腕以内的自然手持范围。画面可读文字只来自原商品自身，画面无添加图文或刻度。",
+    "visual_observation": "双手从下方和右侧承托，完整闭盒正面可见，保留大字造物者 CREATOR、椭圆金徽和下方两行品名。",
+    "limitation": "徽章内部细纹为生成重绘；手持相对尺度仅供视觉参考。",
+    "revision": "R03",
+    "status": "confirmed",
+    "path": "图片/手持效果/01_礼盒_手持.png",
+    "sha256": "f06dc36163e5d16e82a1d6730f3ac585561e8ae2817d75a33584a3545264c5d4",
+    "dimensions": [
+      1536,
+      1024
+    ],
+    "bytes": 1822389,
+    "tool": "built-in ImageGen",
+    "input_evidence": [
+      {
+        "path": "图片/造物者温泉酸-礼盒外观.png",
+        "sha256": "5068c644d0e9adb0e67e689767988491276f4031602f23d561048202bc89713b"
+      },
+      {
+        "source_video": "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/01_原始资料/产品动作参考/开盒.mp4",
+        "source_time_seconds": 0.2,
+        "extracted_frame_sha256": "80c730769bc17f9c838520fd07fb2f577a963adc222f40f0cb69137efbf91ed4"
+      }
+    ],
+    "user_confirmation": {
+      "scope": "正式产品包手持参考，按各图登记的相对尺寸与持握用途",
+      "user_feedback": "然后待选图可以进入正式了。",
+      "sha256": "f06dc36163e5d16e82a1d6730f3ac585561e8ae2817d75a33584a3545264c5d4"
+    }
+  },
+  {
+    "reference_id": "TUBES-AB",
+    "filename": "02_AB双剂_手持.png",
+    "provider_source": "/Users/liuyang/.codex/generated_images/01a1bbbd-2a53-79b2-af79-ae863f61e369/exec-9d79eab2-8fd8-4a76-8ac7-2140982d96aa.png",
+    "prompt": "参考1提供香槟金B、白A的真实正面、同等管形尺寸、印字版式和未掰开的白色折断尖端。参考2和3分别只提供白A、金B相对成人手指的实际尺度。两只手各用拇指、食指在上端压纹封边处轻捏一支小型单次软管，双管并列、头向下，画面左边香槟金B略高，右边白A略低，两管印面正对镜头，保留完整尖端和可读标签。原字按参考1放置，A「造物者」「A」「多肽精华乳」「POLYPEPTIDE SERUM」，B「造物者」「B」「碳酸精华露」「CARBONATED LIQUID」，两管保留实图原有的掰开提示小字与位置。保持指尖捏得住的小支试剂尺度，不生成大支日用软管，不增加旋盖。\n输出一张独立手持产品照片，横向 3:2，素浅灰无缝背景，左上侧大面积柔光，真实手部皮纹与自然短裸色指甲，产品和抓握处在同一焦平面，常规摄影透视，产品完整、周围留少许边距，取景只含指定产品和手腕以内的自然手持范围。画面可读文字只来自原商品自身，画面无添加图文或刻度。",
+    "visual_observation": "金B在左、白A在右，分别捏住压纹封边，正面印面及未打开的折断尖端可见。",
+    "limitation": "小号掰开提示文字为生成重绘，准确包装细字以原图为准；手持相对尺度仅供视觉参考。",
+    "revision": "R03",
+    "status": "confirmed",
+    "path": "图片/手持效果/02_AB双剂_手持.png",
+    "sha256": "90a90ea184e2d53bac02ffbcd6fd5524179b4432a87704d1a3fa65cd2b77160b",
+    "dimensions": [
+      1536,
+      1024
+    ],
+    "bytes": 1967024,
+    "tool": "built-in ImageGen",
+    "input_evidence": [
+      {
+        "path": "图片/造物者温泉酸-A与B双剂外观.png",
+        "sha256": "cada2ea9093aff8ba3f884d9ba7c89c4f04f72b50aaccb346274846cf2ccb807"
+      },
+      {
+        "path": "证据/手持实拍/白A管_实拍手指.png",
+        "sha256": "c48782f6c5458e54b00f683300cb564a900ee7704b9b2dbed30ae7653d976332"
+      },
+      {
+        "path": "证据/手持实拍/金B管_实拍手指.png",
+        "sha256": "908405462a60b61adde2b0c148784e76941f0e792b7ae43c4511cadf3be20fd8"
+      }
+    ],
+    "user_confirmation": {
+      "scope": "正式产品包手持参考，按各图登记的相对尺寸与持握用途",
+      "user_feedback": "然后待选图可以进入正式了。",
+      "sha256": "90a90ea184e2d53bac02ffbcd6fd5524179b4432a87704d1a3fa65cd2b77160b"
+    }
+  },
+  {
+    "reference_id": "MIX-BOWL",
+    "output_id": "AST-007-MIX-BOWL@r03-handheld-corrected",
+    "filename": "03_透明面膜碗_手持.png",
+    "provider_source": "/Users/liuyang/.codex/generated_images/01a1bbca-a036-7103-8c9c-9dd2851e072c/exec-f1f8aa29-87dd-47f4-9d2f-b8355b519342.png",
+    "prompt": "一张独立的手持透明面膜小调碗照片。参考1用于碗本身，复刻透明浅圆玻璃小碗、细密不规则横纹、无装饰圆口和小圆底。参考2是实际大小和握法的依据：一只成人手像原片那样用拇指与对侧指尖轻托小碗侧缘和底部，手心其余部分自然露出。碗口外径约等于同一只手的掌宽（只数食指至小指掌指关节的宽度，不含外张的拇指），并明显小于腕横纹至中指指尖的整手长度。浅碗紧凑，抓握位置和碗沿在同一景深，正常视距与透视。取景同时交代整个手掌、五指和完整手腕，避免近大远小，碗以略俯斜角露出完整空碗口与横纹碗壁。浅灰无缝背景，左上柔光，素裸色短指甲。画面只有这只手和空碗，无其他物件或图文刻度。",
+    "visual_observation": "原片式指尖和拇指轻托；成图碗口外径和同画面掌宽接近，明显小于手长；整掌与腕部可见，透明浅碗、完整圆口、横纹与小圆底可辨。",
+    "limitation": "斜俯画面仅给相对尺度；原片未提供标尺，厘米数未验证。",
+    "status": "confirmed",
+    "tool": "built-in ImageGen",
+    "path": "图片/手持效果/03_透明面膜碗_手持.png",
+    "observer": "/root/bristle_bowl",
+    "dimensions": [
+      1086,
+      1448
+    ],
+    "sha256": "d6bab38d982d0af2bc06fae05d316d1a8932e221c09c7f65dc19ca39ca9e183e",
+    "bytes": 1957751,
+    "revision": "R03",
+    "input_evidence": [
+      {
+        "path": "图片/造物者温泉酸-透明面膜碗.png",
+        "sha256": "6074e2f1ed5113cf8cbbb6755d545330fe9afa9ed4f5b3551dea1e000763b4ac"
+      },
+      {
+        "path": "证据/手持实拍/透明碗_原片0.12秒.png",
+        "sha256": "ba6501b2c599c655f9d93a97f61ff8c429e247cf9e39ca0dcaf5a703f1b5ef8f"
+      }
+    ],
+    "user_confirmation": {
+      "scope": "正式产品包手持参考，按各图登记的相对尺寸与持握用途",
+      "user_feedback": "然后待选图可以进入正式了。",
+      "sha256": "d6bab38d982d0af2bc06fae05d316d1a8932e221c09c7f65dc19ca39ca9e183e"
+    }
+  },
+  {
+    "reference_id": "BRISTLE-BRUSH",
+    "output_id": "AST-008-MASK-BRUSH@r03-bristle-handheld",
+    "filename": "04_毛刷_手持.png",
+    "path": "图片/手持效果/04_毛刷_手持.png",
+    "provider_source": "/Users/liuyang/.codex/generated_images/01a1bbca-a036-7103-8c9c-9dd2851e072c/exec-f9b03b1d-75ca-4240-b370-2c9c1710b94e.png",
+    "tool": "built-in ImageGen",
+    "prompt": "生成单张横幅 4:3 造物者面膜毛刷手持产品图。图1是实拍，按图1复现这支刷子的实际比例、右手握点及纤细女性手的形态和美甲。图2只作为造物者这支毛刷的造型参考：细密象牙白纤维形成浅圆扇面，暖白斜肩刷颈，细接缝，清透而修长的切面柄，圆钝尾。呈现中等大小的刷子，按图1手指尺度，同一焦平面内整刷沿轴长度约为同一只手拇指甲长轴的七倍，扇形毛头最宽处约略超过一枚拇指甲的长轴长度，透明柄在握点处保持约三分之一指腹厚度。毛刷完整斜向右上，刷头露在手指上方，刷柄下段伸出拇指。女性纤细右手从右下方伸入，拇指和食指指腹轻夹住透明柄中下部，手指在接触处自然遮挡，余指自然稍屈，露出掌和手腕。指甲修成与图1相似的偏长杏仁形，通透裸粉，表面有柔光反射。手和刷子均清晰，背景是素浅灰无缝底，左上柔和棚光，刷毛和柄尾完整且两端有留白。画面只呈现这只手和这支刷子，不保留图1的管、玻璃碗或背景。",
+    "status": "confirmed",
+    "observer": "/root/bristle_bowl",
+    "visual_observation": "同一横幅和相近拇指甲投影下，新图刷身明显大于退回的小版，且相对手明显小于最初的大版。沿刷轴与同画面拇指甲长轴粗估：过小版约 800/150（约 5.3 倍），当前新版约 1100/155（约 7.1 倍），原过大版约 1440/110（约 13.1 倍）；用户实拍约 630/80（约 7.9 倍）。纤细女性手、透粉杏仁美甲、拇指与食指夹在透明柄中下段；完整象牙白扇形细毛、白斜肩刷颈、细接缝和细透长柄可辨。",
+    "limitation": "拇指甲长轴仅作为同画面的粗略尺度锚点，甲型与投影不同，数值不对应真实厘米。新版手腕自然延至画面下沿。",
+    "dimensions": [
+      1448,
+      1086
+    ],
+    "sha256": "de00ace2eb6fb6ecc309d74bbb32c80b98f8779eb553a1e419897db548abbb55",
+    "bytes": 1614501,
+    "comparison_only": {
+      "sha256": [
+        "5db5fc8e31649f8b6d0008431f2dec4b960dc143f86aba3b1d5d98e85e06dce5",
+        "4a7c0b99d8ff239059a81dea4d6fe93a6bd54092a00c8350a1a8b8d80f1ab7d6"
+      ],
+      "reason": "前两版尺寸仅用于目测比较。"
+    },
+    "revision": "R03",
+    "input_evidence": [
+      {
+        "path": "证据/生图输入/毛刷_用户实拍.png",
+        "sha256": "b7460a624fddde55613cac2a9778223c381efff3c9f4357ab877cda52fc936bd"
+      },
+      {
+        "path": "图片/造物者温泉酸-毛刷_白底电商.png",
+        "sha256": "fbc347d4ce569c267d142d84bbe8576fa205db8c55bb713aa912eb1fc6e3a429"
+      }
+    ],
+    "user_confirmation": {
+      "scope": "正式产品包手持参考，按各图登记的相对尺寸与持握用途",
+      "user_feedback": "然后待选图可以进入正式了。",
+      "sha256": "de00ace2eb6fb6ecc309d74bbb32c80b98f8779eb553a1e419897db548abbb55"
+    },
+    "previous_scope_confirmation": {
+      "scope": "毛刷与手的相对比例",
+      "user_feedback": "这张比例可以",
+      "sha256": "de00ace2eb6fb6ecc309d74bbb32c80b98f8779eb553a1e419897db548abbb55"
+    }
+  },
+  {
+    "reference_id": "BRISTLE-BRUSH",
+    "output_id": "AST-008-MASK-BRUSH@r03-bristle-catalog",
+    "filename": "造物者温泉酸-毛刷_白底电商.png",
+    "provider_source": "/Users/liuyang/.codex/generated_images/01a1bbca-a036-7103-8c9c-9dd2851e072c/exec-dbfc4451-803c-4574-93e5-524a1cd9e25f.png",
+    "prompt": "将参考照片中的那一支造物者面膜毛刷单独拍成一张白底电商图。竖幅，完整刷子沿画面中央微斜摆放，柔和棚光在纯白无缝底上勾出刷毛与透明柄的边缘。严格复刻照片可见的构造与各段长宽比例：上段是象牙白的细软毛束，从狭窄根部向两侧逐渐散开，顶缘是柔和饱满的浅弧，能看到大量细密而独立的纤维；刷头下方连接一段光滑不透明的暖白刷颈，上端为贴住毛根的短平斜肩，整段微微收束，底端一条细的接缝接入长而笔直的透明硬质刷柄。刷柄修长，带低调的纵向切面，向下稍收窄，尾端圆钝。完整展示刷毛至柄尾的轮廓。全图仅一支刷子。专项排除硅胶刮片、金属套环和无法辨认的刻字，移除来源画面里的手、管装产品和碗。",
+    "visual_observation": "白底只展示一支完整刷子；象牙白浅弧扇面有细密单根纤维，暖白光滑斜肩刷颈、细接缝、长透明切面和圆钝柄尾均可辨。与附件的整体轮廓、接头和段长对应。",
+    "limitation": "附件柄身可能有极浅标记，文字无法确读，成图保留干净柄面。无实测长度与背面证据。",
+    "status": "confirmed",
+    "tool": "built-in ImageGen",
+    "path": "图片/造物者温泉酸-毛刷_白底电商.png",
+    "observer": "/root/bristle_bowl",
+    "dimensions": [
+      793,
+      1983
+    ],
+    "sha256": "fbc347d4ce569c267d142d84bbe8576fa205db8c55bb713aa912eb1fc6e3a429",
+    "bytes": 934423,
+    "revision": "R03",
+    "input_evidence": [
+      {
+        "path": "证据/生图输入/毛刷_用户实拍.png",
+        "sha256": "b7460a624fddde55613cac2a9778223c381efff3c9f4357ab877cda52fc936bd"
+      }
+    ],
+    "user_confirmation": {
+      "scope": "正式产品包手持参考，按各图登记的相对尺寸与持握用途",
+      "user_feedback": "然后待选图可以进入正式了。",
+      "sha256": "fbc347d4ce569c267d142d84bbe8576fa205db8c55bb713aa912eb1fc6e3a429"
+    }
+  }
+]
