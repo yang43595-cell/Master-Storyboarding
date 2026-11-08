@@ -26,5 +26,3 @@
 这只验证了认证与空参数处理。未调用 `create-case` 或 `publish`，未读取具体私人案例，没有真实发布、批准或往返回执。当前合同只收 `.md`／`.txt` 文本，POST 须 Bearer 与 JSON Content-Type，不带 Cookie／Origin；`status` 返回 head／expectations／sourceScriptVersion，不含批注或人工批准。资产图片和 JSON 原包上传、任意项目的准确意见／批准读取仍未接通。全文仍带本地 MVP 范围，尚未核该源码与现网 release 的准确对应关系。
 
 后续按现有[API 接线要求](../development/review-to-canvas-entry.md#审核站-api-对接要求)补真实文本发布／版本冲突、资产媒体与准确批准读取。上传成功、head 存在和本地回归通过均不作为人工批准或画布交付依据。
-
-本阶段之后，用户另行授权了独立合成案例的真实文本送审验收。案例 `13` 已完成创建、R01 发布、原请求精确重试不增代、R02 新版本及 Edge 正文／完整 JSON 回读，页面仍为“待审核”；详见[后续文本送审现网验收](2026-11-05-review-text-api-smoke.md)。以上保留本阶段原验证边界，不把后续结果追记为当时已完成；资产、意见／批准读取和并发冲突仍未验收。
