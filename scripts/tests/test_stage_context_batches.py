@@ -11,7 +11,10 @@ from threading import Barrier
 import pytest
 
 from scripts import stage_context_cli as cli
-from test_stage_context_cli import _method_vault, _project
+from test_stage_context_cli import _method_vault, _project, isolated_stage_knowledge
+
+
+pytestmark = pytest.mark.usefixtures("isolated_stage_knowledge")
 
 
 def make_batch_context(tmp_path: Path, *, context_id="batch-a", actor_id="worker-a",
@@ -172,7 +175,7 @@ def test_same_batch_target_change_invalidates_old_reading_receipt(tmp_path):
     payload = json.loads(request.read_text())
     payload["image_targets"] = ["VS-NEW-TARGET"]
     request.write_text(json.dumps(payload), encoding="utf-8")
-    with pytest.raises(cli.StageContextError, match="实质范围已改变"):
+    with pytest.raises(cli.StageContextError, match="开工决定或阶段请求已改变"):
         cli.ensure_prepared(args)
     result = cli.prepare(args)
     assert result["stage_reading_restored"] is False

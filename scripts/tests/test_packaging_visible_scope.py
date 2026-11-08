@@ -36,6 +36,26 @@ def test_visible_artwork_scope_accepts_without_fabricating_physical_sku(tmp_path
     assert result['physical_variant_verified'] is False
 
 
+def test_opened_interior_is_static_visible_artwork_not_opening_process(tmp_path):
+    frozen, manifest = visible_fixture(tmp_path)
+    row=frozen['drafts'][0]; ref=row['reference_checks'][0]
+    product=ref['product_reference']; basis=product['physical_variant']['basis']
+    basis.update(visible_faces=['opened_interior'],
+                 rationale='Synthetic already-open tray observation, no opening motion or hidden face',
+                 excluded_uses=['back_face','opening_process','formula_or_specification','efficacy_claims'])
+    manifest['artifacts'][0]['product_reference']=copy.deepcopy(product)
+    row['quality_evidence']['checks']['packaging_identity']['items'][0]['product_reference']={
+        k:product[k] for k in ('product_id','product_name','packaging_reference_revision','physical_variant')}
+    qa=manifest['artifacts'][0]['quality_evidence']; qa['uses']=[q.image_use(ref,['S1'])]
+    qa['packaging']['product_sha256']=q.fingerprint(product)
+    bind(tmp_path,frozen,manifest)
+    assert canvas_readback.validate_submission(frozen,tmp_path)['ok']
+    basis['excluded_uses'].remove('opening_process')
+    with pytest.raises(ValueError): q.product_identity(product)
+    basis['excluded_uses'].append('opening_process'); basis['rationale']=''
+    with pytest.raises(ValueError): q.product_identity(product)
+
+
 @pytest.mark.parametrize('mutation',['unknown','mixed_sku','empty_basis','missing_source','wrong_artwork','wrong_shot','back_face','open_use','claim_physical_pass','stale_use','source_bytes'])
 def test_visible_scope_rejects_unsupported_use_and_false_physical_claim(tmp_path,mutation):
     frozen,manifest=visible_fixture(tmp_path);row=frozen['drafts'][0];ref=row['reference_checks'][0];p=ref['product_reference'];qa=manifest['artifacts'][0]['quality_evidence']

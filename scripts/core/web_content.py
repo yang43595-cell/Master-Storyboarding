@@ -200,7 +200,8 @@ def compile_content(raw: bytes, *, stage: str, case_id: str, source_script_versi
                     benchmark: dict | None = None, title: str | None = None,
                     reviewable: bool = False, contract_root=CONTRACT, project_root: Path | None = None,
                     transport_evidence: dict | None = None, prompt_mode: str = "executed",
-                    director_narrative: dict | None = None, candidate_paragraph_ids: list[str] | None = None):
+                    director_narrative: dict | None = None, candidate_paragraph_ids: list[str] | None = None,
+                    director_narrative_path: Path | None = None):
     """Compile from one source plus explicit transport/readback evidence.
 
     media_registry contains existing media descriptors/local paths and the actual
@@ -329,6 +330,7 @@ def compile_content(raw: bytes, *, stage: str, case_id: str, source_script_versi
         if director_narrative is not None:
             director_report = validate_story_sources(director_narrative, business,
                 project_root=Path(project_root) if project_root is not None else None,
+                narrative_path=director_narrative_path,
                 candidate_paragraph_ids=candidate_paragraph_ids)
         if director_report is not None:
             block('director-validation-scope', '本轮来源自查范围（非整稿通过）', canonical(director_report))
@@ -523,14 +525,15 @@ def main():
     import sys
     try:
         job = json.load(sys.stdin)
+        narrative_path = Path(job['directorNarrativePath']).resolve() if job.get('directorNarrativePath') else None
         result = compile_content(Path(job['sourcePath']).read_bytes(), stage=job['stage'],
             case_id=job['caseId'], source_script_version=job['sourceScriptVersion'],
             expected_version=job['expectedVersion'], scope=job['scope'], media_registry=job.get('mediaRegistry'),
             benchmark=job.get('benchmark'), title=job.get('title'), reviewable=job.get('reviewable', False),
             contract_root=job.get('contractRoot', CONTRACT), project_root=job.get('projectRoot'),
             transport_evidence=job.get('transportEvidence'), prompt_mode=job.get('promptMode', 'executed'),
-            director_narrative=(json.loads(Path(job['directorNarrativePath']).read_text(encoding='utf-8-sig'))
-                                if job.get('directorNarrativePath') else None),
+            director_narrative=json.loads(narrative_path.read_text(encoding='utf-8-sig')) if narrative_path else None,
+            director_narrative_path=narrative_path,
             candidate_paragraph_ids=job.get('candidateParagraphIds'))
         print(canonical(result))
         return 0

@@ -8,6 +8,7 @@ It never selects or starts an Agent, stores thread state, or decides a stage.
 from __future__ import annotations
 
 import json
+import copy
 import hashlib
 import shutil
 import uuid
@@ -15,8 +16,8 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from . import confirmation_scope
-from .artifacts import (dependency_closure, load_manifest, mark_impacted_artifacts_stale,
-                        project_path, validate_candidate_submission, validate_agent_submission)
+from .artifacts import (dependency_closure, load_manifest, mark_impacted_artifacts_stale, project_path,
+                        unchanged_director_edges, validate_candidate_submission, validate_agent_submission)
 from .io import (
     PROJECT_LOCK_RELATIVE,
     file_lock,
@@ -45,6 +46,10 @@ TIER_VALUES = {"T0", "T1", "T2"}
 
 class RevisionControlError(ValueError):
     """A revision request cannot safely advance."""
+
+
+class _DeliveryProjectBindingError(RevisionControlError):
+    """A delivery report needs a fresh readback of the platform project ID."""
 
 
 def _json_bytes(value: Any) -> bytes:
@@ -234,10 +239,11 @@ def _validate_segment_reconciliation(project: Path, baseline: dict[str, Any], ca
         raise RevisionControlError("生成段对账必须恰好覆盖全部增删、正文替换、顺序及源覆盖变化")
 
 
-def _current_by_logical(manifest: dict[str, Any], logical_id: str) -> dict[str, Any]:
+def _current_by_logical(manifest: dict[str, Any], logical_id: str, *, allow_stale: bool = False) -> dict[str, Any]:
     found = [
         item for item in manifest.get("artifacts", [])
-        if item.get("logical_id") == logical_id and item.get("status") == "current"
+        if item.get("logical_id") == logical_id
+        and item.get("status") in ({"current", "stale"} if allow_stale else {"current"})
     ]
     if len(found) != 1:
         raise RevisionControlError(f"{logical_id} 必须恰有一个 current 产物，实际 {len(found)} 个")
@@ -418,15 +424,23 @@ def inspect_change(project: Path, logical_ids: list[str], candidate: str | None 
     bases = [_current_by_logical(manifest, item) for item in logical_ids]
     tier = "T2"
     reason = "semantic_review_required"
+    unchanged_edges = set()
     if candidate is not None and len(bases) == 1:
-        candidate_path, _ = _within_project(project, candidate)
+        candidate_path, relative = _within_project(project, candidate)
         source_raw = str(bases[0].get("path_or_url") or "")
         source = project_path(project, source_raw).resolve()
         if source.is_file():
             same = False
             if source.suffix.lower() == ".json" and candidate_path.suffix.lower() == ".json":
                 try:
-                    same = sha256_json(read_json(source)) == sha256_json(read_json(candidate_path))
+                    payload = read_json(candidate_path)
+                    same = sha256_json(read_json(source)) == sha256_json(payload)
+                    if (not same and bases[0].get("logical_id") == "storyboard.package"
+                            and isinstance(payload, dict)):
+                        replacement = {**bases[0], "path_or_url": relative, "status": "candidate",
+                                       "revision": payload.get("revision"), "checksum": sha256_file(candidate_path)}
+                        unchanged_edges = unchanged_director_edges(project, manifest, load_project_state(project),
+                                                                   bases[0], replacement)
                 except (OSError, json.JSONDecodeError):
                     same = False
             elif source.suffix.lower() in {".md", ".txt", ".json", ".yaml", ".yml"}:
@@ -435,7 +449,8 @@ def inspect_change(project: Path, logical_ids: list[str], candidate: str | None 
                 same = sha256_file(source) == sha256_file(candidate_path)
             if same:
                 tier, reason = "T0", "proven_equivalent_candidate"
-    freeze = [] if tier == "T0" else _dependency_closure(manifest, logical_ids)
+    freeze = [] if tier == "T0" else sorted(dependency_closure(manifest, set(logical_ids),
+                                                              unchanged_edges=unchanged_edges))
     return {
         "tier": tier,
         "reason": reason,
@@ -465,7 +480,14 @@ def open_change(
         if control.get("active_change") is not None:
             raise RevisionControlError("每个项目同时只能有一个活动变更案")
         manifest = load_manifest(project)
-        bases = [_current_by_logical(manifest, item) for item in logical_ids]
+        bases = [_current_by_logical(manifest, item, allow_stale=authorization_id is not None) for item in logical_ids]
+        for item in bases:
+            if item.get("status") == "stale":
+                source = project_path(project, item.get("path_or_url", ""))
+                if (not (item.get("agent_acceptance") or item.get("user_approved"))
+                        or not item.get("checksum") or not source.is_file()
+                        or sha256_file(source) != item["checksum"]):
+                    raise RevisionControlError("失效基线须有原采用依据及未变化的准确文件字节")
         authorization = None
         if authorization_id is not None:
             from .candidate_test import require_production
@@ -569,7 +591,13 @@ def record_candidate(
     candidate_path: str,
     revision: str,
     depends_on: list[str] | None = None,
+    artifact_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    if artifact_metadata is not None and (
+            artifact_type != "visual-supplement-image"
+            or not isinstance(artifact_metadata, dict)
+            or set(artifact_metadata) - {"quality_evidence", "product_reference", "source_receipt"}):
+        raise RevisionControlError("图片候选元数据只允许质量证据、产品参考与来源回执；不能注入采用身份")
     project = project.resolve()
     with project_lock(project):
         control = _load_control(project)
@@ -616,8 +644,13 @@ def record_candidate(
             "revision_managed": True,
             "user_approved": False,
             "created_at": utc_now(),
+            **copy.deepcopy(artifact_metadata or {}),
         })
         change["candidate_receipt"] = receipt
+        if logical_id == "storyboard.package" and change.get("tier") != "T0":
+            edges = unchanged_director_edges(project, manifest, load_project_state(project),
+                                             prior_item, manifest["artifacts"][-1])
+            change["frozen_logical_ids"] = sorted(dependency_closure(manifest, {logical_id}, unchanged_edges=edges))
         change["manifest_sha256"] = _manifest_digest(manifest)
         change["status"] = "awaiting_candidate_confirmation" if change.get("tier") == "T0" else "awaiting_review"
         return _commit_json_transaction_unlocked(project, {
@@ -637,14 +670,26 @@ def _validate_delivery(project: Path, payload: dict) -> None:
         raise RevisionControlError(f'交付快照当前参考检查失败：{exc}') from exc
 
 
+def _assert_delivery_report_project(project_id, report) -> None:
+    if project_id is None:
+        return
+    field = 'observed_target_project_id'
+    if isinstance(report, dict) and field not in report:
+        raise _DeliveryProjectBindingError('旧交付报告缺少刷新后项目 ID；请重新回读并登记新报告')
+    if not isinstance(report, dict) or report.get(field) != project_id:
+        raise RevisionControlError('交付报告缺少匹配的刷新后项目 ID；请重新回读，不复用旧 PASS')
+
+
 def _assert_review_current(project: Path, change: dict[str, Any]) -> None:
     """Use the existing change receipt, never treat an old PASS as a new review."""
     candidate = change.get('candidate_receipt') or {}
     source, _ = _within_project(project, candidate['path'])
+    platform_project_id = None
     if source.suffix.lower() == '.json':
         payload = read_json(source)
         if isinstance(payload, dict) and 'target_url' in payload and 'drafts' in payload:
             _validate_delivery(project, payload)
+            platform_project_id = payload.get('target_project_id')
     # Equivalent copies waive repeated human review, never current input checks.
     if change.get('tier') == 'T0':
         return
@@ -654,10 +699,15 @@ def _assert_review_current(project: Path, change: dict[str, Any]) -> None:
             or review.get('change_id') != change.get('change_id')
             or any(not candidate.get(k) or review.get(k) != candidate[k] for k in fields)):
         raise RevisionControlError('审核凭据未绑定当前候选 artifact/revision/hash；请重新审核，不复用旧 PASS')
+    report = None
     if review.get('report_sha256'):
-        report, _ = _within_project(project, review['report_ref'])
-        if not report.is_file() or sha256_file(report) != review['report_sha256']:
+        report_path, _ = _within_project(project, review['report_ref'])
+        raw = report_path.read_bytes() if report_path.is_file() else None
+        if raw is None or hashlib.sha256(raw).hexdigest() != review['report_sha256']:
             raise RevisionControlError('审核报告内容漂移；不能复用旧 PASS')
+        if platform_project_id is not None:
+            report = json.loads(raw.decode('utf-8'))
+    _assert_delivery_report_project(platform_project_id, report)
 
 
 def record_review(project: Path, *, change_id: str, verdict: str, report_ref: str) -> dict[str, Any]:
@@ -669,8 +719,17 @@ def record_review(project: Path, *, change_id: str, verdict: str, report_ref: st
     with project_lock(project):
         control = _load_control(project)
         change = _assert_active(control, change_id)
-        if change.get("status") != "awaiting_review":
-            raise RevisionControlError("当前变更案不等待审核")
+        status = change.get("status")
+        if status != "awaiting_review":
+            if verdict != 'approved' or status not in {'awaiting_candidate_confirmation', 'commit_ready'}:
+                raise RevisionControlError("当前变更案不等待审核")
+            try:
+                _assert_review_current(project, change)
+            except _DeliveryProjectBindingError:
+                # A pre-upgrade delivery can bind a fresh report for the same candidate.
+                pass
+            else:
+                raise RevisionControlError("当前变更案不等待审核")
         candidate = change.get('candidate_receipt') or {}
         source, _ = _within_project(project, str(candidate.get('path') or ''))
         if not candidate.get('revision') or sha256_file(source) != candidate.get('sha256'):
@@ -683,7 +742,8 @@ def record_review(project: Path, *, change_id: str, verdict: str, report_ref: st
             if isinstance(payload, dict) and 'target_url' in payload and 'drafts' in payload:
                 _validate_delivery(project, payload)
                 report_path, relative = _within_project(project, report_ref)
-                report = read_json(report_path)
+                raw = report_path.read_bytes()
+                report = json.loads(raw.decode('utf-8'))
                 native = report.get('native_reference_checks', {})
                 expected_nodes = {row['node_id'] for row in payload['drafts']}
                 native_ok = isinstance(native, dict) and all(
@@ -697,9 +757,11 @@ def record_review(project: Path, *, change_id: str, verdict: str, report_ref: st
                         or report['submission_checks'].get('ok') is not True
                         or not native_ok or set(native) != expected_nodes):
                     raise RevisionControlError('交付快照须绑定本修订/hash的完整参考检查和实际实体回读；旧 PASS 不能复用')
-                receipt.update(report_ref=relative, report_sha256=sha256_file(report_path))
+                _assert_delivery_report_project(payload.get('target_project_id'), report)
+                receipt.update(report_ref=relative, report_sha256=hashlib.sha256(raw).hexdigest())
         change["review"] = receipt
-        change["status"] = "awaiting_candidate_confirmation" if verdict == "approved" else "blocked"
+        if status == "awaiting_review":
+            change["status"] = "awaiting_candidate_confirmation" if verdict == "approved" else "blocked"
         state = load_project_state(project)
         state["review_report"] = receipt
         return _commit_json_transaction_unlocked(project, {
@@ -719,6 +781,7 @@ def confirm_candidate(
     if not approval_ref.strip():
         raise RevisionControlError("候选确认必须提供 approval_ref")
     from .candidate_test import require_production
+    from .review_publication import require_script_approval
     project = project.resolve()
     with project_lock(project):
         require_production(project)
@@ -744,11 +807,9 @@ def confirm_candidate(
                 or project_path(project, candidate_item.get("path_or_url", "")) != source):
             raise RevisionControlError("登记候选与当前审核凭据的 ID/逻辑产物/修订/路径/hash 不一致")
         try:
-            submission_sha256 = validate_candidate_submission(project, candidate_item, manifest)
-            if candidate_item.get("logical_id") in {"narrative.package", "storyboard.package", "video.prompt"} and not submission_sha256:
-                raise ValueError("旧稿件/未识别结构不能正式确认；仅保留历史读取")
-        except (ValueError, OSError, KeyError, TypeError) as exc:
-            raise RevisionControlError(f"正式稿件提交前校验失败：{exc}") from exc
+            require_script_approval(project, candidate_item, approval_ref, None)
+        except ValueError as exc:
+            raise RevisionControlError(str(exc)) from exc
         if candidate_item.get("type") == "visual-supplement-image":
             try:
                 confirmation_scope.image_usage_shots(usage, required=True)
@@ -763,6 +824,7 @@ def confirm_candidate(
                 "kind": "revision-candidate",
                 "change_id": change_id,
                 "artifact_id": candidate.get("artifact_id"),
+                "revision": candidate.get("revision"),
                 "sha256": candidate.get("sha256"),
                 "approval_ref": approval_ref,
                 "at": utc_now(),
@@ -770,6 +832,12 @@ def confirm_candidate(
         )
         if usage is not None:
             receipt["usage"] = json.loads(json.dumps(usage))
+        try:
+            submission_sha256 = validate_candidate_submission(project, candidate_item, manifest, approval_receipt=receipt)
+            if candidate_item.get("logical_id") in {"narrative.package", "storyboard.package", "video.prompt"} and not submission_sha256:
+                raise ValueError("旧稿件/未识别结构不能正式确认；仅保留历史读取")
+        except (ValueError, OSError, KeyError, TypeError) as exc:
+            raise RevisionControlError(f"正式稿件提交前校验失败：{exc}") from exc
         change["candidate_confirmation"] = receipt
         change["status"] = "commit_ready"
         state = load_project_state(project)
@@ -886,21 +954,26 @@ def record_scoped_confirmation(
         return dict(receipt)
 
 
-def commit_change(project: Path, *, change_id: str) -> dict[str, Any]:
+def commit_change(project: Path, *, change_id: str, website_approval=None) -> dict[str, Any]:
     from .candidate_test import require_production
+    from .review_publication import require_script_approval
     project = project.resolve()
     with project_lock(project):
         require_production(project)
         control = _load_control(project)
         change = _assert_active(control, change_id)
-        if change.get("status") != "commit_ready":
-            raise RevisionControlError("当前变更案尚未具备提交条件")
-        _assert_review_current(project, change)
         agent_acceptance = change.get("candidate_acceptance")
-        if agent_acceptance is not None and not isinstance(agent_acceptance, dict):
-            raise RevisionControlError("自主候选验收依据必须是准确报告指针")
-        if agent_acceptance is None and not confirmation_scope.is_whole_artifact(change.get("candidate_confirmation")):
-            raise RevisionControlError("只有整稿范围的用户确认才能提交采用")
+        if website_approval is None:
+            if change.get("status") != "commit_ready":
+                raise RevisionControlError("当前变更案尚未具备提交条件")
+            _assert_review_current(project, change)
+            if agent_acceptance is not None and not isinstance(agent_acceptance, dict):
+                raise RevisionControlError("自主候选验收依据必须是准确报告指针")
+            if agent_acceptance is None and not confirmation_scope.is_whole_artifact(change.get("candidate_confirmation")):
+                raise RevisionControlError("只有整稿范围的用户确认才能提交采用")
+        elif (change.get("status") not in {"awaiting_review", "awaiting_candidate_confirmation", "commit_ready"}
+              or agent_acceptance is not None or change.get("workflow_authorization")):
+            raise RevisionControlError("网站通过须对应已登记候选、等待审核或采用的编导变更案")
         manifest = load_manifest(project)
         _assert_manifest_head(change, manifest)
         candidate = change.get("candidate_receipt") or {}
@@ -912,6 +985,32 @@ def commit_change(project: Path, *, change_id: str) -> dict[str, Any]:
         if candidate_item is None or candidate_item.get("status") != "candidate":
             raise RevisionControlError("候选产物登记状态无效")
         state = load_project_state(project)
+        approval_ref = getattr(website_approval, "approval_ref", None)
+        try:
+            require_script_approval(project, candidate_item, approval_ref, website_approval)
+        except ValueError as exc:
+            raise RevisionControlError(str(exc)) from exc
+        if website_approval is not None:
+            if (project_path(project, candidate_item["path_or_url"]) != source
+                    or any(candidate[key] != candidate_item[field] for key, field in (
+                        ("logical_id", "logical_id"), ("revision", "revision"), ("sha256", "checksum")))):
+                raise RevisionControlError("已送审稿件与当前变更案登记的候选不一致")
+            report_path, relative = _within_project(project, approval_ref)
+            now = utc_now()
+            change["review"] = {"kind": "revision-review", "change_id": change_id, "verdict": "approved",
+                                "report_ref": relative, "report_sha256": sha256_file(report_path), "at": now,
+                                **{key: candidate[key] for key in ("artifact_id", "revision", "sha256")}}
+            receipt = confirmation_scope.new_receipt(
+                confirmation_scope.SCOPE_ARTIFACT,
+                description="审核站编导稿整版通过",
+                extra={"kind": "revision-candidate", "change_id": change_id,
+                       "artifact_id": candidate_id, "revision": candidate["revision"], "sha256": candidate["sha256"],
+                       "approval_ref": approval_ref, "at": now},
+            )
+            change["candidate_confirmation"] = receipt
+            _assert_review_current(project, change)
+            _append_confirmation(state, receipt)
+            state["review_report"] = dict(change["review"])
         if agent_acceptance is not None:
             from .agent_acceptance import validate_agent_acceptance
             _assert_workflow_authorization(project, change, candidate_item, state)
@@ -925,16 +1024,23 @@ def commit_change(project: Path, *, change_id: str) -> dict[str, Any]:
         elif change.get("workflow_authorization"):
             raise RevisionControlError("自主变更缺少本版验收，不用人工确认旁路")
         try:
-            submission_sha256 = validate_candidate_submission(project, candidate_item, manifest)
+            submission_sha256 = validate_candidate_submission(project, candidate_item, manifest,
+                                                              approval_receipt=change.get("candidate_confirmation"))
             if candidate_item.get("logical_id") in {"narrative.package", "storyboard.package", "video.prompt"} and not submission_sha256:
                 raise ValueError("旧稿件/未识别结构不能正式提交；仅保留历史读取")
         except (ValueError, OSError, KeyError, TypeError) as exc:
             raise RevisionControlError(f"正式稿件采用前校验失败：{exc}") from exc
+        logical_id = str(candidate.get("logical_id"))
+        unchanged_edges = set()
+        if logical_id == "storyboard.package":
+            baseline = _current_by_logical(manifest, logical_id, allow_stale=True)
+            unchanged_edges = unchanged_director_edges(project, manifest, state, baseline, candidate_item)
         report = mark_impacted_artifacts_stale(
             manifest,
-            {str(candidate.get("logical_id"))},
+            {logical_id},
             reason=f"前序修订 {change_id}",
             revision=str(candidate_item.get("revision") or ""),
+            unchanged_edges=unchanged_edges,
         )
         for item in manifest.get("artifacts") or []:
             if item.get("logical_id") == candidate.get("logical_id") and item.get("artifact_id") != candidate_id and item.get("status") in {"current", "stale"}:
@@ -953,6 +1059,8 @@ def commit_change(project: Path, *, change_id: str) -> dict[str, Any]:
         completed["stale_downstream"] = stale_downstream
         control["history"].append(completed)
         control["active_change"] = None
+        if website_approval is not None and sha256_file(source) != website_approval.sha256:
+            raise RevisionControlError("已送审编导稿在提交校验期间发生变化")
         return _commit_json_transaction_unlocked(project, {
             project / CONTROL_RELATIVE: control,
             project / MANAGE / "artifact_manifest.json": manifest,

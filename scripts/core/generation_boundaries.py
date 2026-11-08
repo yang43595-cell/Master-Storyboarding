@@ -13,7 +13,16 @@ import math
 import re
 from pathlib import Path
 
-from .quality_evidence import source_shot_ids, reference_shot_ids
+from .quality_evidence import (generation_duration_values, required_visuals, reference_shot_ids, scene_state_requirements,
+                               source_shot_ids, validate_required_visuals,
+                               validate_scene_state_coverage, validate_shot_durations)
+
+_PHYSICAL_DIMENSIONS = ("positions", "props", "visibility")
+_PHYSICAL_ROLES = {
+    "positions": {"layout", "state_reference"},
+    "props": {"appearance", "state_reference"},
+    "visibility": {"appearance", "state_reference"},
+}
 
 
 def _need(value, message):
@@ -75,17 +84,39 @@ def _source_boundary(record, left, right, shots, reason):
 def _model_limit(payload, left, right, root):
     model = payload.get("selected_video_model")
     _need(isinstance(model, dict), "时长拆段缺少本轮已核模型能力")
+    # A delegated draft choice is a capability/parameter binding only. Its
+    # explicit blocked state cannot stand in for user model confirmation or
+    # permission to generate, including when the permission field is absent.
+    draft_selection = (model.get("confirmed_by_user") is False
+        and model.get("selection_basis") == "agent_selected_for_authorized_draft"
+        and _text(model.get("authorization_ref"))
+        and payload.get("status") == "candidate"
+        and payload.get("review_status") == "unreviewed"
+        and payload.get("production_blocked") is True
+        and payload.get("generation_authorized") is False
+        and payload.get("user_approved") is not True)
     _need(all(_text(model.get(k)) for k in ("id", "platform", "entry_point", "reference_mode"))
-          and model.get("confirmed_by_user") is True and _seconds(model.get("max_duration_seconds")),
+          and (model.get("confirmed_by_user") is True or draft_selection)
+          and _seconds(model.get("max_duration_seconds")),
           "模型、入口、参考模式、确认选择与真实时长上限不完整")
     _evidence_file(model.get("capability_evidence"), root)
+    modes = model.get("reference_modes")
+    if modes is None:
+        modes = [model["reference_mode"]]
+    else:
+        _need(isinstance(modes, list) and modes and all(_text(mode) for mode in modes)
+              and len(set(modes)) == len(modes), "已核参考模式列表无效")
+        proofs = model.get("reference_mode_evidence")
+        _need(isinstance(proofs, dict) and set(proofs) == set(modes),
+              "每种参考模式须有本轮实际能力证据")
+        for mode in modes:
+            _evidence_file(proofs[mode], root)
     for row in (left, right):
         parameters = row.get("parameters", payload.get("platform", {}))
         _need(isinstance(parameters, dict) and parameters.get("model") == model["id"]
-              and parameters.get("reference_mode", parameters.get("mode")) == model["reference_mode"],
+              and parameters.get("reference_mode", parameters.get("mode")) in modes,
               "拆段能力与实际段落模型/参考方式不一致")
-        values = [row[k] for k in ("duration_seconds", "generation_seconds") if k in row]
-        values += [parameters[k] for k in ("duration_seconds", "duration") if k in parameters]
+        values = generation_duration_values(row, parameters)
         _need(values and all(_seconds(v) and v <= model["max_duration_seconds"] for v in values)
               and all(v == values[0] for v in values), "生成时长缺失、冲突或超过本轮已核上限")
     return model["max_duration_seconds"]
@@ -107,8 +138,7 @@ def validate_delivery_parameters(rows, payload, project):
                 observed = [parameters[k] for k in aliases if k in parameters]
                 _need(all(_text(v) and v == values[0] for v in values) and observed
                       and all(v == values[0] for v in observed), "实际交付" + label + "与准确源稿不一致")
-        duration = [source[k] for k in ("duration_seconds", "generation_seconds") if k in source]
-        duration += [expected[k] for k in ("duration_seconds", "duration") if k in expected]
+        duration = generation_duration_values(source, expected)
         if duration:
             observed = [parameters[k] for k in ("duration_seconds", "duration") if k in parameters]
             _need(all(_seconds(v) and v == duration[0] for v in duration) and observed
@@ -149,23 +179,79 @@ def _cutpoint(left, right):
     # canvas gates check their confirmed group/visual evidence and native bytes.
 
 
-def validate_generation_boundaries(payload, storyboard, project):
+def _physical_requirements(left, right):
+    state = right.get("physical_continuity")
+    boundary = f"{left['segment_id']}→{right['segment_id']}"
+    _need(isinstance(state, dict) and state.get("from_segment_id") == left["segment_id"]
+          and _text(state.get("permitted_change")),
+          f"{boundary} 缺人物、持物和可见状态的独立接缝检查")
+    dimensions = [dimension for dimension in _PHYSICAL_DIMENSIONS if dimension in state]
+    _need(dimensions, f"{boundary} 未列出任何实际继承的状态")
+    for dimension in dimensions:
+        check = state[dimension]
+        _need(isinstance(check, dict) and check.get("status") in {"visual_reference", "no_visual_needed"}
+              and all(_text(check.get(k)) for k in ("previous_state", "current_state", "basis")),
+              f"{boundary} 的 {dimension} 缺两侧可见状态和依据")
+        for side, row, shot in (
+            ("previous", left, source_shot_ids(left)[-1]),
+            ("current", right, source_shot_ids(right)[0]),
+        ):
+            hashes = check.get(f"{side}_sha256s", [])
+            _need(isinstance(hashes, list) and all(isinstance(value, str) and
+                  re.fullmatch(r"[0-9a-f]{64}", value) for value in hashes)
+                  and len(set(hashes)) == len(hashes),
+                  f"{boundary} 的 {dimension} 引用须为两侧准确图像摘要")
+            if check["status"] == "no_visual_needed":
+                _need(not hashes, f"{boundary} 的 {dimension} 无需补图判断与引用冲突")
+                continue
+            _need(hashes and _text(check.get(f"{side}_observation")),
+                  f"{boundary} 的 {dimension} 缺 {side} 侧实际关系／状态图及实看证据")
+            yield row["segment_id"], shot, dimension, side, set(hashes), boundary
+
+
+def _require_physical_refs(refs, row, shot, dimension, side, hashes, boundary, *, source):
+    _need(isinstance(refs, list), f"{boundary} 缺实际参考清单")
+    covered = set()
+    expected_roles = _PHYSICAL_ROLES[dimension] | {"end_frame" if side == "previous" else "start_frame"}
+    for ref in refs:
+        if not isinstance(ref, dict) or ref.get("sha256") not in hashes:
+            continue
+        role = ref.get("role", ref.get("primary_role"))
+        roles = ref.get("roles", [role])
+        scope = ref.get("physical_scope", [])
+        is_image = (Path(ref.get("path") or "").suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}
+                    if source else ref.get("kind") == "image")
+        # A general layout or product photograph does not prove that it shows
+        # the actors, in-hand assembly, or visibility state being checked.
+        if (is_image and isinstance(roles, list) and set(roles) & expected_roles
+                and isinstance(scope, list) and dimension in scope and shot in reference_shot_ids(ref, row)):
+            covered.add(ref["sha256"])
+    segment_id = row.get("source_segment_id", row.get("segment_id"))
+    _need(hashes <= covered, f"{boundary} 的 {dimension} 缺 {segment_id} 侧实际匹配的画面参考")
+
+
+def validate_generation_boundaries(payload, storyboard, project, *, require_physical=True, action_shots=None):
     """Validate a full or partial current draft without writing/approving it.
 
     Missing facts may remain in a candidate, but this strict check fails until
     supplied. It does not auto-merge/split, demand an image for every shot, or
     impose model settings on an unsplit platform-neutral manuscript.
+    Canvas preflight can narrow action coverage to the shots being delivered.
     """
     try:
-        return _validate(payload, storyboard, Path(project).resolve())
+        return _validate(payload, storyboard, Path(project).resolve(), require_physical=require_physical,
+                         action_shots=action_shots)
     except (KeyError, TypeError, AttributeError, IndexError) as exc:
         raise ValueError("generation_boundary: 分段依据或来源结构无效") from exc
 
 
-def _validate(payload, storyboard, root):
+def _validate(payload, storyboard, root, *, require_physical, action_shots):
     rows = _rows(payload)
     shots = {}
+    staged_scenes = set()
     for scene in storyboard.get("scenes", []):
+        if scene.get("space_rules"):
+            staged_scenes.add(scene.get("scene_id"))
         for shot in scene.get("shots", []):
             key = shot.get("shot_id")
             _need(_text(key) and key not in shots and _text(scene.get("scene_id")), "导演场景/镜号缺失或重复")
@@ -179,11 +265,25 @@ def _validate(payload, storyboard, root):
         for key in ids:
             _need(order[key] >= previous, "生成段来源顺序与导演顺序冲突")
             previous = order[key]
+        if "shot_durations" in row:
+            validate_shot_durations(row, row.get("parameters", payload.get("platform", {})))
         mapped.append(ids)
+    validate_required_visuals(rows, required_visuals(storyboard), shot_order=tuple(shots), project=root,
+                              action_shots=action_shots)
     checked = 0
     for index, (left, right) in enumerate(zip(rows, rows[1:])):
         before, after = mapped[index:index + 2]
-        if shots[before[-1]][0] != shots[after[0]][0]:
+        before_scene, after_scene = shots[before[-1]][0], shots[after[0]][0]
+        same_scene = before_scene == after_scene
+        # A new scene can establish its own staging. Declared carryover still
+        # binds the selected states across either kind of cut.
+        if "physical_continuity" in right or (require_physical and same_scene and before_scene in staged_scenes):
+            by_side = {left["segment_id"]: left, right["segment_id"]: right}
+            for ident, shot, dimension, side, hashes, boundary in _physical_requirements(left, right):
+                row = by_side[ident]
+                _require_physical_refs(row.get("materials", row.get("candidate_upload_order", [])),
+                                       row, shot, dimension, side, hashes, boundary, source=True)
+        if not same_scene:
             continue
         split = right.get("same_scene_split")
         _need(isinstance(split, dict) and split.get("from_segment_id") == left["segment_id"]
@@ -203,7 +303,7 @@ def _validate(payload, storyboard, root):
             _cutpoint(left, right)
         checked += 1
     return {"segment_count": len(rows), "same_scene_boundaries_checked": checked,
-            "scope": "declared source boundaries, capability evidence bytes and cutpoint input roles; not semantic/visual approval"}
+            "scope": "source boundaries, capability evidence, and declared physical-state and action references; not semantic/visual approval"}
 
 
 def validate_delivery_cutpoints(rows, segments):
@@ -214,6 +314,15 @@ def validate_delivery_cutpoints(rows, segments):
     _need(len(delivered) == len(rows), "同一源生成段不能对应多个本次交付节点")
     required, external_predecessors = {}, {}
     for right in segments:
+        physical = right.get("physical_continuity")
+        if physical is not None:
+            predecessor = by_id.get(physical.get("from_segment_id")) if isinstance(physical, dict) else None
+            _need(predecessor is not None, "实际交付缺物理接缝的准确前段")
+            for ident, shot, dimension, side, hashes, boundary in _physical_requirements(predecessor, right):
+                if ident in delivered:
+                    row = delivered[ident]
+                    _require_physical_refs(row.get("reference_checks", []), row, shot, dimension,
+                                           side, hashes, boundary, source=False)
         split = right.get("same_scene_split", {})
         if not isinstance(split, dict) or split.get("reason") not in {"model_duration_exceeded", "execution_limit"}:
             continue
@@ -252,6 +361,36 @@ def validate_delivery_cutpoints(rows, segments):
     return external_predecessors
 
 
+def diagnose_scene_state_plan(payload, storyboard):
+    """Report state coverage in the proposed references, before any native binding."""
+    requirements = scene_state_requirements(storyboard)
+    report = []
+    for segment in _rows(payload):
+        shots = source_shot_ids(segment)
+        needed = [state for state in requirements if set(shots) & set(state["source_shot_ids"])]
+        if not needed:
+            continue
+        result = {"segment_id": segment["segment_id"], "status": "covered"}
+        refs = []
+        try:
+            for ref in segment.get("materials", segment.get("candidate_upload_order", [])):
+                planned = dict(ref)
+                if "kind" not in planned:
+                    path = planned.get("path")
+                    if isinstance(path, str) and Path(path).suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
+                        planned["kind"] = "image"
+                refs.append(planned)
+            validate_scene_state_coverage(
+                {"source_shot_ids": shots, "reference_checks": refs}, needed)
+        except ValueError as exc:
+            result.update(status="needs_review", issue=str(exc))
+        except TypeError:
+            result.update(status="needs_review", issue="scene_state: 拟用素材结构无效")
+        report.append(result)
+    return {"scope": "declared plan only; native control and visual observations not checked",
+            "segments": report}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", type=Path, required=True)
@@ -259,8 +398,10 @@ def main(argv=None):
     parser.add_argument("--storyboard", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
-        result = validate_generation_boundaries(json.loads(args.prompt.read_text(encoding="utf-8-sig")),
-            json.loads(args.storyboard.read_text(encoding="utf-8-sig")), args.project)
+        payload = json.loads(args.prompt.read_text(encoding="utf-8-sig"))
+        storyboard = json.loads(args.storyboard.read_text(encoding="utf-8-sig"))
+        result = validate_generation_boundaries(payload, storyboard, args.project)
+        result["scene_state_plan"] = diagnose_scene_state_plan(payload, storyboard)
     except (ValueError, OSError) as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
         return 1

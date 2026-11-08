@@ -4,8 +4,9 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from test_visual_asset_projects import fixture, pmod, load_project_state, write_project_state
-from visual_asset_source import digest, prompt_context
+from visual_asset_source import digest, prompt_context, resolve_reference
 import test_visual_asset_projects as project_tests
 
 
@@ -72,6 +73,42 @@ class SourceTests(unittest.TestCase):
              patch.object(self.lib.projects.bridge, 'plan_assets', side_effect=boundary):
             self.lib.projects._plan_worker('not-executed', project, [row])
         self.assertEqual(captured['reference_paths'], [str(source)])
+
+    def test_external_asset_media_does_not_enable_external_text_evidence(self):
+        external = self.root.parent / 'external-knowledge'
+        external.mkdir()
+        source = external / 'reference.png'
+        source.write_bytes(Path(self.asset['original']).read_bytes())
+        brief = external / 'PRODUCT_BRIEF.md'
+        brief.write_text('## Product facts\nExternal method must never load.', encoding='utf-8')
+        project_brief = self.root / 'PROJECT_BRIEF.md'
+        project_brief.write_text('Project product facts.', encoding='utf-8')
+        external_reference = str(brief) + '#Product facts'
+        requirements = [{'reference_paths': [str(source), external_reference, project_brief.name]}]
+        raw_read = Path.read_text
+
+        def read_text(path, *args, **kwargs):
+            self.assertNotEqual(path, brief)
+            return raw_read(path, *args, **kwargs)
+
+        with patch.object(Path, 'read_text', read_text):
+            self.assertEqual(resolve_reference(self.root, str(source)), str(source))
+            result = pmod.reference_evidence(self.root, requirements, [{'source': str(source)}])
+            self.assertEqual(result['reference_documents'], [{'path': str(project_brief), 'content': 'Project product facts.'}])
+            self.assertEqual(len(result['unavailable_references']), 1)
+            self.assertIn('文本参考超出项目和仓库范围', result['unavailable_references'][0])
+            self.assertIn(external_reference, result['unavailable_references'][0])
+
+    def test_reference_relocation_cannot_rebind_to_external_text(self):
+        external = self.root.parent / 'legacy-brief.md'
+        external.write_text('## Product facts', encoding='utf-8')
+        entry = {'artifact_id': 'A', 'path_or_url': str(external), 'status': 'current',
+                 'user_approved': True, 'checksum': digest(external)}
+        state = {'user_confirmations': [{'artifact_ids': ['A']}]}
+        with patch('visual_asset_source.digest') as read_bytes:
+            with self.assertRaisesRegex(ValueError, '文本参考超出项目和仓库范围'):
+                resolve_reference(self.root, external.name + '#Product facts', [entry], state)
+            read_bytes.assert_not_called()
 
     def test_received_and_single_item_context(self):
         _, source, n = pmod.source_project(self.root)

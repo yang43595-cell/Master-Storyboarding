@@ -142,8 +142,49 @@ def save_manifest(project_root: Path, manifest: dict[str, Any]) -> None:
 _FORMAL_PACKAGE_LOGICAL_IDS = {"narrative.package", "storyboard.package", "video.prompt"}
 
 
+def _exact_narrative_approval(receipt: Any, entry: dict[str, Any], sha256: str) -> bool:
+    if not isinstance(receipt, dict) or receipt.get("scope") != confirmation_scope.SCOPE_ARTIFACT:
+        return False
+    if not confirmation_scope.is_whole_artifact(receipt) or receipt.get("sha256") != sha256:
+        return False
+    approval_ref = receipt.get("approval_ref")
+    if entry.get("logical_id") != "narrative.package" or not isinstance(approval_ref, str) or not approval_ref.strip():
+        return False
+    if receipt.get("kind") == "package-adoption":
+        return (receipt.get("artifact_ids") == [entry.get("artifact_id")]
+                and receipt.get("logical_id") == "narrative.package"
+                and receipt.get("revision") == entry.get("revision"))
+    return (receipt.get("kind") == "revision-candidate"
+            and receipt.get("artifact_id") == entry.get("artifact_id")
+            and receipt.get("revision") == entry.get("revision"))
+
+
+def narrative_has_exact_approval(project_root: Path, source_path: Path, narrative: dict[str, Any]) -> bool:
+    """Recognize an existing whole-package human approval, bound to the original bytes."""
+    root = Path(project_root).resolve()
+    source_path = project_path(root, source_path)
+    if not source_path.is_relative_to(root) or not source_path.is_file():
+        return False
+    state = load_project_state(root)
+    for entry in load_manifest(root).get("artifacts", []):
+        if (entry.get("logical_id") != "narrative.package" or entry.get("revision") != narrative.get("revision")
+                or not artifact_is_confirmed(entry, state, root)):
+            continue
+        sha256 = entry.get("checksum")
+        if not sha256 or not any(_exact_narrative_approval(receipt, entry, sha256)
+                                for receipt in state.get("user_confirmations", [])):
+            continue
+        path = project_path(root, entry.get("path_or_url", ""))
+        if path == source_path:
+            raw = path.read_bytes()
+            if hashlib.sha256(raw).hexdigest() == sha256 and json.loads(raw.decode("utf-8-sig")) == narrative:
+                return True
+    return False
+
+
 def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
-                                 manifest: dict[str, Any] | None = None) -> str | None:
+                                 manifest: dict[str, Any] | None = None, *, reading_existing: bool = False,
+                                 approval_receipt: dict[str, Any] | None = None) -> str | None:
     """Recheck platform-neutral source contracts at a formal adoption boundary.
 
     Candidate drafting/registration stays permissive. The supported adoption
@@ -151,6 +192,9 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
     upstream approvals or a drifted file cannot pass on an earlier review.
     This validates local project contracts only; it does not certify meaning,
     quality, or an external delivery platform.
+
+    Reading an already adopted baseline for upstream repair does not require
+    newly introduced fields. Adoption and delivery keep the strict default.
     """
     logical_id = entry.get("logical_id")
     if logical_id not in _FORMAL_PACKAGE_LOGICAL_IDS:
@@ -184,14 +228,17 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
         if "story_paragraphs" not in payload:
             raise ValueError("正式 narrative.package 必须包含 story_paragraphs 来源对账")
         from .story_sources import validate_story_sources
-        validate_story_sources(payload, project_root=root, require_dialogue_evidence=True)
+        validate_story_sources(payload, project_root=root, narrative_path=path, require_dialogue_evidence=True,
+                               require_character_output=not reading_existing,
+                               exact_human_approval=_exact_narrative_approval(approval_receipt, entry, candidate_sha256))
     elif logical_id == "storyboard.package":
         if payload.get("schema_version") != "4.0":
             raise ValueError("旧导演事件包仅保留历史读取；正式 storyboard.package 须使用 4.0 JSON 契约")
-        narrative = _confirmed_package_source(root, manifest, state, payload.get("source_narrative"),
-                                              "narrative.package")
+        narrative, narrative_path = _read_confirmed_package_source(root, manifest, state, payload.get("source_narrative"),
+                                                                    "narrative.package")
         from .story_sources import validate_story_sources
-        validate_story_sources(narrative, payload, project_root=root, require_dialogue_evidence=True)
+        validate_story_sources(narrative, payload, project_root=root, narrative_path=narrative_path,
+                               require_dialogue_evidence=True)
     else:
         from .quality_evidence import validate_native_binding_claims
         validate_native_binding_claims(payload, root, entry.get('revision'))
@@ -207,11 +254,13 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
             raise ValueError("正式视频提示词必须绑定准确 source_storyboard")
         storyboard = _confirmed_package_source(root, manifest, state, source, "storyboard.package")
         narrative_ref = storyboard.get("source_narrative")
-        narrative = _confirmed_package_source(root, manifest, state, narrative_ref, "narrative.package")
+        narrative, narrative_path = _read_confirmed_package_source(root, manifest, state, narrative_ref, "narrative.package")
         from .story_sources import validate_story_sources
-        validate_story_sources(narrative, storyboard, project_root=root, require_dialogue_evidence=True)
+        validate_story_sources(narrative, storyboard, project_root=root, narrative_path=narrative_path,
+                               require_dialogue_evidence=True)
         from . import revision_control
-        if revision_control._generation_segments(payload) is None:
+        segments = revision_control._generation_segments(payload)
+        if segments is None:
             raise ValueError("正式视频提示词必须包含真实 generation_segments，材料分组不能代替生成段")
         try:
             from ..check_video_prompt_focal_intent import _json_segments
@@ -221,10 +270,10 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
             _json_segments(json.dumps(payload, ensure_ascii=False))
         except ValueError as exc:
             raise ValueError("正式视频提示词生成段/创作段引用不一致：" + str(exc)) from exc
-        from .quality_evidence import source_shot_ids
+        from .quality_evidence import director_shot_audio, replay_source_audio, source_shot_ids
         known_shots = {shot["shot_id"] for scene in storyboard.get("scenes", [])
                        for shot in scene.get("shots", [])}
-        for row in revision_control._generation_segments(payload):
+        for row in segments:
             unknown = set(source_shot_ids(row)) - known_shots
             if unknown:
                 raise ValueError("视频来源镜号不属于准确已确认导演包：" + ", ".join(sorted(unknown)))
@@ -235,7 +284,11 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
         if prior:
             revision_control._validate_segment_reconciliation(root, prior[0], payload)
         from .generation_boundaries import validate_generation_boundaries
-        validate_generation_boundaries(payload, storyboard, root)
+        validate_generation_boundaries(payload, storyboard, root, require_physical=not reading_existing)
+        if not reading_existing:
+            shot_audio = director_shot_audio([storyboard])
+            if shot_audio or any("source_audio" in row for row in segments):
+                replay_source_audio(segments, shot_audio)
     if digest(path) != candidate_sha256:
         raise ValueError("候选稿件在提交校验期间发生变化；重新登记并审核")
     return candidate_sha256
@@ -243,6 +296,12 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
 
 def _confirmed_package_source(root: Path, manifest: dict[str, Any], state: dict[str, Any],
                               reference: Any, logical_id: str) -> dict[str, Any]:
+    payload, _ = _read_confirmed_package_source(root, manifest, state, reference, logical_id)
+    return payload
+
+
+def _read_confirmed_package_source(root: Path, manifest: dict[str, Any], state: dict[str, Any],
+                              reference: Any, logical_id: str) -> tuple[dict[str, Any], Path]:
     if not isinstance(reference, dict):
         raise ValueError("正式稿件缺少准确来源引用：" + logical_id)
     matches = [item for item in manifest.get("artifacts", [])
@@ -269,13 +328,14 @@ def _confirmed_package_source(root: Path, manifest: dict[str, Any], state: dict[
         raise ValueError("正式稿件上游必须是 JSON 对象：" + logical_id)
     if value.get("revision") != source.get("revision"):
         raise ValueError("正式稿件上游正文 revision 与登记版本不一致：" + logical_id)
-    return value
+    return value, path
 
 
 def adopt_initial_package(project_root: Path, artifact_id: str, approval_ref: str,
-                          *, scope_description: str = "") -> dict[str, Any]:
+                          *, scope_description: str = "", website_approval=None) -> dict[str, Any]:
     """Atomically confirm and select a first formal package in an empty lineage."""
     from .candidate_test import require_production
+    from .review_publication import require_script_approval
     if not approval_ref.strip():
         raise ValueError("正式稿采用必须提供准确 approval_ref")
     root = Path(project_root).resolve()
@@ -293,23 +353,28 @@ def adopt_initial_package(project_root: Path, artifact_id: str, approval_ref: st
         if any(item.get("logical_id") == logical_id and item.get("status") in {"current", "stale"}
                for item in manifest.get("artifacts", [])):
             raise ValueError("该逻辑产物已有 current/stale 版本；返修须使用 revision_control")
-        submission_sha256 = validate_candidate_submission(root, entry, manifest)
-        if not submission_sha256:
-            raise ValueError("正式采用入口只接受当前结构化 JSON 稿件")
         path = project_path(root, entry.get("path_or_url", ""))
-        if digest(path) != submission_sha256:
-            raise ValueError("候选稿件在整稿确认期间发生变化；重新登记并审核")
-        entry["checksum"] = submission_sha256
-        entry["status"] = "current"
-        entry["user_approved"] = True
+        if not path.is_relative_to(root) or not path.is_file():
+            raise ValueError("正式稿件必须是项目内可读文件")
+        current_sha256 = digest(path)
+        require_script_approval(root, {**entry, "path_or_url": path.relative_to(root).as_posix(),
+                                       "checksum": current_sha256}, approval_ref, website_approval)
         receipt = confirmation_scope.new_receipt(
             confirmation_scope.SCOPE_ARTIFACT,
             description=scope_description,
             extra={"kind": "package-adoption", "artifact_ids": [artifact_id],
                    "logical_id": logical_id, "revision": entry.get("revision"),
-                   "sha256": submission_sha256, "approval_ref": approval_ref,
+                   "sha256": current_sha256, "approval_ref": approval_ref,
                    "at": utc_now()},
         )
+        submission_sha256 = validate_candidate_submission(root, entry, manifest, approval_receipt=receipt)
+        if not submission_sha256:
+            raise ValueError("正式采用入口只接受当前结构化 JSON 稿件")
+        if digest(path) != submission_sha256 or receipt["sha256"] != submission_sha256:
+            raise ValueError("候选稿件在整稿确认期间发生变化；重新登记并审核")
+        entry["checksum"] = submission_sha256
+        entry["status"] = "current"
+        entry["user_approved"] = True
         state = load_project_state(root)
         state.setdefault("user_confirmations", []).append(receipt)
         state["current_artifacts"] = list(dict.fromkeys([*state.get("current_artifacts", []), artifact_id]))
@@ -405,7 +470,90 @@ def current_artifacts(manifest: dict[str, Any]) -> list[dict[str, Any]]:
     return [item for item in manifest.get("artifacts", []) if item.get("status") == "current"]
 
 
-def dependency_closure(manifest: dict[str, Any], roots: set[str]) -> set[str]:
+def unchanged_director_usage(project, baseline, replacement, shot_ids) -> bool:
+    """Prove a supplement's ordered scene context against two exact director files."""
+    if (not shot_ids or baseline.get('status') not in {'current', 'superseded'}
+            or replacement.get('status') not in {'candidate', 'current'}
+            or baseline.get('depends_on') != replacement.get('depends_on')):
+        return False
+    project = Path(project).resolve()
+    prefixes = []
+    package_contexts = []
+    try:
+        for entry in (baseline, replacement):
+            if entry.get('logical_id') != 'storyboard.package' or entry.get('type') != 'storyboard.package':
+                return False
+            path = project_path(project, entry['path_or_url'])
+            if (not path.is_relative_to(project) or path.suffix.lower() != '.json'
+                    or not entry.get('checksum') or digest(path) != entry['checksum']):
+                return False
+            package = read_json(path)
+            if package.get('schema_version') != '4.0' or package.get('revision') != entry.get('revision'):
+                return False
+            scope = {}
+            scene_ids = set()
+            scenes = package['scenes']
+            for index, scene in enumerate(scenes):
+                scene_id = scene['scene_id']
+                if not scene_id or scene_id in scene_ids:
+                    return False
+                scene_ids.add(scene_id)
+                for shot in scene['shots']:
+                    shot_id = shot['shot_id']
+                    if not shot_id or shot_id in scope:
+                        return False
+                    scope[shot_id] = index
+            if not set(shot_ids) <= scope.keys():
+                return False
+            # Retain the scene's shared context and all preceding scenes.
+            prefixes.append(sha256_json(scenes[:max(scope[shot] for shot in shot_ids) + 1]))
+            context = {key: value for key, value in package.items() if key not in {
+                'scenes', 'revision', 'status', 'human_readable_path', 'rebuild_provenance'}}
+            timing = context.get('timing_basis')
+            if isinstance(timing, dict) and timing.get('status') == 'not_evaluable':
+                # The descriptive summary may change with a later scene's budget.
+                # Timing status and exact source identity remain bound.
+                context['timing_basis'] = {key: value for key, value in timing.items() if key != 'source_type'}
+            package_contexts.append(sha256_json(context))
+    except (AttributeError, KeyError, OSError, TypeError, ValueError):
+        return False
+    return prefixes[0] == prefixes[1] and package_contexts[0] == package_contexts[1]
+
+
+def supplement_director_shots(entry, report) -> set[str]:
+    permitted = confirmation_scope.image_usage_shots(report.get('usage'), required=True)
+    evidence = entry.get('quality_evidence') or {}
+    observed = confirmation_scope.image_usage_shots(
+        {'source_shot_ids': evidence.get('source_shot_ids')}, required=True)
+    return set(permitted) | set(observed)
+
+
+def unchanged_director_edges(project, manifest, state, baseline, replacement) -> set[tuple[str, str]]:
+    """Cut only direct edges with already adopted, unchanged image usage."""
+    if (baseline.get('logical_id') != 'storyboard.package'
+            or baseline.get('status') != 'current'
+            or not artifact_is_adopted(baseline, state, project)):
+        return set()
+    from .agent_acceptance import validate_agent_acceptance
+    kept = set()
+    current = current_artifacts(manifest)
+    logical_ids = [item.get('logical_id') for item in current]
+    for item in current:
+        if (item.get('type') != 'visual-supplement-image' or not item.get('agent_acceptance')
+                or logical_ids.count(item.get('logical_id')) != 1
+                or 'storyboard.package' not in (item.get('depends_on') or [])):
+            continue
+        try:
+            report = validate_agent_acceptance(project, item, state=state)
+            validate_current_dependencies(item, manifest, state, project)
+            if unchanged_director_usage(project, baseline, replacement, supplement_director_shots(item, report)):
+                kept.add(('storyboard.package', item['logical_id']))
+        except (KeyError, OSError, TypeError, ValueError):
+            continue
+    return kept
+
+
+def dependency_closure(manifest: dict[str, Any], roots: set[str], *, unchanged_edges=()) -> set[str]:
     """Follow the adopted branch, preferring current over stale for each ID.
 
     A stale version still carries the path to its current downstream dependents
@@ -422,7 +570,9 @@ def dependency_closure(manifest: dict[str, Any], roots: set[str]) -> set[str]:
         logical_id = item.get("logical_id")
         if logical_id:
             for dependency in item.get("depends_on") or []:
-                dependents.setdefault(str(dependency), set()).add(str(logical_id))
+                edge = str(dependency), str(logical_id)
+                if edge not in unchanged_edges:
+                    dependents.setdefault(edge[0], set()).add(edge[1])
     impacted: set[str] = set()
     pending = set(roots)
     while pending:
@@ -470,6 +620,8 @@ def mark_impacted_artifacts_stale(
     changed_ids: set[str],
     reason: str,
     revision: str,
+    *,
+    unchanged_edges=(),
 ) -> InvalidationReport:
     """把直接或间接依赖变化项的 current 产物标为 stale。
 
@@ -479,7 +631,7 @@ def mark_impacted_artifacts_stale(
     changed = set(changed_ids)
     if not changed:
         return InvalidationReport(set(), reason, revision)
-    impacted = dependency_closure(manifest, changed)
+    impacted = dependency_closure(manifest, changed, unchanged_edges=unchanged_edges)
     stale_ids: set[str] = set()
     now = utc_now()
     for item in manifest.get("artifacts", []):

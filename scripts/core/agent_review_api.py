@@ -6,6 +6,8 @@ is inferred from either a publication receipt or a status response.
 """
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import math
 import re
@@ -19,6 +21,8 @@ DEFAULT_BASE_URL = 'https://yangyangyang.click'
 MAX_TEXT_BYTES = 100 * 1024
 MAX_RESPONSE_BYTES = 1024 * 1024
 TEXT_STAGES = ('script', 'director', 'prompts')
+IMAGE_TYPES = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp'}
+MAX_IMAGE_BYTES = 8 * 1024 * 1024
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}', re.I)
 _TOKEN = re.compile(r'[-_A-Za-z0-9]{32,200}')
 _VERSION = re.compile(r'[a-f0-9]{64}')
@@ -136,11 +140,11 @@ class AgentReviewClient:
             raise AgentReviewError('Cannot read a valid Agent Review credential.', code='CREDENTIAL_ERROR') from None
 
     @staticmethod
-    def _target(case_id, stage):
+    def _target(case_id, stage, stages=TEXT_STAGES):
         if (not _text(case_id) or len(case_id) > 200
                 or any(ord(c) < 32 for c in case_id)):
             _invalid('A nonempty case_id is required.')
-        if stage not in TEXT_STAGES:
+        if stage not in stages:
             _invalid('Agent Review text stage must be script, director or prompts.')
 
     @staticmethod
@@ -155,8 +159,10 @@ class AgentReviewClient:
                 data = json.dumps(payload, ensure_ascii=False, separators=(',', ':'), allow_nan=False).encode('utf-8')
             except (TypeError, ValueError, UnicodeError):
                 _invalid('Agent Review request must be valid UTF-8 JSON.')
-            if len(data) > 128 * 1024:
-                _invalid('Encoded Agent Review request exceeds the server 128KB limit.')
+            limit = 12 * 1024 * 1024 if route == 'publish-assets' else 128 * 1024
+            if len(data) > limit:
+                _invalid('Encoded Agent Review request exceeds the server ' +
+                         ('12 MiB' if route == 'publish-assets' else '128KB') + ' limit.')
         token = self._token()
         headers = {'Authorization': 'Bearer ' + token}
         if data is not None:
@@ -235,6 +241,34 @@ class AgentReviewClient:
         if purpose is not None:
             payload['purpose'] = purpose
         result = self._request('POST', 'publish', payload)
+        return self._publication(result, case_id, stage, operation_id)
+
+    def publish_asset(self, *, case_id, name, image, purpose, operation_id,
+                      artifact_id, ast_id, output_id, references=()):
+        self._target(case_id, 'assets', ('assets',))
+        self._operation(operation_id)
+        if (not _text(name) or len(name) > 200 or re.search(r'[\x00-\x1f/\\]', name)
+                or Path(name).suffix.lower() not in IMAGE_TYPES):
+            _invalid('Asset must use a PNG, JPEG or WebP filename without path separators.')
+        if not isinstance(image, bytes) or not 0 < len(image) <= MAX_IMAGE_BYTES:
+            _invalid('Asset image must contain at most 8 MiB.')
+        if (not _text(purpose) or len(purpose) > 500 or any(ord(c) < 32 for c in purpose)
+                or not all(_text(item) for item in (artifact_id, ast_id, output_id))
+                or not isinstance(references, (list, tuple)) or len(references) > 50
+                or not all(_text(ref) for ref in references) or len(set(references)) != len(references)):
+            _invalid('Asset purpose, identities and references must be explicit.')
+        payload = {'caseId': case_id, 'name': name, 'purpose': purpose,
+                   'operationId': operation_id, 'stage': 'assets', 'mime': IMAGE_TYPES[Path(name).suffix.lower()],
+                   'dataBase64': base64.b64encode(image).decode('ascii'),
+                   'artifactId': artifact_id, 'astId': ast_id, 'outputId': output_id,
+                   'references': list(references)}
+        result = self._request('POST', 'publish-assets', payload)
+        self._publication(result, case_id, 'assets', operation_id)
+        if result.get('sha256') != hashlib.sha256(image).hexdigest():
+            _receipt_error()
+        return result
+
+    def _publication(self, result, case_id, stage, operation_id):
         if (result.get('ok') is not True or result.get('caseId') != case_id
                 or result.get('stage') != stage or result.get('scope') != 'live'
                 or result.get('operationId') != operation_id
@@ -261,7 +295,7 @@ class AgentReviewClient:
         return result
 
     def status(self, *, case_id, stage='script'):
-        self._target(case_id, stage)
+        self._target(case_id, stage, (*TEXT_STAGES, 'assets'))
         result = self._request('GET', 'status', query={'caseId': case_id, 'stage': stage})
         case, head, expected = result.get('case'), result.get('head'), result.get('expectations')
         if (not isinstance(case, dict) or case.get('id') != case_id
@@ -285,3 +319,35 @@ class AgentReviewClient:
                 or (stage == 'script' and source != version)):
             _receipt_error()
         return result
+
+    def decision(self, *, case_id, stage, version):
+        self._target(case_id, stage, ('script', 'assets'))
+        if not _version(version):
+            _invalid('Decision reads require an exact published version.')
+        result = self._request('GET', 'decision', query={'caseId': case_id, 'stage': stage, 'version': version})
+        case, validity = result.get('case'), result.get('validity')
+        status = result.get('decisionStatus')
+        flags = ('isCurrent', 'sourceStale', 'dependencyStale', 'dependencyUnapproved', 'reviewable', 'stillEffective')
+        if (not isinstance(case, dict) or case.get('id') != case_id or not _text(case.get('projectId'))
+                or result.get('stage') != stage or result.get('version') != version
+                or status not in ('pending', 'changes', 'approved')
+                or not isinstance(validity, dict) or any(type(validity.get(flag)) is not bool for flag in flags)):
+            _receipt_error()
+        approval, event = result.get('approval'), result.get('latestEvent')
+        if status == 'approved':
+            scope = dict(projectId=case['projectId'], scope='live', caseId=case_id, stage=stage, version=version)
+            if (not isinstance(approval, dict) or approval.get('scope') != scope
+                    or not _text(approval.get('actorId')) or not _text(approval.get('decidedAt'))
+                    or not isinstance(event, dict) or event.get('decision') != 'approve'
+                    or event.get('actorId') != approval['actorId'] or event.get('createdAt') != approval['decidedAt']):
+                _receipt_error()
+        elif approval is not None:
+            _receipt_error()
+        return result
+
+
+def effective_approval(decision):
+    validity = decision['validity']
+    return (decision['decisionStatus'] == 'approved' and validity['isCurrent']
+            and validity['stillEffective'] and validity['reviewable']
+            and not any(validity[key] for key in ('sourceStale', 'dependencyStale', 'dependencyUnapproved')))

@@ -204,7 +204,8 @@ def _validate_v32(plan: dict[str, Any], project_root: Path) -> ValidationReport:
             _issue(errors, "PLAN_SCHEMA_INVALID", message)
         if narrative and storyboard:
             try:
-                validate_story_sources(narrative, storyboard, project_root=project_root)
+                narrative_path = _resolve_project_ref(project_root, plan["source_narrative"]["path"])
+                validate_story_sources(narrative, storyboard, project_root=project_root, narrative_path=narrative_path)
             except (ValueError, OSError) as exc:
                 _issue(errors, "STORY_SOURCE_INVALID", str(exc))
 

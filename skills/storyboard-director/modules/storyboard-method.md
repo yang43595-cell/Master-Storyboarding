@@ -1,6 +1,6 @@
 # 视觉补充执行合同
 
-本 Skill 必读 knowledge-profile 绑定的 `VISUAL-SUPPLEMENT-METHOD` 与 `IMAGE-CONTINUITY-METHOD` 完整正文；按现行根解析读取仓库 `knowledge/runtime/` 运行副本或明确选定的 Vault 来源，固定副本不等于实时主库。下文保留资料读取、来源镜头约束、请求数量与交付合同，不将回链当作已阅读。
+本 Skill 必读 knowledge-profile 绑定的 `VISUAL-SUPPLEMENT-METHOD` 与 `IMAGE-CONTINUITY-METHOD` 完整正文；从仓库 `knowledge/runtime/` 读取当前 profile 选定的固定版本。下文保留资料读取、来源镜头约束、请求数量与交付合同，不将回链当作已阅读。
 
 ## 本 Skill 产出须命中的规范（缺即停）
 

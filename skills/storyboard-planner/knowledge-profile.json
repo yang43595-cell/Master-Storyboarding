@@ -9,6 +9,16 @@
       "binding_status": "user_confirmed",
       "applies_when": "已确认叙事包之后形成、返修或核对导演镜头方案时",
       "requires": {"skill": "storyboard-planner"}
+    },
+    {
+      "id": "VGEN-CREATOR-POLISHING-MASK-USE",
+      "path": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/方法.md",
+      "binding_status": "user_confirmed",
+      "applies_when": "本轮明确选用造物者温泉酸抛光面膜 2.0，且产品实际出镜展示或按真实方法使用；按本 Skill 职责读取。",
+      "requires": {
+        "skill": "storyboard-planner",
+        "request.product_id": "creator-polishing-mask-2"
+      }
     }
   ]
 }

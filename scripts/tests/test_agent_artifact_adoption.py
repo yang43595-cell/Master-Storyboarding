@@ -219,3 +219,115 @@ def test_narrative_cannot_enter_agent_adoption(tmp_path):
     with pytest.raises(ValueError, match="不允许 agent"):
         artifacts.adopt_initial_agent_artifact(tmp_path, "N2", "does-not-exist.json")
     assert load_project_state(tmp_path) == before
+
+
+def test_authorized_stale_image_revision_carries_evidence_in_atomic_candidate(tmp_path):
+    from test_quality_evidence_consumers import agent_fixture
+    _, base = agent_fixture(tmp_path)
+    before = copy.deepcopy(load_project_state(tmp_path)['user_confirmations'])
+    manifest = artifacts.load_manifest(tmp_path)
+    next(a for a in manifest['artifacts'] if a['artifact_id'] == base['artifact_id'])['status'] = 'stale'
+    artifacts.save_manifest(tmp_path, manifest)
+    rc.open_change(tmp_path, change_id='REBIND', tier='T1', logical_ids=[base['logical_id']],
+                   reason='Synthetic revalidation only', authorization_id='SYNTHETIC-WF')
+    rc.record_candidate(tmp_path, change_id='REBIND', artifact_id='IMG-R02',
+                        logical_id=base['logical_id'], artifact_type=base['type'],
+                        candidate_path=base['path_or_url'], revision='R02',
+                        artifact_metadata={'quality_evidence': copy.deepcopy(base['quality_evidence'])})
+    candidate = next(a for a in artifacts.load_manifest(tmp_path)['artifacts'] if a['artifact_id'] == 'IMG-R02')
+    check = report(tmp_path, candidate, name='rebind-check.json', authorization_id='SYNTHETIC-WF',
+                   usage={'source_shot_ids': ['S01-010']})
+    rc.confirm_agent_candidate(tmp_path, change_id='REBIND', report_path=str(check))
+    rc.commit_change(tmp_path, change_id='REBIND')
+    adopted = next(a for a in artifacts.load_manifest(tmp_path)['artifacts'] if a['artifact_id'] == 'IMG-R02')
+    assert artifacts.artifact_is_adopted(adopted, load_project_state(tmp_path), tmp_path)
+    assert adopted['user_approved'] is False
+    assert load_project_state(tmp_path)['user_confirmations'] == before
+
+
+@pytest.mark.parametrize('injected', ['status', 'user_approved', 'agent_acceptance', 'checksum'])
+def test_revision_image_metadata_cannot_inject_adoption_fields(tmp_path, injected):
+    with pytest.raises(ValueError, match='不能注入采用身份'):
+        rc.record_candidate(tmp_path, change_id='UNUSED', artifact_id='IMG-R02',
+                            logical_id='image.test', artifact_type='visual-supplement-image',
+                            candidate_path='image.png', revision='R02',
+                            artifact_metadata={injected: True})
+
+
+@pytest.mark.parametrize('change_scope', ['later_scene', 'used_scene', 'global_rule', 'timing_source'])
+def test_director_revision_preserves_only_unchanged_supplement_scope(tmp_path, change_scope):
+    from scripts.core import asset_refs
+    from test_quality_evidence_consumers import adopt_agent_fixture_entry, observations
+
+    story, _ = confirmed_narrative(tmp_path)
+    board = board_candidate(tmp_path, story)
+    later = copy.deepcopy(board['scenes'][0])
+    later.update(scene_id='S02', audiovisual_flow='S02-010 Synthetic subsequent action')
+    later['shots'][0].update(shot_id='S02-010', source_dialogue_ids=[])
+    later['shots'][0]['audio']['dialogue'] = []
+    board['scenes'].append(later)
+    base = adopt_agent_fixture_entry(tmp_path, register(tmp_path, 'DIR-R01', 'storyboard.package', board,
+                                                       ['narrative.package']))
+    evidence_file = {'path': base['path_or_url'], 'sha256': base['checksum']}
+    for shot_id in ['S01-010', 'S02-010']:
+        image = tmp_path / (shot_id + '.png')
+        image.write_bytes(base64.b64decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='))
+        evidence = observations(quality.IMAGE_ASPECTS)
+        evidence.update(image_sha256=artifacts.digest(image), source_files=[evidence_file],
+                        source_shot_ids=[shot_id], view={'resolution': 'original', 'locator': 'synthetic pixel'})
+        entry = artifacts.register_workspace_artifact(tmp_path, {
+            'artifact_id': shot_id, 'logical_id': f'image.{shot_id}', 'type': 'visual-supplement-image',
+            'revision': 'R01', 'path_or_url': image.name, 'depends_on': ['storyboard.package'],
+            'quality_evidence': evidence,
+        })
+        adopt_agent_fixture_entry(tmp_path, entry, usage={'source_shot_ids': [shot_id]})
+        assert asset_refs.require_references(tmp_path, [shot_id], [shot_id]) == (True, [])
+
+    before_state = load_project_state(tmp_path)
+    old_receipt = (tmp_path / 'agent-S01-010.json').read_bytes()
+    new_board = copy.deepcopy(board)
+    new_board.update(revision='R02')
+    new_board['scenes'][1]['shots'][0]['rhythm'] = 'Later shot revised'
+    new_board['timing_basis']['source_type'] = 'Updated description of the non-evaluable later shot budget'
+    if change_scope == 'used_scene':
+        new_board['scenes'][0]['shots'][0]['rhythm'] = 'Earlier shot also revised'
+    elif change_scope == 'global_rule':
+        new_board['director_rules']['camera_principle'] = 'Different shared camera rule'
+    elif change_scope == 'timing_source':
+        new_board['timing_basis'].update(source_path='N.json', source_field='different source basis')
+
+    path = tmp_path / 'DIR-R02.json'
+    write_json(path, new_board)
+    inspected = rc.inspect_change(tmp_path, ['storyboard.package'], path.name)
+    rc.open_change(tmp_path, change_id='V04', tier='T1', logical_ids=['storyboard.package'],
+                   reason='Synthetic scoped director revision', authorization_id='SYNTHETIC-WF')
+    rc.record_candidate(tmp_path, change_id='V04', artifact_id='DIR-R02', logical_id='storyboard.package',
+                        artifact_type='storyboard.package', candidate_path=path.name, revision='R02')
+    frozen = rc.show_change(tmp_path)['active_change']['frozen_logical_ids']
+    assert inspected['frozen_logical_ids'] == frozen
+    assert 'image.S02-010' in frozen
+    assert ('image.S01-010' in frozen) == (change_scope != 'later_scene')
+    if change_scope == 'later_scene':
+        assert asset_refs.require_references(tmp_path, ['S01-010'], ['S01-010']) == (True, [])
+
+    candidate = artifacts.load_manifest(tmp_path)['artifacts'][-1]
+    check = report(tmp_path, candidate, name='director-r02-check.json', authorization_id='SYNTHETIC-WF')
+    rc.confirm_agent_candidate(tmp_path, change_id='V04', report_path=str(check))
+    rc.commit_change(tmp_path, change_id='V04')
+    adopted = {item['artifact_id']: item for item in artifacts.load_manifest(tmp_path)['artifacts']}
+    assert adopted['DIR-R01']['status'] == 'superseded'
+    assert adopted['S02-010']['status'] == 'stale'
+    assert not asset_refs.require_references(tmp_path, ['S02-010'], ['S02-010'])[0]
+    if change_scope == 'later_scene':
+        assert adopted['S01-010']['status'] == 'current'
+        assert asset_refs.require_references(tmp_path, ['S01-010'], ['S01-010']) == (True, [])
+        assert not asset_refs.require_references(tmp_path, ['S01-010'], ['S02-010'])[0]
+        old_board = tmp_path / base['path_or_url']
+        old_board.write_bytes(old_board.read_bytes() + b'\n')
+        assert not asset_refs.require_references(tmp_path, ['S01-010'], ['S01-010'])[0]
+    else:
+        assert adopted['S01-010']['status'] == 'stale'
+        assert not asset_refs.require_references(tmp_path, ['S01-010'], ['S01-010'])[0]
+    assert (tmp_path / 'agent-S01-010.json').read_bytes() == old_receipt
+    assert load_project_state(tmp_path)['user_confirmations'] == before_state['user_confirmations']

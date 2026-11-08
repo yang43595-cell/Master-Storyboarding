@@ -1,15 +1,15 @@
 # 怎么用它做一部短剧（个人使用说明）
 
-> 一句话：这是用 AI 帮你把「一个故事 / 主题」做成**分镜、资产、视频脚本、成片**的流程。共 **7 步**，新创作轮由干净的专属执行者完成并自查，主对话协调；独立审核仅在明确要求时启动；你确认且明确继续后进入下一步。
+> 一句话：这是用 AI 帮你把「一个故事 / 主题」做成**分镜、资产、视频脚本、成片**的流程。新项目开工前集中确定需求，编导和资产图走网站人审，获准的下游阶段由专属执行者自行检查并继续。
 
-当前统一流程按[审核到画布入口](review-to-canvas-entry.md)执行：编导和资产图由网站人审，下游按授权自行验收，最终保存画布草稿。下文逐阶段人工确认说明保留为兼容路径；图片制作按[图片生产批次](../../PROJECT_RULES.md#图片生产批次)交给干净子 agent，每批最多 8 张，普通准备使用[独立批次上下文](../../skills/_shared/knowledge-access.md#图片批次的隔离准备)。
+当前统一流程按[审核到画布入口](review-to-canvas-entry.md)执行：编导和资产图由网站人审，下游按授权自行验收，最终保存画布草稿。下文逐阶段人工确认说明保留为兼容路径；图片制作按[图片生产批次](../rules/execution.md#图片生产批次)交给干净子 agent，每批最多 8 张，普通准备使用[独立批次上下文](../../skills/_shared/knowledge-access.md#图片批次的隔离准备)。
 
 ## 先记住两件事
 
 1. **通常是「生成启动包 → AI 干活 → 你审核 → 交接到下一步」**；视频提示词阶段按 Skill 直接读取和自查，不创建准备包、阅读凭据或审核包。
 2. **三种状态别混**：`候选`（AI 做出来的，还没定）→ `审核通过`（审核口头认可）→ `你确认`（你点头，才算数）。只有你确认的版本才会进下一步。
 
-新电脑或新 agent 先按 [独立仓库启动](standalone-repository.md) 核验。以下命令中的 `--vault` 可省略，此时使用仓库内已选方法，不需要 Mac 或 Obsidian。
+新电脑或新 agent 先按 [独立仓库启动](standalone-repository.md) 核验。项目制作统一使用仓库内各 Skill 的三层资料。
 
 ## 一、建项目
 
@@ -42,7 +42,7 @@ python scripts/init_desktop_project.py --path "C:\Users\LIUYANG\Desktop\项目�
 以下准备、阅读登记与审核包命令不用于 `voiceover-to-video-script`；该阶段的旧入口会明确拒绝。视频阶段直接按其 [Skill](../../skills/voiceover-to-video-script/SKILL.md) 读取已确认来源并交付提示词。
 
 ```powershell
-python scripts/stage_context_cli.py prepare --project <项目路径> --skill <技能名> --objective <这步目标> --vault "C:\Users\LIUYANG\Documents\Obsidian Vault" --request-json <本轮请求JSON路径>
+python scripts/stage_context_cli.py prepare --project <项目路径> --skill <技能名> --objective <这步目标> --request-json <本轮请求JSON路径>
 ```
 
 `--objective` 是目标说明，实际选知使用 `--request-json` 和项目摘要。请求由 AI 按当前已明确需求准备，沿用已有请求文件即可，不需要用户手写 JSON。只保留本轮任务与适用条件；历史方案、否定和输入矛盾的处理见 `skills/_shared/knowledge-access.md`。没有任务特定选知需求时可省略请求文件，但不能据此认为目标中的关键词已参与匹配。

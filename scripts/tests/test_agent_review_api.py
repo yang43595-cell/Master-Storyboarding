@@ -1,5 +1,7 @@
 """Synthetic transport checks; no real credential or external host is used."""
 import io
+import base64
+import hashlib
 import json
 import threading
 from http.client import HTTPConnection
@@ -11,7 +13,7 @@ import pytest
 
 from scripts.core.agent_review_api import (
     AgentReviewClient, AgentReviewError, MAX_RESPONSE_BYTES, MAX_TEXT_BYTES,
-    _NoRedirect,
+    _NoRedirect, effective_approval,
 )
 
 TOKEN = 'SYNTHETIC_CLIENT_TEST_TOKEN_ONLY_1234567890'
@@ -93,6 +95,39 @@ def test_same_operation_retry_is_explicit_and_preserved():
     assert publish(c) == publish(c)
     assert len(transport.requests) == 2
     assert transport.requests[0][0].data == transport.requests[1][0].data
+
+
+def test_asset_publish_requires_a_receipt_for_the_sent_image():
+    image = b'\x89PNG\r\n\x1a\nsynthetic transport bytes'
+    expected = publish_response()
+    expected.update(stage='assets', url=expected['url'].replace('stage=script', 'stage=assets'),
+                    sha256=hashlib.sha256(image).hexdigest())
+    c, transport = client(Response(expected), Response({**expected, 'sha256': 'b' * 64}))
+    kwargs = dict(case_id='12', name='fixture.png', image=image, purpose='Fixture',
+                  operation_id=OP, artifact_id='IMG-1', ast_id='AST-1', output_id='main')
+    assert c.publish_asset(**kwargs) == expected
+    request = transport.requests[0][0]
+    assert request.full_url.endswith('/publish-assets')
+    assert base64.b64decode(json.loads(request.data)['dataBase64']) == image
+    with pytest.raises(AgentReviewError, match='mismatched receipt'):
+        c.publish_asset(**kwargs)
+
+
+def test_exact_approval_must_be_current_and_tied_to_submitted_event():
+    scope = dict(projectId='four-ad-review', scope='live', caseId='12', stage='assets', version=VERSION)
+    event = dict(decision='approve', actorId='reviewer', createdAt='2026-11-07T00:00:00Z')
+    approval = dict(actorId='reviewer', decidedAt=event['createdAt'], scope=scope)
+    validity = dict(isCurrent=True, stillEffective=True, reviewable=True, sourceStale=False,
+                    dependencyStale=False, dependencyUnapproved=False)
+    decision = dict(case=status_response()['case'], stage='assets', version=VERSION, approval=approval,
+                    latestEvent=event, decisionStatus='approved', validity=validity)
+    c, _ = client(Response(decision), Response({**decision, 'validity': {**validity, 'isCurrent': False}}),
+                  Response({**decision, 'latestEvent': None}))
+    params = dict(case_id='12', stage='assets', version=VERSION)
+    assert effective_approval(c.decision(**params))
+    assert not effective_approval(c.decision(**params))
+    with pytest.raises(AgentReviewError, match='mismatched receipt'):
+        c.decision(**params)
 
 
 @pytest.mark.parametrize('value', [URLError(TOKEN), TimeoutError(TOKEN), OSError(TOKEN)])

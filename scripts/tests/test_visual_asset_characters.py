@@ -1,7 +1,6 @@
 """Character routes: reusable final assets and shared-head outfit dependencies."""
 import copy
 import json
-import os
 import shutil
 import tempfile
 import unittest
@@ -10,12 +9,14 @@ from unittest.mock import patch
 from PIL import Image
 from test_visual_asset_projects import fixture, update_narrative_checksum, synthetic_vault
 from visual_asset_characters import character_route, upstream_outfits, prepare_character
+import visual_asset_library as m
 
 class CharacterRoutes(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.base = Path(self.temp.name)
-        self.vault_env = patch.dict(os.environ, {'MSB_VAULT_ROOT': str(synthetic_vault(self.base / 'synthetic-vault'))})
+        self.vault_env = patch.object(m.asset_skill, 'resolve_knowledge_root',
+                                      return_value=synthetic_vault(self.base / 'synthetic-vault'))
         self.vault_env.start()
         self.addCleanup(self.vault_env.stop)
         self.lib, self.project, _ = fixture(self.base)
@@ -278,22 +279,17 @@ class CharacterRoutes(unittest.TestCase):
     def test_empty_head_uses_requirement_and_wardrobe_inherits_confirmed_head(self):
         j=self.route('build',name='日常装',evidence='日常装')
         head=next(i for i,s in enumerate(j['steps']) if s['key']=='shared_head')
-        from test_visual_asset_projects import synthetic_vault
-        vault = synthetic_vault(self.base / 'template-vault')
-        with patch.dict(os.environ, {'MSB_VAULT_ROOT': str(vault)}):
-            request=self.lib.projects.request(j,head)
+        request=self.lib.projects.request(j,head)
         self.assertEqual(request['reference_records'],[])
         self.assertTrue(request['allow_unreferenced_design'])
         self.assertEqual(request['requirement']['asset_id'],'AST-PERSON')
         self.assertIn('依据当前需求设计', request['prompt'])
         self.assertNotIn('从参考照片中提取', request['prompt'])
-        with patch.dict(os.environ, {'MSB_VAULT_ROOT': str(vault)}):
-            self.assertEqual(self.lib.projects.skill.build_task_package(request)['production_item']['template']['content'], request['prompt'])
+        self.assertEqual(self.lib.projects.skill.build_task_package(request)['production_item']['template']['content'], request['prompt'])
         self.confirm(j,'shared_head','大头照')
         j=self.lib.get(j['id'],'jobs')
         cloth=next(i for i,s in enumerate(j['steps']) if s['kind']=='服装')
-        with patch.dict(os.environ, {'MSB_VAULT_ROOT': str(vault)}):
-            request=self.lib.projects.request(j,cloth)
+        request=self.lib.projects.request(j,cloth)
         self.assertEqual(request['reference_records'][0]['id'],self.assets['大头照']['id'])
         self.assertTrue(request['allow_unreferenced_design'])
         self.assertIn('已确认大头照，唯一面部身份来源', request['prompt'])
@@ -338,6 +334,69 @@ class CharacterRoutes(unittest.TestCase):
         for bad in ([], [{'name': '首次饭局'}], req['wardrobe_states'][:1] * 2):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 upstream_outfits({**req, 'wardrobe_states': bad})
+
+    def set_approved_character_output(self, kind, **details):
+        path = Path(self.project['path']) / 'narrative.json'
+        narrative = json.loads(path.read_text(encoding='utf8'))
+        narrative.pop('events')
+        narrative.pop('human_readable_path')
+        narrative.update(schema_version='2.0', story_paragraphs=[
+            {'paragraph_id': 'STP-01', 'text': '人物甲出现在日常场景及出差场景。'},
+        ])
+        requirement = narrative['asset_requirements'][0]
+        requirement.pop('source_event_ids')
+        requirement.update(character_output_kind=kind, source_paragraph_ids=['STP-01'],
+                           image_decision='需要制作', image_reason='固定人物甲的造型', **details)
+        path.write_text(json.dumps(narrative, ensure_ascii=False), encoding='utf8')
+        update_narrative_checksum(path.parent)
+
+    def test_approved_board_route_binds_exact_outfit_ids_and_rejects_single(self):
+        service = self.lib.projects
+        payload = {'project_id': self.project['id'], 'ast_id': 'AST-PERSON'}
+        service.character_output_mode({**payload, 'mode': 'single'})
+        old_job = service.prepare_reuse(payload)['rows'][0]['job']
+        self.set_approved_character_output('人物1x4', wardrobe_states=[
+            {'name': '日常装', 'evidence': '日常场景', 'output_id': 'HOME-FINAL'},
+            {'name': '出差装', 'evidence': '出差场景', 'output_id': 'TRAVEL-FINAL'},
+        ])
+
+        row = service.sync(self.project['id'])['rows'][0]
+        self.assertEqual(row['character_output_mode'], 'wardrobe')
+        self.assertTrue(row['uses_wardrobe'])
+        self.assertIsNone(row['job_id'])
+        with self.assertRaisesRegex(ValueError, '旧版需求'):
+            service.context(old_job, 0)
+        with self.assertRaisesRegex(ValueError, '最终人物1×4'):
+            service.character_output_mode({**payload, 'mode': 'single'})
+        with self.assertRaisesRegex(ValueError, '人物卡片'):
+            service.prepare_reuse(payload)
+
+        job = prepare_character(service, payload)['rows'][0]['job']
+        finals = [(step['state'], step['output_id'], step['kind']) for step in job['steps']]
+        self.assertEqual(finals, [
+            ('日常装', 'HOME-FINAL', '人物1x4'),
+            ('出差装', 'TRAVEL-FINAL', '人物1x4'),
+        ])
+        with self.assertRaisesRegex(ValueError, '请选择人物1x4'):
+            service.select({'job_id': job['id'], 'index': 0, 'asset_id': self.assets['大头照']['id']})
+
+    def test_approved_single_route_uses_only_single_picture_jobs(self):
+        service = self.lib.projects
+        payload = {'project_id': self.project['id'], 'ast_id': 'AST-PERSON'}
+        self.set_approved_character_output('人物单图')
+
+        row = service.sync(self.project['id'])['rows'][0]
+        self.assertEqual(row['character_output_mode'], 'single')
+        self.assertFalse(row['uses_wardrobe'])
+        with self.assertRaisesRegex(ValueError, '上游已确认使用人物单图'):
+            service.character_output_mode({**payload, 'mode': 'wardrobe'})
+        with self.assertRaisesRegex(ValueError, '只处理人物需求'):
+            prepare_character(service, payload)
+        job = service.prepare_reuse(payload)['rows'][0]['job']
+        self.assertTrue(job['steps'])
+        self.assertTrue(all(step['kind'] == '人物单图' for step in job['steps']))
+        with self.assertRaisesRegex(ValueError, '请从人物单图分类'):
+            service.select({'job_id': job['id'], 'index': 0, 'asset_id': self.assets['人物1x4']['id']})
 
     def test_explicit_states_pass_source_prepare_and_refresh(self):
         path = Path(self.project['path']) / 'narrative.json'

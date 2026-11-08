@@ -273,6 +273,10 @@
               "evidence": {
                 "type": "string",
                 "minLength": 2
+              },
+              "output_id": {
+                "type": "string",
+                "minLength": 1
               }
             }
           }
@@ -288,6 +292,12 @@
         "image_reason": {
           "type": "string",
           "pattern": "\\S"
+        },
+        "character_output_kind": {
+          "enum": [
+            "人物1x4",
+            "人物单图"
+          ]
         },
         "character_type": {
           "enum": [

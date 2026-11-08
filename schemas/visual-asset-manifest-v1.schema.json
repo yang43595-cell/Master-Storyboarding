@@ -470,6 +470,9 @@
         "output_id": {
           "$ref": "#/$defs/nonEmptyString"
         },
+        "output_kind": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
         "purpose": {
           "$ref": "#/$defs/nonEmptyString"
         },

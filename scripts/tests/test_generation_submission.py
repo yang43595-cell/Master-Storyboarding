@@ -21,6 +21,7 @@ def submission(root, private=False):
     payload['scenes'] = board['scenes']
     sha = frozen['drafts'][0]['reference_checks'][0]['sha256']
     for i, segment in enumerate(payload['generation_segments']):
+        segment['prompt'] = frozen['drafts'][i]['prompt']
         segment['materials'] = [dict(sha256=sha, state_id='handoff',
                                      role='end_frame' if i == 0 else 'start_frame')]
     payload['generation_segments'][1]['continuity']['boundary'].update(
@@ -94,6 +95,14 @@ def test_full_submission_exact_parameters_and_legitimate_aliases(tmp_path, priva
     bind_synthetic_quality(tmp_path, frozen)
     if private: seal(frozen)
     assert validate_submission(frozen, tmp_path, private_preview=private)['ok']
+
+
+def test_formal_submission_cannot_rewrite_adopted_prompt(tmp_path):
+    frozen = submission(tmp_path)
+    frozen['drafts'][1]['prompt'] += ' Add a new line of dialogue.'
+    bind_synthetic_quality(tmp_path, frozen)
+    with pytest.raises(ValueError, match='G2: .*'):
+        validate_submission(frozen, tmp_path)
 
 
 @pytest.mark.parametrize('private', [False, True])
