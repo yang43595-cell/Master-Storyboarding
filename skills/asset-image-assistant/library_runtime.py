@@ -4,6 +4,8 @@ import hashlib
 import re
 import sys
 from core.character_assets import production_kinds
+from core.image_technical import technical_check
+from core.knowledge_runtime import resolve_knowledge_root, verify_selected_file
 from pathlib import Path
 
 SKILL = Path(__file__).resolve().parent
@@ -35,7 +37,8 @@ def language_issues(prompt):
 
 
 def local_references(kind, request=None):
-    common = ['PROJECT_RULES.md', 'skills/asset-image-assistant/SKILL.md',
+    common = ['docs/rules/execution.md', 'docs/rules/artifacts.md',
+        'docs/rules/visual-production.md', 'PROJECT_RULES.md', 'skills/asset-image-assistant/SKILL.md',
         'skills/asset-image-assistant/modules/library-mode.md',
         'skills/asset-image-assistant/modules/asset-method.md',
         'skills/asset-image-assistant/modules/web-input-contract.md',
@@ -90,11 +93,9 @@ def _knowledge(request):
     from core.knowledge_blocks import build_knowledge_index, load_policy
     from core.knowledge_selector import select_knowledge, render_knowledge_bundle
     from core.method_documents import resolve_method_documents
-    from stage_context_cli import _vault_root, _state, _state_summary, _tombstone_fingerprints
+    from stage_context_cli import _state, _state_summary, _tombstone_fingerprints
 
-    vault = _vault_root(None)
-    if not vault.is_dir():
-        raise ValueError('资产 Skill 知识库不存在：' + str(vault))
+    vault = resolve_knowledge_root(repo_root=ROOT)
     knowledge_profile = json.loads((SKILL / 'knowledge-profile.json').read_text(encoding='utf-8'))
     if knowledge_profile.get('skill') != 'asset-image-assistant':
         raise ValueError('资产 Skill 知识配置身份不匹配')
@@ -135,19 +136,16 @@ def _digest(value):
 def template_source(kind, raw=''):
     """Resolve a recipe source for both Web seed text and the final model input."""
     spec = recipe(kind)
-    if 'template' not in spec:
-        path = ROOT / 'skills/asset-image-assistant/references' / spec['guide']
-    else:
-        from stage_context_cli import _vault_root
-        vault = _vault_root(None)
-        if raw:
-            path = Path(raw)
-        else:
-            from core.knowledge_runtime import verify_selected_file
-            path = verify_selected_file(vault, 'wiki/reference/提示词模板/' + spec['template'])
-    if not path.is_file():
-        raise ValueError(('本次指定的' if raw else '') + '模板或分类合同文件不存在：' + str(path))
-    return path.resolve()
+    guide = SKILL / 'references' / spec['guide']
+    if 'template' not in spec or (raw and Path(raw).resolve() == guide.resolve()):
+        if not guide.is_file() or not guide.resolve().is_relative_to(SKILL.resolve()):
+            raise ValueError('资产 Skill 分类合同不存在或越界：' + str(guide))
+        return guide.resolve()
+    vault = resolve_knowledge_root(repo_root=ROOT)
+    template = verify_selected_file(vault, 'wiki/reference/提示词模板/' + spec['template'])
+    if raw and Path(raw).resolve() != template:
+        raise ValueError('本次指定的模板与资产 Skill 内置模板不符：' + str(raw))
+    return template
 
 
 def template_step(kind, view='', index=None):
@@ -186,10 +184,62 @@ def _template_excerpt(raw, kind, view='', index=None):
             'content': blocks[index].strip(), 'status': 'loaded'}
 
 
+def executable_template(kind, subject='', notes='', *, raw='', view='', index=None,
+                        allow_unreferenced_design=False, reference_records=(), has_references=True):
+    """Render the same bounded template for the seed and the model's task package."""
+    template = _template_excerpt(raw, kind, view, index)
+    if template['status'] != 'loaded':
+        return template
+    block = template['content']
+    # Only these known legacy template sentences are rewritten, before inserting
+    # user names/notes. Never scrub a source name or a numeric product specification.
+    replacements = {
+        '超写实专业人物摄影，真实自然，4K，高细节': '人物摄影，皮肤纹理自然，发丝边缘和五官轮廓清楚',
+        '超写实服装电商棚拍，4K，高细节': '服装电商棚拍，织物纹理、缝线和配件边缘清楚',
+    }
+    for old, new in replacements.items():
+        block = block.replace(old, new)
+    if kind == '环境':
+        step = template_step(kind, view, index)
+        if step == 0:
+            block = block.replace('以图一【SC-XXX 场景母图】为唯一场景参考', '以用户所选照片为场景参考')
+            block += '\n本次45°图是这组场景的第一张母图和文件夹封面。'
+        elif step == 1:
+            block = block.replace('生成【SC-XXX 场景名称】的场景母图，用作后续所有机位的唯一空间锚点。',
+                                  '以图一（已确认的45°母图）为唯一空间锚点，生成同一场景的正面平视图。')
+            block += '\n摄影机：正面自然平视高度；仅改变机位，不重新设计场景。'
+        elif step == 2:
+            block = block.replace('以图一【SC-XXX 场景母图】为唯一场景参考',
+                                  '以图一（已确认的45°母图）和图二（已确认的正面图）为场景参考')
+        else:
+            block = block.replace('图一【场景母图】、图二【反向平视回望图】和图三【45°斜俯视全景图】',
+                                  '图一（45°母图）、图二（正面图）和图三（反面图）')
+    fields = {'永久固定项': '参考图中的空间边界、建筑、门窗、通道、家具数量和位置、材质、颜色与光源方向',
+              '状态编号与仅允许变化项': '保持参考图中的时间、光照与场景状态；只改变本步规定的视角'}
+    basis = '本次需求中的' if allow_unreferenced_design else '输入图片中的'
+    block = re.sub(r'【([^】]+)】', lambda m: '「' + subject + '」' if 'SC-XXX' in m[1]
+                   else fields.get(m[1], '参照' + basis + m[1]), block)
+    if allow_unreferenced_design:
+        prefix = f'依据当前需求设计「{subject}」尚未锁定的外观候选，保留已确认身份与故事约束。'
+        if has_references:
+            prefix += '已有参考只按各自职责继承，不把身份参考中的服装当作本次服装设计。'
+    else:
+        prefix = f'从参考照片中提取「{subject}」。以所选照片的可见细节及指定参考职责为准，不替换已锁定身份或实物外观。'
+    roles = [(i + 1, str(record['role'])) for i, record in enumerate(reference_records) if record.get('role')]
+    if roles:
+        prefix += '\n参考职责：' + '；'.join(f'图{i}：{role}' for i, role in roles) + '。'
+    suffix = ('\n未锁定且不可见的外观仅作待用户审核的设计选择，不冒充参考事实。'
+              if allow_unreferenced_design else '\n未展示的结构仅按可见线索保守补全；不把推测当作真实背面证据。')
+    template['content'] = prefix + '\n' + block.strip() + suffix + ('\n用户补充：' + notes if notes else '')
+    template['content_sha256'] = _digest(template['content'])
+    return template
+
+
 def _writing_rules(ref, content, single_item):
     """Remove named non-writing sections; all other source text passes through verbatim."""
     omitted = {
-        'PROJECT_RULES.md': {'项目目录按生产流程排列', '双文件产物串行交付', 'JSON 交付与按需导出', '导演稿之后的生产顺序'},
+        'docs/rules/artifacts.md': {'JSON 交付与按需导出', '确认范围'},
+        'docs/rules/visual-production.md': {'导演稿之后的生产顺序'},
         'skills/asset-image-assistant/SKILL.md': {'后续交接'},
         'skills/_shared/knowledge-access.md': {'局部维护边界', '读取与执行开销'},
     }.get(ref, set()) if single_item else set()
@@ -235,7 +285,11 @@ def build_task_package(request, refs=None, startup_text='', methods=()):
                    **({'template_path': m.template_path, 'template_sha256': m.template_checksum,
                        'template_content': m.template_content} if m.template_path else {})} for m in methods]}
     if not request.get('rows'):
-        template = _template_excerpt(request.get('template_source', ''), request['kind'], request.get('view', ''), request.get('index') if request.get('mode', 'asset-library') == 'asset-library' else None)
+        template = executable_template(request['kind'], request.get('subject', request.get('requirement', {}).get('name', '')),
+            request.get('template_notes', ''), raw=request.get('template_source', ''), view=request.get('view', ''),
+            index=request.get('index') if request.get('mode', 'asset-library') == 'asset-library' else None,
+            allow_unreferenced_design=request.get('allow_unreferenced_design', False),
+            reference_records=request.get('reference_records', []), has_references=bool(request.get('reference_paths')))
         if request['kind'] == '环境' and template['status'] == 'loaded' and not request.get('reference_paths'):
             raise ValueError('场景派生模板需要参考母图；首张场景请使用分类指南')
         if template['status'] == 'category-guide':
@@ -285,15 +339,3 @@ def approved(step):
     a = step.get('audit', {})
     return (a.get('status') == 'passed' and a.get('skill_execution', {}).get('version') == profile()['version']
             and (step.get('kind') == '物品' or not language_issues(step.get('prompt', ''))))
-
-
-def technical_check(path, ratio):
-    from PIL import Image
-    with Image.open(path) as image:
-        image.load()
-        width, height = image.size
-        fmt = image.format
-    a, b = map(int, ratio.split(':'))
-    passed = abs(width / height - a / b) / (a / b) <= 0.02
-    return {'passed': passed, 'width': width, 'height': height, 'format': fmt,
-            'expected_ratio': ratio, 'message': f'{width}×{height} · {fmt} · ' + ('比例符合要求，视觉质量待你确认' if passed else '比例不符合要求，请重做')}

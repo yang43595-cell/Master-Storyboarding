@@ -7,13 +7,18 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 from PIL import Image
-from test_visual_asset_projects import fixture, update_narrative_checksum
+from test_visual_asset_projects import fixture, update_narrative_checksum, synthetic_vault
 from visual_asset_characters import character_route, upstream_outfits, prepare_character
+import visual_asset_library as m
 
 class CharacterRoutes(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.base = Path(self.temp.name)
+        self.vault_env = patch.object(m.asset_skill, 'resolve_knowledge_root',
+                                      return_value=synthetic_vault(self.base / 'synthetic-vault'))
+        self.vault_env.start()
+        self.addCleanup(self.vault_env.stop)
         self.lib, self.project, _ = fixture(self.base)
         path = Path(self.project['path']) / 'narrative.json'
         n = json.loads(path.read_text(encoding='utf8'))
@@ -37,6 +42,7 @@ class CharacterRoutes(unittest.TestCase):
         req.update(character_type='ANIMAL', name='猫咪', identity_constraints=['公主的猫咪'],
                    required_states=['追逐', '奔跑', '床边休息'])
         path.write_text(json.dumps(n, ensure_ascii=False), encoding='utf8')
+        update_narrative_checksum(path.parent)
         service = self.lib.projects
         service.sync(self.project['id'])
         row = service.detail(self.project['id'])['rows'][0]
@@ -141,12 +147,14 @@ class CharacterRoutes(unittest.TestCase):
         self.confirm(j,first+'_wardrobe','服装三视图');self.confirm(j,second+'_wardrobe','服装三视图')
         j=self.lib.get(j['id'],'jobs')
         i=next(i for i,s in enumerate(j['steps']) if s['key']==second+'_final')
-        with self.assertRaisesRegex(ValueError,'自动合成'):
-            self.lib.projects.request(j,i)
-        self.assertEqual(j['steps'][i]['status'],'confirmed')
+        request = self.lib.projects.request(j,i)
+        self.assertEqual([r['category'] for r in request['reference_records']], ['服装三视图', '大头照'])
+        self.assertEqual(j['steps'][i]['status'],'waiting')
+        self.confirm(j,first+'_final','人物1x4');self.confirm(j,second+'_final','人物1x4')
+        j=self.lib.get(j['id'],'jobs')
         receipt=j['steps'][i]['project_confirmation']
-        self.assertEqual([r['output_key'] for r in receipt['source_confirmations']],['shared_head',second+'_wardrobe'])
-        self.assertTrue(all(r['confirmation_id'] for r in receipt['source_confirmations']))
+        self.assertEqual([r['output_key'] for r in receipt['dependency_confirmations']],['shared_head',second+'_wardrobe'])
+        self.assertTrue(all(r['confirmation_id'] for r in receipt['dependency_confirmations']))
         i=next(i for i,s in enumerate(j['steps']) if s['key']==first+'_wardrobe')
         self.lib.projects.reopen({'job_id':j['id'],'index':i})
         j=self.lib.get(j['id'],'jobs')
@@ -171,6 +179,7 @@ class CharacterRoutes(unittest.TestCase):
         j=self.route('build');v=j['character_workflow']['outfits'][0]['id']
         self.confirm(j,'shared_head','大头照')
         self.confirm(j,v+'_wardrobe','服装三视图')
+        self.confirm(j,v+'_final','人物1x4')
         j=self.lib.get(j['id'],'jobs')
         self.assertTrue(all(s['status']=='confirmed' for s in j['steps']))
         for step in j['steps']:
@@ -182,67 +191,109 @@ class CharacterRoutes(unittest.TestCase):
         self.assertEqual(out['confirmed_asset']['candidate_id'],final['candidate_id'])
         self.assertEqual(len(out['confirmed_outputs']),3)
 
-    def test_auto_board_waits_for_both_inputs_and_preserves_four_panels(self):
-        head=self.base/'head-yellow.png';Image.new('RGB',(300,400),'yellow').save(head)
-        clothes=self.base/'clothes-three.png';image=Image.new('RGB',(960,540))
-        for i,color in enumerate(['red','green','blue']):image.paste(color,(i*320,0,(i+1)*320,540))
-        image.save(clothes)
-        self.assets['大头照']=self.lib.import_file(head,category='大头照')[0]
-        self.assets['服装三视图']=self.lib.import_file(clothes,category='服装三视图')[0]
+    def test_ai_board_waits_for_both_inputs_and_requires_explicit_generation_authorization(self):
         originals=[Path(a['original']).read_bytes() for a in [self.assets['大头照'],self.assets['服装三视图']]]
         j=self.route('build');v=j['character_workflow']['outfits'][0]['id']
+        index=next(i for i,s in enumerate(j['steps']) if s['key']==v+'_final')
+        with self.assertRaisesRegex(ValueError, '前置制作项'):
+            self.lib.projects.request(j,index)
         self.confirm(j,v+'_wardrobe','服装三视图')
         self.assertEqual(next(s for s in self.lib.get(j['id'],'jobs')['steps'] if s['key']==v+'_final')['status'],'waiting')
-        self.confirm(j,'shared_head','大头照')
+        before = len(self.lib.items())
+        with patch.object(self.lib, 'submit_imagegen') as generate, patch.object(self.lib, 'submit') as dreamina:
+            self.confirm(j,'shared_head','大头照')
+        generate.assert_not_called();dreamina.assert_not_called()
+        self.assertEqual(len(self.lib.items()), before)
         j=self.lib.get(j['id'],'jobs');final=next(s for s in j['steps'] if s['key']==v+'_final')
-        self.assertEqual(final['status'],'confirmed');self.assertFalse(final['generation_enabled'])
-        asset=self.lib.get(final['selected'])
-        from core.artifacts import digest
-        self.assertEqual(final['project_confirmation']['image_sha256'], digest(Path(asset['original'])))
-        self.assertEqual(asset['confirmation']['image_sha256'], final['project_confirmation']['image_sha256'])
-        self.assertEqual(asset['provenance']['kind'],'character_composite')
-        with Image.open(asset['original']) as output:
-            self.assertEqual(output.size,(2048,1152))
-            self.assertEqual([output.getpixel((i*512+256,576)) for i in range(4)],[(255,255,0),(255,0,0),(0,128,0),(0,0,255)])
+        self.assertEqual(final['status'],'waiting');self.assertTrue(final['generation_enabled'])
+        self.assertEqual(final['outputs'], []);self.assertIsNone(final['project_confirmation'])
+        request = self.lib.projects.request(j,index)
+        self.assertEqual([r['category'] for r in request['reference_records']], ['服装三视图','大头照'])
+        self.assertIn('图1：已确认服装三视图，服装及无头身体来源', request['prompt'])
+        self.assertIn('图2：已确认大头照，唯一面部身份来源', request['prompt'])
         self.assertEqual(originals,[Path(a['original']).read_bytes() for a in [self.assets['大头照'],self.assets['服装三视图']]])
         head_index=next(i for i,s in enumerate(j['steps']) if s['key']=='shared_head')
         again=self.lib.projects.confirm({'job_id':j['id'],'index':head_index,'confirm':True})
-        self.assertEqual(next(s for s in again['rows'][0]['job']['steps'] if s['key']==v+'_final')['selected'],asset['id'])
-        index=j['steps'].index(final)
-        with self.assertRaisesRegex(ValueError,'自动合成'):
-            self.lib.projects.batch({'project_id':self.project['id'],'mode':'prepare','tasks':[{'job_id':j['id'],'index':index}]})
-        Image.new('RGB', (2048,1152), 'red').save(asset['original'])
-        with self.assertRaisesRegex(ValueError, '图片内容已变化'):
-            self.lib.projects.dependencies(j, final)
+        self.assertFalse(next(s for s in again['rows'][0]['job']['steps'] if s['key']==v+'_final').get('selected'))
+        tasks = [{'job_id':j['id'],'index':index}]
+        with patch('visual_asset_projects.threading.Thread.start') as start:
+            self.lib.projects.batch({'project_id':self.project['id'],'mode':'prepare','tasks':tasks})
+            entry = self.lib.projects.get(self.project['id'])['batch']['entries'][0]
+            self.assertEqual(entry['operation'], 'write')
+            self.assertEqual(entry['request']['kind'], '人物1x4')
+            start.assert_called_once()
+        # Queue preparation alone is not authorization to submit image generation.
+        self.lib.projects.batch_running = False
+        j=self.lib.get(j['id'],'jobs');final=j['steps'][index]
+        final.update(prompt='四格人物资产候选', audit={'status':'passed','prompt':'四格人物资产候选',
+            'skill_execution':{'version':self.lib.projects.skill.profile()['version'],'mode':'project'}})
+        self.lib.save(j,'jobs')
+        tasks[0]['prompt']=final['prompt']
+        with patch('visual_asset_projects.threading.Thread.start') as start:
+            with self.assertRaisesRegex(ValueError, '额度消耗'):
+                self.lib.projects.batch({'project_id':self.project['id'],'mode':'generate','tasks':tasks})
+            start.assert_not_called()
+            self.lib.projects.batch({'project_id':self.project['id'],'mode':'generate','tasks':tasks,'authorize':True})
+            self.assertEqual(self.lib.projects.get(self.project['id'])['batch']['mode'],'generate')
+            start.assert_called_once()
 
-    def test_composition_failure_keeps_source_confirmations_and_can_retry(self):
+    def test_legacy_pending_composition_is_unblocked_without_images_or_confirmations(self):
         j=self.route('build');v=j['character_workflow']['outfits'][0]['id']
         self.confirm(j,'shared_head','大头照')
-        with patch('visual_asset_characters.Image.Image.save',side_effect=OSError('disk unavailable')):
-            result=self.confirm(j,v+'_wardrobe','服装三视图')
-        j=result['rows'][0]['job'];final=next(s for s in j['steps'] if s['key']==v+'_final')
-        self.assertEqual(final['status'],'waiting');self.assertTrue(final['composition_error'])
-        self.assertFalse(final['project_confirmation'])
-        self.assertTrue(all(s['project_confirmation'] for s in j['steps'] if s['kind']!='人物1x4'))
-        result=self.lib.projects.compose_character({'job_id':j['id'],'index':j['steps'].index(final)})
-        final=next(s for s in result['rows'][0]['job']['steps'] if s['key']==v+'_final')
-        self.assertEqual(final['status'],'confirmed');self.assertFalse(final['composition_error'])
+        self.confirm(j,v+'_wardrobe','服装三视图')
+        j=self.lib.get(j['id'],'jobs');final=next(s for s in j['steps'] if s['key']==v+'_final')
+        sources=copy.deepcopy([s['project_confirmation'] for s in j['steps'] if s['kind']!='人物1x4'])
+        final.update(generation_enabled=False, composition_error=True, message='人物1×4自动合成未完成：disk unavailable')
+        self.lib.save(j,'jobs');before=self.lib.items()
+        row=self.lib.projects.detail(self.project['id'])['rows'][0]
+        j=row['job'];final=next(s for s in j['steps'] if s['key']==v+'_final')
+        self.assertTrue(final['generation_enabled']);self.assertNotIn('composition_error',final)
+        self.assertNotIn('message',final);self.assertEqual(final['status'],'waiting')
+        self.assertEqual(sources,[s['project_confirmation'] for s in j['steps'] if s['kind']!='人物1x4'])
+        self.assertFalse(final['project_confirmation']);self.assertEqual(final['outputs'],[])
+        final['generation_enabled']=False
+        self.lib.save(j,'jobs')
+        self.lib.projects.request(j,j['steps'].index(final))
+        self.assertTrue(self.lib.get(j['id'],'jobs')['steps'][j['steps'].index(final)]['generation_enabled'])
+        with self.assertRaisesRegex(ValueError, '已改为AI生成'):
+            self.lib.projects.compose_character({'job_id':j['id'],'index':j['steps'].index(final)})
+        self.assertEqual(self.lib.items(),before)
+
+    def test_confirmed_legacy_composite_and_receipt_remain_unchanged(self):
+        j=self.route('build');v=j['character_workflow']['outfits'][0]['id']
+        self.confirm(j,'shared_head','大头照');self.confirm(j,v+'_wardrobe','服装三视图')
+        self.confirm(j,v+'_final','人物1x4')
+        j=self.lib.get(j['id'],'jobs');final=next(s for s in j['steps'] if s['key']==v+'_final')
+        final['generation_enabled']=False
+        final['project_confirmation']['method']='已确认大头照与服装三视图自动拼版'
+        self.lib.save(j,'jobs')
+        asset=self.lib.get(final['selected']);asset['provenance']['kind']='character_composite'
+        asset['confirmation']=copy.deepcopy(final['project_confirmation']);self.lib.save(asset)
+        original=Path(asset['original']).read_bytes()
+        for _ in range(2):
+            self.lib.projects.detail(self.project['id'])
+            self.assertEqual(self.lib.get(j['id'],'jobs'),j)
+            self.assertEqual(self.lib.get(asset['id']),asset)
+        self.assertEqual(Path(asset['original']).read_bytes(),original)
 
     def test_empty_head_uses_requirement_and_wardrobe_inherits_confirmed_head(self):
         j=self.route('build',name='日常装',evidence='日常装')
         head=next(i for i,s in enumerate(j['steps']) if s['key']=='shared_head')
-        with patch.object(self.lib,'project_template',return_value=('seed','template')):
-            request=self.lib.projects.request(j,head)
+        request=self.lib.projects.request(j,head)
         self.assertEqual(request['reference_records'],[])
         self.assertTrue(request['allow_unreferenced_design'])
         self.assertEqual(request['requirement']['asset_id'],'AST-PERSON')
+        self.assertIn('依据当前需求设计', request['prompt'])
+        self.assertNotIn('从参考照片中提取', request['prompt'])
+        self.assertEqual(self.lib.projects.skill.build_task_package(request)['production_item']['template']['content'], request['prompt'])
         self.confirm(j,'shared_head','大头照')
         j=self.lib.get(j['id'],'jobs')
         cloth=next(i for i,s in enumerate(j['steps']) if s['kind']=='服装')
-        with patch.object(self.lib,'project_template',return_value=('seed','template')):
-            request=self.lib.projects.request(j,cloth)
+        request=self.lib.projects.request(j,cloth)
         self.assertEqual(request['reference_records'][0]['id'],self.assets['大头照']['id'])
         self.assertTrue(request['allow_unreferenced_design'])
+        self.assertIn('已确认大头照，唯一面部身份来源', request['prompt'])
+        self.assertIn('不把身份参考中的服装当作本次服装设计', request['prompt'])
 
     def test_upstream_clothes_ignore_skin_and_preserve_unassigned_legacy_image(self):
         path=Path(self.project['path'])/'narrative.json'
@@ -250,6 +301,7 @@ class CharacterRoutes(unittest.TestCase):
         req=n['asset_requirements'][0]
         req['identity_constraints']=['燕麦针织裙(前)→冰蓝缎面裙(后)','皮肤暗沉→水光肌']
         path.write_text(json.dumps(n,ensure_ascii=False),encoding='utf8')
+        update_narrative_checksum(path.parent)
         self.lib.projects.sync(self.project['id'])
         j=self.route('reuse')
         self.confirm(j,j['steps'][0]['key'],'人物1x4')
@@ -283,6 +335,69 @@ class CharacterRoutes(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 upstream_outfits({**req, 'wardrobe_states': bad})
 
+    def set_approved_character_output(self, kind, **details):
+        path = Path(self.project['path']) / 'narrative.json'
+        narrative = json.loads(path.read_text(encoding='utf8'))
+        narrative.pop('events')
+        narrative.pop('human_readable_path')
+        narrative.update(schema_version='2.0', story_paragraphs=[
+            {'paragraph_id': 'STP-01', 'text': '人物甲出现在日常场景及出差场景。'},
+        ])
+        requirement = narrative['asset_requirements'][0]
+        requirement.pop('source_event_ids')
+        requirement.update(character_output_kind=kind, source_paragraph_ids=['STP-01'],
+                           image_decision='需要制作', image_reason='固定人物甲的造型', **details)
+        path.write_text(json.dumps(narrative, ensure_ascii=False), encoding='utf8')
+        update_narrative_checksum(path.parent)
+
+    def test_approved_board_route_binds_exact_outfit_ids_and_rejects_single(self):
+        service = self.lib.projects
+        payload = {'project_id': self.project['id'], 'ast_id': 'AST-PERSON'}
+        service.character_output_mode({**payload, 'mode': 'single'})
+        old_job = service.prepare_reuse(payload)['rows'][0]['job']
+        self.set_approved_character_output('人物1x4', wardrobe_states=[
+            {'name': '日常装', 'evidence': '日常场景', 'output_id': 'HOME-FINAL'},
+            {'name': '出差装', 'evidence': '出差场景', 'output_id': 'TRAVEL-FINAL'},
+        ])
+
+        row = service.sync(self.project['id'])['rows'][0]
+        self.assertEqual(row['character_output_mode'], 'wardrobe')
+        self.assertTrue(row['uses_wardrobe'])
+        self.assertIsNone(row['job_id'])
+        with self.assertRaisesRegex(ValueError, '旧版需求'):
+            service.context(old_job, 0)
+        with self.assertRaisesRegex(ValueError, '最终人物1×4'):
+            service.character_output_mode({**payload, 'mode': 'single'})
+        with self.assertRaisesRegex(ValueError, '人物卡片'):
+            service.prepare_reuse(payload)
+
+        job = prepare_character(service, payload)['rows'][0]['job']
+        finals = [(step['state'], step['output_id'], step['kind']) for step in job['steps']]
+        self.assertEqual(finals, [
+            ('日常装', 'HOME-FINAL', '人物1x4'),
+            ('出差装', 'TRAVEL-FINAL', '人物1x4'),
+        ])
+        with self.assertRaisesRegex(ValueError, '请选择人物1x4'):
+            service.select({'job_id': job['id'], 'index': 0, 'asset_id': self.assets['大头照']['id']})
+
+    def test_approved_single_route_uses_only_single_picture_jobs(self):
+        service = self.lib.projects
+        payload = {'project_id': self.project['id'], 'ast_id': 'AST-PERSON'}
+        self.set_approved_character_output('人物单图')
+
+        row = service.sync(self.project['id'])['rows'][0]
+        self.assertEqual(row['character_output_mode'], 'single')
+        self.assertFalse(row['uses_wardrobe'])
+        with self.assertRaisesRegex(ValueError, '上游已确认使用人物单图'):
+            service.character_output_mode({**payload, 'mode': 'wardrobe'})
+        with self.assertRaisesRegex(ValueError, '只处理人物需求'):
+            prepare_character(service, payload)
+        job = service.prepare_reuse(payload)['rows'][0]['job']
+        self.assertTrue(job['steps'])
+        self.assertTrue(all(step['kind'] == '人物单图' for step in job['steps']))
+        with self.assertRaisesRegex(ValueError, '请从人物单图分类'):
+            service.select({'job_id': job['id'], 'index': 0, 'asset_id': self.assets['人物1x4']['id']})
+
     def test_explicit_states_pass_source_prepare_and_refresh(self):
         path = Path(self.project['path']) / 'narrative.json'
         n = json.loads(path.read_text(encoding='utf8'))
@@ -298,6 +413,7 @@ class CharacterRoutes(unittest.TestCase):
             {'name': '首次饭局', 'evidence': '两次会面'},
             {'name': '二次会面', 'evidence': '第二次换装'}]
         path.write_text(json.dumps(n, ensure_ascii=False), encoding='utf8')
+        update_narrative_checksum(path.parent)
         self.lib.projects.sync(self.project['id'])
         payload = {'project_id': self.project['id'], 'ast_id': 'AST-PERSON'}
         row = prepare_character(self.lib.projects, payload)['rows'][0]

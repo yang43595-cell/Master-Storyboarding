@@ -4,7 +4,7 @@
 `build_asset_list()`——该函数是唯一权威，别处不再复述口径：
 - 资产网页的每次改动（取消／恢复／新增）落盘后调用 `scan_and_write()`，产出受影响位置清单；
 - `当前资产清单.json` 只是可重建快照，供人查看；工具读取与门禁一律走 `load_asset_list()` 现场派生；
-- 视频提交前用 `--require-image AST-ID@OUTPUT-ID` 核对具体确认输出，无图、输出不存在或已被
+- 视频提交前用 `--require-final-image AST-ID@OUTPUT-ID` 核对具体确认输出，无图、输出不存在或已被
   项目明确拒用都直接阻塞。
 """
 from __future__ import annotations
@@ -16,18 +16,20 @@ import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from .character_assets import character_type, uses_wardrobe
+from .character_assets import (character_type, uses_wardrobe, scoped_output_requirements,
+                               validate_output_plan, final_output_problems)
+from .image_technical import character_board_image_problem
 
 if __package__ == "scripts.core":
     from ..visual_asset_choices import effective, read_choices  # type: ignore
     from ..visual_asset_product_usage import load_usage
-    from .artifacts import artifact_is_confirmed, digest, load_manifest, project_path, verify_image_confirmation  # type: ignore
+    from .artifacts import artifact_is_confirmed, artifact_is_adopted, digest, load_manifest, project_path, verify_image_confirmation  # type: ignore
     from .project_state import load_project_state  # type: ignore
 else:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from visual_asset_choices import effective, read_choices  # type: ignore
     from visual_asset_product_usage import load_usage
-    from core.artifacts import artifact_is_confirmed, digest, load_manifest, project_path, verify_image_confirmation  # type: ignore
+    from core.artifacts import artifact_is_confirmed, artifact_is_adopted, digest, load_manifest, project_path, verify_image_confirmation  # type: ignore
     from core.project_state import load_project_state  # type: ignore
 
 ASSET_LIST = "04_资产/当前资产清单.json"
@@ -233,6 +235,7 @@ def _confirmed_output(root: Path, asset_id: str, output: dict) -> dict | None:
     return {
         "output_id": output.get("output_id"),
         "purpose": output.get("purpose"),
+        **({"output_kind": output["output_kind"]} if "output_kind" in output else {}),
         "view": output.get("view"),
         "state": output.get("state"),
         "candidate_id": output.get("candidate_id"),
@@ -659,6 +662,72 @@ def scope_assets(root: Path, requests: list[str]) -> tuple[list[dict], list[str]
     return result, problems
 
 
+def character_output_contract(root: Path, requests: list[str]) -> dict:
+    """Resolve final requirements from the adopted narrative and legacy adjustments."""
+    if not requests:
+        return {}
+    choices = read_choices(root)
+    if not choices.get("character_output_requirements") and not any(
+        entry.get("logical_id") == "narrative.package" and entry.get("status") == "current"
+        for entry in load_manifest(root).get("artifacts", [])
+    ):
+        return {}
+    return scoped_output_requirements(current_narrative(root), choices, requests)
+
+
+def check_output_plan(root: Path, request: dict, *, candidate_test_mode: bool = False) -> dict:
+    """Final target declarations must match upstream; intermediate targets stay usable."""
+    targets = request.get("image_targets", [])
+    if candidate_test_mode:
+        # Only the plan-only isolated route may read its exact registered candidates.
+        # Final confirmation and ordinary consumption keep character_output_contract.
+        from .candidate_test import resolve_inputs as resolve_candidate_inputs
+        records = resolve_candidate_inputs(root)
+        choices = read_choices(root)
+        stories = [entry for entry in records if entry.get("logical_id") == "narrative.package"]
+        if targets and (stories or choices.get("character_output_requirements")):
+            if len(stories) != 1:
+                raise ValueError("候选人物规格必须绑定唯一已登记的 narrative.package")
+            narrative = _read(project_path(root, stories[0]["path_or_url"]))
+            requirements = scoped_output_requirements(narrative, choices, targets)
+        else:
+            requirements = {}
+    else:
+        requirements = character_output_contract(root, targets)
+    problems = validate_output_plan(requirements, targets, request.get("image_output_kinds", {}))
+    if problems:
+        raise ValueError("；".join(problems))
+    return requirements
+
+
+def require_final_images(root: Path, requests: list[str]) -> tuple[bool, list[str]]:
+    """Check only this delivery scope, retaining ordinary confirmation/file checks."""
+    try:
+        requirements = character_output_contract(root, requests)
+        images = confirmed_images(root) if requirements else {}
+        problems = final_output_problems(requirements, requests,
+                                        {ast: image.get("outputs", []) for ast, image in images.items()})
+        # A bare AST means all registered finals; never demand intermediate build files.
+        expanded = []
+        for request in requests:
+            ast, marker, _ = request.partition("@")
+            expanded.extend([ast + "@" + output for output in requirements[ast]]
+                            if not marker and ast in requirements else [request])
+        ok, ordinary = require_images(root, expanded)
+        problems.extend(ordinary)
+        if ok and not problems:
+            for request in dict.fromkeys(expanded):
+                ast, _, final_id = request.partition("@")
+                if final_id not in requirements.get(ast, {}):
+                    continue
+                output = next(item for item in images[ast]["outputs"] if item["output_id"] == final_id)
+                if issue := character_board_image_problem(output["path"]):
+                    problems.append(f"{request}：{issue}")
+        return ok and not problems, problems
+    except ValueError as exc:
+        return False, [str(exc)]
+
+
 def require_images(root: Path, asset_ids: list[str]) -> tuple[bool, list[str]]:
     from .revision_control import guard_action
     try:
@@ -716,7 +785,7 @@ def require_references(root: Path, artifact_ids: list[str], shot_ids: list[str] 
             from .revision_control import guard_action
             guard_action(root, logical_ids=[entry['logical_id']])
             if (ident not in state['current_artifacts']
-                    or not artifact_is_confirmed(entry, state, root)):
+                    or not artifact_is_adopted(entry, state, root)):
                 raise ValueError('参考尚未确认、已返工失效或被新版替代')
             path = project_path(root, entry['path_or_url'])
             if not entry.get('checksum') or not path.is_file() or digest(path) != entry['checksum']:
@@ -735,43 +804,49 @@ def require_references(root: Path, artifact_ids: list[str], shot_ids: list[str] 
                 # a named member of a batch, or the revision-control adoption.
                 from .confirmation_scope import is_whole_artifact, image_usage_shots
                 from .artifacts import formal_adoption
-                confirmation = entry.get('confirmation_ref')
-                if not confirmation:
-                    exact = [r for r in state['user_confirmations']
-                             if r.get('kind') == 'revision-candidate'
-                             and r.get('artifact_id') == ident and is_whole_artifact(r)
-                             and r.get('sha256') == entry['checksum'] and r.get('approval_ref')]
-                    if not exact and not formal_adoption(entry, root):
-                        raise ValueError('分镜图缺少绑定该版本的具体确认依据')
-                    permissions = [image_usage_shots(r.get('usage')) for r in exact]
-                    if permissions and any(p != permissions[0] for p in permissions[1:]):
-                        raise ValueError('同一分镜图存在冲突用途确认，须核对准确批准依据')
-                    permitted_shots = set(permissions[0] if permissions else [])
+                if entry.get('agent_acceptance') is not None:
+                    from .agent_acceptance import validate_agent_acceptance
+                    from .artifacts import validate_current_dependencies
+                    report = validate_agent_acceptance(root, entry, state=state)
+                    validate_current_dependencies(entry, manifest, state, root)
+                    permitted_shots = set(image_usage_shots(report.get('usage'), required=True))
                 else:
-                    receipt_path, _ = _confirmation_file(root, confirmation)
-                    receipt = _read(receipt_path) if receipt_path else {}
-                    if not isinstance(receipt, dict) or not is_whole_artifact(receipt) or ident not in receipt.get('artifact_ids', []):
-                        raise ValueError('确认记录未覆盖这张分镜图')
-                    if 'images' in receipt:
-                        if not isinstance(receipt['images'], list):
-                            raise ValueError('批量确认图片明细无效')
-                        selected = [r for r in receipt['images'] if isinstance(r, dict) and r.get('artifact_id') == ident]
-                        if len(selected) != 1:
-                            raise ValueError('批量确认中缺少这张图的唯一明细')
-                        image = selected[0]
+                    confirmation = entry.get('confirmation_ref')
+                    if not confirmation:
+                        exact = [r for r in state['user_confirmations']
+                                 if r.get('kind') == 'revision-candidate'
+                                 and r.get('artifact_id') == ident and is_whole_artifact(r)
+                                 and r.get('sha256') == entry['checksum'] and r.get('approval_ref')]
+                        if not exact and not formal_adoption(entry, root):
+                            raise ValueError('分镜图缺少绑定该版本的具体确认依据')
+                        permissions = [image_usage_shots(r.get('usage')) for r in exact]
+                        if permissions and any(p != permissions[0] for p in permissions[1:]):
+                            raise ValueError('同一分镜图存在冲突用途确认，须核对准确批准依据')
+                        permitted_shots = set(permissions[0] if permissions else [])
                     else:
-                        image = {'path': receipt.get('image_path'), 'sha256': receipt.get('image_sha256')}
-                    if (not image.get('path') or project_path(root, image['path']) != path
-                            or image.get('sha256') != entry['checksum']):
-                        raise ValueError('确认记录的图片路径/指纹与当前版本不一致')
-                    usage = image['usage'] if 'usage' in image else receipt.get('usage')
-                    permitted_shots = set(image_usage_shots(usage))
-                    white = image.get('white_reference')
-                    if white:
-                        white_path = project_path(root, white['path'])
-                        if not white_path.is_file() or digest(white_path) != white.get('sha256'):
-                            raise ValueError('本图共同使用的确认白模图已变化或缺失')
-
+                        receipt_path, _ = _confirmation_file(root, confirmation)
+                        receipt = _read(receipt_path) if receipt_path else {}
+                        if not isinstance(receipt, dict) or not is_whole_artifact(receipt) or ident not in receipt.get('artifact_ids', []):
+                            raise ValueError('确认记录未覆盖这张分镜图')
+                        if 'images' in receipt:
+                            if not isinstance(receipt['images'], list):
+                                raise ValueError('批量确认图片明细无效')
+                            selected = [r for r in receipt['images'] if isinstance(r, dict) and r.get('artifact_id') == ident]
+                            if len(selected) != 1:
+                                raise ValueError('批量确认中缺少这张图的唯一明细')
+                            image = selected[0]
+                        else:
+                            image = {'path': receipt.get('image_path'), 'sha256': receipt.get('image_sha256')}
+                        if (not image.get('path') or project_path(root, image['path']) != path
+                                or image.get('sha256') != entry['checksum']):
+                            raise ValueError('确认记录的图片路径/指纹与当前版本不一致')
+                        usage = image['usage'] if 'usage' in image else receipt.get('usage')
+                        permitted_shots = set(image_usage_shots(usage))
+                        white = image.get('white_reference')
+                        if white:
+                            white_path = project_path(root, white['path'])
+                            if not white_path.is_file() or digest(white_path) != white.get('sha256'):
+                                raise ValueError('本图共同使用的确认白模图已变化或缺失')
             if entry.get('type') == 'visual-supplement-image':
                 from .quality_evidence import validate_image_evidence
                 validate_image_evidence(root, path, entry.get('quality_evidence'), shot_ids,
@@ -791,6 +866,7 @@ def main() -> int:
     parser.add_argument("--scan", nargs="+", metavar="AST-ID", help="扫描这些资产的引用影响")
     parser.add_argument("--write", action="store_true", help="把扫描结果写入变更影响目录并标注资产表")
     parser.add_argument("--require-image", nargs="+", metavar="AST-ID[@OUTPUT-ID]", help="图片可用性门禁；上传所用版本必须指定 @OUTPUT-ID")
+    parser.add_argument("--require-final-image", nargs="+", metavar="AST-ID[@OUTPUT-ID]", help="最终交付检查：仅核本次范围内明确登记的最终输出；不要求复用板的过程图")
     parser.add_argument("--require-reference", nargs="+", metavar="ART-ID", help="核对明确的分镜图/白模参考版本；不证明切点状态或视觉用途正确")
     parser.add_argument("--for-shots", nargs="+", metavar="SHOT-ID", help="限定本次非AST参考的获准镜号范围；不判定视觉状态/比例是否正确")
     args = parser.parse_args()
@@ -825,8 +901,12 @@ def main() -> int:
             if asset["name_hit_total"] > len(asset["name_hits"]):
                 print(f"    （另有 {asset['name_hit_total'] - len(asset['name_hits'])} 处文字命中，见影响清单文件）")
         return 0
-    if args.require_image or args.require_reference:
+    if args.require_image or args.require_reference or args.require_final_image:
         ok, problems = require_images(root, args.require_image) if args.require_image else (True, [])
+        if args.require_final_image:
+            finals_ok, finals_problems = require_final_images(root, args.require_final_image)
+            ok = ok and finals_ok
+            problems += finals_problems
         if args.require_reference:
             refs_ok, refs_problems = require_references(root, args.require_reference, args.for_shots)
             ok = ok and refs_ok

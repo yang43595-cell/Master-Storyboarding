@@ -5,9 +5,12 @@ import sys
 import tempfile
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import visual_asset_product_usage as usage
+from core import product_reference_pack
+from core.io import sha256_file, write_json
 
 
 class ProductUsageTests(unittest.TestCase):
@@ -68,5 +71,46 @@ class ProductUsageTests(unittest.TestCase):
         inventory = copy.deepcopy(self.inventory)
         inventory[0].update(product_id='another-product', product_name='另一款', aliases=['另一款'])
         self.assertEqual(usage.products(self.narrative, inventory), [])
+
+    def test_pinned_pack_scopes_web_matches_and_previews_without_library(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            product_id = 'creator-polishing-mask-2'
+            pack = root / 'packs' / product_id / 'R01'
+            pack.mkdir(parents=True)
+            entries = []
+            for ident, filename, role, key in (
+                ('BOX', 'box.png', 'packaging', ''),
+                ('STIR', 'stir.mp4', 'action', 'stir'),
+                ('MONTAGE', 'all.mp4', 'technique', 'montage'),
+            ):
+                path = pack / filename
+                path.write_bytes(filename.encode())
+                entries.append({'id': ident, 'path': filename, 'role': role, 'action_key': key,
+                                'source': 'fixture', 'coverage': 'fixture', 'sha256': sha256_file(path),
+                                'sequence_only': ident == 'MONTAGE',
+                                'usages': ['real_use'] if key else ['display', 'real_use']})
+            manifest = pack / 'manifest.json'
+            write_json(manifest, {'product_id': product_id, 'product_name': '造物者面膜',
+                                  'revision': 'R01', 'references': entries})
+            kickoff = {'decision_ref': 'fixture', 'product': {'mode': 'insert', 'product_id': product_id,
+                       'reference_pack_revision': 'R01', 'reference_pack_sha256': sha256_file(manifest)},
+                       'canvas': {'platform': 'redframe', 'model': 'Seedance 2.5', 'aspect_ratio': '9:16',
+                                  'resolution': '720p', 'create_new': True}}
+            request = root / 'project' / '00_项目管理' / 'project_request.json'
+            project = {'path': str(request.parent.parent), 'narrative': self.narrative, 'source': {'revision': 'R02'}}
+            with patch.object(product_reference_pack, 'PACK_ROOT', root / 'packs'):
+                for scope, ids in [('display', ['BOX']), ('real_use', ['BOX', 'STIR'])]:
+                    kickoff['product']['product_usage'] = scope
+                    write_json(request, {'kickoff': kickoff})
+                    inventory = usage.project_catalogue(None, project)
+                    self.assertEqual([row['asset_id'] for row in inventory], ids)
+                    result = self.matches if scope == 'real_use' else {'references': [], 'effects': []}
+                    saved = usage.persist_matches(None, project, inventory, result, 'fixture')
+                    write_json(Path(project['path']) / usage.FILE, saved)
+                    self.assertEqual(usage.preview_path(project, ids[-1]).read_bytes(),
+                                     (pack / ('stir.mp4' if scope == 'real_use' else 'box.png')).read_bytes())
+                    with self.assertRaises(ValueError):
+                        usage.preview_path(project, 'MONTAGE')
 
 if __name__ == '__main__': unittest.main()

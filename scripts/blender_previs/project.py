@@ -391,9 +391,8 @@ def confirm_reference(root: Path, artifact_id: str, approval_ref: str, user_quot
     if not approval_ref.strip() or not user_quote.strip():
         raise ProjectPrevisError('须填实际用户确认引用和原话；技术通过不等于用户确认')
     root = root.resolve()
-    require_production(root)
-    revision_control.recover_transactions(root)
-    with revision_control.file_lock(root / revision_control.LOCK_RELATIVE):
+    with revision_control.project_lock(root):
+        require_production(root)
         entry, data = reference_data(root, artifact_id)
         guard_action(root, logical_ids=[entry['logical_id']])
         receipt_path = project_file(root, entry['path_or_url']).parent / 'user-confirmation.json'

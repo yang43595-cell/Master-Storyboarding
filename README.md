@@ -2,7 +2,11 @@
 
 Private, self-contained source repository for the Master-Storyboarding workflow.
 
-New computer or agent: start with [standalone setup](docs/development/standalone-repository.md), then read `AGENTS.md` and the selected Skill. The selected method runtime is versioned in `knowledge/runtime/`; Obsidian and a Mac-mounted Vault are not startup prerequisites.
+New computer or agent: start with [standalone setup](docs/development/standalone-repository.md), then read `AGENTS.md` and the selected Skill. Production uses each Skill’s repository-owned rules, templates, methods, and references. The selected knowledge bundle is versioned in `knowledge/runtime/`.
+
+For website review of the script and asset images, followed by agent self-checks and a saved canvas draft, use the [review-to-canvas entry](docs/development/review-to-canvas-entry.md). It records the agreed SOP and the integration work still required; it is not a working upload API or an automatic runner.
+
+Image production runs in clean-context child agents, with up to 8 target images per batch. Each worker reads its inputs, methods and references, writes prompts, generates, inspects and corrects within authorization, then hands back exact files and usage evidence. Independent batches may run in parallel after shared references are ready; stage owners keep shared state and adoption. See [image batch rules](docs/rules/execution.md#图片生产批次) and [isolated preparation](skills/_shared/knowledge-access.md#图片批次的隔离准备). Asset images still require website human review; storyboard supplements retain their authorized agent acceptance path.
 
 ## Current status
 

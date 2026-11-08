@@ -223,6 +223,11 @@ def resolve_inputs(project, ids=None):
             # Return diagnostics, never mutate manifest status or the business JSON.
             item = {**item, "business_status": report["business_status"],
                     "return_upstream": payload["return_upstream"]}
+        elif (item.get('type') == 'reference'
+              and item.get('logical_id') in {'reference.product', 'reference.product.actions'}
+              and payload.get('status') == 'reference_only_unconfirmed'):
+            if payload.get('user_confirmed') is not False or payload.get('formal_adoption') is not False:
+                raise ValueError('产品参考须明确未确认且未正式采用：' + str(ident))
         elif "status" in payload and payload["status"] not in (
                 {"candidate", "candidate_unreviewed"} if item.get("type") == "source.evidence"
                 else {"candidate"}):

@@ -147,7 +147,7 @@ def test_legacy_schema_is_readable_without_mutating(tmp_path):
 
 
 def test_new_asset_receiver_reads_paragraph_sources(tmp_path):
-    from test_visual_asset_projects import fixture, pmod
+    from test_visual_asset_projects import fixture, pmod, update_narrative_checksum
     _,project,_=fixture(tmp_path);root=Path(project['path'])
     n=pmod.read(root/'narrative.json')
     n['schema_version']='2.0';n.pop('events')
@@ -158,6 +158,7 @@ def test_new_asset_receiver_reads_paragraph_sources(tmp_path):
         a.pop('source_event_ids');a['source_paragraph_ids']=['STP-01']
     (root/'script.md').write_text('## 故事正文\n### STP-01\n房间里人物活动。\n',encoding='utf-8')
     pmod.write(root/'narrative.json',n)
+    update_narrative_checksum(root)
     # Exercise actual receiver; fixture has user confirmation and matching manifest.
     received=pmod.source_project(str(root))[2]
     assert received['story_paragraphs']==n['story_paragraphs']
@@ -192,7 +193,7 @@ def test_new_plan_checks_paragraph_union(tmp_path, monkeypatch):
     assert 'SEGMENT_PARAGRAPH_TRACE_MISMATCH' in validate_production_plan(plan,tmp_path).error_codes
 
 def test_new_export_and_source_revision_invalidate_jobs():
-    from test_visual_asset_projects import ProjectTests, pmod, plan_result, m
+    from test_visual_asset_projects import ProjectTests, pmod, plan_result, m, update_narrative_checksum
     case=ProjectTests();case.setUp()
     try:
         root=Path(case.p['path']);n=pmod.read(root/'narrative.json')
@@ -203,6 +204,7 @@ def test_new_export_and_source_revision_invalidate_jobs():
             item.pop('source_event_ids');item['source_paragraph_ids']=['STP-01']
         script=root/'script.md';script.write_text('## 故事正文\n### STP-01\n人物在房间拿起杯子。\n',encoding='utf-8')
         pmod.write(root/'narrative.json',n)
+        update_narrative_checksum(root)
         service=case.lib.projects;service.sync(case.p['id'])
         p=service.get(case.p['id'])
         service.apply_plan(p,p['rows'],plan_result(),{'version':m.asset_skill.profile()['version'],'mode':'project'})
@@ -217,6 +219,7 @@ def test_new_export_and_source_revision_invalidate_jobs():
         n['story_paragraphs'][0]['text']='人物在房间放下杯子。'
         script.write_text('## 故事正文\n### STP-01\n人物在房间放下杯子。\n',encoding='utf-8')
         pmod.write(root/'narrative.json',n)
+        update_narrative_checksum(root)
         detail=service.sync(p['id'])
         assert all(row.get('job') is None for row in detail['rows'])
     finally:case.tearDown()

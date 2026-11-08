@@ -11,7 +11,7 @@ from unittest.mock import patch
 import pytest
 
 from scripts.core import artifacts, io, revision_control
-from scripts.core.project_state import new_project_state, write_project_state
+from scripts.core.project_state import new_project_state, write_project_state, load_project_state
 
 REPO = Path(io.__file__).resolve().parents[2]
 
@@ -221,6 +221,203 @@ def test_voice_and_revision_share_the_same_project_lock(tmp_path):
     assert blocked, 'voice binding bypassed the project revision lock'
     assert not worker.is_alive() and not failure
     assert entered.is_set()
+
+def _candidate_record(ident):
+    return dict(artifact_id=ident, logical_id='asset.' + ident,
+                type='image', path_or_url=ident + '.png', status='candidate')
+
+
+@pytest.mark.parametrize('reader_name,writer_name', [
+    ('scripts.core.artifacts', 'core.artifacts'),
+    ('core.artifacts', 'scripts.core.artifacts'),
+])
+def test_manifest_snapshot_conflict_survives_import_aliases(tmp_path, reader_name, writer_name):
+    import importlib
+    reader, writer = map(importlib.import_module, (reader_name, writer_name))
+    reader.register_workspace_artifact(tmp_path, _candidate_record('A'))
+    stale = reader.load_manifest(tmp_path)
+    writer.register_workspace_artifact(tmp_path, _candidate_record('B'))
+    stale['note'] = 'an older task is still editing'
+    manifest_path = tmp_path / artifacts.MANIFEST_PATH
+    before = manifest_path.read_bytes()
+
+    with pytest.raises(ValueError, match='其他任务更新'):
+        writer.save_manifest(tmp_path, stale)
+
+    assert manifest_path.read_bytes() == before
+    assert {a['artifact_id'] for a in reader.load_manifest(tmp_path)['artifacts']} == {'A', 'B'}
+    fresh = reader.load_manifest(tmp_path)
+    for note in ('first cross-alias edit', 'second cross-alias edit'):
+        fresh['note'] = note
+        writer.save_manifest(tmp_path, fresh)
+        assert reader.load_manifest(tmp_path)['note'] == note
+
+
+@pytest.mark.parametrize('reader_name,writer_name', [
+    ('scripts.core.project_state', 'core.project_state'),
+    ('core.project_state', 'scripts.core.project_state'),
+])
+def test_stale_project_state_cannot_remove_another_tasks_confirmation(tmp_path, reader_name, writer_name):
+    import importlib
+    reader, writer = map(importlib.import_module, (reader_name, writer_name))
+    writer.write_project_state(tmp_path, writer.new_project_state(current_stage='creative-director'))
+    stale = reader.load_project_state(tmp_path)
+    current = writer.load_project_state(tmp_path)
+    confirmation = {'kind': 'synthetic-approval', 'approval_ref': 'synthetic:other-task'}
+    current['user_confirmations'].append(confirmation)
+    writer.write_project_state(tmp_path, current)
+    state_path = tmp_path / '00_项目管理/project_state.json'
+    view_path = state_path.with_suffix('.md')
+    before = state_path.read_bytes(), view_path.read_bytes()
+    stale['current_stage'] = 'storyboard-planner'
+
+    with pytest.raises(ValueError, match='其他任务更新'):
+        writer.write_project_state(tmp_path, stale)
+
+    assert (state_path.read_bytes(), view_path.read_bytes()) == before
+    assert reader.load_project_state(tmp_path)['user_confirmations'] == [confirmation]
+
+
+def test_reconciled_state_keeps_its_read_version(tmp_path):
+    from scripts.core.project_state import reconcile_current_artifacts
+    io.write_json(tmp_path / artifacts.MANIFEST_PATH, {'artifacts': [
+        dict(_candidate_record('KEPT'), status='current', user_approved=True)]})
+    initial = new_project_state(current_stage='creative-director')
+    initial['current_artifacts'] = ['KEPT']
+    write_project_state(tmp_path, initial)
+    stale = reconcile_current_artifacts(load_project_state(tmp_path), artifacts.load_manifest(tmp_path))
+    current = load_project_state(tmp_path)
+    current['user_confirmations'].append({'approval_ref': 'synthetic:new-confirmation'})
+    write_project_state(tmp_path, current)
+    before = (tmp_path / '00_项目管理/project_state.json').read_bytes()
+    stale['next_stage'] = 'storyboard-planner'
+
+    with pytest.raises(ValueError, match='其他任务更新'):
+        write_project_state(tmp_path, stale)
+
+    assert (tmp_path / '00_项目管理/project_state.json').read_bytes() == before
+
+
+def test_fresh_state_snapshot_supports_repeated_saves_and_plain_initialization(tmp_path):
+    initial = new_project_state(current_stage='creative-director')
+    write_project_state(tmp_path, initial)
+    # Existing callers use ordinary dictionaries when initializing or replacing
+    # state explicitly; optimistic checks apply to versioned loaded snapshots.
+    initial['next_stage'] = 'storyboard-planner'
+    write_project_state(tmp_path, initial)
+    loaded = load_project_state(tmp_path)
+    for stage in ('storyboard-planner', 'asset-image-assistant'):
+        loaded['current_stage'] = stage
+        write_project_state(tmp_path, loaded)
+        assert load_project_state(tmp_path)['current_stage'] == stage
+    raw = json.loads((tmp_path / '00_项目管理/project_state.json').read_text(encoding='utf-8'))
+    assert set(raw) == set(initial)
+
+
+def test_voice_projection_change_invalidates_an_older_normalized_state(tmp_path):
+    from scripts.voice_reference_cli import next_project_state, project_lock as voice_lock
+    write_project_state(tmp_path, new_project_state(current_stage='storyboard-planner'))
+    stale = load_project_state(tmp_path)
+    voice_manifest = {'assignments': [
+        {'character_id': 'CHR-A', 'voice_id': 'VOICE-A', 'status': 'current'}]}
+    with voice_lock(tmp_path):
+        state_path, projected = next_project_state(tmp_path, voice_manifest, audio_policy='dialogue')
+        revision_control._commit_json_transaction_unlocked(tmp_path, {state_path: projected},
+            reason='synthetic voice projection', preserve_state_extensions=True)
+    before = state_path.read_bytes()
+    stale['next_stage'] = 'asset-image-assistant'
+
+    with pytest.raises(ValueError, match='其他任务更新'):
+        write_project_state(tmp_path, stale)
+
+    assert state_path.read_bytes() == before
+    raw = json.loads(before)
+    assert raw['voice_assignments'] == {'CHR-A': 'VOICE-A'}
+    assert raw['audio_policy'] == 'dialogue'
+
+
+def _interrupt_project_revision(project):
+    io.write_json(project / artifacts.MANIFEST_PATH, {'artifacts': [
+        dict(_candidate_record('A'), status='current', user_approved=True)]})
+    initial = new_project_state(current_stage='creative-director')
+    initial['current_artifacts'] = ['A']
+    write_project_state(project, initial)
+    pending_manifest = artifacts.load_manifest(project)
+    pending_manifest['artifacts'].append(_candidate_record('B'))
+    pending_state = load_project_state(project)
+    pending_state['next_stage'] = 'storyboard-planner'
+    pending_state['user_confirmations'].append({'approval_ref': 'synthetic:pending-revision'})
+    with io.project_lock(project):
+        with pytest.raises(RuntimeError, match='fault injection'):
+            revision_control._commit_json_transaction_unlocked(project, {
+                project / artifacts.MANIFEST_PATH: pending_manifest,
+                project / '00_项目管理/project_state.json': pending_state,
+            }, reason='synthetic interrupted revision', fail_after=1)
+
+
+def test_pending_revision_recovery_cannot_erase_a_successful_registration(tmp_path):
+    _interrupt_project_revision(tmp_path)
+    artifacts.register_workspace_artifact(tmp_path, _candidate_record('C'))
+    revision_control.recover_transactions(tmp_path)
+
+    assert {a['artifact_id'] for a in artifacts.load_manifest(tmp_path)['artifacts']} == {'A', 'B', 'C'}
+    state = load_project_state(tmp_path)
+    assert state['next_stage'] == 'storyboard-planner'
+    assert state['user_confirmations'] == [{'approval_ref': 'synthetic:pending-revision'}]
+
+
+def test_pending_revision_recovery_cannot_erase_a_later_state_confirmation(tmp_path):
+    _interrupt_project_revision(tmp_path)
+    receipt = {'approval_ref': 'synthetic:after-interruption'}
+    state = load_project_state(tmp_path)
+    state['user_confirmations'].append(receipt)
+    try:
+        write_project_state(tmp_path, state)
+    except ValueError as exc:
+        # Recovery may correctly invalidate the snapshot read before the write
+        # acquired its lock. The caller must then reload rather than overwrite.
+        assert '其他任务更新' in str(exc)
+        state = load_project_state(tmp_path)
+        state['user_confirmations'].append(receipt)
+        write_project_state(tmp_path, state)
+    revision_control.recover_transactions(tmp_path)
+
+    state = load_project_state(tmp_path)
+    assert state['next_stage'] == 'storyboard-planner'
+    assert state['user_confirmations'] == [
+        {'approval_ref': 'synthetic:pending-revision'}, receipt]
+    assert {a['artifact_id'] for a in artifacts.load_manifest(tmp_path)['artifacts']} == {'A', 'B'}
+
+
+@pytest.mark.parametrize('drift_target', ['artifact_manifest.json', 'project_state.json'])
+@pytest.mark.parametrize('entrypoint', ['explicit_recovery', 'automatic_recovery'])
+def test_recovery_rejects_third_party_changes_before_writing_any_target(tmp_path, drift_target, entrypoint):
+    _interrupt_project_revision(tmp_path)
+    transaction_path, = (tmp_path / revision_control.TRANSACTION_ROOT).glob('*/transaction.json')
+    transaction = io.read_json(transaction_path)
+    # Model the valid crash window after durable intent, before any replacement.
+    # A later conflicting state file must not let recovery first rewrite manifest.
+    for record in transaction['files']:
+        relative = Path(record['path'])
+        before_path = transaction_path.parent / 'before' / relative
+        io.write_bytes(tmp_path / relative, before_path.read_bytes())
+    drift_path = tmp_path / '00_项目管理' / drift_target
+    foreign = io.read_json(drift_path)
+    if drift_target == 'project_state.json':
+        foreign['user_confirmations'].append({'approval_ref': 'synthetic:third-party-write'})
+    else:
+        foreign['note'] = 'synthetic third-party write after interrupted transaction'
+    io.write_json(drift_path, foreign)
+    original = {record['path']: (tmp_path / record['path']).read_bytes()
+                for record in transaction['files']}
+
+    with pytest.raises(revision_control.RevisionControlError):
+        if entrypoint == 'explicit_recovery':
+            revision_control.recover_transactions(tmp_path)
+        else:
+            artifacts.register_workspace_artifact(tmp_path, _candidate_record('C'))
+
+    assert {relative: (tmp_path / relative).read_bytes() for relative in original} == original
 
 
 def test_candidate_configuration_does_not_initialize_a_missing_project(tmp_path):

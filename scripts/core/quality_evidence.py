@@ -9,9 +9,11 @@ from __future__ import annotations
 import hashlib
 import json
 import copy
+import math
 from datetime import datetime
 from pathlib import Path
 
+from .media_types import MEDIA_EXTENSIONS
 from .prompt_body import submitted_prompt_body
 
 IMAGE_ASPECTS = ('identity_wardrobe', 'hands_support', 'product_geometry',
@@ -159,6 +161,10 @@ def product_identity(product):
                 or not isinstance(variant['basis'], dict)):
             raise ValueError('packaging: 可见包装范围须有准确原件版本及物理变体不适用依据，不能混填/猜测SKU')
         basis = variant['basis']
+        opened_interior = (isinstance(basis.get('visible_faces'), list)
+                           and 'opened_interior' in basis['visible_faces'])
+        excluded = ['back_face', 'formula_or_specification', 'efficacy_claims',
+                    'opening_process' if opened_interior else 'opened_packaging']
         if (set(basis) != {'source', 'source_shot_ids', 'rationale', 'visible_faces', 'excluded_uses'}
                 or not isinstance(basis['source'], dict) or set(basis['source']) != {'path', 'sha256'}
                 or not _text(basis['source']['path']) or not isinstance(basis['source']['sha256'], str)
@@ -168,11 +174,11 @@ def product_identity(product):
                 or not all(_text(v) for v in basis['source_shot_ids'])
                 or len(set(basis['source_shot_ids'])) != len(basis['source_shot_ids'])
                 or not isinstance(basis['visible_faces'], list) or not basis['visible_faces']
-                or not all(v in {'front', 'top', 'right', 'left'} for v in basis['visible_faces'])
+                or not all(v in {'front', 'top', 'right', 'left', 'opened_interior'} for v in basis['visible_faces'])
                 or len(set(basis['visible_faces'])) != len(basis['visible_faces'])
-                or 'front' not in basis['visible_faces']
+                or not (opened_interior or 'front' in basis['visible_faces'])
                 or not isinstance(basis['excluded_uses'], list)
-                or sorted(basis['excluded_uses']) != sorted(['back_face', 'opened_packaging', 'formula_or_specification', 'efficacy_claims'])):
+                or sorted(basis['excluded_uses']) != sorted(excluded)):
             raise ValueError('packaging: 物理变体不适用须绑定来源字节、镜号和有限可见面用途')
         return {key: product[key] for key in ('product_id', 'product_name', 'packaging_reference_revision', 'physical_variant')}
     if any(not _text(product.get(key)) for key in ('sku', 'version')):
@@ -493,6 +499,154 @@ def source_shot_ids(row):
     return direct if direct is not None else mapped or []
 
 
+def required_visuals(storyboard):
+    """Read only explicit director requirements; do not infer them from prose."""
+    requirements = {}
+    for scene in storyboard.get('scenes', []):
+        for shot in scene.get('shots', []):
+            if 'required_visuals' not in shot:
+                continue
+            items = shot['required_visuals']
+            shot_id = shot['shot_id']
+            if (not isinstance(items, list) or not items or any(
+                    not isinstance(item, dict) or set(item) - {'prompt_clause', 'min_seconds', 'action_reference'}
+                    or not _text(item.get('prompt_clause'))
+                    or item['prompt_clause'] != item['prompt_clause'].strip()
+                    or '\n' in item['prompt_clause'] or '\r' in item['prompt_clause']
+                    or ('min_seconds' in item and not _positive_seconds(item['min_seconds']))
+                    for item in items)
+                    or len({item['prompt_clause'] for item in items}) != len(items)
+                    or sum('min_seconds' in item for item in items) > 1):
+                raise ValueError(f'required_visuals: {shot_id} 必保画面须有准确、唯一的单行正文指令及有效时长')
+            for item in items:
+                if 'action_reference' not in item:
+                    continue
+                action = item['action_reference']
+                assets = shot.get('source_asset_requirement_ids')
+                if (not isinstance(action, dict) or set(action) != {'product_ast_id', 'action_key'}
+                        or any(not _text(value) or value != value.strip() for value in action.values())
+                        or not isinstance(assets, list) or action['product_ast_id'] not in assets):
+                    raise ValueError(f'action_reference: {shot_id} 缺本镜产品资产编号或准确动作名')
+            requirements[shot_id] = items
+    return requirements
+
+
+def _positive_seconds(value):
+    return type(value) in (int, float) and math.isfinite(value) and value > 0
+
+
+def generation_duration_values(row, parameters):
+    """Collect existing generation duration aliases, excluding edit targets."""
+    values = [row[key] for key in ('duration_seconds', 'generation_seconds') if key in row]
+    values.extend(parameters[key] for key in ('duration_seconds', 'duration') if key in parameters)
+    return values
+
+
+def validate_shot_durations(row, parameters):
+    """Check a declared schedule against the same budget in source and delivery."""
+    identity = row.get('segment_id') or row.get('node_id')
+    parts = row.get('shot_durations')
+    if not isinstance(parts, list) or not parts or not all(_positive_seconds(part) for part in parts):
+        raise ValueError(f'{identity}: 逐镜时长必须是非空正数数组')
+    if not isinstance(parameters, dict):
+        raise ValueError(f'{identity}: 生成参数结构无效')
+    durations = generation_duration_values(row, parameters)
+    if not durations:
+        return  # Legacy source rows can carry a schedule without a generation budget.
+    duration = durations[0]
+    if any(not _positive_seconds(value) or value != duration for value in durations):
+        raise ValueError(f'{identity}: 生成时长声明无效或冲突')
+    total = sum(parts)
+    if not math.isclose(total, duration, abs_tol=1e-6):
+        raise ValueError(f'{identity}: 片段总长 {duration:g} 秒，逐镜合计 {total:g} 秒')
+
+
+def _is_action_video(reference):
+    if not isinstance(reference, dict) or reference.get('kind') != 'video':
+        return False
+    roles = reference.get('roles', [reference.get('role', reference.get('primary_role'))])
+    return isinstance(roles, list) and 'action' in roles
+
+
+def _has_action_reference(row, shot_id, action, project, delivery_sources):
+    """Check the declared source clip and, for delivery, the actual bound bytes."""
+    product, action_key = action['product_ast_id'], action['action_key']
+    source, root = row, project
+    delivered_hashes = None
+    if delivery_sources is not None:
+        segment = row.get('source_segment_id', row.get('node_id'))
+        source, root = delivery_sources[segment]
+        checks = row.get('reference_checks', [])
+        if not isinstance(checks, list):
+            return False
+        delivered_hashes = {
+            ref['sha256'] for ref in checks
+            if _is_action_video(ref) and _text(ref.get('sha256'))
+            and isinstance(ref.get('entity_ids'), list) and product in ref['entity_ids']
+            and shot_id in reference_shot_ids(ref, row)
+        }
+    if root is None:
+        return False
+    materials = source.get('materials', source.get('candidate_upload_order', []))
+    if not isinstance(materials, list):
+        return False
+    for ref in materials:
+        if not _is_action_video(ref) or ref.get('asset_id') != product:
+            continue
+        uses = ref.get('action_references')
+        if not isinstance(uses, list) or {'shot_id': shot_id, 'action_key': action_key} not in uses:
+            continue
+        if (not isinstance(ref.get('source_shot_ids'), list) or shot_id not in reference_shot_ids(ref, source)
+                or not _text(ref.get('path')) or Path(ref['path']).suffix.lower() not in MEDIA_EXTENSIONS['video']
+                or (delivered_hashes is not None and ref.get('sha256') not in delivered_hashes)):
+            continue
+        try:
+            if _file(root, ref).stat().st_size > 0:
+                return True
+        except (ValueError, OSError):
+            continue
+    return False
+
+
+def validate_required_visuals(rows, requirements, *, shot_order=(), project=None,
+                              delivery_sources=None, action_shots=None):
+    """Bind approved clauses to actual body and budget, never claim visual QA."""
+    if not requirements:
+        return
+    by_shot = {}
+    for row in rows:
+        ids = source_shot_ids(row)
+        body_lines = submitted_prompt_body(row).splitlines() if any(key in requirements for key in ids) else []
+        for index, shot_id in enumerate(ids):
+            by_shot.setdefault(shot_id, []).append((row, index, len(ids), body_lines))
+    scoped = set(by_shot)
+    positions = [index for index, shot_id in enumerate(shot_order) if shot_id in scoped]
+    if positions:
+        scoped.update(shot_order[positions[0]:positions[-1] + 1])
+    for shot_id, items in requirements.items():
+        if shot_id not in scoped:
+            continue
+        carriers = by_shot.get(shot_id, [])
+        for item in items:
+            clause = item['prompt_clause']
+            matches = [(row, index, count) for row, index, count, lines in carriers if clause in lines]
+            if not matches:
+                raise ValueError(f'required_visuals: {shot_id} 正文缺少必保画面：{clause}')
+            minimum = item.get('min_seconds')
+            if minimum is not None:
+                matches = [(row, index, count) for row, index, count in matches
+                           if isinstance(parts := row.get('shot_durations'), list) and len(parts) == count
+                           and all(_positive_seconds(part) for part in parts) and parts[index] >= minimum]
+                if not matches:
+                    raise ValueError(f'required_visuals: {shot_id} 需按镜号保留至少 {minimum:g} 秒：{clause}')
+            action = item.get('action_reference')
+            if (action is not None and (action_shots is None or shot_id in action_shots)
+                    and not any(_has_action_reference(row, shot_id, action, project, delivery_sources)
+                                for row, _, _ in matches)):
+                raise ValueError(f"action_reference: {shot_id} 缺实际可用的{action['action_key']}动作参考"
+                                 f"（{action['product_ast_id']}）")
+
+
 def scene_state_requirements(payload):
     """Read persistent changes from the existing director JSON; no NLP/vision.
 
@@ -568,6 +722,13 @@ def validate_scene_state_references(row, requirements):
         return
     if not shots:
         raise ValueError('scene_state: 有持久场景状态时必须提供完整 source_shots 映射')
+    validate_scene_state_coverage(row, needed)
+
+
+def validate_scene_state_coverage(row, needed):
+    """Check declared coverage of the applicable states, independently of observation."""
+    shots = source_shot_ids(row)
+    refs = row.get('reference_checks', [])
     by_entity = {}
     for state in needed:
         by_entity.setdefault(state['entity_id'], set()).add(state['state_id'])
@@ -599,7 +760,7 @@ def validate_scene_state_references(row, requirements):
             raise ValueError('scene_state: 新场景状态图待制作/待审或未实际引用，阻止提交；文字保持或假@不代替图片')
 
 
-def validate_scene_source_mapping(rows, sources, project):
+def validate_scene_source_mapping(rows, sources, project, *, check_submitted_body=False):
     """Bind draft shot mapping to byte-checked source segments and director.
 
     sources contains (authority reference, resolved path, decoded JSON). Source
@@ -609,12 +770,18 @@ def validate_scene_source_mapping(rows, sources, project):
     videos = []
     video_origins = {}
     all_shots = set()
+    visual_requirements = {}
     has_states = False
     has_packaging = False
+    delivery_shots = {shot for row in rows for shot in source_shot_ids(row)}
     for ref, path, payload in sources:
         linked_director = False
         if not isinstance(payload, dict):
             continue
+        for shot_id, items in required_visuals(payload).items():
+            if shot_id in visual_requirements and visual_requirements[shot_id] != items:
+                raise ValueError(f'required_visuals: {shot_id} 存在不同来源要求')
+            visual_requirements[shot_id] = items
         for scene in payload.get('scenes', []):
             all_shots.update(s['shot_id'] for s in scene.get('shots', []))
             has_states |= bool(scene.get('scene_states'))
@@ -637,7 +804,8 @@ def validate_scene_source_mapping(rows, sources, project):
                 raise ValueError('scene_state: 视频源与导演修订/字节不一致')
             if rows and ('generation_segments' in payload or 'creative_sections' in payload):
                 from .generation_boundaries import validate_generation_boundaries
-                validate_generation_boundaries(payload, value, Path(ref.get('project_path', project)))
+                validate_generation_boundaries(payload, value, Path(ref.get('project_path', project)),
+                                               action_shots=delivery_shots)
                 linked_director = True
         segments = payload.get('generation_segments')
         if segments is None and isinstance(payload.get('creative_sections'), list):
@@ -647,7 +815,8 @@ def validate_scene_source_mapping(rows, sources, project):
                 # Existing composite source snapshots carry their director and
                 # segment mapping in the same byte-checked artifact.
                 from .generation_boundaries import validate_generation_boundaries
-                validate_generation_boundaries(payload, payload, Path(ref.get('project_path', project)))
+                validate_generation_boundaries(payload, payload, Path(ref.get('project_path', project)),
+                                               action_shots=delivery_shots)
                 linked_director = True
             if rows and not linked_director:
                 raise ValueError('generation_boundary: 生成段源必须绑定准确导演，不能删来源绕过分段检查')
@@ -659,23 +828,17 @@ def validate_scene_source_mapping(rows, sources, project):
         raise ValueError('scene_state: 已声明source_segment_id但缺准确视频源，不能退回无映射检查')
     # Audio provenance is independent of persistent environment changes. Read
     # only existing director placements and video source_audio; no NLP claims.
-    shot_audio = {}
-    for _, _, payload in sources:
-        for scene in payload.get('scenes', []):
-            for shot in scene.get('shots', []):
-                if isinstance(shot.get('audio'), dict) and 'dialogue' in shot['audio']:
-                    key = shot['shot_id']
-                    if key in shot_audio:
-                        raise ValueError('source_audio: 来源导演镜号冲突')
-                    shot_audio[key] = shot['audio']['dialogue']
+    shot_audio = director_shot_audio(payload for _, _, payload in sources if isinstance(payload, dict))
     if videos and (shot_audio or any('source_audio' in s for s in videos)):
         replay_source_audio(videos, shot_audio)
     if videos:
         from .generation_boundaries import validate_delivery_cutpoints
         external_predecessors = validate_delivery_cutpoints(rows, videos)
-    if not has_states and not has_packaging and not videos:
+    if not has_states and not has_packaging and not visual_requirements and not videos:
         return
     if not videos:
+        if visual_requirements:
+            raise ValueError('required_visuals: 交付必须携带含准确镜号的 generation_segments 来源')
         raise ValueError('scene_state/packaging: 场景后态或包装交付必须携带准确视频源generation_segments，不能省略视频源绕过镜号映射')
     for row in rows:
         ids = source_shot_ids(row)
@@ -686,8 +849,31 @@ def validate_scene_source_mapping(rows, sources, project):
             matches = [s for s in videos if s.get('segment_id') == segment]
             if len(matches) != 1 or source_shot_ids(matches[0]) != ids:
                 raise ValueError('scene_state: 提交 source_shots 必须逐镜匹配准确视频源 source_segment_id，不能换镜绕过后态')
+    delivery_sources = {s['segment_id']: (s, Path(video_origins[s['segment_id']].get('project_path', project)))
+                        for s in videos}
+    validate_required_visuals(rows, visual_requirements, project=project, delivery_sources=delivery_sources)
+    if check_submitted_body:
+        for row in rows:
+            segment_id = row.get('source_segment_id', row.get('node_id'))
+            source, _ = delivery_sources[segment_id]
+            body = submitted_prompt_body(source)
+            if body and submitted_prompt_body(row) != body:
+                raise ValueError(f'{segment_id}: 冻结正文与采用源段不一致；正文与原生引用分别核对')
     return {node: {'previous_segment_id': ident, 'source': video_origins[ident]}
             for node, ident in external_predecessors.items()}
+
+
+def director_shot_audio(boards):
+    shot_audio = {}
+    for board in boards:
+        for scene in board.get('scenes', []):
+            for shot in scene.get('shots', []):
+                if isinstance(shot.get('audio'), dict) and 'dialogue' in shot['audio']:
+                    key = shot['shot_id']
+                    if key in shot_audio:
+                        raise ValueError('source_audio: 来源导演镜号冲突')
+                    shot_audio[key] = shot['audio']['dialogue']
+    return shot_audio
 
 
 def replay_source_audio(segments, shot_audio):
@@ -704,10 +890,23 @@ def replay_source_audio(segments, shot_audio):
     for segment in segments:
         ids = source_shot_ids(segment)
         audio = segment.get('source_audio')
-        if (not ids or not isinstance(audio, list) or
-                any(not isinstance(a, dict) for a in audio) or
-                [a.get('shot_id') for a in audio] != ids):
-            raise ValueError('source_audio: 必须逐镜对应本段完整source_shots，不能漏掉无对白镜')
+        if not ids or not isinstance(audio, list) or any(not isinstance(a, dict) for a in audio):
+            raise ValueError('source_audio: 缺本段准确镜号和对白片段')
+        # Existing prompts also store flat fragments with source_shot_id.
+        # Project that form into shot groups without reordering any utterance.
+        if not audio or any('source_shot_id' in part for part in audio):
+            groups = {shot: [] for shot in ids}
+            order = {shot: i for i, shot in enumerate(ids)}
+            previous = -1
+            for part in audio:
+                shot = part.get('source_shot_id')
+                if not isinstance(shot, str) or shot not in order or order[shot] < previous:
+                    raise ValueError('source_audio: 平铺片段必须按本段准确镜号顺序排列')
+                previous = order[shot]
+                groups[shot].append(part)
+            audio = [{'shot_id': shot, 'dialogue': groups[shot]} for shot in ids]
+        if [a.get('shot_id') for a in audio] != ids:
+            raise ValueError('source_audio: 分组片段必须逐镜对应本段完整source_shots')
         output = []
         for item in audio:
             shot = item['shot_id']

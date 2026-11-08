@@ -529,6 +529,31 @@
         "rhythm"
       ],
       "properties": {
+        "required_visuals": {
+          "description": "本镜不可省略的可见指令。只记录来自本轮导演决定、需要下游保真的内容。",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["prompt_clause"],
+            "properties": {
+              "prompt_clause": {"$ref": "#/$defs/nonEmptyString"},
+              "min_seconds": {"type": "number", "exclusiveMinimum": 0},
+              "action_reference": {
+                "description": "本镜必须使用的产品动作参考。仅在已明确需要实拍动作参考时填写。",
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["product_ast_id", "action_key"],
+                "properties": {
+                  "product_ast_id": {"$ref": "#/$defs/assetId"},
+                  "action_key": {"$ref": "#/$defs/nonEmptyString"}
+                }
+              }
+            }
+          }
+        },
         "packaging_requirements": {
           "description": "本镜出镜包装归属与目标版本；未知不得作为包装通过，不从道具名字猜商品。",
           "type": "array",

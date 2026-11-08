@@ -176,9 +176,16 @@ def file_lock(lock_path: Path, *, timeout_seconds: float = 10.0) -> Iterator[Non
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
+@contextmanager
 def project_lock(project_root: Path):
-    """One lock for shared manifest, confirmation and project-state writers."""
-    return file_lock(Path(project_root) / PROJECT_LOCK_RELATIVE)
+    """Recover decided writes before another project writer reads its inputs."""
+    project_root = Path(project_root).resolve()
+    with file_lock(project_root / PROJECT_LOCK_RELATIVE):
+        # Lazy import avoids the io/artifacts/revision-control import cycle.
+        # Recovery uses the raw reentrant lock and never calls project_lock.
+        from .revision_control import recover_transactions
+        recover_transactions(project_root)
+        yield
 
 
 def project_locked(function):

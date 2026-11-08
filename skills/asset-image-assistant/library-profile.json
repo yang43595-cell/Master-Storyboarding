@@ -1,5 +1,5 @@
 {
-  "version": "asset-library-skill-v4",
+  "version": "asset-library-skill-v6",
   "required_rules": [
     "MSB-KB-PROMPT-002"
   ],

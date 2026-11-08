@@ -1,7 +1,6 @@
 """Web method migration acceptance: real local loading, isolated Vault and no model calls."""
 import importlib.util
 import json
-import os
 from pathlib import Path
 import shutil
 import sys
@@ -20,7 +19,8 @@ from core.method_documents import resolve_method_documents, MethodDocumentError
 class WebReadingTests(unittest.TestCase):
     def test_writing_projection_only_omits_named_workflow_sections(self):
         for ref, headings in {
-            'PROJECT_RULES.md': {'项目目录按生产流程排列','双文件产物串行交付', 'JSON 交付与按需导出','导演稿之后的生产顺序'},
+            'docs/rules/artifacts.md': {'JSON 交付与按需导出', '确认范围'},
+            'docs/rules/visual-production.md': {'导演稿之后的生产顺序'},
             'skills/asset-image-assistant/SKILL.md': {'后续交接'},
             'skills/_shared/knowledge-access.md': {'局部维护边界','读取与执行开销'},
         }.items():
@@ -33,11 +33,40 @@ class WebReadingTests(unittest.TestCase):
                     self.assertIn(section, projected)
             self.assertLess(len(projected), len(original))
             self.assertEqual(asset._writing_rules(ref, original, False), original)
-        for ref in ['skills/storyboard-director/references/image-continuity-hard-rules.md',
+        for ref in ['PROJECT_RULES.md', 'docs/rules/execution.md',
+                    'skills/storyboard-director/references/image-continuity-hard-rules.md',
                     'skills/_shared/product-reference.md',
                     'skills/voiceover-to-video-script/references/prompt-language-hard-rules.md']:
             original = (ROOT / ref).read_text(encoding='utf-8')
             self.assertEqual(asset._writing_rules(ref, original, True), original)
+
+    def test_split_rules_reach_web_model_package_without_optional_branches(self):
+        for mode in ['asset-library', 'project']:
+            request = {'kind': '物品', 'mode': mode, 'subject': '隔离规则测试'}
+            if mode == 'project':
+                request.update(narrative={'story_paragraphs': []},
+                               requirement={'name': '测试', 'source_paragraph_ids': []})
+            rules = asset.build_task_package(request)['rules']
+            execution = 'docs/rules/execution.md'
+            self.assertEqual(rules[execution], (ROOT / execution).read_text())
+            self.assertIn('用户调整资产图需求', rules['docs/rules/visual-production.md'])
+            self.assertNotIn('## 导演稿之后的生产顺序', rules['docs/rules/visual-production.md'])
+            self.assertNotIn('docs/rules/experiments.md', rules)
+            self.assertNotIn('docs/rules/legacy-review.md', rules)
+
+    def test_active_recovery_section_survives_single_and_batch_web_projection(self):
+        import re
+        ref = 'skills/_shared/knowledge-access.md'
+        original = (ROOT / ref).read_text()
+        section = re.search(r'(?ms)^## 压缩后的主动恢复核对\n.*?(?=^## |\Z)', original).group(0).rstrip()
+        for mode in ['asset-library', 'project']:
+            request = {'kind': '物品', 'mode': mode, 'subject': '恢复输入测试'}
+            if mode == 'project':
+                request.update(narrative={'story_paragraphs': []},
+                               requirement={'name': '测试', 'source_paragraph_ids': []})
+            self.assertIn(section, asset.build_task_package(request)['rules'][ref])
+        for single in [True, False]:
+            self.assertIn(section, asset._writing_rules(ref, original, single))
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -57,9 +86,11 @@ class WebReadingTests(unittest.TestCase):
         templates.mkdir(parents=True)
         for name in {r['template'] for r in asset.profile()['recipes'].values() if 'template' in r}:
             (templates / name).write_text('\n\n'.join('```text\n隔离模板 '+str(i)+'\n```' for i in range(5)), encoding='utf-8')
-        env = patch.dict(os.environ, {'MSB_VAULT_ROOT': str(self.vault)})
-        env.start()
-        self.addCleanup(env.stop)
+        import visual_asset_library as library
+        for runtime in (asset, library.asset_skill):
+            resolver = patch.object(runtime, 'resolve_knowledge_root', return_value=self.vault)
+            resolver.start()
+            self.addCleanup(resolver.stop)
 
     def request(self, kind, mode):
         request = {'kind': kind, 'mode': mode, 'reference_paths': ['fixture-reference.png'], 'view': '正面'}
@@ -234,6 +265,82 @@ class WebReadingTests(unittest.TestCase):
         with patch.object(bridge, '_run_prompt_cli', side_effect=simulated_cli) as cli:
             bridge.run('simulated-codex', folder, 'draft', request, '', package)
         self.assertEqual(cli.call_count, 1)
+
+    def test_design_template_and_real_transport_use_normalized_body_without_changing_source(self):
+        import hashlib
+        import subprocess
+        import visual_asset_library as library
+        import visual_asset_codex as bridge
+        source = self.vault / 'wiki/reference/提示词模板/1x4三视图模板提示词.md'
+        blocks = ['身份链',
+                  '人物设定：【性别与年龄感】。构图：3:4，从头顶到锁骨，画面内不出现任何衣服。\n风格：超写实专业人物摄影，真实自然，4K，高细节。',
+                  '构图：16:9，正面、左侧、背面三格，无头无脸人台。超写实服装电商棚拍，4K，高细节。',
+                  '人物1×4，服装图一、脸图二。']
+        source.write_text('\n'.join('```text\n' + block + '\n```' for block in blocks), encoding='utf-8')
+        before = source.read_bytes()
+        for kind in ['大头照', '服装']:
+            with self.subTest(kind=kind):
+                request = self.request(kind, 'project')
+                records = [] if kind == '大头照' else [{'role': '已确认大头照，唯一面部身份来源'}]
+                request.update(subject='海城高级中学角色', template_notes='保留标识4K-24；量规4K。',
+                    allow_unreferenced_design=True, reference_records=records,
+                    reference_paths=[] if not records else ['confirmed-face.png'])
+                seed, path = library.template_prompt(kind, request['subject'], request['template_notes'],
+                    allow_unreferenced_design=True, reference_records=records, has_references=bool(records))
+                request.update(prompt=seed, template_source=path)
+                folder = self.root / ('normalized-' + kind)
+                package, _ = asset.prepare(folder, request)
+                template = json.loads(package)['production_item']['template']
+                self.assertEqual(template['content'], seed)
+                self.assertEqual(template['sha256'], hashlib.sha256(before).hexdigest())
+                self.assertEqual(template['content_sha256'], hashlib.sha256(seed.encode()).hexdigest())
+                self.assertNotIn('4K，高细节', seed)
+                self.assertIn('保留标识4K-24；量规4K。', seed)
+                self.assertIn('海城高级中学角色', seed)
+                self.assertNotIn('从参考照片中提取', seed)
+                self.assertNotIn('参照输入图片中的', seed)
+                if records:
+                    self.assertIn('图1：已确认大头照，唯一面部身份来源', seed)
+                    self.assertIn('不把身份参考中的服装当作本次服装设计', seed)
+                result = {'prompt': seed, 'passed': True, 'observations': [], 'uncertainties': [],
+                          'checks': [c['id'] + '：本测试检查证据' for c in json.loads(package)['review_checks']], 'issues': []}
+                def simulated_cli(command, **kwargs):
+                    delivered = kwargs['input']
+                    self.assertIn(package, delivered)
+                    self.assertIn('依据当前需求设计', delivered)
+                    self.assertIn('保留标识4K-24', delivered)
+                    self.assertNotIn('4K，高细节', delivered)
+                    (folder / 'draft.json').write_text(json.dumps(result), encoding='utf-8')
+                    return subprocess.CompletedProcess(command, 0, '', '')
+                with patch.object(bridge, '_run_prompt_cli', side_effect=simulated_cli) as cli:
+                    bridge.run('simulated-codex', folder, 'draft', request, seed, package)
+                self.assertEqual(cli.call_count, 1)
+        self.assertEqual(source.read_bytes(), before)
+
+    def test_scene_seed_and_package_share_actual_view_order_in_both_web_modes(self):
+        import visual_asset_library as library
+        source = self.vault / 'wiki/reference/提示词模板/环境一致性模板提示词.md'
+        blocks = ['身份卡',
+                  '生成【SC-XXX 场景名称】的场景母图，用作后续所有机位的唯一空间锚点。',
+                  '以图一【SC-XXX 场景母图】为唯一场景参考，生成同一环境的反向平视回望图。',
+                  '以图一【SC-XXX 场景母图】为唯一场景参考，生成同一环境的45°斜俯视全景图。',
+                  '同时以图一【场景母图】、图二【反向平视回望图】和图三【45°斜俯视全景图】为参考，生成90°俯视。']
+        source.write_text('\n'.join('```text\n' + block + '\n```' for block in blocks), encoding='utf-8')
+        expected = ['以用户所选照片为场景参考', '图一（已确认的45°母图）',
+                    '图一（已确认的45°母图）和图二（已确认的正面图）',
+                    '图一（45°母图）、图二（正面图）和图三（反面图）']
+        for mode in ['project', 'asset-library']:
+            for index, view in enumerate(['45°', '正面', '反面', '俯视']):
+                with self.subTest(mode=mode, view=view):
+                    request = self.request('环境', mode)
+                    request.update(subject='房间', template_notes='当前状态常态', view=view,
+                                   index=index if mode == 'asset-library' else index + 5)
+                    seed, path = library.template_prompt('环境', request['subject'], request['template_notes'], index)
+                    request['template_source'] = path
+                    package = asset.build_task_package(request)
+                    self.assertEqual(package['production_item']['template']['content'], seed)
+                    self.assertIn(expected[index], seed)
+                    self.assertNotIn('图二【反向平视回望图】', seed)
 
     def test_visual_supplement_shares_same_source_and_other_skill_does_not_load_it(self):
         profile = json.loads((ROOT/'skills/storyboard-director/knowledge-profile.json').read_text(encoding='utf-8'))

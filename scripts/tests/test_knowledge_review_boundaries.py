@@ -9,6 +9,10 @@ from scripts import stage_context_cli as cli
 from scripts.core.knowledge_blocks import KnowledgeBlock, load_policy
 from scripts.core.knowledge_selector import select_knowledge, render_knowledge_candidates
 from scripts.core.review_delta import fingerprint, lightweight_revision, revision_delta
+from test_stage_context_cli import isolated_stage_knowledge
+
+
+pytestmark = pytest.mark.usefixtures("isolated_stage_knowledge")
 
 
 def block(i, **changes):
@@ -62,6 +66,42 @@ def test_asset_conditions_keep_required_cross_skill_and_shared_contracts():
     assert 'knowledge-access.md' in names
     unknown={p.name for p in cli._local_standard_documents(cli.ROOT/'skills/asset-image-assistant', {})}
     assert '02-character-master-guide.md' in unknown
+
+
+@pytest.mark.parametrize('scopes,human,body', [
+    ({}, True, True),
+    ({'body': False}, True, True),
+    ({'character': True}, True, True),
+    ({'character': True, 'body': False}, True, False),
+    ({'body': True}, False, True),
+    ({'character': True, 'body': True}, True, True),
+    ({'object': True, 'body': False}, False, False),
+])
+def test_asset_anatomy_routes_keep_legacy_and_shared_contracts(scopes, human, body):
+    names = {path.name for path in cli._local_standard_documents(
+        cli.ROOT / 'skills/asset-image-assistant', {'asset_method_scopes': scopes})}
+    assert ('02-character-master-guide.md' in names) is human
+    assert ('02a-body-character-master-guide.md' in names) is body
+    assert {'image-continuity-hard-rules.md', 'prompt-language-hard-rules.md',
+            'knowledge-access.md', 'skill-layers.md'} <= names
+
+
+@pytest.mark.parametrize('scopes,reference', [
+    ({'body': True}, '02-character-master-guide.md'),
+    ({'character': True, 'body': False}, '02a-body-character-master-guide.md'),
+])
+def test_asset_anatomy_cannot_reintroduce_excluded_guide(scopes, reference):
+    request = {'asset_method_scopes': scopes,
+               'local_references': ['skills/asset-image-assistant/references/' + reference]}
+    with pytest.raises(cli.StageContextError, match='asset_method_scopes 不一致'):
+        cli._local_standard_documents(cli.ROOT / 'skills/asset-image-assistant', request)
+
+
+@pytest.mark.parametrize('value', ['true', 1, None])
+def test_asset_body_scope_requires_boolean(value):
+    with pytest.raises(cli.StageContextError, match='布尔值'):
+        cli._local_standard_documents(cli.ROOT / 'skills/asset-image-assistant',
+                                      {'asset_method_scopes': {'body': value}})
 
 
 @pytest.mark.parametrize('change',['changed','removed','added'])
@@ -135,6 +175,62 @@ def asset_fixture(tmp_path, monkeypatch):
     cli.record_method_reading(cli.parser().parse_args(['record-method-reading',*common,*actor,*methods]))
     gate=cli.parser().parse_args(['ensure-prepared',*common,*actor])
     return root,project,prepare,gate
+
+
+@pytest.mark.parametrize('human', [False, True])
+def test_asset_body_prepare_freezes_only_applicable_methods_and_requires_reading(tmp_path, monkeypatch, human):
+    root, project, prepare, gate = asset_fixture(tmp_path, monkeypatch)
+    state_path = project / '00_项目管理/project_state.json'
+    original_state = state_path.read_bytes()
+    scopes = {'body': True, **({'character': True} if human else {})}
+    Path(prepare.request_json).write_text(json.dumps({'asset_method_scopes': scopes}))
+    if not human:
+        # A body-only task must not even require the human method to exist.
+        (Path(prepare.vault) / 'projects/Master-Storyboarding/应用知识/图片资产/人物资产方法.md').unlink()
+    cli.prepare(prepare)
+    context = project / cli.CONTEXT_DIR
+    basis = json.loads((context / 'task_basis.json').read_text())
+    assert basis['task_request']['asset_method_scopes'] == scopes
+    methods = {item['id'] for item in basis['reading_manifest']['methods']}
+    expected = {'IMAGE-CONTINUITY-METHOD'}
+    if human:
+        expected.add('ASSET-CHARACTER-METHOD')
+    assert methods == expected
+    names = {Path(item['path']).name for item in basis['standards']['local_documents']}
+    assert '02a-body-character-master-guide.md' in names
+    assert ('02-character-master-guide.md' in names) is human
+    packet = (context / 'method_reading_packet.md').read_text()
+    assert ('## ASSET-CHARACTER-METHOD' in packet) is human
+    # The previous object-only reading receipt cannot satisfy this new scope.
+    assert cli.ensure_prepared(gate)['ok'] is False
+    arguments = ['record-method-reading', '--project', str(project), '--skill', 'asset-image-assistant',
+                 '--actor-id', 'fixture-actor', '--task-id', 'fixture-task']
+    for method in sorted(methods):
+        arguments += ['--method', method]
+    cli.record_method_reading(cli.parser().parse_args(arguments))
+    assert cli.ensure_prepared(gate)['ok'] is True
+    request = Path(prepare.request_json)
+    original_request = request.read_bytes()
+    request.write_text(json.dumps({'asset_method_scopes': {'character': True, 'body': False}}))
+    with pytest.raises(cli.StageContextError, match='开工决定或阶段请求已改变'):
+        cli.ensure_prepared(gate)
+    request.write_bytes(original_request)
+    if human:
+        required_method = Path(prepare.vault) / 'projects/Master-Storyboarding/应用知识/图片资产/人物资产方法.md'
+        method_bytes = required_method.read_bytes()
+        required_method.unlink()
+        with pytest.raises(cli.StageContextError, match='专业方法文件缺失：ASSET-CHARACTER-METHOD'):
+            cli.prepare(prepare)
+        required_method.write_bytes(method_bytes)
+    if not human:
+        unused = root / 'skills/asset-image-assistant/references/02-character-master-guide.md'
+        unused.write_text(unused.read_text() + '\nUnused human guide fixture change.\n')
+        assert cli.ensure_prepared(gate)['ok'] is True
+    required = root / 'skills/asset-image-assistant/references/02a-body-character-master-guide.md'
+    required.write_text(required.read_text() + '\nRequired body guide fixture change.\n')
+    with pytest.raises(cli.StageContextError, match='已改变'):
+        cli.ensure_prepared(gate)
+    assert state_path.read_bytes() == original_state
 
 
 def test_real_asset_prepare_ignores_unused_guide_but_detects_required_changes(tmp_path,monkeypatch):

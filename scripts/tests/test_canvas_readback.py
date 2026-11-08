@@ -1,6 +1,8 @@
 import copy
 import pytest
-from scripts.canvas_readback import compare, digest
+from scripts.canvas_readback import compare, digest, validate_submission
+from scripts.core.io import write_json
+from scripts.core.project_kickoff import REQUEST_PATH
 
 
 def sample():
@@ -58,6 +60,16 @@ def test_wrong_evidence_identity_rejected(field, value):
     with pytest.raises(ValueError): compare(frozen, observed)
 
 
+def test_legacy_comparison_honors_an_explicit_project_id():
+    frozen, observed = sample()
+    frozen['target_project_id'] = 'exact-project'
+    observed['frozen_sha256'] = digest(frozen)
+    with pytest.raises(ValueError, match='readback project differs'):
+        compare(frozen, observed)
+    observed['target_project_id'] = 'exact-project'
+    assert compare(frozen, observed)['submission_checks'] == 'not_checked'
+
+
 def test_self_reported_refresh_without_native_readback_does_not_pass():
     frozen, observed = sample()
     frozen['drafts'][0]['native_entity_type'] = 'fixture-chip'
@@ -86,3 +98,60 @@ def test_native_parameter_type_change_is_not_equal():
     observed['frozen_sha256'] = digest(frozen)
     observed['drafts'][0]['parameters']['enabled'] = 1
     assert not compare(frozen, observed)['ok']
+
+
+def test_frozen_delivery_cannot_override_project_kickoff(tmp_path):
+    from scripts.tests.test_delivery_preflight import bind_synthetic_quality, delivery
+
+    frozen, observed = delivery(tmp_path)
+    canvas = {"platform": "redframe", "model": "fixture", "aspect_ratio": "9:16",
+              "resolution": "720p", "target_url": frozen["target_url"]}
+    for row, readback in zip(frozen["drafts"], observed["drafts"]):
+        row["parameters"].update(model="fixture", aspect_ratio="9:16", resolution="720p")
+        readback["parameters"] = copy.deepcopy(row["parameters"])
+    bind_synthetic_quality(tmp_path, frozen)
+    observed["frozen_sha256"] = digest(frozen)
+    write_json(tmp_path / REQUEST_PATH, {"kickoff": {
+        "decision_ref": "synthetic fixture", "product": {"mode": "none"}, "canvas": canvas}})
+    assert compare(frozen, observed, tmp_path)["ok"]
+    frozen["target_project_id"] = "wrong-project"
+    with pytest.raises(ValueError, match="交付目标与开工记录不符"):
+        validate_submission(frozen, tmp_path)
+    del frozen["target_project_id"]
+    frozen["drafts"][0]["parameters"]["resolution"] = "480p"
+    with pytest.raises(ValueError, match="模型、画幅或分辨率与开工决定不符"):
+        validate_submission(frozen, tmp_path)
+
+
+@pytest.mark.parametrize("kickoff_bound", [False, True])
+@pytest.mark.parametrize("text_only", [False, True])
+def test_formal_readback_checks_declared_project_id(tmp_path, kickoff_bound, text_only):
+    from scripts.tests.test_delivery_preflight import bind_synthetic_quality, delivery
+
+    frozen, observed = delivery(tmp_path)
+    frozen["target_project_id"] = "confirmed-project"
+    if text_only:
+        row = frozen["drafts"][0]
+        row.pop("native_entity_type")
+        row.update(required_entities=[], required_reference_roles={}, ordered_media=[], reference_checks=[])
+        frozen["drafts"] = [row]
+        observed["drafts"] = [{**copy.deepcopy(row), "native_mentions": []}]
+    if kickoff_bound:
+        canvas = {"platform": "redframe", "model": "Seedance 2.5", "aspect_ratio": "9:16",
+                  "resolution": "720p", "target_url": frozen["target_url"],
+                  "target_project_id": frozen["target_project_id"]}
+        for row, readback in zip(frozen["drafts"], observed["drafts"]):
+            row["parameters"].update(model=canvas["model"], aspect_ratio=canvas["aspect_ratio"],
+                                     resolution=canvas["resolution"])
+            readback["parameters"] = copy.deepcopy(row["parameters"])
+        write_json(tmp_path / REQUEST_PATH, {"kickoff": {
+            "decision_ref": "synthetic fixture", "product": {"mode": "none"}, "canvas": canvas}})
+    bind_synthetic_quality(tmp_path, frozen)
+    observed["frozen_sha256"] = digest(frozen)
+    with pytest.raises(ValueError, match="readback project differs"):
+        compare(frozen, observed, tmp_path)
+    observed["target_project_id"] = "other-project"
+    with pytest.raises(ValueError, match="readback project differs"):
+        compare(frozen, observed, tmp_path)
+    observed["target_project_id"] = "confirmed-project"
+    assert compare(frozen, observed, tmp_path)["ok"]
