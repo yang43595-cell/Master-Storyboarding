@@ -1,0 +1,2 @@
+jsonschema>=4.26,<4.27
+referencing>=0.37,<0.38

@@ -29,6 +29,7 @@ if str(ROOT / 'scripts') not in sys.path:
     sys.path.insert(0, str(ROOT / 'scripts'))
 from core.artifacts import (load_manifest, save_manifest, register_workspace_artifact,
                             promote_candidate, mark_impacted_artifacts_stale)
+from core.io import project_lock
 from core.project_state import load_project_state, write_project_state
 from core.schema_contracts import require_schema
 
@@ -193,10 +194,11 @@ class Projects:
         if not p.get('export'):
             return
         root = Path(p['path'])
-        manifest = load_manifest(root)
-        mark_impacted_artifacts_stale(manifest, {'visual.asset.manifest'}, reason, p['source']['revision'])
-        save_manifest(root, manifest)
-        p.setdefault('export_history', []).append(p.pop('export'))
+        with project_lock(root):
+            manifest = load_manifest(root)
+            mark_impacted_artifacts_stale(manifest, {'visual.asset.manifest'}, reason, p['source']['revision'])
+            save_manifest(root, manifest)
+            p.setdefault('export_history', []).append(p.pop('export'))
 
     def sync(self, ident):
         with self.lib.lock:
@@ -1181,6 +1183,14 @@ class Projects:
                 self.save(p)
 
     def export(self, payload):
+        if payload.get('confirm') is not True:
+            raise ValueError('请确认整张需求表后交接')
+        with self.lib.lock:
+            p = self.get(payload['project_id'])
+            with project_lock(Path(p['path'])):
+                return self._export_locked(payload)
+
+    def _export_locked(self, payload):
         if payload.get('confirm') is not True:
             raise ValueError('请确认整张需求表后交接')
         with self.lib.lock:

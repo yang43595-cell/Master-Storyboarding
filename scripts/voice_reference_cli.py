@@ -5,12 +5,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import re
 import shutil
 import subprocess
 import sys
-import time
 import wave
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -18,10 +16,12 @@ from pathlib import Path
 from typing import Any, Iterator
 
 if __package__:
+    from .core.io import project_lock as shared_project_lock
     from .core.artifacts import dependency_closure
     from .core.project_state import (normalize_project_state, reconcile_current_artifacts,
                                      render_project_state_markdown)
 else:
+    from core.io import project_lock as shared_project_lock
     from core.artifacts import dependency_closure
     from core.project_state import (normalize_project_state, reconcile_current_artifacts,
                                    render_project_state_markdown)
@@ -382,29 +382,12 @@ def commit_json_atomic(pairs: list[tuple[Path, dict[str, Any] | str]]) -> None:
 
 @contextmanager
 def project_lock(project: Path) -> Iterator[None]:
-    """项目级声音锁：bind/replace/sync-plan 串行，避免并发竞态。"""
-    lock_path = project / "00_项目管理" / ".voice-reference.lock"
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    deadline = time.monotonic() + 10.0
-    while True:
-        try:
-            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                handle.write(json.dumps({"pid": os.getpid(), "created_at": now()}))
-            break
-        except FileExistsError:
-            if time.monotonic() >= deadline:
-                raise VoiceReferenceError(f"无法获取项目声音锁：{lock_path}")
-            try:
-                if time.time() - lock_path.stat().st_mtime > 120:
-                    lock_path.unlink(missing_ok=True)
-            except FileNotFoundError:
-                pass
-            time.sleep(0.05)
+    """Share the revision lock because voice binding also writes project state."""
     try:
-        yield
-    finally:
-        lock_path.unlink(missing_ok=True)
+        with shared_project_lock(project):
+            yield
+    except TimeoutError as exc:
+        raise VoiceReferenceError(f"无法获取项目声音锁：{project}") from exc
 
 
 def _snapshot_core(args: argparse.Namespace, *, mode: str) -> dict[str, Any]:
