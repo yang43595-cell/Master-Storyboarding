@@ -36,7 +36,7 @@
 - `templates/video-script-template.md`：拟上传映射、开场不重复、保留每段必要约束和制作备注边界。
 - `references/prompt-language-hard-rules.md`：修正非等义的正向改写示例。
 - `references/seedance-delivery-package.md`、`references/seedance-cli-notes.md`：区分候选／实传和既有任务查询；技术检查、真实回读与生成授权继续保留。
-- 新增 `references/product-action-case-notes.md`：承接原有产品个案，明确条件、历史性质与来源核对；不建立新生产阶段。
+- 产品动作按当轮真实输入与已确认工序核对，原个案记录存于业务项目。
 - `review-profile.json`、`tests/prompt-content-review.md`：同步现有检查项和有限情景判定，不新增检查 ID 或大测试套件。
 - 内置 `knowledge/runtime/projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法.md`、本 Skill 的 `knowledge-profile.json`、`knowledge/manifest.json`：仅更新这一方法的当前文字、版本、实际字节和真实 user_directed 依据；保留上游采集元数据与原版本追溯，不声称同步外部 Vault。
 - `scripts/core/prompt_body.py`、`scripts/tests/test_video_output_policy.py`：修复已复现的屏幕误报，并沿现有测试覆盖同类否定语句和拦截边界。

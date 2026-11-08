@@ -48,30 +48,5 @@
       "applies_when": "当前直读视频提示词流程",
       "requires": {"skill": "voiceover-to-video-script", "direct_read": true}
     }
-  ],
-  "conditional_experiences": [
-    {
-      "id": "VGEN-SCALE-CONTINUITY-CASE-LOOKUP",
-      "path": "projects/Master-Storyboarding/经验/跨片段尺度连续性/缩放角色的共享尺度参照缺口.md",
-      "status": "conditional-reference",
-      "direct_read_when": "本轮已明确角色放大、缩小、微缩，或巨人/巨物涉及的比例状态与跨片段连续性、跨段衔接问题时，按需直读内置对应案例；普通任务不加载，类比不代表已验证",
-      "retrieval_keywords": [
-        "放大",
-        "缩小",
-        "微缩",
-        "巨人",
-        "巨物",
-        "巴掌大小",
-        "体型变化",
-        "比例状态",
-        "尺度漂移",
-        "跨片段连续性",
-        "跨段衔接",
-        "scale",
-        "shrink",
-        "enlarge",
-        "giant"
-      ]
-    }
   ]
 }
