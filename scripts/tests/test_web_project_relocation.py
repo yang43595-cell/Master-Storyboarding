@@ -15,6 +15,7 @@ from scripts.core import web_content as web
 from scripts.core.artifacts import load_manifest, project_path
 from scripts.core.project_state import load_project_state, new_project_state
 from test_web_content_adapter import BENCHMARK, registry, sources
+from test_formal_package_submission import narrative as formal_narrative
 
 
 OLD_ROOT = r'D:\Synthetic\RelocatedFilm'
@@ -46,6 +47,11 @@ def test_project_copy_keeps_json_confirmations_and_web_request_version(tmp_path,
     before.mkdir()
     media = registry(before)
     values = sources(before)
+    # Formal handoff binds the shared synthetic exact-text/speaker evidence.
+    formal = formal_narrative(before)
+    (before / 'script.md').unlink()  # Keep the canonical JSON-only fixture.
+    values['script'].update(dialogue_evidence_path=source_path(formal['dialogue_evidence_path'], absolute),
+                            dialogue_evidence_sha256=formal['dialogue_evidence_sha256'])
     for output in values['assets']['assets'][0]['confirmed_outputs']:
         output['path'] = source_path(output['path'], absolute)
     preview = source_path('fixture/preview.png', absolute)

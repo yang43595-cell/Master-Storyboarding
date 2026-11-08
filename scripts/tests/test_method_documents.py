@@ -76,6 +76,18 @@ def test_confirmed_method_requires_explicit_matching_task_conditions(tmp_path: P
     assert result.pending[0]["reason"] == "applies_when_not_met"
 
 
+def test_creative_mask_scope_does_not_trim_storyboard_planner_method() -> None:
+    root = Path(__file__).resolve().parents[2]
+    profile = json.loads((root / "skills/storyboard-planner/knowledge-profile.json").read_text(encoding="utf-8"))
+    vault = root / "knowledge/runtime"
+    result = resolve_method_documents(
+        vault, profile, {"skill": "storyboard-planner", "request": {"product_id": "creator-polishing-mask-2"}},
+    )
+    method = next(item for item in result.required if item.id == "VGEN-CREATOR-POLISHING-MASK-USE")
+    assert method.content == (vault / method.vault_path).read_text(encoding="utf-8-sig")
+    assert not method.reading_scope
+
+
 def test_video_profile_keeps_only_direct_read_conditions() -> None:
     profile = json.loads((Path(__file__).resolve().parents[2] / "skills/voiceover-to-video-script/knowledge-profile.json").read_text(encoding="utf-8"))
     methods = {item["id"]: item for item in profile["professional_methods"]}
@@ -137,7 +149,7 @@ lifecycle:
     other = "creative-director" if skill == "storyboard-planner" else "storyboard-planner"
     skipped = resolve_method_documents(tmp_path / "vault", profile, {"skill": other})
     assert skipped.required == []
-    assert skipped.pending == [{"id": method_id, "path": relative, "reason": "applies_when_not_met"}]
+    assert {"id": method_id, "path": relative, "reason": "applies_when_not_met"} in skipped.pending
 
 
 @pytest.mark.parametrize("relative", ["../outside.md", "wiki/../../outside.md", "C:/outside.md", "C:outside.md", "\\\\server\\share\\outside.md", "wiki\\..\\outside.md"])

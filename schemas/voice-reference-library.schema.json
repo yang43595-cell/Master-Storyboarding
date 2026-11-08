@@ -11,7 +11,7 @@
     "voices": {"type": "array", "items": {"$ref": "#/$defs/voice"}}
   },
   "$defs": {
-    "nonEmptyString": {"type": "string", "minLength": 1},
+    "nonEmptyString": {"type": "string", "minLength": 1, "pattern": "\\S"},
     "voice": {
       "type": "object",
       "required": ["voice_id", "name", "audio_path", "character_types", "duration_seconds", "sha256", "source", "authorization"],
@@ -39,7 +39,11 @@
             "status": {"enum": ["authorized", "restricted", "unknown"]},
             "authorization_ref": {"$ref": "#/$defs/nonEmptyString"},
             "permitted_uses": {"type": "array", "items": {"$ref": "#/$defs/nonEmptyString"}}
-          }
+          },
+          "allOf": [{
+            "if": {"properties": {"status": {"const": "authorized"}}, "required": ["status"]},
+            "then": {"properties": {"permitted_uses": {"minItems": 1}}}
+          }]
         }
       }
     }

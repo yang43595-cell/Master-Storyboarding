@@ -160,3 +160,48 @@ def test_blocked_request_handoff_and_production_exits(tmp_path):
     with pytest.raises(ValueError, match='unreviewed'):
         revision_control.confirm_candidate(tmp_path, change_id='none', approval_ref='not approval')
     with pytest.raises(ValueError, match='unreviewed'): validate_submission({}, tmp_path)
+
+
+def agent_source_request(root):
+    from scripts.tests.test_quality_evidence_consumers import agent_board_fixture
+    board = agent_board_fixture(root)
+    value = request()
+    value['source_storyboard'].update(artifact_id=board['artifact_id'], revision=board['revision'],
+                                      path=board['path_or_url'], status='agent_accepted')
+    value['source_shot_ids'] = ['S01-010']
+    return value
+
+
+def test_agent_director_source_requires_real_adoption_and_project(tmp_path):
+    from scripts.core.schema_contracts import validate_visual_supplement_request
+    value = agent_source_request(tmp_path)
+    assert validate_visual_supplement_request(value, project_root=tmp_path)['schema_valid']
+    with pytest.raises(ValueError, match='准确项目'):
+        validate_visual_supplement_request(value)
+
+
+@pytest.mark.parametrize('mutation', ['id', 'revision', 'path', 'bytes', 'pointer', 'status', 'selection', 'authorization', 'duplicate_current'])
+def test_agent_director_source_rejects_self_claims_and_stale_adoption(tmp_path, mutation):
+    from scripts.core import artifacts
+    from scripts.core.io import write_json
+    from scripts.core.schema_contracts import validate_visual_supplement_request
+    value = agent_source_request(tmp_path)
+    source = value['source_storyboard']
+    manifest = artifacts.load_manifest(tmp_path)
+    board = next(item for item in manifest['artifacts'] if item['artifact_id'] == source['artifact_id'])
+    if mutation in {'id', 'revision', 'path'}:
+        source[{'id': 'artifact_id', 'revision': 'revision', 'path': 'path'}[mutation]] = {
+            'id': 'UNKNOWN', 'revision': 'R99', 'path': 'other.json'}[mutation]
+    elif mutation == 'bytes': (tmp_path / board['path_or_url']).write_text('{}')
+    elif mutation == 'pointer': board.pop('agent_acceptance')
+    elif mutation == 'status': board['status'] = 'candidate'
+    elif mutation == 'duplicate_current': manifest['artifacts'].append({**board, 'artifact_id': 'DUPLICATE'})
+    else:
+        path = tmp_path / '00_项目管理/project_state.json'
+        state = json.loads(path.read_text())
+        if mutation == 'selection': state['current_artifacts'].remove(board['artifact_id'])
+        else: state['workflow_authorizations'][0]['status'] = 'revoked'
+        write_json(path, state)
+    write_json(tmp_path / artifacts.MANIFEST_PATH, manifest)
+    with pytest.raises(ValueError):
+        validate_visual_supplement_request(value, project_root=tmp_path)

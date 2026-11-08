@@ -9,7 +9,10 @@ from scripts.core import artifacts, story_sources
 from scripts.core.io import write_json
 from test_candidate_test_mode import setup, add
 from test_story_paragraph_sources import narrative
-from test_stage_context_cli import _method_vault, _synthetic_method_profile
+from test_stage_context_cli import _method_vault, _synthetic_method_profile, isolated_stage_knowledge
+
+
+pytestmark = pytest.mark.usefixtures("isolated_stage_knowledge")
 
 
 def dialogue_record(root, speaker=None):

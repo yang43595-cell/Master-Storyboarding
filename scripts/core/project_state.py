@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import json
+from copy import copy
 from pathlib import Path
 from typing import Any
 
-from .io import project_locked, write_json, write_text
+from .io import project_locked, sha256_json, write_json, write_text
 
 
 SCHEMA_VERSION = "stage-1.0"
 STATE_KEYS = (
     "schema_version", "current_stage", "project_status", "finalization",
     "current_artifacts", "user_confirmations", "review_report", "accepted_issues", "next_stage",
+    "workflow_authorizations",
 )
 
 
@@ -24,6 +26,7 @@ def new_project_state(*, current_stage: str = "") -> dict[str, Any]:
         "finalization": None,
         "current_artifacts": [],
         "user_confirmations": [],
+        "workflow_authorizations": [],
         "review_report": None,
         "accepted_issues": [],
         "next_stage": None,
@@ -63,6 +66,7 @@ def normalize_project_state(value: dict[str, Any]) -> dict[str, Any]:
         legacy=True,
     )
     state["user_confirmations"] = value.get("user_confirmations") or []
+    state["workflow_authorizations"] = value.get("workflow_authorizations", [])
     state["project_status"] = str(value.get("project_status") or "active")
     state["finalization"] = value.get("finalization") if isinstance(value.get("finalization"), dict) else None
     state["review_report"] = value.get("review_report")
@@ -71,20 +75,28 @@ def normalize_project_state(value: dict[str, Any]) -> dict[str, Any]:
     return state
 
 
+class _ProjectState(dict):
+    """Read version kept outside the persisted project-state contract."""
+    def __init__(self, value, source_digest):
+        super().__init__(value)
+        self.source_digest = source_digest
+
+
 def load_project_state(project_root: Path) -> dict[str, Any]:
     path = project_root / "00_项目管理" / "project_state.json"
     if not path.is_file():
-        return new_project_state()
+        return _ProjectState(new_project_state(), None)
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
         raise ValueError("project_state.json 必须是对象")
-    return normalize_project_state(value)
+    return _ProjectState(normalize_project_state(value), sha256_json(value))
 
 
 def validate_project_state(state: dict[str, Any]) -> None:
-    if set(state) - {"candidate_test"} != set(STATE_KEYS):
+    required = set(STATE_KEYS) - {"workflow_authorizations"}
+    if set(state) - {"candidate_test"} - {"workflow_authorizations"} != required:
         extra = sorted(set(state) - set(STATE_KEYS))
-        missing = sorted(set(STATE_KEYS) - set(state))
+        missing = sorted(required - set(state))
         raise ValueError(f"project_state 字段不符合最小契约：extra={extra}, missing={missing}")
     if "candidate_test" in state:
         from .candidate_test import validate_context
@@ -100,6 +112,12 @@ def validate_project_state(state: dict[str, Any]) -> None:
     for field in ("current_artifacts", "user_confirmations", "accepted_issues"):
         if not isinstance(state.get(field), list):
             raise ValueError(f"{field} 必须是数组")
+    authorizations = state.get("workflow_authorizations", [])
+    if (not isinstance(authorizations, list)
+            or any(not isinstance(item, dict) or not isinstance(item.get("id"), str)
+                   or not item["id"].strip() for item in authorizations)
+            or len({item["id"] for item in authorizations}) != len(authorizations)):
+        raise ValueError("workflow_authorizations 必须是带唯一非空 id 的授权对象数组")
     _artifact_ids(state["current_artifacts"])
     if state.get("review_report") is not None and not isinstance(state["review_report"], dict):
         raise ValueError("review_report 必须是对象或 null")
@@ -117,6 +135,7 @@ def render_project_state_markdown(state: dict[str, Any]) -> str:
         f"- 定稿记录：{(state['finalization'] or {}).get('record_path', '无')}",
         f"- 当前有效产物：{len(state['current_artifacts'])}",
         f"- 用户确认：{len(state['user_confirmations'])}",
+        f"- 流程授权：{len(state.get('workflow_authorizations', []))}",
         f"- 审核报告：{'有' if state['review_report'] else '无'}",
         f"- 已接受问题：{len(state['accepted_issues'])}",
         f"- 下一阶段：{state['next_stage'] or '未设置'}",
@@ -137,12 +156,20 @@ def render_project_state_markdown(state: dict[str, Any]) -> str:
 @project_locked
 def write_project_state(project_root: Path, state: dict[str, Any]) -> None:
     validate_project_state(state)
+    original_state = state
+    manage = project_root / "00_项目管理"
+    path = manage / "project_state.json"
+    if hasattr(state, "source_digest"):
+        previous_digest = sha256_json(json.loads(path.read_text(encoding="utf-8"))) if path.is_file() else None
+        if state.source_digest != previous_digest:
+            raise ValueError("项目状态已被其他任务更新；重新读取后重试，不能覆盖新确认")
     from .artifacts import MANIFEST_PATH, load_manifest
     if (project_root / MANIFEST_PATH).is_file():
         state = reconcile_current_artifacts(state, load_manifest(project_root))
-    manage = project_root / "00_项目管理"
-    write_json(manage / "project_state.json", state)
+    write_json(path, state)
     write_text(manage / "project_state.md", render_project_state_markdown(state))
+    if hasattr(original_state, "source_digest"):
+        original_state.source_digest = sha256_json(state)
 
 
 def reconcile_current_artifacts(
@@ -163,7 +190,10 @@ def reconcile_current_artifacts(
         replacement = (replacements or {}).get(artifact_id, artifact_id)
         if replacement in valid and replacement not in selected:
             selected.append(replacement)
-    return {**state, "current_artifacts": selected}
+    # A shallow copy retains the read version for later optimistic writes.
+    reconciled = copy(state)
+    reconciled["current_artifacts"] = selected
+    return reconciled
 
 
 @project_locked

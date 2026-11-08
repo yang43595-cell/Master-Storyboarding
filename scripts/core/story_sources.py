@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .schema_contracts import require_schema
 from .artifacts import project_path
+from .character_assets import board_outfit_ids, uses_wardrobe
 from .director_reading import director_scene_reading, readable_fields
 
 
@@ -152,7 +153,7 @@ def validate_dialogue_review(record, project_root):
     rows = record.get('dialogues')
     if not isinstance(rows, list) or not rows:
         raise ValueError('对白审核记录需要非空 dialogues')
-    conflicts, unresolved, verified_times, ids = [], [], [], set()
+    conflicts, unresolved, awaiting_creative_approval, verified_times, ids = [], [], [], [], set()
     for row in rows:
         if not isinstance(row, dict):
             raise ValueError('对白审核行须为对象')
@@ -218,9 +219,11 @@ def validate_dialogue_review(record, project_root):
         unknown_speaker = (isinstance(speaker, str) and speaker.strip().casefold() in
                            {'unknown', 'unknown_speaker', 'unk', 'unresolved', '未知', '待确认', '未确认'})
         # Legacy text-only verification is retained but cannot clear identity uncertainty.
-        if (resolution is None or not isinstance(speaker, str) or not speaker.strip()
-                or unknown_speaker or speaker_status != 'verified' or resolution.get('speaker_id') != speaker):
+        known_speaker = isinstance(speaker, str) and bool(speaker.strip()) and not unknown_speaker and speaker_status == 'verified'
+        if not known_speaker or resolution is None or resolution.get('speaker_id') != speaker:
             unresolved.append(ident)
+            if known_speaker and resolution is None and kind in {'authored_addition', 'authorized_revision'}:
+                awaiting_creative_approval.append(ident)
         for field in ('source_locator', 'verified_timing'):
             timing = row.get(field)
             if timing is None:
@@ -243,7 +246,8 @@ def validate_dialogue_review(record, project_root):
     fidelity_checked = _validate_source_projection(record, project_root)
     return {'verification': 'source_consistency_only', 'conflicts': conflicts,
             'source_fidelity_checked': fidelity_checked,
-            'unresolved_ids': unresolved, 'verified_timing_ids': verified_times,
+            'unresolved_ids': unresolved, 'awaiting_creative_approval_ids': awaiting_creative_approval,
+            'verified_timing_ids': verified_times,
             'limits': 'Hashes and declared provenance do not prove subtitle transcription, listening, identity, product claims or approval authenticity. Missing source_baseline cannot prove source completeness/order.'}
 
 
@@ -423,12 +427,29 @@ def _candidate_text_source(narrative, root, evidence_id, paragraph_ids, storyboa
 
 def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, project_root: Path | None = None, candidate_test: bool = False,
                            candidate_paragraph_ids: list[str] | None = None,
-                           candidate_source_evidence: str | None = None) -> dict | None:
+                           candidate_source_evidence: str | None = None,
+                           require_dialogue_evidence: bool = False,
+                           require_character_output: bool = False,
+                           review_ready: bool = False,
+                           narrative_path: Path | None = None,
+                           exact_human_approval: bool = False) -> dict | None:
+    """Validate sources, separating readiness for review from human approval.
+
+    Read-only inspection retains historical unbound packages. Formal adoption
+    and revision submission must require dialogue evidence regardless of a
+    package's claimed age, status or human_readable_path. The existing explicit
+    isolated candidate routes remain blocked from production and keep their
+    declared unresolved-evidence handling.
+    """
+    if review_ready and (storyboard is not None or candidate_test or candidate_paragraph_ids is not None
+                         or candidate_source_evidence is not None):
+        raise ValueError("整稿送审准备只接受独立的完整编导叙事包")
     # Explicit read-only route, never inferred from missing coverage or open questions.
     local_candidate = candidate_paragraph_ids is not None
     if local_candidate and (storyboard is None or storyboard.get('status') != 'candidate'):
         raise ValueError('局部来源检查仅接受明确范围的 candidate 导演包')
     test_report = None
+    source_report = None
     if candidate_test:
         from .candidate_test import context, result_metadata
         if project_root is None or not context(project_root):
@@ -439,6 +460,14 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
     require_schema(narrative, 'narrative-package.schema.json', label='编导包')
     if narrative.get('schema_version') != '2.0':
         raise ValueError('新段落引用要求编导包 2.0；旧事件包须按原稿重新整理，不能自动换编号')
+    if review_ready and (narrative.get('status') not in {'candidate', 'confirmed'} or narrative.get('open_questions')):
+        raise ValueError('整稿送审须使用候选或已确认版本，并先关闭稿件中的未决问题')
+    if review_ready:
+        source_report = {'review_ready': True, 'awaiting_creative_approval_ids': [],
+                         'source_fidelity_checked': False}
+    if ((require_dialogue_evidence or review_ready) and not candidate_test and narrative['dialogues']
+            and not narrative.get('dialogue_evidence_path')):
+        raise ValueError('正式采用或返修提交的含对白叙事包必须绑定 dialogue_evidence_path/sha256；历史只读兼容不能用于新采用')
     if candidate_source_evidence is not None:
         if test_report is None:
             raise ValueError('有限正文来源仅用于显式隔离 candidate_test，不是正式采用入口')
@@ -471,12 +500,33 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
         report = validate_dialogue_review(evidence, project_root)
         if test_report is not None:
             test_report['source_fidelity_checked'] = report['source_fidelity_checked']
-        if report['unresolved_ids']:
+        awaiting_approval = report['awaiting_creative_approval_ids']
+        unresolved = report['unresolved_ids']
+        if review_ready:
+            unresolved = [ident for ident in unresolved if ident not in awaiting_approval]
+            source_report.update(awaiting_creative_approval_ids=awaiting_approval,
+                                 source_fidelity_checked=report['source_fidelity_checked'])
+        elif awaiting_approval and not candidate_test:
+            from .artifacts import narrative_has_exact_approval
+            if exact_human_approval or (narrative_path is not None
+                                        and narrative_has_exact_approval(project_root, narrative_path, narrative)):
+                unresolved = [ident for ident in unresolved if ident not in awaiting_approval]
+        if unresolved:
             if test_report is None:
-                raise ValueError('完整叙事包仍有未核对白证据：' + ', '.join(report['unresolved_ids']))
-            test_report['unresolved_dialogue_ids'] = report['unresolved_ids']
+                raise ValueError('完整叙事包仍有未核对白证据：' + ', '.join(unresolved))
+            test_report['unresolved_dialogue_ids'] = unresolved
         if [(r['dialogue_id'], r.get('speaker_id'), r['text']) for r in evidence['dialogues']] != [(r['dialogue_id'], r['speaker_id'], r['text']) for r in narrative['dialogues']]:
             raise ValueError('叙事包与对白审核记录的 ID、说话人、原文或顺序不一致')
+    elif test_report is not None and candidate_source_evidence is None:
+        test_report['dialogue_evidence_status'] = 'not_bound_unverified'
+        test_report['unresolved_dialogue_ids'] = [r['dialogue_id'] for r in narrative['dialogues']]
+    elif narrative['dialogues'] and not narrative.get('dialogue_evidence_path'):
+        source_report = {'verification': 'source_consistency_only',
+                         'dialogue_evidence_status': 'not_bound_unverified',
+                         'unresolved_dialogue_ids': [r['dialogue_id'] for r in narrative['dialogues']],
+                         'source_fidelity_checked': False, 'human_listening_verified': False,
+                         'formal_adoption_allowed': False,
+                         'limits': '历史兼容只检查正文与引用一致；未绑定对白证据，未证明原片覆盖、听核或身份，不可据此新采用；不改变已有用户批准及其范围。'}
     paragraphs = narrative['story_paragraphs']
     by_id = {p['paragraph_id']: p['text'] for p in paragraphs}
     if len(by_id) != len(paragraphs):
@@ -497,11 +547,25 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
         for item in narrative['asset_requirements']:
             if not item.get('image_decision') or not str(item.get('image_reason') or '').strip():
                 raise ValueError('新 JSON 资产需求必须保留出图决定与依据：' + item['asset_id'])
+    check_character_output = (not narrative.get('human_readable_path') and not candidate_test
+                              and (review_ready or require_character_output))
     for requirement in narrative['asset_requirements']:
+        ast = requirement['asset_id']
         if not set(requirement['source_paragraph_ids']).issubset(by_id):
-            raise ValueError('资产引用不存在的故事段落：' + requirement['asset_id'])
+            raise ValueError('资产引用不存在的故事段落：' + ast)
+        kind = requirement.get('character_output_kind')
+        human_character = uses_wardrobe(requirement)
+        if check_character_output and human_character and kind is None and requirement['image_decision'] in {
+                '需要制作', '复用现有素材'}:
+            raise ValueError('需出图的人类或人形角色必须登记 character_output_kind：' + ast)
+        if kind is not None and not human_character:
+            raise ValueError('character_output_kind 只适用于人类或人形角色：' + ast)
+        if kind == '人物1x4':
+            board_outfit_ids(requirement)
+        elif any('output_id' in outfit for outfit in requirement.get('wardrobe_states', [])):
+            raise ValueError('服装状态的 output_id 只用于最终人物1×4：' + ast)
     if storyboard is None:
-        return test_report
+        return test_report or source_report
     require_schema(storyboard, 'storyboard-package.schema.json', label='导演包')
     from .quality_evidence import scene_state_requirements
     scene_state_requirements(storyboard)
@@ -641,7 +705,7 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
         adjacent = {ordered_ids[j] for i, key in enumerate(ordered_ids) if key in checked_ids
                     for j in (i - 1, i + 1) if 0 <= j < len(ordered_ids)
                     and ordered_ids[j] not in checked_ids}
-        return {**(test_report or {}),
+        return {**(test_report or source_report or {}),
                 'source_narrative_revision': narrative['revision'],
                 'source_narrative_canonical_sha256': hashlib.sha256(json.dumps(narrative,
                     ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest(), 'validation_scope': 'candidate_paragraphs',
@@ -652,7 +716,7 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
                 'cross_boundary_semantics_checked': False,
                 'whole_package_validated': False, 'formal_adoption_allowed': False,
                 'notice': '仅本轮已写段落的结构与来源自查；跨段衔接须人工核对，未写部分未检查，不构成整稿通过或用户确认。'}
-    return test_report
+    return test_report or source_report
 
 
 def validate_asset_decisions(path: Path) -> None:
@@ -768,9 +832,9 @@ def _latest_narrative_name(project_root: Path) -> str:
     return candidates[-1].name
 
 
-def reading_supplement(narrative: dict, project_root: Path) -> dict:
+def reading_supplement(narrative: dict, project_root: Path, *, narrative_path: Path | None = None) -> dict:
     """Omit only text proven identical to Markdown, retain every other field."""
-    validate_story_sources(narrative, project_root=project_root)
+    validate_story_sources(narrative, project_root=project_root, narrative_path=narrative_path)
     if not narrative.get('human_readable_path'):
         return {'kind': 'narrative_reading_supplement',
                 'notice': 'JSON 是本修订唯一业务数据源；完整保留原文，不要求 Markdown。此读取不代表用户确认。',
@@ -794,6 +858,18 @@ def export_markdown(package: dict, destination: Path) -> None:
     if 'story_paragraphs' in package:
         for paragraph in package['story_paragraphs']:
             reading += ['## ' + paragraph['paragraph_id'], paragraph['text']]
+        character_outputs = []
+        for requirement in package['asset_requirements']:
+            kind = requirement.get('character_output_kind')
+            if kind is None:
+                continue
+            outfits = board_outfit_ids(requirement)
+            label = '人物1×4' if outfits else kind
+            outputs = '；'.join(f"{name}（{output_id}）" for name, output_id in outfits.items())
+            character_outputs.append(
+                f"- {requirement['asset_id']} {requirement['name']} · {label}" + (f" · {outputs}" if outputs else ""))
+        if character_outputs:
+            reading += ['## 人物资产最终交付', '\n'.join(character_outputs)]
     elif 'scenes' in package:
         for scene in package['scenes']:
             view = director_scene_reading(scene)
@@ -823,6 +899,8 @@ def main():
     inputs.add_argument('--markdown', type=Path)
     inputs.add_argument('--shot-plan', type=Path, help='导演镜头方案 Markdown：只读检查资产引用是否仍有效')
     parser.add_argument('--export-markdown', type=Path, help='按需从已校验 JSON 导出完整阅读视图；拒绝覆盖已有文件')
+    parser.add_argument('--review-ready', action='store_true',
+                        help='编导整稿送审检查：有来源与明确人物的创作对白可以等待整稿审核')
     parser.add_argument('--dialogue-baseline', type=Path)
     parser.add_argument('--check-asset-decisions', action='store_true', help='检查新稿资产表是否填写判断，不重复语义审查')
     parser.add_argument('--reading-supplement', action='store_true',
@@ -836,6 +914,8 @@ def main():
     parser.add_argument('--candidate-test', action='store_true', help='仅隔离候选试跑；保留未核对白并报告生产阻塞')
     parser.add_argument('--project', type=Path, required=True)
     args = parser.parse_args()
+    if args.review_ready and (not args.narrative or args.storyboard or args.candidate_test or args.reading_supplement):
+        parser.error('--review-ready 仅用于完整编导 --narrative 送审检查')
     if args.candidate_source_evidence is not None and (
             not args.candidate_test or not args.narrative or args.dialogue_review
             or args.markdown or args.shot_plan or args.reading_supplement or args.dialogue_baseline):
@@ -869,12 +949,13 @@ def main():
         parser.error('--dialogue-baseline 仅用于 --markdown')
     narrative = json.loads(args.narrative.read_text(encoding='utf-8-sig'))
     if args.reading_supplement:
-        print(json.dumps(reading_supplement(narrative, args.project), ensure_ascii=False, indent=2))
+        print(json.dumps(reading_supplement(narrative, args.project, narrative_path=args.narrative.resolve()), ensure_ascii=False, indent=2))
         return
     storyboard = json.loads(args.storyboard.read_text(encoding='utf-8-sig')) if args.storyboard else None
     report = validate_story_sources(narrative, storyboard, project_root=args.project, candidate_test=args.candidate_test,
                                     candidate_paragraph_ids=args.candidate_paragraph_id,
-                                    candidate_source_evidence=args.candidate_source_evidence)
+                                    candidate_source_evidence=args.candidate_source_evidence,
+                                    review_ready=args.review_ready, narrative_path=args.narrative.resolve())
     if report is not None:
         print(json.dumps(report, ensure_ascii=False))
     if args.export_markdown:

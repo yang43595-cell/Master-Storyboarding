@@ -18,7 +18,7 @@ SOURCE_ENTRIES = (
 )
 _EXCLUDED_NAMES = (
     ".git", ".venv", "venv", "node_modules", "__pycache__", "*.py[cod]",
-    ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox", ".nox",
+    ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox", ".nox", ".ds_store",
     ".blender-previs-cache", ".master-storyboarding", ".tmp_*",
     "regression_evidence", ".repair-evidence", "inputs", "history", "evidence_sources",
     "product-references", "*transcript*", ".aws", ".ssh", ".claude", ".codex",

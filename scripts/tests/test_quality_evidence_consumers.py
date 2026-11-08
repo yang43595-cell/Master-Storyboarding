@@ -97,6 +97,59 @@ def test_cli_fails_without_mutating_files(tmp_path):
     assert before=={str(p):p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}
 
 
+def required_shot_submission(tmp_path, *, source_seconds=5, declared_total=None):
+    frozen, manifest = fixture(tmp_path)
+    row = frozen['drafts'][0]
+    clause = 'Keep the lantern flame and the striker together in close view until ignition.'
+    segment = {'segment_id': 'SEG', 'prompt': clause, 'source_shot_ids': ['S1'], 'shot_durations': [source_seconds]}
+    if declared_total is not None:
+        segment['duration_seconds'] = declared_total
+    source_files = {
+        'BOARD': {'scenes': [{'scene_id': 'ROOM', 'shots': [{'shot_id': 'S1', 'required_visuals': [
+            {'prompt_clause': clause, 'min_seconds': 3}]}]}]},
+        'VIDEO': {'source_storyboard': {'path': 'board.json', 'revision': 'R1'}, 'generation_segments': [segment]},
+    }
+    state_path = tmp_path / '00_项目管理/project_state.json'
+    state = json.loads(state_path.read_text())
+    for ident, payload in source_files.items():
+        path = tmp_path / (ident.lower() + '.json')
+        write_json(path, payload)
+        reference = dict(artifact_id=ident, revision='R1', sha256=artifacts.digest(path))
+        frozen['source_artifacts'].append(reference)
+        logical_id = 'storyboard.package' if ident == 'BOARD' else 'synthetic.video'
+        manifest['artifacts'].append(dict(reference, logical_id=logical_id, type='document',
+            path_or_url=path.name, checksum=reference['sha256'], status='current', user_approved=True,
+            confirmation_ref='confirmation.json', depends_on=[]))
+        state['current_artifacts'].append(ident)
+        state['user_confirmations'][0]['artifact_ids'].append(ident)
+    write_json(state_path, state)
+    write_json(tmp_path / artifacts.MANIFEST_PATH, manifest)
+    row.update(source_segment_id='SEG', prompt=clause)
+    row['quality_evidence']['input_sha256'] = q.fingerprint(q.draft_binding(row))
+    return frozen
+
+
+def test_formal_preflight_checks_required_shot_in_actual_prompt_even_with_fresh_evidence(tmp_path):
+    frozen = required_shot_submission(tmp_path)
+    assert canvas_readback.validate_submission(frozen, tmp_path)['ok']
+
+    row = frozen['drafts'][0]
+    row['prompt'] = 'The lantern is already lit.'
+    row['quality_evidence']['input_sha256'] = q.fingerprint(q.draft_binding(row))
+    with pytest.raises(ValueError, match='required_visuals: S1.*正文缺少'):
+        canvas_readback.validate_submission(frozen, tmp_path)
+
+
+@pytest.mark.parametrize('source_seconds', [5, 6], ids=['matching', 'impossible'])
+def test_formal_preflight_checks_linked_source_shot_schedule_against_declared_total(tmp_path, source_seconds):
+    frozen = required_shot_submission(tmp_path, source_seconds=source_seconds, declared_total=5)
+    if source_seconds == 6:
+        with pytest.raises(ValueError, match=r'SEG.*(?:片段总长|逐镜合计)'):
+            canvas_readback.validate_submission(frozen, tmp_path)
+    else:
+        assert canvas_readback.validate_submission(frozen, tmp_path)['ok']
+
+
 def test_historical_compare_not_upgraded(tmp_path):
     frozen,_=fixture(tmp_path)
     legacy={k:copy.deepcopy(frozen[k]) for k in ('target_url','drafts')}
@@ -356,3 +409,114 @@ def test_real_ensure_prepared_rejects_stale_director_method_fingerprint(tmp_path
                                 '--required-reference','skills/storyboard-planner/modules/shot-planning.md'])
     with pytest.raises(cli.StageContextError,match='必需本地规范已变更'):
         cli.ensure_prepared(args)
+
+
+def adopt_agent_fixture_entry(root, entry, *, usage=None, reference_groups=None):
+    """Exercise real adoption APIs with explicitly synthetic self-check evidence."""
+    from scripts.core import agent_acceptance as acceptance
+    from scripts.core.project_state import load_project_state
+    state = load_project_state(root)
+    if not state.get('workflow_authorizations'):
+        acceptance.register_workflow_authorization(root, authorization_id='SYNTHETIC-WF',
+            authorization_ref='SYNTHETIC ONLY: user authorized the downstream workflow',
+            skills=['storyboard-planner', 'storyboard-director', 'voiceover-to-video-script'])
+    profile_path = acceptance.ROOT / 'skills' / acceptance.skill_for_artifact(entry) / 'review-profile.json'
+    profile = json.loads(profile_path.read_text())
+    report = {**acceptance.acceptance_binding(root, entry), 'schema_version': '1.0',
+              'kind': 'agent-self-check', 'authorization_id': 'SYNTHETIC-WF',
+              'agent_id': 'synthetic-agent', 'checked_at': '2026-11-05T00:00:00Z',
+              'scope': 'artifact', 'verdict': 'pass',
+              'review_profile_sha256': artifacts.digest(profile_path),
+              'checks': [{'id': item['id'], 'result': 'pass',
+                          'observation': 'SYNTHETIC ONLY, no actual creative or visual acceptance',
+                          'locator': 'synthetic consumer fixture'}
+                         for item in profile['production_artifact_checks']]}
+    if usage is not None:
+        report['usage'] = usage
+    if reference_groups is not None:
+        report['reference_groups'] = reference_groups
+    path = root / ('agent-' + entry['artifact_id'] + '.json')
+    write_json(path, report)
+    return artifacts.adopt_initial_agent_artifact(root, entry['artifact_id'], path.name)['artifact']
+
+
+def agent_board_fixture(root):
+    from test_formal_package_submission import confirmed_narrative, board_candidate, register
+    story, _ = confirmed_narrative(root)
+    board = board_candidate(root, story)
+    second = copy.deepcopy(board['scenes'][0]['shots'][0])
+    second.update(shot_id='S01-020', source_dialogue_ids=[])
+    second['audio']['dialogue'] = []
+    board['scenes'][0]['shots'].append(second)
+    entry = register(root, 'BOARD', 'storyboard.package', board, ['narrative.package'])
+    return adopt_agent_fixture_entry(root, entry)
+
+
+def agent_fixture(root, *, image_setup=None):
+    """Human narrative -> agent director -> agent image, without new human receipts."""
+    frozen, old_manifest = fixture(root)
+    board = agent_board_fixture(root)
+    entry = old_manifest['artifacts'][0]
+    entry.update(status='candidate', user_approved=False, depends_on=['storyboard.package'])
+    entry.pop('confirmation_ref')
+    row = frozen['drafts'][0]
+    row['source_shot_ids'] = ['S01-010']
+    evidence = entry['quality_evidence']
+    evidence['source_shot_ids'] = ['S01-010']
+    evidence['uses'] = [q.image_use(row['reference_checks'][0], row['source_shot_ids'])]
+    if image_setup is not None:
+        image_setup(frozen, entry)  # Complete observations before their immutable adoption binding.
+    artifacts.register_workspace_artifact(root, entry)
+    adopted = adopt_agent_fixture_entry(root, entry, usage={'source_shot_ids': ['S01-010']})
+    frozen['source_artifacts'] = [{'artifact_id': board['artifact_id'], 'revision': board['revision'],
+                                  'sha256': board['checksum']}]
+    row['quality_evidence']['input_sha256'] = q.fingerprint(q.draft_binding(row))
+    return frozen, adopted
+
+
+def test_agent_image_consumers_use_real_adoption_without_human_confirmation(tmp_path):
+    from scripts.core.project_state import load_project_state
+    frozen, entry = agent_fixture(tmp_path)
+    state = load_project_state(tmp_path)
+    assert not entry['user_approved'] and not artifacts.artifact_is_confirmed(entry, state, tmp_path)
+    assert artifacts.artifact_is_adopted(entry, state, tmp_path)
+    assert state['user_confirmations'] == [{'artifact_ids': ['N']}]
+    assert asset_refs.require_references(tmp_path, ['IMG'], ['S01-010']) == (True, [])
+    assert canvas_readback.validate_submission(frozen, tmp_path)['ok']
+
+
+@pytest.mark.parametrize('mutation', ['missing', 'fail', 'unknown', 'source_hash', 'image_hash',
+                                     'scope', 'no_locator', 'report_hash', 'authorization', 'upstream_confirmation'])
+def test_agent_image_acceptance_never_bypasses_observation_or_authorization(tmp_path, mutation):
+    frozen, _ = agent_fixture(tmp_path)
+    manifest = artifacts.load_manifest(tmp_path)
+    entry = next(item for item in manifest['artifacts'] if item['artifact_id'] == 'IMG')
+    evidence = entry['quality_evidence']
+    if mutation == 'missing': entry.pop('quality_evidence')
+    elif mutation in {'fail', 'unknown'}: evidence['checks']['product_phase']['result'] = mutation
+    elif mutation == 'source_hash': evidence['source_files'][0]['sha256'] = '0' * 64
+    elif mutation == 'image_hash': evidence['image_sha256'] = '0' * 64
+    elif mutation == 'scope': evidence['source_shot_ids'] = ['S01-020']
+    elif mutation == 'no_locator': evidence['checks']['hands_support'].pop('locator')
+    elif mutation == 'report_hash': (tmp_path / entry['agent_acceptance']['report_path']).write_text('{}')
+    else:
+        path = tmp_path / '00_项目管理/project_state.json'
+        state = json.loads(path.read_text())
+        if mutation == 'upstream_confirmation': state['user_confirmations'] = []
+        else: state['workflow_authorizations'][0]['status'] = 'revoked'
+        write_json(path, state)
+    write_json(tmp_path / artifacts.MANIFEST_PATH, manifest)
+    assert not asset_refs.require_references(tmp_path, ['IMG'], ['S01-010'])[0]
+    with pytest.raises(ValueError): canvas_readback.validate_submission(frozen, tmp_path)
+
+
+def test_agent_image_observed_extra_shot_does_not_expand_accepted_usage(tmp_path):
+    def observe_extra_shot(frozen, image):
+        row = frozen['drafts'][0]
+        row['source_shot_ids'] = ['S01-020']
+        image['quality_evidence']['source_shot_ids'].append('S01-020')
+        image['quality_evidence']['uses'].append(q.image_use(row['reference_checks'][0], ['S01-020']))
+    frozen, _ = agent_fixture(tmp_path, image_setup=observe_extra_shot)
+    assert not asset_refs.require_references(tmp_path, ['IMG'], ['S01-020'])[0]
+    with pytest.raises(ValueError, match='acceptance usage'):
+        canvas_readback.validate_submission(frozen, tmp_path)

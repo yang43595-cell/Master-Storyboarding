@@ -9,7 +9,30 @@ from scripts.core import artifacts, revision_control as rc
 from scripts.core.io import read_json, write_json
 from scripts.core.project_state import load_project_state, new_project_state, write_project_state
 from test_director_compact import compact_package
-from test_story_paragraph_sources import narrative
+from test_story_paragraph_sources import narrative as legacy_narrative
+
+
+def narrative(root):
+    """Fresh synthetic formal input; the shared historical fixture stays unchanged."""
+    package = legacy_narrative(root)
+    record = {"sources": [], "dialogues": []}
+    for row in package["dialogues"]:
+        record["dialogues"].append({
+            "dialogue_id": row["dialogue_id"], "speaker_id": row["speaker_id"],
+            "speaker_status": "verified", "text": row["text"], "source_ids": [],
+            "origin": {"kind": "authored_addition", "reference": "synthetic original text request",
+                       "scope": "synthetic formal adoption test only", "author": "synthetic user",
+                       "purpose": "exercise manuscript submission", "revision": package["revision"]},
+            "verification": {"scope": "dialogue", "dialogue_id": row["dialogue_id"],
+                             "speaker_id": row["speaker_id"], "text": row["text"],
+                             "method": "user_confirmation", "reference": "synthetic exact text and speaker approval",
+                             "reviewer": "synthetic user"},
+        })
+    evidence = root / "synthetic-dialogue-review.json"
+    write_json(evidence, record)
+    package.update(dialogue_evidence_path=evidence.name,
+                   dialogue_evidence_sha256=artifacts.digest(evidence))
+    return package
 
 
 def register(root, artifact_id, logical_id, payload, dependencies=()):
@@ -90,7 +113,8 @@ def test_normal_cli_adopts_confirmed_package_without_channel_configuration(tmp_p
     write_project_state(project, new_project_state(current_stage="creative-director"))
     package = narrative(project)
     package.pop("human_readable_path")
-    package["asset_requirements"][0].update(image_decision="需要制作", image_reason="synthetic only")
+    package["asset_requirements"][0].update(image_decision="需要制作", image_reason="synthetic only",
+                                            character_output_kind="人物单图")
     path = project / "02_编导/R01.json"
     write_json(path, package)
 
@@ -377,7 +401,39 @@ def test_commit_rechecks_confirmed_candidate_bytes(tmp_path):
     assert rc.show_change(tmp_path)["active_change"]["status"] == "commit_ready"
 
 
-def video_project(root):
+def test_whole_revision_approval_covers_new_creative_dialogue_without_editing_evidence(tmp_path):
+    from scripts.core.story_sources import validate_story_sources
+
+    original, _ = confirmed_narrative(tmp_path)
+    candidate = copy.deepcopy(original)
+    candidate["revision"] = "R02"
+    original_evidence = tmp_path / original["dialogue_evidence_path"]
+    evidence = read_json(original_evidence)
+    row = evidence["dialogues"][0]
+    row["origin"]["revision"] = "R02"
+    row.pop("verification")
+    path = tmp_path / "revision-dialogues.json"
+    write_json(path, evidence)
+    candidate.update(dialogue_evidence_path=path.name, dialogue_evidence_sha256=artifacts.digest(path))
+    source = tmp_path / "N-R02.json"
+    write_json(source, candidate)
+    before = source.read_bytes(), path.read_bytes()
+
+    rc.open_change(tmp_path, change_id="SCRIPT-REV", tier="T1",
+                   logical_ids=["narrative.package"], reason="synthetic revised narrative")
+    rc.confirm_impact(tmp_path, change_id="SCRIPT-REV", approval_ref="synthetic:impact")
+    rc.record_candidate(tmp_path, change_id="SCRIPT-REV", artifact_id="N-R02", logical_id="narrative.package",
+                        artifact_type="narrative.package", candidate_path=source.name, revision="R02")
+    rc.record_review(tmp_path, change_id="SCRIPT-REV", verdict="approved", report_ref="synthetic:review")
+    with pytest.raises(ValueError, match="未核对白证据"):
+        validate_story_sources(candidate, project_root=tmp_path)
+    rc.confirm_candidate(tmp_path, change_id="SCRIPT-REV", approval_ref="synthetic:whole-script-human-approval")
+    rc.commit_change(tmp_path, change_id="SCRIPT-REV")
+    validate_story_sources(candidate, project_root=tmp_path, narrative_path=source, require_dialogue_evidence=True)
+    assert before == (source.read_bytes(), path.read_bytes())
+
+
+def video_project(root, *, current_prompt=True):
     story, _ = confirmed_narrative(root)
     board = board_candidate(root, story)
     # Synthetic second scene: the reconciliation test must also retain real
@@ -400,16 +456,38 @@ def video_project(root):
     old_prompt = {"revision": "R01", "source_storyboard": source_board,
                   "generation_segments": [{"segment_id": "G-01", "prompt": "Alice close-up: stop at the door.", "source_shot_ids": ["S01-010"]},
                                           {"segment_id": "G-02", "prompt": "She turns back.", "source_shot_ids": ["S02-010"]}]}
+    for scene, segment in zip(board["scenes"], old_prompt["generation_segments"]):
+        shot = scene["shots"][0]
+        segment["source_audio"] = [
+            dict(fragment, source_shot_id=shot["shot_id"]) for fragment in shot["audio"]["dialogue"]
+        ]
+    # The synthetic shot mapping deliberately crosses scene IDs while keeping
+    # the same actor, doorway and visible state across the cut.
+    old_prompt["generation_segments"][1]["physical_continuity"] = {
+        "from_segment_id": "G-01",
+        "permitted_change": "Alice turns her head without stepping away.",
+        "positions": {"status": "no_visual_needed", "previous_state": "Alice stops at the door.",
+                      "current_state": "Alice stands at the same door.",
+                      "basis": "The cloned scene and its continuation keep Alice at one marked position."},
+        "props": {"status": "no_visual_needed", "previous_state": "Alice carries no object.",
+                  "current_state": "Alice carries no object.",
+                  "basis": "Neither source shot gives Alice an object or a handoff."},
+        "visibility": {"status": "no_visual_needed", "previous_state": "Alice is visible in close-up.",
+                        "current_state": "Alice remains visible while looking back.",
+                        "basis": "The turn does not introduce a new visible character or object."},
+    }
     old_path = root / "P-OLD.json"
     write_json(old_path, old_prompt)
-    manifest["artifacts"].append({"artifact_id": "P-OLD", "logical_id": "video.prompt", "type": "video.prompt",
-                                  "revision": "R01", "status": "current", "user_approved": True,
-                                  "path_or_url": old_path.name, "checksum": artifacts.digest(old_path),
-                                  "depends_on": ["storyboard.package"]})
+    if current_prompt:
+        manifest["artifacts"].append({"artifact_id": "P-OLD", "logical_id": "video.prompt", "type": "video.prompt",
+                                      "revision": "R01", "status": "current", "user_approved": True,
+                                      "path_or_url": old_path.name, "checksum": artifacts.digest(old_path),
+                                      "depends_on": ["storyboard.package"]})
     write_json(root / artifacts.MANIFEST_PATH, manifest)
     state = new_project_state(current_stage="voiceover-to-video-script")
-    state.update(current_artifacts=["N", "B", "P-OLD"],
-                 user_confirmations=[{"artifact_ids": ["N", "B", "P-OLD"]}])
+    current_ids = ["N", "B"] + (["P-OLD"] if current_prompt else [])
+    state.update(current_artifacts=current_ids,
+                 user_confirmations=[{"artifact_ids": current_ids}])
     write_project_state(root, state)
     return old_prompt
 
@@ -436,12 +514,46 @@ def test_formal_video_prompt_promotion_runs_generation_segment_reconciliation(tm
                 if a["artifact_id"] == "P-BAD")["status"] == "candidate"
 
 
+def test_formal_video_adoption_rejects_rewritten_source_audio(tmp_path):
+    payload = video_project(tmp_path, current_prompt=False)
+    payload["generation_segments"][0]["source_audio"][0]["text"] = "Changed dialogue."
+    entry = register(tmp_path, "P-DRIFT", "video.prompt", payload, ["storyboard.package"])
+    with pytest.raises(ValueError, match="source_audio"):
+        artifacts.promote_candidate(tmp_path, "video.prompt", entry["artifact_id"])
+    assert next(a for a in artifacts.load_manifest(tmp_path)["artifacts"]
+                if a["artifact_id"] == entry["artifact_id"])["status"] == "candidate"
+
+
+@pytest.mark.parametrize("declared_total", [None, 3, 2], ids=["legacy", "matching", "impossible"])
+def test_adopt_package_checks_video_shot_schedule_against_declared_total(tmp_path, declared_total):
+    payload = video_project(tmp_path, current_prompt=False)
+    segment = payload["generation_segments"][0]
+    segment["shot_durations"] = [3]
+    if declared_total is not None:
+        segment["duration_seconds"] = declared_total
+    path = tmp_path / "P-NEW.json"
+    write_json(path, payload)
+    before = load_project_state(tmp_path)
+    arguments = ["adopt-package", "--project", str(tmp_path), "--artifact-id", "P-NEW",
+                 "--logical-id", "video.prompt", "--path", path.name, "--revision", "R01",
+                 "--approval-ref", "synthetic exact manuscript approval", "--depends-on", "storyboard.package"]
+
+    if declared_total == 2:
+        with pytest.raises(cli.StageContextError, match=r"G-01.*(?:片段总长|逐镜合计)"):
+            cli.main(arguments)
+        assert load_project_state(tmp_path) == before
+    else:
+        assert cli.main(arguments) == 0
+        assert "P-NEW" in load_project_state(tmp_path)["current_artifacts"]
+    entry = next(a for a in artifacts.load_manifest(tmp_path)["artifacts"] if a["artifact_id"] == "P-NEW")
+    assert entry["status"] == ("candidate" if declared_total == 2 else "current")
+
+
 def test_formal_video_prompt_accepts_reasoned_generation_segment_change(tmp_path):
     baseline = video_project(tmp_path)
     payload = copy.deepcopy(baseline)
     payload["revision"] = "R02"
-    payload["generation_segments"] = [baseline["generation_segments"][0],
-                                      {"segment_id": "G-03", "prompt": "Continue after the turn.", "source_shot_ids": ["S02-010"]}]
+    payload["generation_segments"][1].update(segment_id="G-03", prompt="Continue after the turn.")
     payload["segment_reconciliation"] = {
         "baseline": {"artifact_id": "P-OLD", "sha256": artifacts.digest(tmp_path / "P-OLD.json")},
         "changes": [{"action": "remove", "segment_id": "G-02", "reason": "Move the return glance to a later continuation."},
@@ -461,3 +573,78 @@ def test_formal_video_prompt_accepts_reasoned_generation_segment_change(tmp_path
                    if a["artifact_id"] == "P-NEW")
     assert adopted["status"] == "current"
     assert "target_url" not in payload and "platform" not in payload
+
+
+def remove_dialogue_binding(package):
+    package.pop("dialogue_evidence_path")
+    package.pop("dialogue_evidence_sha256")
+
+
+def unbound_current_narrative(root):
+    """Seed a synthetic historical source, never rewrite a real approval."""
+    source = read_json(root / "N.json")
+    remove_dialogue_binding(source)
+    write_json(root / "N.json", source)
+    manifest = artifacts.load_manifest(root)
+    next(item for item in manifest["artifacts"] if item["artifact_id"] == "N")["checksum"] = artifacts.digest(root / "N.json")
+    write_json(root / artifacts.MANIFEST_PATH, manifest)
+
+
+@pytest.mark.parametrize("logical_id", ["narrative.package", "storyboard.package", "video.prompt"])
+def test_adopt_package_cannot_use_unbound_dialogue_as_legacy_compatibility(tmp_path, logical_id):
+    dependencies = []
+    if logical_id == "narrative.package":
+        package = narrative(tmp_path)
+        remove_dialogue_binding(package)
+        package.pop("human_readable_path")
+        package["asset_requirements"][0].update(image_decision="需要制作", image_reason="synthetic only")
+    elif logical_id == "storyboard.package":
+        story, _ = confirmed_narrative(tmp_path)
+        package = board_candidate(tmp_path, story)
+        unbound_current_narrative(tmp_path)
+        dependencies = ["narrative.package"]
+    else:
+        package = video_project(tmp_path, current_prompt=False)
+        unbound_current_narrative(tmp_path)
+        dependencies = ["storyboard.package"]
+    write_json(tmp_path / "NEW.json", package)
+    before = copy.deepcopy(load_project_state(tmp_path))
+    arguments = ["adopt-package", "--project", str(tmp_path), "--artifact-id", "NEW",
+                 "--logical-id", logical_id, "--path", "NEW.json",
+                 "--revision", package["revision"], "--approval-ref", "synthetic exact manuscript approval"]
+    for dependency in dependencies:
+        arguments.extend(["--depends-on", dependency])
+    with pytest.raises(cli.StageContextError, match="必须绑定 dialogue_evidence"):
+        cli.main(arguments)
+    entry = next(item for item in artifacts.load_manifest(tmp_path)["artifacts"] if item["artifact_id"] == "NEW")
+    assert entry["status"] == "candidate" and not entry.get("user_approved")
+    state = load_project_state(tmp_path)
+    assert state["user_confirmations"] == before["user_confirmations"]
+    assert state["current_artifacts"] == before["current_artifacts"]
+
+
+@pytest.mark.parametrize("logical_id", ["narrative.package", "storyboard.package", "video.prompt"])
+def test_revision_confirmation_cannot_erase_dialogue_binding(tmp_path, logical_id):
+    if logical_id == "narrative.package":
+        package, _ = confirmed_narrative(tmp_path)
+        package = copy.deepcopy(package)
+        remove_dialogue_binding(package)
+    else:
+        prompt = video_project(tmp_path)
+        package = read_json(tmp_path / "B.json") if logical_id == "storyboard.package" else prompt
+        unbound_current_narrative(tmp_path)
+    package["revision"] = "R03"
+    write_json(tmp_path / "REV.json", package)
+    rc.open_change(tmp_path, change_id="UNBOUND-REV", tier="T1", logical_ids=[logical_id],
+                   reason="synthetic missing source evidence negative test")
+    rc.confirm_impact(tmp_path, change_id="UNBOUND-REV", approval_ref="synthetic impact approval")
+    rc.record_candidate(tmp_path, change_id="UNBOUND-REV", artifact_id="REV", logical_id=logical_id,
+                        artifact_type=logical_id, candidate_path="REV.json", revision="R03")
+    rc.record_review(tmp_path, change_id="UNBOUND-REV", verdict="approved", report_ref="synthetic review")
+    before = copy.deepcopy(load_project_state(tmp_path)["user_confirmations"])
+    with pytest.raises(rc.RevisionControlError, match="必须绑定 dialogue_evidence"):
+        rc.confirm_candidate(tmp_path, change_id="UNBOUND-REV", approval_ref="synthetic exact revision approval")
+    change = rc.show_change(tmp_path)["active_change"]
+    assert change["status"] == "awaiting_candidate_confirmation" and not change.get("candidate_confirmation")
+    assert load_project_state(tmp_path)["user_confirmations"] == before
+    assert next(item for item in artifacts.load_manifest(tmp_path)["artifacts"] if item["artifact_id"] == "REV")["status"] == "candidate"

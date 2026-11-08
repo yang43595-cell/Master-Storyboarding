@@ -1,4 +1,5 @@
 """Codex prompt drafting/review and explicitly authorized native ImageGen calls."""
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -6,6 +7,7 @@ import shutil
 import subprocess
 import time
 import re
+from datetime import datetime
 from PIL import Image, ImageOps
 
 
@@ -170,7 +172,7 @@ def run(exe, folder, phase, request, draft, task_package):
                if phase == 'draft' and request.get('kind') in {'物品', '产品'} else '')
     task = ('执行 asset-image-assistant，当前轮次：' + phase + '。' + purpose + brevity +
             ('在本次执行内完成撰写、自查、修正和复核，prompt返回最终全文。' if phase == 'draft' else
-             '本轮仅审查，不改写正文。prompt逐字返回当前编辑稿；发现问题在issues提出具体修改建议，passed=false。用户修改优先于旧稿，不擅自撤销。文字长短、措辞和可选构图改进只写observations建议，不得作为issues阻断；只有明确违反用户要求、关键身份或不可执行的矛盾才判不通过。') +
+             '本轮仅审查，不改写正文。prompt逐字返回当前编辑稿；发现问题在issues提出具体修改建议，passed=false。用户修改优先于旧稿，不擅自撤销。文字长短、措辞和可选构图改进只写observations建议，不得作为issues阻断；明确违反当前用户要求或适用硬规则时判不通过，包括关键身份、真实参考、连续性、语言红线及不可执行的矛盾。') +
             'checks写具体检查结论，不得只写通过。passed针对最终返回的prompt。'
             '只处理下面任务包中的制作项；不生图、不改文件、不执行工具或其他阶段。'
             '实际阅读模板正文、适用规范和动态知识；已附带的参考图必须查看，文件不可读时passed=false。'
@@ -192,7 +194,7 @@ def run(exe, folder, phase, request, draft, task_package):
             '\n待处理草稿：\n' + json.dumps(draft['prompt'] if isinstance(draft, dict) else draft, ensure_ascii=False))
     if request.get('kind') == '物品':
         task = ('制作普通物品四视图。当前物品规则优先：提示词只写物品名称、用户明确外观及必要尺寸排版，少量润色即可。'
-                '默认一张16:9横图，2×2四格：左上正面、右上左侧、左下背面、右下俯视，大小一致、浅色背景。不要增加手部、受力、灯光等细节。'
+                '默认一张16:9横图，2×2四格：左上正面、右上左侧、左下背面、右下俯视，同一物品同一状态，大小一致、浅色背景。不要增加手部、受力、灯光等细节。'
                 '保留指定品牌；无参考也可生成，不要求补图或实际厘米数。'
                 + ('写出简短提示词并自查。' if phase == 'draft' else '仅审查，prompt逐字保留用户原文，不改写。')
                 + '逐项执行review_checks：checks必须使用原检查ID，例如“ASSET-SCOPE：具体名称与需求证据”“ASSET-QC：具体排版证据”，不可用中文标题替换ID。只有明确冲突才passed=false并写issues，其他润色建议写observations，建议可为空。'
@@ -289,23 +291,148 @@ def plan_assets(exe, folder, request, rules):
     return data
 
 
+IMAGE_CHECKS = ('requirements', 'reference_consistency', 'identity_wardrobe',
+                'product_geometry', 'composition_state')
+
+
+def image_digest(path):
+    with Path(path).open('rb') as stream:
+        return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+
+def visual_self_check(value, path, *, prompt=None, references=None, binding_missing=False):
+    """Bind declared observations to bytes; this does not certify that an agent looked."""
+    path = Path(path).resolve()
+    evidence = json.loads(json.dumps(value)) if isinstance(value, dict) else {}
+    issues = [item for item in evidence.get('binding_issues', []) if isinstance(item, str)] if isinstance(evidence.get('binding_issues', []), list) else []
+    actual = image_digest(path)
+    if not evidence:
+        issues.append('此结果未保存成图实看记录，视觉要求尚未验证。')
+    if evidence.get('status') not in {'pass', 'fail', 'unknown'}:
+        issues.append('缺少有效的成图自查结论。')
+    try:
+        observed_path = Path(evidence.get('image_path', ''))
+        same_path = observed_path.is_absolute() and observed_path.resolve() == path
+        stored_path = Path(evidence.get('stored_path', ''))
+        same_path = same_path or (stored_path.is_absolute() and stored_path.resolve() == path
+                                  and evidence.get('stored_image_sha256') == actual)
+    except TypeError:
+        same_path = False
+    if not same_path or evidence.get('image_sha256') != actual:
+        issues.append('实看文件路径或SHA256与当前图片不符，不能复用旧观察。')
+    if not isinstance(evidence.get('observer'), str) or not evidence['observer'].strip():
+        issues.append('未记录实际观察执行者。')
+    try:
+        if datetime.fromisoformat(evidence.get('checked_at', '').replace('Z', '+00:00')).utcoffset() is None:
+            raise ValueError
+    except (TypeError, ValueError, AttributeError):
+        issues.append('未记录带时区的实际观察时间。')
+    checks = evidence.get('checks')
+    valid_checks = isinstance(checks, dict) and all(
+        isinstance(checks.get(key), dict)
+        and checks[key].get('result') in {'pass', 'fail', 'unknown', 'not_applicable'}
+        and isinstance(checks[key].get('observation'), str) and checks[key]['observation'].strip()
+        and isinstance(checks[key].get('locator'), str) and checks[key]['locator'].strip()
+        for key in IMAGE_CHECKS)
+    if not valid_checks or checks.get('requirements', {}).get('result') == 'not_applicable':
+        issues.append('本次要求、参考、身份服装、产品和构图状态的具体观察或位置不完整。')
+    if not isinstance(evidence.get('limitations'), list) or any(
+            not isinstance(item, str) for item in evidence.get('limitations', [])):
+        issues.append('缺少明确的观察局限记录。')
+    sources = evidence.get('source_files')
+    if not isinstance(sources, list) or any(not isinstance(r, dict)
+            or not isinstance(r.get('path'), str) or not r['path'].strip()
+            or not isinstance(r.get('sha256'), str) or not re.fullmatch(r'[a-f0-9]{64}', r['sha256'])
+            for r in sources):
+        issues.append('缺少有效的实际参考观察文件记录。')
+        sources = []
+    if binding_missing:
+        issues.append('缺少原生成输入快照，不能验证观察与本次输入的绑定。')
+    if prompt is not None and evidence.get('prompt_sha256') != hashlib.sha256(prompt.encode('utf-8')).hexdigest():
+        issues.append('观察未绑定本次已确认提示词。')
+    if references is not None:
+        for record in references:
+            try:
+                unchanged = image_digest(record['path']) == record['sha256']
+            except (OSError, KeyError):
+                unchanged = False
+            if not unchanged or record not in sources:
+                issues.append('真实参考已变化、不可读或缺少实看绑定：' + record.get('path', '未知参考'))
+    # A failed requirement stays failed. Incomplete/broken bindings can never retain pass.
+    status = evidence.get('status', 'unknown')
+    if issues:
+        status = 'unknown'
+    elif valid_checks:
+        outcomes = [checks[key]['result'] for key in IMAGE_CHECKS]
+        if 'fail' in outcomes:
+            status = 'fail'
+        elif 'unknown' in outcomes:
+            status = 'unknown'
+    evidence.update(status=status, binding_issues=list(dict.fromkeys(issues)),
+                    stored_path=str(path), stored_image_sha256=actual)
+    return evidence
+
+
+def image_result(value):
+    """Legacy path-only results remain usable candidates with unknown visual quality."""
+    result = {'output_path': value} if isinstance(value, str) else dict(value)
+    path = result['output_path']
+    result['visual_self_check'] = visual_self_check(result.get('visual_self_check'), path)
+    return result
+
+
 def generate_image(exe, folder, request):
     """One native ImageGen call, returning a verified newly generated file, never an API fallback."""
     folder.mkdir(parents=True, exist_ok=True)
     # Keep the exact submitted references inside this run's readable workspace.
+    original_request = request
+    references = [{'path': str(Path(path).resolve()), 'sha256': image_digest(path)}
+                  for path in request['reference_paths']]
     paths = stage_image_references(folder / 'references', request['reference_paths'])
-    request = {**request, 'reference_paths': paths}
+    prompt_sha256 = hashlib.sha256(request['prompt'].encode('utf-8')).hexdigest()
+    # The snapshot belongs to this native run, including recovery without resubmission.
+    (folder / 'image-request.json').write_text(json.dumps({
+        'prompt_sha256': prompt_sha256, 'references': references}, ensure_ascii=False, indent=2), encoding='utf-8')
+    request = {**request, 'reference_paths': paths, 'source_references': references,
+               'prompt_sha256': prompt_sha256}
     schema = folder / 'image-schema.json'
     schema.write_text(json.dumps({'type': 'object', 'additionalProperties': False,
         'properties': {'status': {'type': 'string', 'enum': ['generated', 'failed']},
-                       'output_path': {'type': 'string'}, 'message': {'type': 'string'}},
-        'required': ['status', 'output_path', 'message']}), encoding='utf-8')
+                       'output_path': {'type': 'string'}, 'message': {'type': 'string'},
+                       'visual_self_check': {'type': 'object', 'additionalProperties': False,
+                           'properties': {
+                               'status': {'type': 'string', 'enum': ['pass', 'fail', 'unknown']},
+                               'image_path': {'type': 'string'}, 'image_sha256': {'type': 'string'},
+                               'prompt_sha256': {'type': 'string'}, 'observer': {'type': 'string'},
+                               'checked_at': {'type': 'string'},
+                               'source_files': {'type': 'array', 'items': {'type': 'object',
+                                   'additionalProperties': False, 'properties': {
+                                       'path': {'type': 'string'}, 'sha256': {'type': 'string'}},
+                                   'required': ['path', 'sha256']}},
+                               'checks': {'type': 'object', 'additionalProperties': False,
+                                   'properties': {key: {'type': 'object', 'additionalProperties': False,
+                                       'properties': {'result': {'type': 'string', 'enum': ['pass', 'fail', 'unknown', 'not_applicable']},
+                                                      'observation': {'type': 'string'}, 'locator': {'type': 'string'}},
+                                       'required': ['result', 'observation', 'locator']} for key in IMAGE_CHECKS},
+                                   'required': list(IMAGE_CHECKS)},
+                               'limitations': {'type': 'array', 'items': {'type': 'string'}}},
+                           'required': ['status', 'image_path', 'image_sha256', 'prompt_sha256',
+                                        'observer', 'checked_at', 'source_files', 'checks', 'limitations']}},
+        'required': ['status', 'output_path', 'message', 'visual_self_check']}), encoding='utf-8')
     output = folder / 'image-result.json'
     task = ('用户已经在本机资产库确认本次参考图和提示词，并点击ImageGen生成1张，授权使用当前Codex账号额度。'
             '请执行且只执行一次内置image_gen.imagegen，生成当前视图1张图片。必须使用内置工具，不得换用API、即梦、脚本绘图或其他工具。'
             '这不是写提示词任务，不需要再审查或改写已确认提示词。引用输入中全部reference_paths，顺序保持一致。'
-            '有参考时先通过view_image观察这些本地参考，再调用imagegen，使用referenced_image_paths；没有参考时全新生成，省略referenced_image_paths和num_last_images_to_include。prompt使用下面请求的prompt全文，'
-            '仅补充明确的输出比例要求。不调用下游阶段，不写知识库、不修改项目或原图。'
+            '有参考时先通过view_image逐张查看source_references中的真实原图，生成使用reference_paths中的准确提交副本，顺序保持一致；'
+            '没有参考时全新生成，省略referenced_image_paths和num_last_images_to_include。prompt使用下面请求的prompt全文，只补充明确的输出比例要求，不静默改写已确认正文。'
+            '生成后必须通过view_image实际查看本次返回的准确成图，再与全部真实参考及本次需求对照：'
+            'requirements核明确要求、reference_consistency核全部参考职责及继承/禁止项、identity_wardrobe核身份服装、'
+            'product_geometry核产品结构/尺度/使用状态、composition_state核构图/主体空间关系/静态动作相位。'
+            '每项记录具体可见事实和位置locator，不能只写合格、passed或复述提示词；不适用写not_applicable并说明依据，必需但不可见写unknown。'
+            'visual_self_check记录真实观察执行者、实际带时区时间、所看成图绝对路径及其实际SHA256、prompt_sha256、全部实看原参考的path/sha256和局限。'
+            '可用只读脚本计算hash和时间；结构完整不代表视觉合格，不把自查当用户确认。'
+            '不符为fail，无法读取/判断为unknown；两者均保留图片为待修/未验证候选，不自动改词、返修或再次生成。'
+            '不调用下游阶段，不写知识库、不修改项目或原图。'
             '生成结果保留工具默认保存位置，不自行复制或导入，由网站服务器负责回填。'
             '失败时停止，不重试、不替换模型；最后返回JSON，output_path必须来自本次工具真实返回的本地图片路径。'
             '无法取得真实结果就status=failed，output_path为空，message说明原因；不能将输入参考图当生成结果。\n'
@@ -324,12 +451,12 @@ def generate_image(exe, folder, request):
                 creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         except subprocess.TimeoutExpired as exc:
             if output.is_file():
-                return generated_image_result(folder, request, started)
+                return generated_image_result(folder, original_request, started)
             raise ValueError('ImageGen等待超时，结果待核实；未自动重试，请检查此次生成记录。') from exc
     if not output.is_file():
         raise ValueError(cli_failure_message('ImageGen未返回可核实结果；未自动重试，请检查此次生成记录。',
                                              (folder / 'image-stderr.log').read_text(encoding='utf-8', errors='replace')))
-    return generated_image_result(folder, request, started)
+    return generated_image_result(folder, original_request, started)
 
 
 def generated_image_result(folder, request, started):
@@ -347,4 +474,14 @@ def generated_image_result(folder, request, started):
             path in [Path(p).resolve() for p in request['reference_paths']] or
             path.stat().st_mtime < started - 5):
         raise ValueError('返回路径不是本次新生成的ImageGen图片，未导入；请核对生成记录。')
-    return str(path)
+    snapshot_path = folder / 'image-request.json'
+    snapshot = json.loads(snapshot_path.read_text(encoding='utf-8')) if snapshot_path.is_file() else None
+    evidence = visual_self_check(data.get('visual_self_check'), path, prompt=request['prompt'],
+        references=snapshot['references'] if snapshot else [], binding_missing=snapshot is None)
+    if snapshot and snapshot.get('prompt_sha256') != hashlib.sha256(request['prompt'].encode('utf-8')).hexdigest():
+        evidence['status'] = 'unknown'
+        evidence['binding_issues'].append('恢复请求与原生成提示词不同，保留候选等待核对。')
+    if snapshot and [r['path'] for r in snapshot['references']] != [str(Path(p).resolve()) for p in request['reference_paths']]:
+        evidence['status'] = 'unknown'
+        evidence['binding_issues'].append('恢复请求与原生成参考不同，保留候选等待核对。')
+    return {'output_path': str(path), 'visual_self_check': evidence}

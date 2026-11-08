@@ -27,6 +27,8 @@ def write_wav(path: Path, seconds: int = 3, sample_rate: int = 8000) -> Path:
 
 
 def args(**values):
+    if "confirmed_by_user" in values:
+        values.setdefault("intended_use", ["project production"])
     return type("Args", (), values)()
 
 
@@ -233,7 +235,8 @@ def test_same_voice_audio_change_failed_commit_keeps_current_audio_and_binding(t
 def test_explicit_cli_scope_does_not_append_project_default():
     parser = MODULE.build_parser()
     required = ["bind", "--library", "library.json", "--project", "project", "--voice-id", "V1",
-                "--character-id", "C1", "--character-name", "角色", "--approval-ref", "trusted://user"]
+                "--character-id", "C1", "--character-name", "角色", "--approval-ref", "trusted://user",
+                "--intended-use", "project production"]
     assert parser.parse_args(required + ["--applicable-scope", "scene:S1"]).applicable_scope == ["scene:S1"]
     assert parser.parse_args(required).applicable_scope is None
 
@@ -259,7 +262,9 @@ def test_voice_scope_schema_and_runtime_accept_the_same_tokens(token, valid):
 ])
 def test_voice_sync_enforces_binding_and_excluded_scope(applicable, excluded, scene, segment, ok):
     binding = {"character_id": "C1", "status": "current", "confirmed_by_user": True,
-               "approval_ref": "trusted://user", "authorization": {"status": "authorized"},
+               "approval_ref": "trusted://user", "authorization": {"status": "authorized",
+                   "authorization_ref": "rights://voice", "permitted_uses": ["project production"]},
+               "intended_uses": ["project production"],
                "dialogue_scope": "all_confirmed_dialogue_for_character", "dialogue_ids": [],
                "applicable_scope": applicable, "excluded_scope": excluded}
     plan = {"voiceover_lock": {"lines": [{"id": "L-1", "character_id": "C1", "text": "你好"}]},
@@ -323,3 +328,327 @@ def test_replacing_same_voice_cannot_silently_accept_drifted_current_snapshot(tm
     with pytest.raises(MODULE.VoiceReferenceError, match="漂移"):
         MODULE.command_replace(args(**common, replace=True))
     assert snapshot.read_bytes() == b'DRIFTED'
+
+
+@pytest.mark.parametrize("status", ["unknown", "restricted"])
+def test_unapproved_rights_remain_candidates_with_empty_uses(tmp_path, status):
+    library = tmp_path / "library.json"
+    MODULE.command_init(args(library=str(library)))
+    add = add_args(library=library, voice_id="V1", audio=write_wav(tmp_path / "source.wav"))
+    add.authorization_status, add.permitted_use = status, []
+    MODULE.command_add(add)
+    assert MODULE.validate_library(library)[0]["authorization_status"] == status
+    project = tmp_path / "project"
+    project.mkdir()
+    with pytest.raises(MODULE.VoiceReferenceError, match="不是 authorized"):
+        MODULE.command_bind(args(library=str(library), project=str(project), voice_id="V1",
+            character_id="C1", character_name="角色", confirmed_by_user=True, approval_ref="trusted://user"))
+    assert not MODULE.project_manifest_path(project).exists()
+
+
+@pytest.mark.parametrize("permitted", [[], [""], ["   "], [42], "project production"])
+def test_authorized_candidate_rejects_missing_or_malformed_uses_before_copy(tmp_path, permitted):
+    library = tmp_path / "library.json"
+    MODULE.command_init(args(library=str(library)))
+    before = library.read_bytes()
+    add = add_args(library=library, voice_id="V1", audio=write_wav(tmp_path / "source.wav"))
+    add.permitted_use = permitted
+    with pytest.raises(MODULE.VoiceReferenceError, match="permitted_uses"):
+        MODULE.command_add(add)
+    assert library.read_bytes() == before
+    assert not (library.parent / "audio").exists()
+
+
+def voice_fixture(tmp_path):
+    library = tmp_path / "library.json"
+    MODULE.command_init(args(library=str(library)))
+    for ident in ("V1", "V2"):
+        MODULE.command_add(add_args(library=library, voice_id=ident,
+                                   audio=write_wav(tmp_path / f"{ident}.wav")))
+    project = tmp_path / "project"
+    project.mkdir()
+    common = dict(library=str(library), project=str(project), character_id="C1", character_name="角色",
+                  confirmed_by_user=True, approval_ref="trusted://user", intended_use=["project production"])
+    return library, project, common
+
+
+@pytest.mark.parametrize("use", [None, [], ["commercial publication"], ["PROJECT PRODUCTION"]])
+def test_current_binding_requires_explicit_exact_allowed_use(tmp_path, use):
+    _library, project, common = voice_fixture(tmp_path)
+    with pytest.raises(MODULE.VoiceReferenceError, match="用途|intended_uses"):
+        MODULE.command_bind(args(**{**common, "intended_use": use}, voice_id="V1"))
+    assert not MODULE.project_manifest_path(project).exists()
+    assert not (project / "07_声音与配音").exists()
+
+
+@pytest.mark.parametrize("field,value", [("authorization_ref", " "), ("permitted_uses", []),
+                                         ("permitted_uses", [" "])])
+def test_binding_rechecks_tampered_authorization_before_creating_snapshot(tmp_path, field, value):
+    library, project, common = voice_fixture(tmp_path)
+    raw = MODULE.read_json(library)
+    raw["voices"][0]["authorization"][field] = value
+    MODULE.write_json(library, raw)
+    with pytest.raises(MODULE.VoiceReferenceError, match="authorization_ref|permitted_uses"):
+        MODULE.command_bind(args(**common, voice_id="V1"))
+    assert not (project / "07_声音与配音").exists()
+
+
+def test_legacy_snapshot_reports_unchecked_usage_and_explicit_check_is_read_only(tmp_path):
+    _library, project, common = voice_fixture(tmp_path)
+    MODULE.command_bind(args(**common, voice_id="V1"))
+    manifest = MODULE.read_json(MODULE.project_manifest_path(project))
+    del manifest["assignments"][0]["intended_uses"]
+    MODULE.write_json(MODULE.project_manifest_path(project), manifest)
+    before = MODULE.project_manifest_path(project).read_bytes()
+    result = MODULE.validate_project(project)
+    assert result["usage_checked"] is False and result["limitations"]
+    assert MODULE.validate_project(project, ["project production"])["usage_checked"] is True
+    with pytest.raises(MODULE.VoiceReferenceError, match="超出"):
+        MODULE.validate_project(project, ["commercial publication"])
+    assert MODULE.project_manifest_path(project).read_bytes() == before
+
+
+def modern_prompt_fixture(project, *, dependency=True, voice_selected=True, nested=False,
+                          character_id="C1", entity_id="C1"):
+    part = {"dialogue_id": "DLG-1", "speaker_id": "C1", "presentation": "ONSCREEN", "text": "你好"}
+    narrative = {"revision": "N1", "dialogues": [dict(part)],
+                 "asset_requirements": [{"category": "CHARACTER", "entity_id": entity_id}]}
+    board = {"revision": "B1", "source_narrative": {"path": "narrative.json", "revision": "N1"},
+             "scenes": [{"scene_id": "SC1", "shots": [{"shot_id": "SH1", "audio": {"dialogue": [dict(part)]}}]}]}
+    row = {"segment_id": "P1", "prompt": "角色说你好。", "source_shots": ["SH1"],
+           "source_audio": [{"shot_id": "SH1", "dialogue": [dict(part)]}]}
+    prompt = {"revision": "P1", "source_storyboard": {"path": "board.json", "revision": "B1"}}
+    if nested:
+        prompt["creative_sections"] = [{"section_id": "SEC1", "generation_segments": [row]}]
+    else:
+        prompt["generation_segments"] = [row]
+    if voice_selected:
+        prompt["audio_policy"] = "voice_reference"
+        prompt["voice_reference_manifest_path"] = str(MODULE.project_manifest_path(project).relative_to(project))
+    manifest = MODULE.load_artifact_manifest(project)
+    entries = []
+    for logical, filename, payload, deps in [
+        ("narrative.package", "narrative.json", narrative, []),
+        ("storyboard.package", "board.json", board, ["narrative.package"]),
+        ("video.prompt", "prompt.json", prompt, ["storyboard.package"] +
+         ([f"voice.character.{character_id}"] if dependency else [])),
+    ]:
+        path = project / filename
+        MODULE.write_json(path, payload)
+        entries.append({"artifact_id": logical, "logical_id": logical, "path_or_url": filename,
+                        "revision": payload["revision"], "checksum": MODULE.file_sha256(path),
+                        "status": "current", "user_approved": True, "depends_on": deps})
+    entries.extend([
+        {"artifact_id": "VIDEO1", "logical_id": "video.P1", "status": "current", "depends_on": ["video.prompt"]},
+        {"artifact_id": "OTHER", "logical_id": "video.OTHER", "status": "current", "depends_on": ["voice.character.C2"]},
+    ])
+    manifest["artifacts"].extend(entries)
+    MODULE.write_json(MODULE.artifact_manifest_path(project), manifest)
+    MODULE.write_json(project / "00_项目管理/project_state.json", {
+        "current_artifacts": [entry["artifact_id"] for entry in entries],
+        "user_confirmations": [{"scope": "artifact", "artifact_ids": [entry["artifact_id"]],
+                                "approval_ref": "trusted://fixture"} for entry in entries]})
+    return prompt
+
+
+@pytest.mark.parametrize("change", ["voice", "audio", "scope", "use"])
+@pytest.mark.parametrize("nested", [False, True])
+def test_modern_prompt_without_retired_plan_invalidates_exact_dependencies(tmp_path, change, nested):
+    library, project, common = voice_fixture(tmp_path)
+    original = MODULE.command_bind(args(**common, voice_id="V1"))["assignment"]
+    old_bytes = (project / original["snapshot_path"]).read_bytes()
+    modern_prompt_fixture(project, nested=nested)
+    prompt_before = (project / "prompt.json").read_bytes()
+    replacement = {**common, "voice_id": "V1"}
+    if change == "voice":
+        replacement["voice_id"] = "V2"
+    elif change == "audio":
+        add = add_args(library=library, voice_id="V1", audio=write_wav(tmp_path / "new.wav", seconds=4))
+        add.replace = True
+        MODULE.command_add(add)
+    elif change == "scope":
+        replacement["applicable_scope"] = ["scene:SC1"]
+    else:
+        raw = MODULE.read_json(library)
+        raw["voices"][0]["authorization"]["permitted_uses"].append("internal preview")
+        MODULE.write_json(library, raw)
+        replacement["intended_use"] = ["internal preview"]
+    result = MODULE.command_replace(args(**replacement))
+    assert result["invalidated_segments"] == ["P1"]
+    assert set(result["invalidated_artifacts"]) == {"video.prompt", "video.P1"}
+    assert (project / "prompt.json").read_bytes() == prompt_before
+    assert (project / "99_历史与废弃/声音母版" / Path(original["snapshot_path"]).name).read_bytes() == old_bytes
+    statuses = {item["logical_id"]: item["status"] for item in MODULE.load_artifact_manifest(project)["artifacts"]}
+    assert statuses["video.OTHER"] == statuses["storyboard.package"] == "current"
+    assert not (project / "00_项目管理/production_plan.json").exists()
+    assert MODULE.validate_project(project)["usage_checked"] is True
+
+
+@pytest.mark.parametrize("failure", ["missing_dependency", "drift", "wrong_revision", "wrong_speaker", "missing_source"])
+def test_modern_voice_mapping_failure_leaves_current_and_files_untouched(tmp_path, failure):
+    _library, project, common = voice_fixture(tmp_path)
+    MODULE.command_bind(args(**common, voice_id="V1"))
+    prompt = modern_prompt_fixture(project, dependency=failure != "missing_dependency")
+    if failure == "wrong_revision":
+        prompt["source_storyboard"]["revision"] = "OLD"
+    elif failure == "wrong_speaker":
+        prompt["generation_segments"][0]["source_audio"][0]["dialogue"][0]["speaker_id"] = "C2"
+    elif failure == "missing_source":
+        (project / "board.json").unlink()
+    if failure in {"wrong_revision", "wrong_speaker", "drift"}:
+        MODULE.write_json(project / "prompt.json", prompt)
+        if failure != "drift":
+            manifest = MODULE.load_artifact_manifest(project)
+            next(item for item in manifest["artifacts"] if item["logical_id"] == "video.prompt")["checksum"] = MODULE.file_sha256(project / "prompt.json")
+            MODULE.write_json(MODULE.artifact_manifest_path(project), manifest)
+        else:
+            (project / "prompt.json").write_text(json.dumps({**prompt, "audio_policy": "generated"}), encoding="utf-8")
+    # A rejected attempt may refresh this shared lock's owner timestamp. Every
+    # business file, including audio, manifests and project state, must match.
+    lock_path = project / "00_项目管理/.revision-control.lock"
+    before = {str(path.relative_to(project)): path.read_bytes() for path in project.rglob("*")
+              if path.is_file() and path != lock_path}
+    with pytest.raises(MODULE.VoiceReferenceError, match="换声契约|现代声音引用"):
+        MODULE.command_replace(args(**common, voice_id="V2"))
+    after = {str(path.relative_to(project)): path.read_bytes() for path in project.rglob("*")
+             if path.is_file() and path != lock_path}
+    assert before == after
+
+
+def test_prompt_without_selected_voice_reference_does_not_create_voice_dependency(tmp_path):
+    _library, project, common = voice_fixture(tmp_path)
+    MODULE.command_bind(args(**common, voice_id="V1"))
+    modern_prompt_fixture(project, voice_selected=False, dependency=False)
+    result = MODULE.command_replace(args(**common, voice_id="V2"))
+    assert result["invalidated_segments"] == result["invalidated_artifacts"] == []
+
+
+@pytest.mark.parametrize("character_id", ["C1", "CHR-C1"])
+def test_modern_source_character_alias_uses_only_confirmed_entity_mapping(tmp_path, character_id):
+    _library, project, common = voice_fixture(tmp_path)
+    common["character_id"] = character_id
+    MODULE.command_bind(args(**common, voice_id="V1"))
+    modern_prompt_fixture(project, entity_id="CHR-C1", character_id=character_id)
+    result = MODULE.command_replace(args(**common, voice_id="V2"))
+    assert result["invalidated_segments"] == ["P1"]
+    assert set(result["invalidated_artifacts"]) == {"video.prompt", "video.P1"}
+
+
+def test_ambiguous_confirmed_character_alias_blocks_before_new_snapshot(tmp_path):
+    _library, project, common = voice_fixture(tmp_path)
+    MODULE.command_bind(args(**common, voice_id="V1"))
+    modern_prompt_fixture(project, entity_id="CHR-C1")
+    narrative = MODULE.read_json(project / "narrative.json")
+    narrative["asset_requirements"].append({"category": "CHARACTER", "entity_id": "C1"})
+    MODULE.write_json(project / "narrative.json", narrative)
+    manifest = MODULE.load_artifact_manifest(project)
+    next(item for item in manifest["artifacts"] if item["logical_id"] == "narrative.package")["checksum"] = MODULE.file_sha256(project / "narrative.json")
+    MODULE.write_json(MODULE.artifact_manifest_path(project), manifest)
+    # Shared lock owner metadata may refresh; all business bytes must stay put.
+    lock_path = project / "00_项目管理/.revision-control.lock"
+    before = {str(path.relative_to(project)): path.read_bytes() for path in project.rglob("*")
+              if path.is_file() and path != lock_path}
+    with pytest.raises(MODULE.VoiceReferenceError, match="别名不唯一"):
+        MODULE.command_replace(args(**common, voice_id="V2"))
+    assert before == {str(path.relative_to(project)): path.read_bytes() for path in project.rglob("*")
+                      if path.is_file() and path != lock_path}
+
+
+def test_modern_voice_mapping_can_follow_source_shots_without_duplicate_audio_table(tmp_path):
+    _library, project, common = voice_fixture(tmp_path)
+    MODULE.command_bind(args(**common, voice_id="V1"))
+    prompt = modern_prompt_fixture(project)
+    prompt["generation_segments"][0].pop("source_audio")
+    MODULE.write_json(project / "prompt.json", prompt)
+    manifest = MODULE.load_artifact_manifest(project)
+    next(item for item in manifest["artifacts"] if item["logical_id"] == "video.prompt")["checksum"] = MODULE.file_sha256(project / "prompt.json")
+    MODULE.write_json(MODULE.artifact_manifest_path(project), manifest)
+    assert MODULE.command_replace(args(**common, voice_id="V2"))["invalidated_segments"] == ["P1"]
+
+
+@pytest.fixture
+def sync_plan_project(tmp_path):
+    project = tmp_path / "project"
+    plan = project / "workflow" / "production_plan.json"
+    manifest = MODULE.project_manifest_path(project)
+    state = project / "00_项目管理" / "project_state.json"
+    MODULE.write_json(plan, {"segments": [{"id": "SEG-1", "voiceover_line_ids": [],
+                                           "speaking_characters": [{"character_id": "C1"}]}]})
+    MODULE.write_json(manifest, {"schema_version": "2.0", "assignments": []})
+    MODULE.write_json(state, {"schema_version": "2.0", "custom_field": "preserve"})
+    return project, plan, manifest, state
+
+
+@pytest.mark.parametrize("field", ["plan", "manifest"])
+@pytest.mark.parametrize("path_kind", ["absolute", "parent", "symlink"])
+def test_sync_plan_rejects_project_escape_without_writes(sync_plan_project, field, path_kind):
+    project, plan, manifest, state = sync_plan_project
+    outside = project.parent / "outside" / f"{field}.json"
+    MODULE.write_json(outside, MODULE.read_json(plan if field == "plan" else manifest))
+    if path_kind == "absolute":
+        escaped = str(outside)
+    elif path_kind == "parent":
+        escaped = str(Path("..") / "outside" / outside.name)
+    else:
+        link = project / f"external-{field}.json"
+        try:
+            link.symlink_to(outside)
+        except (OSError, NotImplementedError) as exc:
+            pytest.skip(f"symlinks unavailable: {exc}")
+        escaped = link.name
+    values = {"project": str(project), "plan": str(plan.relative_to(project)),
+              "manifest": str(manifest.relative_to(project))}
+    values[field] = escaped
+    originals = {path: path.read_bytes() for path in (plan, manifest, state, outside)}
+
+    with pytest.raises(MODULE.VoiceReferenceError, match="必须位于项目内"):
+        MODULE.command_sync_plan(args(**values))
+
+    assert {path: path.read_bytes() for path in originals} == originals
+
+
+@pytest.mark.parametrize("absolute", [False, True])
+def test_sync_plan_accepts_paths_inside_project(sync_plan_project, absolute):
+    project, plan, manifest, state = sync_plan_project
+    plan_arg = plan if absolute else plan.relative_to(project)
+    manifest_arg = manifest if absolute else manifest.relative_to(project)
+    result = MODULE.command_sync_plan(args(project=str(project), plan=str(plan_arg), manifest=str(manifest_arg)))
+
+    assert Path(result["plan"]) == plan.resolve()
+    assert MODULE.read_json(plan)["segments"][0]["speaking_characters"] == []
+    assert MODULE.read_json(state)["custom_field"] == "preserve"
+    assert MODULE.read_json(state)["voice_reference_manifest_path"] == str(manifest.relative_to(project))
+
+
+def test_sync_plan_lock_timeout_returns_cli_error(sync_plan_project, monkeypatch, capsys):
+    import threading
+    from core.io import PROJECT_LOCK_RELATIVE, file_lock
+
+    project, plan, manifest, state = sync_plan_project
+    acquired = threading.Event()
+    release = threading.Event()
+
+    def hold_lock():
+        with file_lock(project / PROJECT_LOCK_RELATIVE):
+            acquired.set()
+            release.wait(timeout=3)
+
+    owner = threading.Thread(target=hold_lock)
+    owner.start()
+    try:
+        assert acquired.wait(timeout=2)
+        monkeypatch.setattr(MODULE, "shared_project_lock", lambda root:
+                            file_lock(root / PROJECT_LOCK_RELATIVE, timeout_seconds=0.01))
+        originals = {path: path.read_bytes() for path in (plan, manifest, state)}
+        result = MODULE.main(["sync-plan", "--project", str(project),
+                              "--plan", str(plan), "--manifest", str(manifest)])
+        captured = capsys.readouterr()
+        assert result == 1
+        assert captured.out == ""
+        assert captured.err.startswith("ERROR: ")
+        assert "无法获取项目声音锁" in captured.err
+        assert {path: path.read_bytes() for path in originals} == originals
+    finally:
+        release.set()
+        owner.join(timeout=3)
+    assert not owner.is_alive()

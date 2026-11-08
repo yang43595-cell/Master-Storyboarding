@@ -1,6 +1,7 @@
 from scripts.core.artifacts import artifact_is_confirmed
 from scripts.core.project_state import new_project_state, normalize_project_state, render_project_state_markdown
 from scripts.core.project_state import reconcile_current_artifacts
+from scripts.core.project_state import validate_project_state
 
 
 def test_final_edit_receipt_does_not_invent_a_file_or_confirm_raw_artifacts() -> None:
@@ -56,3 +57,21 @@ def test_reconcile_replaces_selected_baseline_without_selecting_other_current_ar
     assert result["user_confirmations"] == state["user_confirmations"]
     assert result["current_stage"] == state["current_stage"]
     assert state["current_artifacts"] == ["OLD", "STALE"]
+
+
+def test_workflow_authorizations_preserve_user_confirmations_and_legacy_reading():
+    state = new_project_state()
+    human = {"scope": "artifact", "artifact_ids": ["OLD"], "approval_ref": "SYNTHETIC ONLY"}
+    grant = {"id": "SYNTHETIC-FLOW", "workflow": "review-to-canvas", "status": "active"}
+    state.update(user_confirmations=[human], workflow_authorizations=[grant])
+    for version in ("stage-1.0", "legacy-synthetic"):
+        value = {**state, "schema_version": version}
+        normalized = normalize_project_state(value)
+        assert normalized["workflow_authorizations"] == [grant]
+        assert normalized["user_confirmations"] == [human]
+        validate_project_state(normalized)
+        assert "流程授权：1" in render_project_state_markdown(normalized)
+    old = new_project_state()
+    old.pop("workflow_authorizations")
+    validate_project_state(old)
+    assert normalize_project_state(old)["workflow_authorizations"] == []

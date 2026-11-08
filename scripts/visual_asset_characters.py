@@ -4,72 +4,31 @@ import json
 import re
 from datetime import datetime, timezone
 from uuid import uuid4
-from PIL import Image, ImageOps
-from core.character_assets import uses_wardrobe
-from core.artifacts import digest
 from pathlib import Path
+from core.asset_refs import character_output_contract
+from core.character_assets import board_outfit_ids, step_output_id, uses_wardrobe
+from visual_asset_choices import read_choices
 
 
-def automatic_final(job, step):
-    return step.get('kind') == '人物1x4' and any(
-        v['id'] == step.get('outfit_id') and v['route'] == 'build'
-        for v in job.get('character_workflow', {}).get('outfits', []))
-
-
-def compose_character_finals(service, project, job):
-    """Derive identity boards from project-confirmed inputs, without another model call."""
+def enable_character_ai_finals(job):
+    """Unblock pending legacy boards; preserve confirmed outputs and active runs."""
+    build_outfits = {v['id'] for v in job.get('character_workflow', {}).get('outfits', []) if v['route'] == 'build'}
+    changed = False
     for step in job['steps']:
-        if not automatic_final(job, step):
+        if step.get('kind') != '人物1x4' or step.get('outfit_id') not in build_outfits:
             continue
-        step['generation_enabled'] = False
-        if step['status'] == 'confirmed' or step['status'] in {'generating', 'submitting', 'submitted', 'querying'}:
+        if step['status'] in {'confirmed', 'generating', 'submitting', 'submitted', 'querying'} or step.get('project_confirmation'):
             continue
-        dependencies = [next(s for s in job['steps'] if s['key'] == key) for key in step['dependencies']]
-        if len(dependencies) != 2 or not all(s['status'] == 'confirmed' and s.get('project_confirmation') for s in dependencies):
-            continue
-        try:
-            inputs = service.dependencies(job, step)
-            head = next(a for a in inputs if a['category'] == '大头照')
-            clothes = next(a for a in inputs if a['category'] == '服装三视图')
-            source_receipts = [{'asset_id': s['selected'], 'output_key': s['key'],
-                                'confirmation_id': s['project_confirmation']['id']} for s in dependencies]
-            board = Image.new('RGB', (2048, 1152), 'white')
-            with Image.open(head['original']) as image:
-                panels = [ImageOps.exif_transpose(image).convert('RGBA')]
-            with Image.open(clothes['original']) as image:
-                image = ImageOps.exif_transpose(image).convert('RGBA')
-                panels.extend(image.crop((round(i * image.width / 3), 0, round((i + 1) * image.width / 3), image.height)) for i in range(3))
-            for i, panel in enumerate(panels):
-                panel = ImageOps.contain(panel, (512, 1152), Image.Resampling.LANCZOS)
-                board.paste(panel, (i * 512 + (512 - panel.width) // 2, (1152 - panel.height) // 2), panel)
-            path = service.lib.root / 'requests' / job['id'] / step['key'] / (uuid4().hex + '.png')
-            path.parent.mkdir(parents=True, exist_ok=True)
-            board.save(path)
-            check = service.skill.technical_check(path, '16:9')
-            if not check['passed']:
-                raise ValueError(check['message'])
-            asset, _ = service.lib.import_file(path, project=project['name'], role='母版', category='人物1x4',
-                provenance={'kind': 'character_composite', 'job_id': job['id'], 'project_id': project['id'],
-                            'ast_id': job['ast_id'], 'output_id': step['key'], 'state': step['state'],
-                            'source_narrative': project['source'], 'source_confirmations': source_receipts})
-            receipt = {'id': uuid4().hex[:16], 'at': datetime.now(timezone.utc).isoformat(),
-                       'asset_id': asset['id'], 'source': project['source'], 'technical_qc': check,
-                       'image_sha256': digest(Path(asset['original'])),
-                       'method': '已确认大头照与服装三视图自动拼版', 'source_confirmations': source_receipts}
-            asset.update(name=job['title'] + '_' + step['name'] + '_' + asset['id'][:6], group=job['title'],
-                         status='confirmed', confirmation=receipt, technical_check=check, backup={'status': 'pending'})
-            asset.setdefault('project_confirmations', []).append({'project_id': project['id'], 'ast_id': job['ast_id'], **receipt})
-            service.lib.save(asset)
-            service.lib.auto_group_character(asset['id'], f'project:{project["id"]}:{job["ast_id"]}', job['title'])
-            service.copy_to_project(project, service.lib.get(asset['id']))
-            if step.get('outputs'):
-                step.setdefault('history', []).append({k: copy.deepcopy(step.get(k)) for k in ('selected', 'outputs', 'project_confirmation', 'prompt', 'audit')})
-            step.update(selected=asset['id'], outputs=[asset['id']], status='confirmed', project_confirmation=receipt,
-                        ratio='16:9', message='', composition_error=False)
-            service.lib.backup_wakeup.set()
-        except Exception as exc:
-            step.update(composition_error=True, message='人物1×4自动合成未完成：' + str(exc)[:400])
-    service.lib.save(job, 'jobs')
+        if step.get('generation_enabled') is not True:
+            step['generation_enabled'] = True
+            changed = True
+        if 'composition_error' in step:
+            step.pop('composition_error')
+            changed = True
+        if step.get('message', '').startswith('人物1×4自动合成未完成：'):
+            step.pop('message')
+            changed = True
+    return changed
 
 
 def upstream_outfits(req):
@@ -114,6 +73,76 @@ def upstream_outfits(req):
     return result
 
 
+def character_final_ids(project, requirement, outfits=None, job=None):
+    approved = board_outfit_ids(requirement)
+    if approved:
+        return approved
+    ast_id = requirement['asset_id']
+    root = Path(project['path'])
+    outputs = character_output_contract(root, [ast_id]).get(ast_id)
+    if not outputs:
+        return {}
+    names = {outfit['name'] for outfit in (upstream_outfits(requirement) if outfits is None else outfits)}
+    record = read_choices(root)['character_output_requirements'][ast_id]
+    if 'outfit_output_ids' in record:
+        mapping = record['outfit_output_ids']
+        if (isinstance(mapping, dict) and mapping.keys() == names
+                and all(isinstance(value, str) for value in mapping.values())
+                and len(mapping) == len(outputs) and set(mapping.values()) == outputs.keys()):
+            return mapping
+    elif len(names) == len(outputs) == 1:
+        return {next(iter(names)): next(iter(outputs))}
+    elif job and job.get('character_workflow'):
+        final_ids = {step['outfit_id']: step_output_id(step)
+                     for step in job['steps'] if step['kind'] == '人物1x4'}
+        mapping = {outfit['name']: final_ids.get(outfit['id'])
+                   for outfit in job['character_workflow']['outfits']}
+        if mapping.keys() == names and len(mapping) == len(outputs) and set(mapping.values()) == outputs.keys():
+            return mapping
+    raise ValueError(ast_id + '：请在人物最终输出规格的 outfit_output_ids 中逐套登记准确服装名称与输出 ID')
+
+
+def final_output_updates(job, final_ids):
+    if not final_ids:
+        return []
+    names = {outfit['id']: outfit['name'] for outfit in job['character_workflow']['outfits']}
+    updates, seen = [], set()
+    for step in job['steps']:
+        current = step_output_id(step)
+        expected = current
+        if step['kind'] == '人物1x4':
+            expected = final_ids.get(names[step['outfit_id']])
+            if expected is None:
+                raise ValueError('人物1×4制作项未对应已登记服装：' + names[step['outfit_id']])
+        if expected in seen:
+            raise ValueError('人物最终输出 ID 与当前其他制作项冲突：' + expected)
+        seen.add(expected)
+        if current != expected:
+            updates.append((step, expected))
+    return updates
+
+
+def bind_final_output_ids(service, project, row, job, updates):
+    if not updates:
+        return
+    if (project.get('batch', {}).get('status') == 'running' or project.get('planning', {}).get('status') == 'running'
+            or any(step['status'] in {'generating', 'submitting', 'submitted', 'querying'}
+                   or step.get('audit', {}).get('status') in {'drafting', 'reviewing'} for step, _ in updates)):
+        raise ValueError('任务正在处理，完成后再对应人物最终输出 ID')
+    confirmed = [step for step, _ in updates if step.get('project_confirmation') or step['status'] == 'confirmed']
+    if confirmed:
+        row['previous_character_images'] = list(dict.fromkeys(
+            row.get('previous_character_images', []) + [step['selected'] for step in confirmed if step.get('selected')]))
+        service.reset_steps(job, {step['key'] for step in confirmed})
+    for step, expected in updates:
+        step['output_id'] = expected
+        if step.get('audit'):
+            step['audit'] = {'status': 'stale'}
+        step.pop('prompt_approval', None)
+    service.invalidate_export(project, '人物最终输出 ID 已调整，受影响图片待按准确输出核对')
+    project.pop('export_pending', None)
+
+
 def prepare_character(service, payload):
     """Bind exact upstream outfit slots; keep ambiguous legacy results for reassignment."""
     with service.lib.lock:
@@ -124,14 +153,22 @@ def prepare_character(service, payload):
             raise ValueError('此入口只处理人物需求')
         expected = upstream_outfits(row['requirement'])
         old = service.lib.get(row['job_id'], 'jobs') if row.get('job_id') else None
+        final_ids = character_final_ids(p, row['requirement'], expected, old)
         if old and old.get('character_workflow', {}).get('upstream_outfits') == expected:
+            updates = final_output_updates(old, final_ids)
+            if updates:
+                bind_final_output_ids(service, p, row, old, updates)
+                service.lib.save(old, 'jobs')
+                service.save(p)
             return service.detail(p['id'])
         if p.get('batch', {}).get('status') == 'running' or p.get('planning', {}).get('status') == 'running' or (old and any(s['status'] in {'generating','submitting','submitted','querying'} or s.get('audit', {}).get('status') in {'drafting','reviewing'} for s in old['steps'])):
             raise ValueError('任务正在处理，完成后再读取上游服装')
         matching = old and [v['name'] for v in old.get('character_workflow', {}).get('outfits', [])] == [v['name'] for v in expected]
         if matching:
+            bind_final_output_ids(service, p, row, old, final_output_updates(old, final_ids))
             old['character_workflow']['upstream_outfits'] = expected
             service.lib.save(old, 'jobs')
+            service.save(p)
             return service.detail(p['id'])
         if old:
             p.setdefault('history', []).append(copy.deepcopy(row))
@@ -184,6 +221,7 @@ def character_route(service, payload):
                    'plan_rationale': '按用户选择复用最终1×4，或共用大头照、逐套服装与1×4制作；生成仍执行项目Skill。',
                    'blockers': [], 'character_workflow': {'outfits': []}}
         outfits = job['character_workflow']['outfits']
+        final_ids = character_final_ids(p, req, job=job)
         outfit_id = payload.get('outfit_id')
         variant = next((v for v in outfits if v['id'] == outfit_id), None) if outfit_id else None
         if outfit_id and not variant:
@@ -199,6 +237,8 @@ def character_route(service, payload):
                     raise ValueError('请填写服装名称，并引用当前上游需求中的原文，不能新增表外服装')
             else:
                 name, evidence = '需求所述服装', '；'.join(req.get('identity_constraints', []) + req.get('required_states', [])) or req['narrative_purpose']
+                if len(final_ids) == 1:
+                    name = next(iter(final_ids))
             outfit_id = 'outfit_' + uuid4().hex[:8]
             variant = {'id': outfit_id, 'name': name, 'evidence': evidence, 'route': route}
             outfits.append(variant)
@@ -249,17 +289,18 @@ def character_route(service, payload):
             for s in job['steps']:
                 if s['key'] == v['id'] + '_final':
                     s['dependencies'] = ['shared_head', v['id'] + '_wardrobe'] if v['route'] == 'build' else []
-                    s['generation_enabled'] = False
+                    if s['status'] != 'confirmed' and not s.get('project_confirmation'):
+                        s['generation_enabled'] = v['route'] == 'build'
                 if s['key'] == v['id'] + '_wardrobe':
                     s['required'] = v['route'] == 'build'
         for s in job['steps']:
             if s['key'] == 'shared_head':
                 s['required'] = any(v['route'] == 'build' for v in outfits)
+        bind_final_output_ids(service, p, row, job, final_output_updates(job, final_ids))
         # Never renumber existing steps: saved prompts, requests and UI selections use their indices.
         service.lib.save(job, 'jobs')
         row['job_id'] = job['id']
         service.invalidate_export(p, '人物制作路径或服装版本已调整，请重新核对交接')
         p.pop('export_pending', None)
         service.save(p)
-        compose_character_finals(service, p, job)
         return service.detail(p['id'])

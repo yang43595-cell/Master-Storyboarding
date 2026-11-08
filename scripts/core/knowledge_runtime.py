@@ -1,4 +1,4 @@
-"""Portable, commit-owned runtime knowledge; external Vaults are opt-in.
+"""Portable, repository-owned runtime knowledge.
 
 This module only resolves and verifies bytes. It never synchronizes upstream
 content, changes lifecycle state, or approves a method or rule.
@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 from pathlib import Path
 from typing import Any
@@ -29,21 +28,12 @@ def bundled_root(repo_root: Path | None = None) -> Path:
 
 
 def resolve_knowledge_root(explicit: str | Path | None = None, *, repo_root: Path | None = None) -> Path:
-    configured = explicit if explicit is not None else os.environ.get("MSB_VAULT_ROOT")
-    if configured is not None:
-        if not str(configured).strip():
-            raise KnowledgeRuntimeError("explicit knowledge root is empty")
-        supplied = Path(configured).expanduser().absolute()
-        if is_bundled_root(supplied):
-            verify_bundle(supplied)
-        root = supplied.resolve()
-        if not root.is_dir():
-            raise KnowledgeRuntimeError(f"explicit knowledge root does not exist: {root}")
-        if is_bundled_root(root):
-            verify_bundle(root)
-    else:
-        root = bundled_root(repo_root)
-        verify_bundle(root)
+    root = bundled_root(repo_root)
+    if explicit is not None and (
+        not str(explicit).strip() or Path(explicit).expanduser().resolve() != root
+    ):
+        raise KnowledgeRuntimeError("production knowledge must use the repository's knowledge/runtime bundle")
+    verify_bundle(root)
     return root
 
 

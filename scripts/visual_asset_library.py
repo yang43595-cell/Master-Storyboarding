@@ -35,6 +35,8 @@ if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 from core.runtime_deps import ensure_runtime_deps  # noqa: E402
 from core.artifacts import digest, verify_image_confirmation
+from core.character_assets import step_output_id
+from core.project_kickoff import grant_covers_asset, load_kickoff
 
 RUNTIME_DEPS = ensure_runtime_deps(ROOT)
 _skill_spec = importlib.util.spec_from_file_location('asset_library_skill', ROOT / 'skills/asset-image-assistant/library_runtime.py')
@@ -91,31 +93,19 @@ def external_generation_provenance(source, record):
             'reference_images': references, 'image_sha256': record['image_sha256']}
 
 
-def template_prompt(kind, subject, notes, index=0):
+def template_prompt(kind, subject, notes, index=0, *, allow_unreferenced_design=False,
+                    reference_records=(), has_references=True):
     recipe = asset_skill.recipe(kind)
     index = asset_skill.template_step(kind, index=index)
     source = asset_skill.template_source(kind)
     if 'template' not in recipe:
-        return (f'从真实参考图制作「{subject}」的{recipe["steps"][index]}。' + recipe['description'] +
+        basis = '依据本次需求设计' if allow_unreferenced_design else '从真实参考图制作'
+        return (f'{basis}「{subject}」的{recipe["steps"][index]}。' + recipe['description'] +
                 '\n用户补充：' + notes, str(source))
-    block = asset_skill._template_excerpt(str(source), kind, index=index)['content']
-    if kind == '环境':
-        if index == 0:
-            block = block.replace('以图一【SC-XXX 场景母图】为唯一场景参考', '以用户所选照片为场景参考')
-            block += '\n本次45°图是这组场景的第一张母图和文件夹封面。'
-        elif index == 1:
-            block = block.replace('生成【SC-XXX 场景名称】的场景母图，用作后续所有机位的唯一空间锚点。', '以已确认的45°母图为唯一空间锚点，生成同一场景的正面平视图。')
-            block += '\n摄影机：正面自然平视高度；仅改变机位，不重新设计场景。'
-        elif index == 2:
-            block = block.replace('图一【SC-XXX 场景母图】', '图一【已确认的45°母图】与图二【已确认的正面图】')
-        else:
-            block = block.replace('图一【场景母图】、图二【反向平视回望图】和图三【45°斜俯视全景图】', '图一【45°母图】、图二【正面图】和图三【反面图】')
-    fields = {'永久固定项': '参考图中的空间边界、建筑、门窗、通道、家具数量和位置、材质、颜色与光源方向',
-              '状态编号与仅允许变化项': '保持参考图中的时间、光照与场景状态；只改变本步规定的视角'}
-    block = re.sub(r'【([^】]+)】', lambda m: '「' + subject + '」' if 'SC-XXX' in m[1] else fields.get(m[1], '参照输入图片中的' + m[1]), block)
-    prefix = f'从参考照片中提取「{subject}」。以所选照片的可见细节为准，不替换人物身份或重新设计服装与空间。\n'
-    suffix = '\n未展示的结构仅按可见线索保守补全；不把推测当作真实背面证据。'
-    return prefix + block.strip() + suffix + ('\n用户补充：' + notes if notes else ''), str(source)
+    template = asset_skill.executable_template(kind, subject, notes, raw=str(source), index=index,
+        allow_unreferenced_design=allow_unreferenced_design,
+        reference_records=reference_records, has_references=has_references)
+    return template['content'], str(source)
 
 
 def now():
@@ -206,7 +196,7 @@ class Library:
         # Asset backup is a writable destination, not the read-only knowledge input.
         # Preserve explicit destinations, including ones that do not exist yet.
         fallback = self.root.parent / 'vault'
-        self.vault = Path(vault or os.environ.get('MSB_VAULT_ROOT') or fallback).expanduser().resolve()
+        self.vault = Path(vault or os.environ.get('MSB_ASSET_VAULT_ROOT') or fallback).expanduser().resolve()
         from core.knowledge_runtime import bundled_root
         if self.vault.is_relative_to(bundled_root()) or self.root.is_relative_to(bundled_root()):
             raise ValueError('资产输出目录不能写入仓库内置知识包')
@@ -979,6 +969,7 @@ class Library:
                     if step['status'] != 'confirmed' and ident in step.get('outputs', []):
                         step['selected'] = ident
                         step['status'] = 'confirmed'
+                        self.sync_visual_self_check(step, item)
                         changed = True
                 if changed:
                     self.save(job, 'jobs')
@@ -1031,7 +1022,8 @@ class Library:
             if (source['category'] != '服装三视图' or secondary['category'] != '大头照' or
                     any(a['status'] != 'confirmed' or a.get('trashed_at') for a in [source, secondary])):
                 raise ValueError('人物1×4须选择已确认服装三视图及已确认大头照')
-        prompt, template = template_prompt(p['kind'], subject, str(p.get('notes', ''))[:3000])
+        roles = [{'role': '已确认服装三视图，服装及无头身体来源'}, {'role': '已确认大头照，唯一面部身份来源'}] if secondary else ()
+        prompt, template = template_prompt(p['kind'], subject, str(p.get('notes', ''))[:3000], reference_records=roles)
         job = dict(id=uid(), title=subject[:200], kind=p['kind'], source_id=source['id'],
                    provider=p.get('provider', 'imagegen'), model=p.get('model', '5.0'), created_at=now(), workflow_version=3,
                    notes=str(p.get('notes', ''))[:3000], secondary_id=secondary['id'] if secondary else None,
@@ -1074,6 +1066,11 @@ class Library:
                 refs.append(self.get(prior['selected'], require_file=True))
         if any(a.get('trashed_at') for a in refs):
             raise ValueError('参考图片已在垃圾桶，请先恢复')
+        records = [{k: a.get(k) for k in ('id', 'category', 'status', 'original')} for a in refs]
+        if job['kind'] == '人物1x4':
+            for i, record in enumerate(records):
+                record['role'] = ('已确认服装三视图，服装及无头身体来源' if i == 0 else
+                                  '已确认大头照，唯一面部身份来源' if i == 1 else '用户提供的补充参考，按可见内容采用')
         prompt = f"从参考图提取「{job['title']}」，制作{job['kind']}资产的{step['name']}独立图片。"
         if job['kind'] == '服装':
             prompt += '衣服使用同一中性无头人台展示，纯浅灰背景、均匀柔光，保留款式、剪裁、颜色、材质、图案与配饰关系。各视图比例一致。'
@@ -1084,15 +1081,18 @@ class Library:
             prompt += '\n用户补充：' + job['notes']
         template = ''
         if job.get('workflow_version', 0) >= 2:
-            prompt, template = template_prompt(job['kind'], job['title'], job['notes'], index)
+            prompt, template = template_prompt(job['kind'], job['title'], job['notes'], index,
+                reference_records=records,
+                has_references=bool(refs))
         prompt = step.get('prompt', prompt)
-        return {'job_id': job['id'], 'kind': job['kind'], 'index': index, 'view': step['name'], 'provider': job['provider'],
+        return {'job_id': job['id'], 'subject': job['title'], 'template_notes': job['notes'],
+                'kind': job['kind'], 'index': index, 'view': step['name'], 'provider': job['provider'],
                 'model': job['model'] if job['provider'] == 'dreamina' else 'Codex 内置 ImageGen（宿主管理模型）',
                 'reference_paths': [r['original'] for r in refs], 'prompt': prompt, 'count': 1,
                 'ratio': asset_skill.recipe(job['kind'])['ratio'], 'resolution': '2k', 'output_is_candidate': True,
                 'must_inherit': job.get('must_inherit', ''), 'must_not_inherit': job.get('must_not_inherit', ''),
-                'reference_records': [{k: a.get(k) for k in ('id', 'category', 'status', 'original')} for a in refs],
-                'template_source': step.get('template_source', template)}
+                'reference_records': records,
+                'template_source': template}
 
     def save_prompt(self, p):
         with self.lock:
@@ -1253,7 +1253,28 @@ class Library:
             return {**request, 'path': str(path), 'handoff': text if approved else '',
                     'audit': audit, 'approved': approved}
 
-    def attach(self, ident, index, paths, *, project_id=_UNSCOPED_PROJECT, manual=False):
+    def sync_visual_self_check(self, step, asset):
+        evidence = asset.get('provenance', {}).get('visual_self_check')
+        if evidence is None:
+            step.pop('visual_self_check', None)
+        else:
+            step['visual_self_check'] = codex_bridge.visual_self_check(evidence, asset['original'])
+
+    @staticmethod
+    def visual_self_check_message(evidence):
+        summary = {'pass': '执行者成图自查通过，仍待用户审核准确图片',
+                   'fail': '成图自查未通过，作为待修候选保留',
+                   'unknown': '成图自查未验证，作为未核候选保留'}[evidence['status']]
+        problems = list(evidence.get('binding_issues', []))
+        checks = evidence.get('checks') if isinstance(evidence.get('checks'), dict) else {}
+        for key, check in checks.items():
+            if isinstance(check, dict) and check.get('result') in {'fail', 'unknown'}:
+                problems.append(key + '：' + check.get('observation', '') + '（' + check.get('locator', '') + '）')
+        if evidence['status'] != 'pass' and not problems and isinstance(evidence.get('limitations'), list):
+            problems.extend(evidence.get('limitations', []))
+        return summary + ('；' + '；'.join(problems)[:800] if problems else '')
+
+    def attach(self, ident, index, paths, *, project_id=_UNSCOPED_PROJECT, manual=False, visual_self_check=None):
         with self.lock:
             job = self.operation_job(ident, project_id)
             if not isinstance(index, int) or not 0 <= index < len(job['steps']):
@@ -1271,17 +1292,24 @@ class Library:
             if not job.get('project_id'):
                 self.step_request(job, index)
             step = job['steps'][index]
+            if visual_self_check is None:
+                step.pop('visual_self_check', None)
             kind = step['kind'] if job.get('project_id') else job['kind']
             ratio = step['ratio'] if job.get('project_id') else asset_skill.recipe(kind)['ratio']
             for path in paths:
                 resolved = Path(path).resolve()
+                evidence = (codex_bridge.visual_self_check(visual_self_check, resolved)
+                            if visual_self_check is not None else None)
                 if any(resolved.is_relative_to(Path(p['path']).resolve()) for p in self.projects.summaries()):
                     raise ValueError('任务目录中的图片不回流到网页资产库；请在任务内使用该图')
                 provenance = {'job_id': ident, 'view': step['name'], 'inferred_hidden_surfaces': True,
-                              'project_id': job.get('project_id'), 'ast_id': job.get('ast_id'), 'output_id': step.get('key'),
+                              'project_id': job.get('project_id'), 'ast_id': job.get('ast_id'), 'output_id': step_output_id(step) if job.get('project_id') else step.get('key'),
                               'source_narrative': job.get('source_narrative'), 'state': step.get('state'), 'prompt': step.get('prompt'),
                               'audit': step.get('audit'), 'authorization': step.get('authorization'),
                               'provider': job['provider'], 'model': job['model'] if job['provider'] == 'dreamina' else 'Codex 内置 ImageGen'}
+                if evidence is not None:
+                    provenance['visual_self_check'] = evidence
+                    provenance['generation_run_id'] = step.get('generation_run_id')
                 if manual:
                     provenance['kind'] = 'manual_result_import'
                     for key in ('provider', 'model', 'authorization'):
@@ -1299,8 +1327,26 @@ class Library:
                         resolved = fitted
                     visual_asset_upload.validate_dimensions(resolved, category)
                     provenance['dimension_adjustment'] = adjustment
+                # Import may create a new byte sequence when upload normalization is required.
+                # Such a candidate must be looked at again; the pre-crop observation cannot pass it.
+                source_sha256 = digest(resolved)
+                if evidence is not None:
+                    evidence = codex_bridge.visual_self_check(evidence, resolved)
+                    provenance['visual_self_check'] = evidence
                 item, _ = self.import_file(resolved, project=job.get('project_name', '照片转资产'), role='候选', category=asset_skill.recipe(kind)['category'],
                                           provenance=provenance)
+                if evidence is not None:
+                    if digest(resolved) != source_sha256 or digest(Path(item['original'])) != source_sha256:
+                        item.setdefault('provenance', {})['visual_self_check'] = codex_bridge.visual_self_check(evidence, item['original'])
+                        self.save(item)
+                        raise ValueError('导入前后图片字节变化，未绑定成图观察；保留候选等待核对。')
+                    evidence.update(stored_path=item['original'], stored_image_sha256=source_sha256)
+                    # A duplicate import never overwrites a prior human confirmation.
+                    if item.get('status') == 'confirmed':
+                        raise ValueError('此生成结果已是确认资产，保留原确认；请核对原任务。')
+                    item.setdefault('provenance', {}).update(visual_self_check=evidence,
+                        generation_run_id=step.get('generation_run_id'))
+                    step['visual_self_check'] = evidence
                 item['group'] = job['title']
                 item['name'] = job['title'] + '_' + step['name'] + '_' + item['id'][:6]
                 item['backup'] = {'status': 'pending'}
@@ -1323,13 +1369,24 @@ class Library:
             self.backup_wakeup.set()
             return job
 
+    def _check_project_generation(self, job, index):
+        if not job.get('project_id'):
+            return
+        from core.candidate_test import require_production
+        root = Path(self.projects.get(job['project_id'])['path'])
+        require_production(root)
+        kickoff = load_kickoff(root)
+        if kickoff:
+            grant = kickoff.get('image_generation')
+            if (not grant_covers_asset(grant, job['ast_id'], step_output_id(job['steps'][index]))
+                    or grant['provider'] != job['provider'] or grant['model'] != job['model']):
+                raise ValueError('工具、模型或制作项不在当前开工生图授权范围')
+
     def submit(self, p):
         with self.lock:
             job = self.operation_job(p['id'], p.get('project_id', _UNSCOPED_PROJECT))
-            if job.get('project_id'):
-                from core.candidate_test import require_production
-                require_production(Path(self.projects.get(job['project_id'])['path']))
             index = int(p['index'])
+            self._check_project_generation(job, index)
             step = job['steps'][index]
             if job['provider'] != 'dreamina' or p.get('authorize') is not True:
                 raise ValueError('需要在界面确认此次即梦上传、模型和额度消耗')
@@ -1423,11 +1480,12 @@ class Library:
             if outputs:
                 step.setdefault('result_history', []).append({'at': now(), 'outputs': outputs,
                     'prompt': step.get('prompt'), 'audit': step.get('audit'),
-                    'generation_run_id': step.get('generation_run_id'), 'submit_id': step.get('submit_id')})
+                    'generation_run_id': step.get('generation_run_id'), 'submit_id': step.get('submit_id'),
+                    'visual_self_check': step.get('visual_self_check')})
             step.update(outputs=[], status='waiting' if redo else 'discarded',
                         audit={'status': 'stale'},
                         message='旧图已移入垃圾桶；修改提示词并重新审查后再生成。' if redo else '不满意的结果已移入垃圾桶，30天内可恢复。')
-            for key in ('prompt_approval', 'generation_run_id', 'submit_id', 'selected', 'authorization'):
+            for key in ('prompt_approval', 'generation_run_id', 'submit_id', 'selected', 'authorization', 'visual_self_check'):
                 step.pop(key, None)
             self.save(job, 'jobs')
             return {'message': '已准备重做，尚未提交生图' if redo else '已移入垃圾桶，30天内可恢复'}
@@ -1446,12 +1504,9 @@ class Library:
             if not run_id or not authorization.get('at') or not authorization.get('request'):
                 raise ValueError('缺少原生成记录，不能自动回填；没有重复生图。')
             folder = self.root / 'requests' / job['id'] / str(index) / 'imagegen' / run_id
-            path = codex_bridge.generated_image_result(folder, authorization['request'],
+            result = codex_bridge.generated_image_result(folder, authorization['request'],
                       datetime.fromisoformat(authorization['at']).timestamp())
-            self.attach(job['id'], index, [path])
-            job = self.get(job['id'], 'jobs')
-            job['steps'][index]['message'] = '已核对原任务并回填已有图片，没有重复生图；请确认图片。'
-            self.save(job, 'jobs')
+            job = self.attach_imagegen_result(job['id'], index, run_id, result, recovered=True)
             return {'message': job['steps'][index]['message']}
 
     def reset_imagegen(self, p):
@@ -1463,20 +1518,19 @@ class Library:
             if step['status'] != 'unknown' or step['outputs']:
                 raise ValueError('只有无图片结果的异常任务可以重新准备')
             step.setdefault('generation_history', []).append({k: step.get(k) for k in
-                ('generation_run_id', 'authorization', 'message')})
+                ('generation_run_id', 'authorization', 'message', 'visual_self_check')})
             step.update(status='waiting', message='已重新准备；请核对提示词并再次同意生成。')
             step.pop('prompt_approval', None)
             step.pop('generation_run_id', None)
+            step.pop('visual_self_check', None)
             self.save(job, 'jobs')
             return {'message': '已重新准备，尚未提交生图'}
 
     def submit_imagegen(self, p):
         with self.lock:
             job = self.operation_job(p['id'], p.get('project_id', _UNSCOPED_PROJECT))
-            if job.get('project_id'):
-                from core.candidate_test import require_production
-                require_production(Path(self.projects.get(job['project_id'])['path']))
             index = int(p['index'])
+            self._check_project_generation(job, index)
             self.step_request(job, index)
             step = job['steps'][index]
             if job['provider'] != 'imagegen' or p.get('authorize') is not True:
@@ -1490,6 +1544,7 @@ class Library:
                 raise ValueError('未找到本机Codex CLI')
             request = self.prepare(job['id'], index)
             run_id = uid()
+            step.pop('visual_self_check', None)
             step.update(status='generating', generation_run_id=run_id,
                         message='ImageGen正在生成，完成后自动显示图片，无需复制或导入。',
                         authorization={'at': now(), 'request': request})
@@ -1497,18 +1552,29 @@ class Library:
             threading.Thread(target=self._imagegen_worker, args=(exe, job['id'], index, run_id, request), daemon=True).start()
             return {'message': 'ImageGen已开始生成1张图片，结果将自动回填当前资产组'}
 
+    def attach_imagegen_result(self, ident, index, run_id, result, *, recovered=False):
+        """Persist agent observations with the imported bytes, never a human approval."""
+        result = codex_bridge.image_result(result)
+        job = self.attach(ident, index, [result['output_path']],
+                          visual_self_check=result['visual_self_check'])
+        step = job['steps'][index]
+        evidence = step['visual_self_check']
+        step.setdefault('generation_history', []).append({
+            'generation_run_id': run_id, 'output_path': result['output_path'],
+            'visual_self_check': evidence, 'finished_at': now(), 'recovered': recovered})
+        step['message'] = ('已核对原任务并回填已有图片，没有重复生图；' if recovered else 'ImageGen图片已导入；') + self.visual_self_check_message(evidence)
+        self.save(job, 'jobs')
+        return job
+
     def _imagegen_worker(self, exe, ident, index, run_id, request):
         folder = self.root / 'requests' / ident / str(index) / 'imagegen' / run_id
         try:
-            path = codex_bridge.generate_image(exe, folder, request)
+            result = codex_bridge.generate_image(exe, folder, request)
             with self.lock:
                 job = self.get(ident, 'jobs')
                 if job['steps'][index].get('generation_run_id') != run_id:
                     return
-                self.attach(ident, index, [path])
-                job = self.get(ident, 'jobs')
-                job['steps'][index]['message'] = 'ImageGen生成完成，图片已导入；点击图片核对并确认。'
-                self.save(job, 'jobs')
+                self.attach_imagegen_result(ident, index, run_id, result)
         except Exception as exc:
             with self.lock:
                 job = self.get(ident, 'jobs')
@@ -1666,6 +1732,14 @@ class Handler(BaseHTTPRequestHandler):
                     self.server.library, unquote(parts[2]), unquote(parts[3]),
                     query.get('manifest_sha256', [None])[0])
                 return self.reply(data, content_type='model/gltf-binary')
+            if url.path.startswith('/product-reference-media/'):
+                from visual_asset_product_usage import preview_path
+                _, _, project_id, asset_id = url.path.split('/')
+                project = self.server.library.projects.get(unquote(project_id))
+                path = preview_path(project, unquote(asset_id))
+                if path.suffix.lower() in VIDEO_EXTS:
+                    return self.reply_video(path)
+                return self.reply(path.read_bytes(), content_type=mimetypes.guess_type(path.name)[0] or 'application/octet-stream')
             if url.path.startswith('/media/'):
                 _, _, ident, variant = url.path.split('/')
                 if variant not in {'thumbnail', 'original'}:
@@ -1802,6 +1876,7 @@ if __name__ == '__main__':
         sys.stdout.reconfigure(encoding='utf-8')
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--library', default=str(DEFAULT_LIBRARY))
+    parser.add_argument('--asset-vault', help='素材存储根目录，使用其资产库子目录')
     subs = parser.add_subparsers(dest='command', required=True)
     run = subs.add_parser('serve')
     run.add_argument('--port', type=int, default=8766)
@@ -1812,12 +1887,22 @@ if __name__ == '__main__':
     attach_parser.add_argument('--job', required=True)
     attach_parser.add_argument('--view', type=int, required=True)
     attach_parser.add_argument('--file', action='append', required=True)
+    review = subs.add_parser('apply-website-review')
+    review.add_argument('--project-id', required=True)
+    review.add_argument('--publication', required=True, type=Path)
+    review.add_argument('--token-file', required=True, type=Path)
+    review.add_argument('--base-url')
     subs.add_parser('list')
     args = parser.parse_args()
-    lib = Library(args.library)
+    lib = Library(args.library, vault=args.asset_vault)
     if args.command == 'serve':
         serve(lib, args.port, args.open)
     elif args.command == 'attach-result':
         print(json.dumps(lib.attach(args.job, args.view, args.file), ensure_ascii=False, indent=2))
+    elif args.command == 'apply-website-review':
+        from core.agent_review_api import AgentReviewClient, DEFAULT_BASE_URL
+        client = AgentReviewClient(base_url=args.base_url or DEFAULT_BASE_URL, token_file=args.token_file)
+        result = lib.projects.apply_website_review(args.project_id, args.publication, client)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         print(json.dumps(lib.import_tree(args.source) if args.command == 'import' else lib.items(), ensure_ascii=False, indent=2))

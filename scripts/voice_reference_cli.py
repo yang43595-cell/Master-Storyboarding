@@ -17,12 +17,12 @@ from typing import Any, Iterator
 
 if __package__:
     from .core.io import project_lock as shared_project_lock
-    from .core.artifacts import dependency_closure
+    from .core.artifacts import dependency_closure, _confirmed_package_source, project_path
     from .core.project_state import (normalize_project_state, reconcile_current_artifacts,
                                      render_project_state_markdown)
 else:
     from core.io import project_lock as shared_project_lock
-    from core.artifacts import dependency_closure
+    from core.artifacts import dependency_closure, _confirmed_package_source, project_path
     from core.project_state import (normalize_project_state, reconcile_current_artifacts,
                                    render_project_state_markdown)
 
@@ -130,6 +130,35 @@ def resolve_audio(base_file: Path, raw: str) -> Path:
     return value.resolve() if value.is_absolute() else (base_file.parent / value).resolve()
 
 
+def authorization_errors(authorization: Any, intended_uses: Any = None,
+                         *, require_authorized: bool = False,
+                         require_intended: bool = False) -> list[str]:
+    """Compare explicit use labels exactly; never infer license meaning."""
+    if not isinstance(authorization, dict):
+        return ["声音授权记录必须为对象"]
+    status = authorization.get("status")
+    if status not in {"authorized", "restricted", "unknown"}:
+        return ["声音授权状态无效"]
+    if require_authorized and status != "authorized":
+        return ["声音授权状态不是 authorized，不能建立或消费 current 快照"]
+    reference = authorization.get("authorization_ref")
+    if not isinstance(reference, str) or not reference.strip():
+        return ["声音授权必须提供非空 authorization_ref"]
+    permitted = authorization.get("permitted_uses")
+    if (not isinstance(permitted, list)
+            or any(not isinstance(use, str) or not use.strip() for use in permitted)
+            or (status == "authorized" and not permitted)):
+        return ["authorized 声音必须提供非空合格 permitted_uses；其他候选允许空数组"]
+    if intended_uses is None and not require_intended:
+        return []
+    if (not isinstance(intended_uses, list) or not intended_uses
+            or any(not isinstance(use, str) or not use.strip() for use in intended_uses)):
+        return ["本次用途未明确；请显式提供 --intended-use，不按授权内容猜用途"]
+    if not set(intended_uses) <= set(permitted):
+        return ["本次 intended_uses 超出 permitted_uses；必须有准确匹配的允许用途证据"]
+    return []
+
+
 def validate_library(path: Path) -> list[dict[str, Any]]:
     library = load_library(path)
     seen: set[str] = set()
@@ -154,10 +183,9 @@ def validate_library(path: Path) -> list[dict[str, Any]]:
             source.get("speaker_identity_basis") or ""
         ).strip():
             raise VoiceReferenceError(f"声音来源或说话者身份依据缺失：{voice_id}")
-        if not isinstance(authorization, dict) or authorization.get("status") not in {
-            "authorized", "restricted", "unknown"
-        } or not str(authorization.get("authorization_ref") or "").strip():
-            raise VoiceReferenceError(f"声音授权记录无效：{voice_id}")
+        issues = authorization_errors(authorization)
+        if issues:
+            raise VoiceReferenceError(f"声音授权记录无效：{voice_id}：{'；'.join(issues)}")
         result.append(
             {
                 "voice_id": voice_id,
@@ -188,13 +216,19 @@ def command_add(args: argparse.Namespace) -> dict[str, Any]:
     speaker_identity_basis = str(getattr(args, "speaker_identity_basis", "") or "").strip()
     authorization_status = str(getattr(args, "authorization_status", "") or "").strip()
     authorization_ref = str(getattr(args, "authorization_ref", "") or "").strip()
-    permitted_uses = list(dict.fromkeys(getattr(args, "permitted_use", None) or []))
+    permitted_uses = getattr(args, "permitted_use", None) or []
     if source_kind not in {"user_recording", "licensed_library", "generated_candidate", "other"}:
         raise VoiceReferenceError("导入声音必须提供有效 --source-kind")
     if not source_ref or not speaker_identity_basis:
         raise VoiceReferenceError("导入声音必须提供 --source-ref 和 --speaker-identity-basis")
     if authorization_status not in {"authorized", "restricted", "unknown"} or not authorization_ref:
         raise VoiceReferenceError("导入声音必须提供授权状态和 --authorization-ref")
+    authorization = {"status": authorization_status, "authorization_ref": authorization_ref,
+                     "permitted_uses": permitted_uses}
+    issues = authorization_errors(authorization)
+    if issues:
+        raise VoiceReferenceError("；".join(issues))
+    authorization["permitted_uses"] = list(dict.fromkeys(permitted_uses))
     existing = next((item for item in library["voices"] if item.get("voice_id") == voice_id), None)
     if existing and not args.replace:
         raise VoiceReferenceError(f"voice_id 已存在；如需替换请显式使用 --replace：{voice_id}")
@@ -216,11 +250,7 @@ def command_add(args: argparse.Namespace) -> dict[str, Any]:
             "source_ref": source_ref,
             "speaker_identity_basis": speaker_identity_basis,
         },
-        "authorization": {
-            "status": authorization_status,
-            "authorization_ref": authorization_ref,
-            "permitted_uses": permitted_uses,
-        },
+        "authorization": authorization,
     }
     if existing:
         library["voices"][library["voices"].index(existing)] = entry
@@ -410,13 +440,17 @@ def _snapshot_core(args: argparse.Namespace, *, mode: str) -> dict[str, Any]:
     if source_digest != voice.get("sha256"):
         raise VoiceReferenceError(f"声音母版已漂移：{args.voice_id}")
     authorization = voice.get("authorization") or {}
-    if authorization.get("status") != "authorized":
-        raise VoiceReferenceError(f"声音授权状态不是 authorized，不能建立 current 快照：{args.voice_id}")
+    intended_uses = getattr(args, "intended_use", None)
+    issues = authorization_errors(authorization, intended_uses, require_authorized=True,
+                                  require_intended=True)
+    if issues:
+        raise VoiceReferenceError(f"声音授权无法用于 current：{args.voice_id}：{'；'.join(issues)}")
     scope = {
         "dialogue_scope": str(getattr(args, "dialogue_scope", None) or "all_confirmed_dialogue_for_character"),
         "dialogue_ids": list(dict.fromkeys(getattr(args, "dialogue_id", None) or [])),
         "applicable_scope": list(dict.fromkeys(getattr(args, "applicable_scope", None) or ["project"])),
         "excluded_scope": list(dict.fromkeys(getattr(args, "excluded_scope", None) or [])),
+        "intended_uses": list(dict.fromkeys(intended_uses)),
     }
     scope_issues = voice_scope_errors(scope)
     if scope_issues:
@@ -430,7 +464,7 @@ def _snapshot_core(args: argparse.Namespace, *, mode: str) -> dict[str, Any]:
         unresolved_legacy = [
             str(item.get("character_id") or "")
             for item in manifest["assignments"]
-            if item is not existing and (item.get("authorization") or {}).get("status") != "authorized"
+            if item is not existing and authorization_errors(item.get("authorization"), require_authorized=True)
         ]
         if unresolved_legacy:
             raise VoiceReferenceError(
@@ -447,6 +481,8 @@ def _snapshot_core(args: argparse.Namespace, *, mode: str) -> dict[str, Any]:
         replacing = existing is not None and (
             old_voice != args.voice_id or existing.get("sha256") != source_digest
             or any(existing.get(key) != value for key, value in scope.items())
+            or existing.get("authorization") != authorization
+            or existing.get("source") != voice.get("source")
         )
 
         if mode == "bind":
@@ -469,8 +505,10 @@ def _snapshot_core(args: argparse.Namespace, *, mode: str) -> dict[str, Any]:
                 revision = str(read_json(plan_path).get("revision") or "")
             except VoiceReferenceError:
                 revision = ""
+        modern_affected: list[str] = []
         if replacing:
-            contract_issues = _validate_replace_contract(project, character_id)
+            modern_affected = _modern_character_segments(project, load_artifact_manifest(project), character_id)
+            contract_issues = _validate_replace_contract(project, character_id, modern_affected)
             if contract_issues:
                 raise VoiceReferenceError("换声契约校验未通过：" + "；".join(contract_issues))
 
@@ -523,6 +561,7 @@ def _snapshot_core(args: argparse.Namespace, *, mode: str) -> dict[str, Any]:
         affected: list[str] = []
         if replacing:
             affected, new_plan = invalidate_character_segments(project, character_id, old_voice, args.voice_id)
+            affected = list(dict.fromkeys([*affected, *modern_affected]))
             if new_plan is not None:
                 pairs.append((project / "00_项目管理" / "production_plan.json", new_plan))
         state_path, state_dict = next_project_state(project, manifest)
@@ -696,7 +735,124 @@ def _prepare_voice_anchor(
     return manifest, invalidated
 
 
-def _validate_replace_contract(project: Path, character_id: str) -> list[str]:
+def _modern_character_segments(project: Path, manifest: dict[str, Any], character_id: str) -> list[str]:
+    """Read only the registered prompt and its exact confirmed JSON sources."""
+    if __package__:
+        from .core.revision_control import _generation_segments
+        from .core.quality_evidence import source_shot_ids, replay_source_audio
+    else:
+        from core.revision_control import _generation_segments
+        from core.quality_evidence import source_shot_ids, replay_source_audio
+    affected: list[str] = []
+    state_path = project / "00_项目管理" / "project_state.json"
+    state = read_json(state_path) if state_path.is_file() else {}
+    try:
+        for entry in manifest.get("artifacts", []):
+            if entry.get("logical_id") != "video.prompt" or entry.get("status") != "current":
+                continue
+            path = project_path(project, entry.get("path_or_url", ""))
+            if not path.is_relative_to(project) or path.suffix.lower() != ".json":
+                raise ValueError("现代 video.prompt 必须是准确项目内 JSON")
+            # Reading the registered file is necessary to distinguish selected
+            # voice references from ordinary generated dialogue.
+            payload = read_json(path)
+            if (not entry.get("checksum") or file_sha256(path) != entry["checksum"]
+                    or payload.get("revision") != entry.get("revision")):
+                raise ValueError("video.prompt 文件字节或 revision 与准确登记不一致")
+            raw_rows = payload.get("generation_segments", [])
+            if "generation_segments" not in payload:
+                sections = payload.get("creative_sections", [])
+                raw_rows = []
+                for section in sections if isinstance(sections, list) else []:
+                    if isinstance(section, dict) and isinstance(section.get("generation_segments"), list):
+                        raw_rows.extend(section["generation_segments"])
+            selected = (payload.get("audio_policy") == "voice_reference"
+                        or bool(payload.get("voice_reference_manifest_path"))
+                        or any(isinstance(dep, str) and dep.startswith("voice.character.")
+                               for dep in entry.get("depends_on", []))
+                        or any(isinstance(row, dict) and row.get("speaking_characters")
+                               for row in (raw_rows if isinstance(raw_rows, list) else [])))
+            if not selected:
+                continue
+            payload = _confirmed_package_source(project, manifest, state,
+                {"path": str(path), "revision": entry.get("revision")}, "video.prompt")
+            rows = _generation_segments(payload)
+            if not rows:
+                raise ValueError("已选声音的 video.prompt 缺 generation_segments")
+            voice_path = payload.get("voice_reference_manifest_path")
+            if voice_path and project_path(project, voice_path) != project_manifest_path(project).resolve():
+                raise ValueError("video.prompt 引用的声音清单不是本项目准确快照")
+            board = _confirmed_package_source(project, manifest, state,
+                                               payload.get("source_storyboard"), "storyboard.package")
+            narrative = _confirmed_package_source(project, manifest, state,
+                                                   board.get("source_narrative"), "narrative.package")
+            # The narrative contract permits both CHR-X and X as speaker IDs.
+            # Resolve only aliases declared by its actual CHARACTER entities.
+            aliases: dict[str, str] = {}
+            for asset in narrative.get("asset_requirements", []):
+                if asset.get("category") != "CHARACTER":
+                    continue
+                entity = asset.get("entity_id")
+                if not isinstance(entity, str) or not entity.strip():
+                    raise ValueError("叙事角色缺准确 entity_id")
+                for alias in {entity, entity.removeprefix("CHR-")}:
+                    if alias in aliases and aliases[alias] != entity:
+                        raise ValueError("叙事角色 ID 别名不唯一，不能猜声音归属")
+                    aliases[alias] = entity
+            target_character = aliases.get(character_id, character_id)
+            dialogues = narrative.get("dialogues")
+            if not isinstance(dialogues, list) or any(not isinstance(row, dict) for row in dialogues):
+                raise ValueError("叙事来源缺准确对白映射")
+            by_dialogue = {row.get("dialogue_id"): row for row in dialogues}
+            if len(by_dialogue) != len(dialogues) or None in by_dialogue:
+                raise ValueError("叙事来源对白编号缺失或重复")
+            shot_audio: dict[str, list[dict[str, Any]]] = {}
+            for scene in board.get("scenes", []):
+                for shot in scene.get("shots", []):
+                    ident = shot.get("shot_id")
+                    audio = (shot.get("audio") or {}).get("dialogue")
+                    if not ident or ident in shot_audio or not isinstance(audio, list):
+                        raise ValueError("导演来源缺准确唯一镜号或对白列表")
+                    for part in audio:
+                        original = by_dialogue.get(part.get("dialogue_id"))
+                        if (not original or part.get("speaker_id") != original.get("speaker_id")
+                                or not isinstance(part.get("text"), str)
+                                or not part["text"].strip()
+                                or part["text"] not in original.get("text", "")):
+                            raise ValueError("导演对白与准确叙事来源的角色/原文不一致")
+                    shot_audio[ident] = audio
+            if any("source_audio" in row for row in rows):
+                mapped = replay_source_audio(rows, shot_audio)
+            else:
+                mapped = []
+                for row in rows:
+                    ids = source_shot_ids(row)
+                    if not ids or any(ident not in shot_audio for ident in ids):
+                        raise ValueError("视频来源镜号不属于准确导演稿")
+                    mapped.append({"segment_id": row["segment_id"],
+                                   "dialogue": [part for ident in ids for part in shot_audio[ident]]})
+            for row, source in zip(rows, mapped):
+                speakers = {part.get("speaker_id") for part in source["dialogue"]
+                            if part.get("presentation") != "ON_SCREEN_TEXT"}
+                if any(not isinstance(ident, str) or not ident.strip() or ident.upper() == "UNKNOWN"
+                       for ident in speakers):
+                    raise ValueError("视频对白存在未归属说话者")
+                speakers = {aliases.get(ident, ident) for ident in speakers}
+                if "speaking_characters" in row:
+                    declared = row["speaking_characters"]
+                    if (not isinstance(declared, list) or any(not isinstance(item, dict) for item in declared)
+                            or {aliases.get(item.get("character_id"), item.get("character_id"))
+                                for item in declared} != speakers):
+                        raise ValueError("视频角色声明与来源对白说话者不一致")
+                if target_character in speakers:
+                    affected.append(row["segment_id"])
+    except (ValueError, KeyError, TypeError, AttributeError) as exc:
+        raise VoiceReferenceError("现代声音引用无法核对：" + str(exc)) from exc
+    return list(dict.fromkeys(affected))
+
+
+def _validate_replace_contract(project: Path, character_id: str,
+                               modern_segments: list[str] | None = None) -> list[str]:
     """换声契约校验：锚点必须已登记；引用该角色的 current prompt.<seg> 必须声明 depends_on 锚点。
 
     缺失即阻止换声（绝不静默不失效、绝不回退全量失效）。
@@ -706,6 +862,10 @@ def _validate_replace_contract(project: Path, character_id: str) -> list[str]:
     issues: list[str] = []
     if not any(item.get("logical_id") == anchor for item in manifest["artifacts"]):
         issues.append(f"换声契约缺失：锚点 {anchor} 未在 artifact_manifest.json 登记")
+    if modern_segments is None:
+        modern_segments = _modern_character_segments(project, manifest, character_id)
+    if modern_segments and "video.prompt" not in dependency_closure(manifest, {anchor}):
+        issues.append(f"换声契约缺失：video.prompt 的角色/对白引用未声明可追溯到 {anchor} 的 depends_on")
     plan_path = project / "00_项目管理" / "production_plan.json"
     seg_ids: list[str] = []
     if plan_path.exists():
@@ -721,7 +881,7 @@ def _validate_replace_contract(project: Path, character_id: str) -> list[str]:
     manifest_lids = {
         str(item.get("logical_id")): item
         for item in manifest["artifacts"]
-        if item.get("logical_id")
+        if item.get("logical_id") and item.get("status") == "current"
     }
     for seg_id in seg_ids:
         prompt_lid = f"prompt.{seg_id}"
@@ -801,7 +961,8 @@ def derive_voice_sync(plan: dict[str, Any], manifest: dict[str, Any], manifest_r
                     }
                 )
                 continue
-            if (assignment.get("authorization") or {}).get("status") != "authorized":
+            if authorization_errors(assignment.get("authorization"), assignment.get("intended_uses"),
+                                    require_authorized=True, require_intended=True):
                 errors.append(
                     {
                         "code": "VOICE_REFERENCE_AUTHORIZATION_MISSING",
@@ -840,6 +1001,9 @@ def command_sync_plan(args: argparse.Namespace) -> dict[str, Any]:
     plan_path = plan_path.resolve() if plan_path.is_absolute() else (project / plan_path).resolve()
     manifest_path = Path(args.manifest)
     manifest_path = manifest_path.resolve() if manifest_path.is_absolute() else (project / manifest_path).resolve()
+    for path, label in ((plan_path, "生产计划"), (manifest_path, "项目声音清单")):
+        if not path.is_relative_to(project):
+            raise VoiceReferenceError(f"{label}必须位于项目内：{path}")
     if not plan_path.is_file():
         raise VoiceReferenceError(f"生产计划不存在：{plan_path}")
     if not manifest_path.is_file():
@@ -866,12 +1030,13 @@ def command_sync_plan(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def validate_project(project: Path) -> dict[str, Any]:
+def validate_project(project: Path, intended_uses: list[str] | None = None) -> dict[str, Any]:
     manifest_path = project_manifest_path(project)
     manifest = read_json(manifest_path)
     seen: set[str] = set()
     seen_snapshots: set[str] = set()
     assignments: list[dict[str, Any]] = []
+    usage_checked = True
     for item in manifest.get("assignments") or []:
         character_id = validate_id(str(item.get("character_id") or ""), "character_id")
         if character_id in seen:
@@ -881,8 +1046,17 @@ def validate_project(project: Path) -> dict[str, Any]:
             item.get("approval_ref") or ""
         ).strip():
             raise VoiceReferenceError(f"项目声音绑定不是已确认 current：{character_id}")
-        if (item.get("authorization") or {}).get("status") != "authorized":
-            raise VoiceReferenceError(f"项目声音绑定缺少可用授权：{character_id}")
+        recorded_uses = item.get("intended_uses")
+        actual_uses = intended_uses if intended_uses is not None else recorded_uses
+        issues = authorization_errors(item.get("authorization"), actual_uses, require_authorized=True)
+        if issues:
+            raise VoiceReferenceError(f"项目声音绑定缺少可用授权：{character_id}：{'；'.join(issues)}")
+        if recorded_uses is not None:
+            issues = authorization_errors(item.get("authorization"), recorded_uses, require_authorized=True,
+                                          require_intended=True)
+            if issues or (actual_uses is not None and not set(actual_uses) <= set(recorded_uses)):
+                raise VoiceReferenceError(f"本次用途超出角色已确认 intended_uses：{character_id}")
+        usage_checked = usage_checked and actual_uses is not None
         scope_issues = voice_scope_errors(item)
         if scope_issues:
             raise VoiceReferenceError(f"角色 {character_id}：{'；'.join(scope_issues)}")
@@ -904,14 +1078,19 @@ def validate_project(project: Path) -> dict[str, Any]:
                 "dialogue_scope": item.get("dialogue_scope"),
                 "applicable_scope": item.get("applicable_scope"),
                 "snapshot_path": str(path),
+                "intended_uses": actual_uses,
+                "usage_checked": actual_uses is not None,
             }
         )
-    return {"manifest": str(manifest_path), "assignments": assignments}
+    return {"manifest": str(manifest_path), "assignments": assignments,
+            "usage_checked": usage_checked,
+            "limitations": ([] if usage_checked else
+                ["旧快照未登记本次用途；仅文件/结构检查完成，授权用途覆盖未建立。可显式提供 --intended-use 只读核对，不补写历史确认。"])}
 
 
 def command_validate_project(args: argparse.Namespace) -> dict[str, Any]:
     project = Path(args.project).resolve()
-    return validate_project(project)
+    return validate_project(project, getattr(args, "intended_use", None))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -948,6 +1127,8 @@ def build_parser() -> argparse.ArgumentParser:
         sub_parser.add_argument("--character-name", required=True)
         sub_parser.add_argument("--confirmed-by-user", action="store_true")
         sub_parser.add_argument("--approval-ref", required=True)
+        sub_parser.add_argument("--intended-use", action="append", required=True,
+                               help="本次实际用途；可重复，必须准确匹配授权 permitted_uses，不推断用途")
         sub_parser.add_argument("--dialogue-scope", choices=["all_confirmed_dialogue_for_character", "specific_dialogue_ids"], default="all_confirmed_dialogue_for_character")
         sub_parser.add_argument("--dialogue-id", action="append")
         sub_parser.add_argument("--applicable-scope", action="append",
@@ -980,6 +1161,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     project_validate = sub.add_parser("validate-project", help="校验项目角色声音绑定")
     project_validate.add_argument("--project", required=True)
+    project_validate.add_argument("--intended-use", action="append",
+                                  help="明确核对本次用途；不传时只使用快照已登记用途，旧快照明确未核")
     project_validate.set_defaults(func=command_validate_project)
     return parser
 

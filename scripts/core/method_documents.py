@@ -47,6 +47,7 @@ class MethodDocument:
     template_path: str = ""
     template_checksum: str = ""
     template_content: str = ""
+    reading_scope: str = ""
 
 
 @dataclass(frozen=True)
@@ -97,7 +98,9 @@ def resolve_method_documents(
         requires = entry.get("requires")
         if not isinstance(requires, dict) or not requires:
             raise MethodDocumentError(f"专业方法缺少可执行的 requires 条件：{identifier}")
-        if not _matches_requires(requires, context or {}):
+        task_context = context or {}
+        usage = _creative_mask_usage(identifier, task_context)
+        if not _matches_requires(requires, task_context):
             pending.append({"id": identifier, "path": path, "reason": "applies_when_not_met"})
             continue
         # Validate the exact bytes before a confirmed method enters this task.
@@ -125,12 +128,69 @@ def resolve_method_documents(
                 template_checksum = hashlib.sha256(template_raw).hexdigest()
             except (KnowledgeRuntimeError, OSError, UnicodeDecodeError) as exc:
                 raise MethodDocumentError(f"专业方法适用模板不可用：{identifier}: {exc}") from exc
+        content, reading_scope = _creative_mask_excerpt(method.content, usage) if usage else (method.content, "")
         required.append(MethodDocument(
             method.id, method.vault_path, method.title, method.version,
-            method.checksum, method.applies_when, method.content, basis,
-            template_path, template_checksum, template_content,
+            method.checksum, method.applies_when, content, basis,
+            template_path, template_checksum, template_content, reading_scope,
         ))
     return MethodResolution(required=required, pending=pending)
+
+
+def _creative_mask_usage(identifier: str, context: dict[str, Any]) -> str:
+    request = context.get("request")
+    if (identifier != "VGEN-CREATOR-POLISHING-MASK-USE"
+            or context.get("skill") != "creative-director"
+            or not isinstance(request, dict)
+            or request.get("product_id") != "creator-polishing-mask-2"):
+        return ""
+    usage = request.get("product_usage")
+    if usage not in ("display", "real_use"):
+        raise MethodDocumentError(
+            "编导已指定造物者温泉酸抛光面膜 2.0，请在请求填写 product_usage："
+            "仅展示用 display，涉及实际使用用 real_use。若只提到品牌，请移除 product_id。"
+        )
+    return usage
+
+
+def _creative_mask_excerpt(content: str, usage: str) -> tuple[str, str]:
+    """Select verbatim passages after the complete source has been validated."""
+    parts = re.split(r"(?m)^## ([^\n]+)\n", content)
+    sections = dict(zip(parts[1::2], parts[2::2]))
+    excerpts = {
+        "适用条件": [
+            ("本轮明确选定", ""),
+            ("开始前核对当前产品版本", "动作片段沿" if usage == "display" else ""),
+        ],
+        "可直接套用的制作模板": [
+            ("实际使用的编导模板" if usage == "real_use" else "仅展示的编导模板", ""),
+        ],
+        "展示与时间分配": [
+            ("- 给产品留可辨认的画面。", "出示、操作、退场分别"),
+        ],
+    }
+    if usage == "real_use":
+        excerpts["展示与时间分配"].append(
+            ("- 40 秒搅拌和 15 分钟等待", "单段时长容不下时"),
+        )
+        excerpts["选择与引用动作视频"] = [
+            ("项目包提供开盒", ""),
+        ]
+        excerpts["产品步骤与硬边界"] = [
+            ("保持顺序", ""),
+            ("本轮确有上脸时", ""),
+            ("不得表现单支产品直接", "真实使用过程不拆成"),
+        ]
+    selected = []
+    for heading, spans in excerpts.items():
+        lines = []
+        for prefix, stop_before in spans:
+            matches = [line for line in sections.get(heading, "").splitlines() if line.startswith(prefix)]
+            if len(matches) != 1 or (stop_before and stop_before not in matches[0]):
+                raise MethodDocumentError(f"编导面膜专项原文无法定位必读段落：{heading} / {prefix}")
+            lines.append(matches[0].split(stop_before, 1)[0].rstrip() if stop_before else matches[0])
+        selected.append(f"## {heading}\n\n" + "\n\n".join(lines))
+    return "\n\n".join(selected), "编导 · 实际使用" if usage == "real_use" else "编导 · 只展示"
 
 
 def _validate_promotion_record(
@@ -260,7 +320,7 @@ def _matches_requires(requires: dict[str, Any], context: dict[str, Any]) -> bool
                 return False
             value = value[part]
         values = expected if isinstance(expected, list) else [expected]
-        if value not in values:
+        if not any(value == item and isinstance(value, bool) == isinstance(item, bool) for item in values):
             return False
     return True
 
@@ -293,10 +353,11 @@ def render_method_packet(methods: list[MethodDocument]) -> str:
             f"## {method.id}", "",
             f"- 来源：`{method.vault_path}`",
             f"- 版本：`{method.version}`",
-            f"- SHA-256：`{method.checksum}`",
+            f"- {'原文 ' if method.reading_scope else ''}SHA-256：`{method.checksum}`",
             f"- 晋升依据状态：`{method.promotion_basis}`（仅记录分类，不由读取本身产生晋升）",
             f"- 适用条件：{method.applies_when}", "",
-            "### 完整正文", "", method.content.rstrip(), "",
+            f"### 本轮必读摘录（{method.reading_scope}）" if method.reading_scope else "### 完整正文",
+            "", method.content.rstrip(), "",
         ])
         if method.template_path:
             lines.extend([

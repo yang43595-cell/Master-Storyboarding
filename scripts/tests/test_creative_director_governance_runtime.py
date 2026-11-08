@@ -82,10 +82,9 @@ class GovernanceRuntimeTests(unittest.TestCase):
             project.mkdir()
             write_project_state(project, new_project_state(current_stage="creative-director"))
             candidate_test.configure(project, "synthetic-run", "synthetic explicit authorization", [])
-            (Path(tmp) / "empty-vault").mkdir(exist_ok=True)
             args = argparse.Namespace(
                 project=str(project), skill="creative-director", objective="synthetic lifecycle",
-                request_json=None, vault=str(Path(tmp) / "empty-vault"), actor_id="test-agent",
+                request_json=None, vault=None, actor_id="test-agent",
                 task_id="test-task", candidate_test=True,
             )
             prepared = cli.prepare(args)

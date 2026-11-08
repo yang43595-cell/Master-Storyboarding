@@ -2,17 +2,19 @@
   "schema_version": "1.0",
   "skill": "voice-reference-manager",
   "skill_contract_checks": [
-    {"id": "CONTRACT-TRIGGER", "text": "触发条件明确指向声音候选、项目绑定和 current 快照管理"},
+    {"id": "CONTRACT-TRIGGER", "text": "仅用户明确要求或选用声音参考后进入，触发条件指向声音候选、项目绑定和 current 快照管理；未选用不新增声音占位或阻塞"},
     {"id": "CONTRACT-BOUNDARY", "text": "不修改台词、不猜人物、不生成配音或决定视频执行"},
     {"id": "CONTRACT-PROVENANCE", "text": "声音来源、说话者身份依据、授权状态与允许用途是明确合同字段"},
     {"id": "CONTRACT-STATUS", "text": "候选、用户选择与项目 current 快照三层分离"},
     {"id": "CONTRACT-SCOPE", "text": "角色、对白范围、适用与排除范围及下游引用边界明确"}
   ],
   "production_artifact_checks": [
-    {"id": "VOICE-SOURCE", "text": "声音来源、说话者身份依据、授权和允许用途有明确证据"},
+    {"id": "VOICE-SOURCE", "text": "声音来源、说话者身份依据、授权和允许用途有明确证据，允许用途覆盖本次实际使用；用户试听选择不替代来源授权"},
     {"id": "VOICE-MAPPING", "text": "角色 ID、说话者与对白归属明确且不是文件名或音色猜测"},
     {"id": "VOICE-SCOPE", "text": "对白范围、项目/场景/片段适用范围和排除范围完整"},
-    {"id": "VOICE-CURRENT", "text": "current 快照具有用户确认、真实路径、时长与哈希，候选未冒充确认"},
-    {"id": "VOICE-DOWNSTREAM", "text": "声音清单与下游角色/对白引用一致，越界、无归属和漂移均已阻止"}
+    {"id": "VOICE-AUDITION", "text": "实际试听或有效复用绑定准确音频版本、角色和用途，有实际听核范围、适配观察及结论；无法听核或缺陷未解决保持候选，未听范围不冒通过"},
+    {"id": "VOICE-CURRENT", "text": "current 快照在准确用户确认后建立，具有真实路径、时长与哈希，绑定后实际validate-project通过；仅交候选时此项不强制绑定，候选/选定/current/拒绝分别说明"},
+    {"id": "VOICE-DOWNSTREAM", "text": "本轮存在的下游角色/对白引用与声音快照及用途一致，越界、无归属和漂移均已阻止，换声或范围变化核受影响依赖失效；无下游标未执行，不创建退役计划凑通过"},
+    {"id": "VOICE-COMPLETION", "text": "交付包含本轮实际来源、试听、技术、确认和绑定/换声范围及其证据位置；未执行/阻塞/不适用明确，问题修复后复核直接影响，技术通过不升级用户确认或声音效果通过"}
   ]
 }

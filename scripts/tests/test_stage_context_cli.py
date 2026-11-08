@@ -14,8 +14,26 @@ from scripts.core.project_state import load_project_state, new_project_state, no
 from scripts.tests.source_fixture import copy_source_fixture
 
 
+@pytest.fixture
+def isolated_stage_knowledge(tmp_path, monkeypatch):
+    """Inject synthetic knowledge for tests of consumers, never CLI behavior."""
+    resolve = cli.resolve_knowledge_root
+
+    def resolve_fixture(value=None, *, repo_root=None):
+        if value is not None:
+            path = Path(value).resolve()
+            if path.is_relative_to(tmp_path.resolve()) and path.is_dir() and not cli.is_bundled_root(path):
+                return path
+        return resolve(value, repo_root=repo_root)
+
+    monkeypatch.setattr(cli, "resolve_knowledge_root", resolve_fixture)
+
+
+pytestmark = pytest.mark.usefixtures("isolated_stage_knowledge")
+
+
 def _current_narrative_package(root: Path, revision: str = "R01") -> dict:
-    from test_story_paragraph_sources import narrative
+    from test_formal_package_submission import narrative
     package = narrative(root)
     package["revision"] = revision
     package["status"] = "confirmed"
@@ -569,7 +587,8 @@ def test_handoff_uses_only_confirmed_current_artifacts_and_prepare_embeds_it(tmp
     text = handoff.read_text(encoding="utf-8")
     assert "上游候选已审核通过" not in text
     assert "语义自查：本卡未读取结论" in text
-    assert "用户确认与依赖已核对" in text
+    assert "有效采用依据与依赖已核对" in text
+    assert "用户已确认上游且明确要求继续" not in text
     assert report["artifact_ids"] == ["ART-NARRATIVE-R01"]
     assert "`ART-NARRATIVE-R01`" in handoff.read_text(encoding="utf-8")
 
@@ -602,6 +621,33 @@ def test_handoff_keeps_video_skill_direct_read_exception(tmp_path: Path) -> None
 
     content = Path(report["path"]).read_text(encoding="utf-8")
     assert "不生成或校验 stage_startup.md" in content
+
+
+def test_formal_handoff_rejects_unbound_dialogue_while_historical_read_stays_valid(tmp_path):
+    from scripts.core.story_sources import validate_story_sources
+    from test_story_paragraph_sources import narrative as legacy_narrative
+    project = _project(tmp_path)
+    package = legacy_narrative(project)
+    artifact = project / "legacy-unbound.json"
+    write_json(artifact, package)
+    write_json(project / "00_项目管理/artifact_manifest.json", {"artifacts": [{
+        "artifact_id": "N-LEGACY", "logical_id": "narrative.package", "type": "narrative.package",
+        "revision": package["revision"], "status": "current", "user_approved": True,
+        "path_or_url": artifact.name, "checksum": cli.digest(artifact), "depends_on": [],
+    }]})
+    state = load_project_state(project)
+    state.update(current_artifacts=["N-LEGACY"], next_stage="storyboard-planner",
+                 user_confirmations=[{"artifact_ids": ["N-LEGACY"], "approval_ref": "synthetic historical text approval"}])
+    write_project_state(project, state)
+    original = artifact.read_bytes()
+    before = load_project_state(project)
+    report = validate_story_sources(package, project_root=project)
+    assert report["dialogue_evidence_status"] == "not_bound_unverified"
+    assert not report["formal_adoption_allowed"] and not report["source_fidelity_checked"]
+    with pytest.raises(cli.StageContextError, match="必须绑定 dialogue_evidence"):
+        cli.handoff(argparse.Namespace(project=str(project), to_skill="storyboard-planner"))
+    assert artifact.read_bytes() == original and load_project_state(project) == before
+    assert not (project / cli.CONTEXT_DIR / "next_stage_handoff.md").exists()
 
 
 def test_prepare_rejects_replaced_handoff_input_and_accepts_regenerated_card(tmp_path):
@@ -1002,7 +1048,8 @@ def test_ensure_prepared_rejects_empty_rule_body(tmp_path: Path) -> None:
         cli.ensure_prepared(args)
     path.write_text(text.replace("适用条件：测试", "适用条件：测试\n\n保留故事事实。"), encoding="utf-8")
     args.required_rule = ["MSB-KB-TEST-001"]
-    assert cli.ensure_prepared(args)["ok"]
+    with pytest.raises(cli.StageContextError, match="缺少仓库内置知识来源证据"):
+        cli.ensure_prepared(args)
 
 
 def test_startup_boundary_scan_does_not_treat_rule_body_heading_as_candidate_partition(tmp_path: Path) -> None:
@@ -1107,6 +1154,176 @@ def test_creative_selected_method_missing_is_not_silently_skipped(tmp_path):
         cli.prepare(args)
 
 
+@pytest.mark.parametrize("usage", [None, "display", "real_use"])
+def test_creative_mask_reading_scope_is_explicit_and_checked(tmp_path, monkeypatch, usage):
+    monkeypatch.delenv("MSB_VAULT_ROOT", raising=False)
+    project = _project(tmp_path)
+    source = project / "brief.md"
+    source.write_text("isolated example", encoding="utf-8")
+    request = project / "request.json"
+    request_data = {"product_id": "造物者温泉酸面膜", "source_files": ["brief.md"]}
+    if usage is not None:
+        request_data["product_usage"] = usage
+    request.write_text(json.dumps(request_data), encoding="utf-8")
+    args = cli.parser().parse_args([
+        "prepare", "--project", str(project), "--skill", "creative-director",
+        "--objective", "商品方法按本轮实际用途", "--request-json", str(request),
+        "--actor-id", "test-agent", "--task-id", "test-method-binding",
+    ])
+    if usage is None:
+        with pytest.raises(cli.StageContextError, match="product_usage"):
+            cli.prepare(args)
+        assert not (project / cli.CONTEXT_DIR / "task_basis.json").exists()
+        return
+
+    assert cli.prepare(args)["required_method_count"] == 1
+    context = project / cli.CONTEXT_DIR
+    packet = context / "method_reading_packet.md"
+    excerpt = packet.read_text(encoding="utf-8")
+    assert ("实际使用的编导模板" if usage == "real_use" else "仅展示的编导模板") in excerpt
+    assert "给产品留可辨认的画面" in excerpt
+    assert "真实 brief" in excerpt
+    assert ("40 秒" in excerpt) == (usage == "real_use")
+    assert ("选择与引用动作视频" in excerpt) == (usage == "real_use")
+    assert ("动作片段沿" in excerpt) == (usage == "real_use")
+    for downstream in ("敷膜面部特写参考（固定前置步骤）", "连续擦除与分区状态", "暂停受影响段的画布交付"):
+        assert downstream not in excerpt
+    manifest = json.loads((context / "task_basis.json").read_text(encoding="utf-8"))["reading_manifest"]
+    method = manifest["methods"][0]
+    assert method["sha256"] == cli.digest(Path(manifest["vault_root"]) / method["path"])
+    assert "本轮必读摘录" in excerpt
+    assert not cli.ensure_prepared(args)["ok"]
+    _record_methods(project, args.skill, Path(manifest["vault_root"]))
+    assert cli.ensure_prepared(args)["ok"]
+    packet.write_text(excerpt + "\n多出的内容。\n", encoding="utf-8")
+    assert not cli.ensure_prepared(args)["ok"]
+    packet.write_text(excerpt, encoding="utf-8")
+    source.write_text("edited after prepare", encoding="utf-8")
+    with pytest.raises(cli.StageContextError, match="当前来源"):
+        cli.ensure_prepared(args)
+
+
+def test_project_kickoff_reaches_prepare_and_rejects_drift(tmp_path, monkeypatch, capsys):
+    from scripts.core import product_reference_pack
+
+    monkeypatch.delenv("MSB_VAULT_ROOT", raising=False)
+    packs = tmp_path / "packs"
+    pack = packs / "creator-polishing-mask-2" / "R03"
+    pack.mkdir(parents=True)
+    monkeypatch.setattr(product_reference_pack, "PACK_ROOT", packs)
+    brief = pack / "PRODUCT_BRIEF.md"
+    brief.write_text("synthetic brief", encoding="utf-8")
+    manifest = pack / "manifest.json"
+    write_json(manifest, {"product_id": "creator-polishing-mask-2", "revision": "R03",
+                          "product_name": "fixture", "references": [
+                              {"id": "BRIEF", "path": brief.name, "role": "brief", "usages": ["display"],
+                               "sha256": cli.digest(brief), "source": "fixture", "coverage": "display"}
+                          ]})
+    project = _project(tmp_path)
+    path = project / cli.REQUEST_PATH
+    write_json(path, {"project_name": "existing", "target_duration": "30s"})
+    answers = tmp_path / "answers.json"
+    kickoff = {
+        "decision_ref": "synthetic fixture",
+        "product": {"mode": "insert", "product_id": "造物者温泉酸面膜", "product_usage": "display"},
+        "canvas": {"platform": "redframe", "model": "Seedance 2.0", "aspect_ratio": "9:16",
+                   "resolution": "720p", "target_url": "https://fixture.invalid/canvas/one"},
+    }
+    write_json(answers, kickoff)
+    assert cli.main(["kickoff", "--project", str(project), "--answers-json", str(answers)]) == 0
+    kickoff["canvas"]["model"] = "Seedance 2.5"
+    kickoff["product"]["product_id"] = "creator-polishing-mask-2"
+    kickoff["product"]["reference_pack_revision"] = "R03"
+    kickoff["product"]["reference_pack_sha256"] = cli.digest(manifest)
+    assert json.loads(capsys.readouterr().out)["kickoff"] == kickoff
+    assert json.loads(path.read_text(encoding="utf-8"))["target_duration"] == "30s"
+
+    args = cli.parser().parse_args([
+        "prepare", "--project", str(project), "--skill", "creative-director",
+        "--objective", "use project kickoff", "--actor-id", "test-agent", "--task-id", "test-method-binding",
+    ])
+    assert cli.prepare(args)["required_method_count"] == 1
+    basis = json.loads((project / cli.CONTEXT_DIR / "task_basis.json").read_text(encoding="utf-8"))
+    _record_methods(project, args.skill, Path(basis["reading_manifest"]["vault_root"]))
+    assert cli.ensure_prepared(args)["ok"]
+    assert cli._task_reading_view(basis)["kickoff"] == kickoff
+
+    kickoff["product"] = {"mode": "none"}
+    write_json(path, {"kickoff": kickoff})
+    with pytest.raises(cli.StageContextError, match="开工决定"):
+        cli.ensure_prepared(args)
+    assert cli.prepare(args)["required_method_count"] == 0
+    args.request_json = str(answers)
+    write_json(answers, {"product_id": "different-product"})
+    with pytest.raises(ValueError, match="冲突"):
+        cli.prepare(args)
+
+
+def test_kickoff_freezes_optional_product_pack_by_usage(tmp_path, monkeypatch, capsys):
+    from scripts.core import product_reference_pack
+
+    product_id = "creator-polishing-mask-2"
+    pack_root = tmp_path / "packs"
+    pack = pack_root / product_id / "R01"
+    pack.mkdir(parents=True)
+    monkeypatch.setattr(product_reference_pack, "PACK_ROOT", pack_root)
+    brief = pack / "PRODUCT_BRIEF.md"
+    brief.write_text("synthetic brief", encoding="utf-8")
+    action = pack / "opening.mp4"
+    action.write_bytes(b"synthetic action bytes")
+    references = [{"id": "brief", "path": brief.name, "role": "brief", "sha256": cli.digest(brief),
+                   "source": "fixture", "coverage": "fixture", "usages": ["display", "real_use"]},
+                  {"id": "opening", "path": action.name, "role": "action", "sha256": cli.digest(action),
+                   "source": "fixture", "coverage": "opening", "usages": ["real_use"], "action_key": "开盒"}]
+    manifest = pack / "manifest.json"
+    pack_data = {"product_id": product_id, "revision": "R01", "product_name": "fixture", "references": references}
+    write_json(manifest, pack_data)
+    action.unlink()  # An action file is outside the display task's scope.
+    project = _project(tmp_path)
+    answers = tmp_path / "answers.json"
+    kickoff = {
+        "decision_ref": "synthetic fixture",
+        "product": {"mode": "insert", "product_id": "造物者温泉酸面膜", "product_usage": "display",
+                    "reference_pack_revision": "R01"},
+        "canvas": {"platform": "redframe", "model": "Seedance 2.5", "aspect_ratio": "9:16",
+                   "resolution": "720p", "create_new": True},
+    }
+    write_json(answers, kickoff)
+    command = ["kickoff", "--project", str(project), "--answers-json", str(answers)]
+    assert cli.main(command) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["kickoff"]["product"]["reference_pack_sha256"] == cli.digest(manifest)
+    assert [item["path"] for item in result["product_reference_pack"]["references"]] == [str(brief)]
+
+    args = cli.parser().parse_args([
+        "prepare", "--project", str(project), "--skill", "creative-director",
+        "--objective", "use optional product pack", "--actor-id", "test-agent", "--task-id", "test-method-binding",
+    ])
+    assert cli.prepare(args)["required_method_count"] == 1
+    basis = json.loads((project / cli.CONTEXT_DIR / "task_basis.json").read_text(encoding="utf-8"))
+    assert set(basis["input_versions"]["product_reference_files"]) == {str(manifest), str(brief)}
+    _record_methods(project, args.skill, Path(basis["reading_manifest"]["vault_root"]))
+    assert cli.ensure_prepared(args)["ok"]
+
+    real_use = {**result["kickoff"]["product"], "product_usage": "real_use"}
+    with pytest.raises(ValueError, match="参考包文件缺失"):
+        product_reference_pack.resolve_product_pack(real_use)
+    action.write_bytes(b"synthetic action bytes")
+    selected = product_reference_pack.resolve_product_pack(real_use)
+    assert [item["role"] for item in selected["references"]] == ["brief", "action"]
+
+    brief.write_text("changed bytes", encoding="utf-8")
+    with pytest.raises(cli.StageContextError, match="当前来源"):
+        cli.ensure_prepared(args)
+    with pytest.raises(ValueError, match="SHA-256 不符"):
+        cli.prepare(args)
+    references[0]["sha256"] = cli.digest(brief)
+    write_json(manifest, pack_data)
+    with pytest.raises(cli.StageContextError, match="同一参考包版本字节已变化"):
+        cli.main(command)
+    assert json.loads((project / cli.REQUEST_PATH).read_text(encoding="utf-8"))["kickoff"] == result["kickoff"]
+
+
 def test_explicit_template_dependency_is_frozen_and_missing_is_reported(tmp_path, monkeypatch):
     root = tmp_path / "repo"
     skill = root / "skills" / "storyboard-planner"
@@ -1132,3 +1349,137 @@ def test_explicit_template_dependency_is_frozen_and_missing_is_reported(tmp_path
 def test_current_director_template_is_in_local_contracts():
     skill = cli.ROOT / "skills/storyboard-planner"
     assert (skill / "templates/专业影视分镜输出模板.md").resolve() in cli._local_standard_documents(skill)
+
+
+def test_split_rules_follow_stage_scope_and_explicit_branches():
+    skill = cli.ROOT / 'skills/creative-director'
+    rules = cli.ROOT / 'docs/rules'
+    paths = cli._local_standard_documents(skill)
+    assert rules / 'execution.md' in paths
+    assert rules / 'artifacts.md' in paths
+    assert rules / 'visual-production.md' not in paths
+    assert rules / 'legacy-review.md' not in paths
+    assert rules / 'experiments.md' not in paths
+    creative_legacy = skill / 'references/dialogue-legacy-workflows.md'
+    creative_candidates = skill / 'references/knowledge-candidates.md'
+    maintenance = cli.ROOT / 'skills/knowledge-maintainer/modules/maintenance-method.md'
+    assert {creative_legacy, creative_candidates, maintenance}.isdisjoint(paths)
+    assert skill / 'references/dialogue-lineage-contract.md' in paths
+    visual = cli._local_standard_documents(cli.ROOT / 'skills/storyboard-planner')
+    assert rules / 'visual-production.md' in visual
+    assert rules / 'legacy-review.md' not in visual
+    assert maintenance in visual
+    selected = cli._local_standard_documents(skill, {
+        'local_references': ['docs/rules/experiments.md', 'docs/rules/legacy-review.md',
+                             str(creative_legacy.relative_to(cli.ROOT)),
+                             str(creative_candidates.relative_to(cli.ROOT))]})
+    assert rules / 'experiments.md' in selected
+    assert rules / 'legacy-review.md' in selected
+    assert {creative_legacy, creative_candidates, maintenance}.issubset(selected)
+
+
+def test_creative_optional_reference_requires_explicit_declaration(tmp_path, monkeypatch):
+    monkeypatch.delenv("MSB_VAULT_ROOT", raising=False)
+    project = _project(tmp_path)
+    reference = "skills/creative-director/references/knowledge-candidates.md"
+    request = project / "request.json"
+    request.write_text("{}", encoding="utf-8")
+    args = cli.parser().parse_args([
+        "prepare", "--project", str(project), "--skill", "creative-director",
+        "--objective", "检查本轮采用的参考", "--request-json", str(request),
+    ])
+    gate = cli.parser().parse_args([
+        "ensure-prepared", "--project", str(project), "--skill", "creative-director",
+        "--required-reference", reference,
+    ])
+    cli.prepare(args)
+    with pytest.raises(cli.StageContextError, match="必需本地规范未在本轮冻结"):
+        cli.ensure_prepared(gate)
+    request.write_text(json.dumps({"local_references": [reference]}), encoding="utf-8")
+    cli.prepare(args)
+    assert cli.ensure_prepared(gate)["ok"]
+
+
+def test_missing_split_rule_fails_instead_of_silently_dropping(tmp_path, monkeypatch):
+    root = tmp_path / 'repo'
+    skill = root / 'skills/creative-director'
+    skill.mkdir(parents=True)
+    (root / 'PROJECT_RULES.md').write_text('# Rules')
+    (skill / 'SKILL.md').write_text('[合同](../../docs/rules/missing.md)')
+    monkeypatch.setattr(cli, 'ROOT', root)
+    with pytest.raises(cli.StageContextError, match='本地规范缺失'):
+        cli._local_standard_documents(skill)
+
+
+def test_long_history_does_not_override_split_rule_selection():
+    skill = cli.ROOT / 'skills/creative-director'
+    history = '旧记录：逐段等待，启用盲测，已通过，历史画布不可用。\n' * 20000
+    assert len(history) > 500000
+    assert cli._local_standard_documents(skill, {'history': history}) == cli._local_standard_documents(skill)
+    selected = cli._local_standard_documents(skill, {
+        'history': history, 'local_references': ['docs/rules/experiments.md']})
+    assert cli.ROOT / 'docs/rules/experiments.md' in selected
+    assert cli.ROOT / 'docs/rules/legacy-review.md' not in selected
+
+
+@pytest.mark.parametrize('change', ['changed', 'missing'])
+def test_split_rule_frozen_and_revalidated_on_resume(tmp_path, monkeypatch, change):
+    repo = copy_source_fixture(cli.ROOT, tmp_path / 'repo')
+    monkeypatch.setattr(cli, 'ROOT', repo)
+    project = _project(tmp_path)
+    _prepared(project)
+    startup = (project / cli.CONTEXT_DIR / 'stage_startup.md').read_text()
+    basis = json.loads((project / cli.CONTEXT_DIR / 'task_basis.json').read_text())
+    rule = repo / 'docs/rules/execution.md'
+    assert str(rule) in startup
+    assert str(repo / 'docs/rules/artifacts.md') in startup
+    assert str(repo / 'docs/rules/legacy-review.md') not in startup
+    assert any(item['path'] == str(rule) for item in basis['standards']['local_documents'])
+    cli._validate_current_inputs(project, basis)
+    if change == 'changed':
+        rule.write_text(rule.read_text() + '\n隔离测试变更。\n')
+    else:
+        rule.unlink()
+    with pytest.raises(cli.StageContextError, match='规范已改变'):
+        cli._validate_current_inputs(project, basis)
+
+
+def test_default_creative_rules_not_hidden_in_legacy_branch():
+    skill = cli.ROOT / 'skills/storyboard-planner'
+    selected = cli._local_standard_documents(skill)
+    text = '\n'.join(path.read_text() for path in selected if path.parent == cli.ROOT / 'docs/rules')
+    for requirement in ['全片统筹写在现有导演 JSON', '不按固定秒数或镜头数切割',
+                        '不默认新增逐段副本', 'record_scoped_confirmation',
+                        '只有整稿确认才能提交人工采用']:
+        assert requirement in text
+    assert cli.ROOT / 'docs/rules/legacy-review.md' not in selected
+
+
+def test_active_recovery_checklist_is_embedded_from_frozen_authority(tmp_path):
+    project = _project(tmp_path)
+    _prepared(project)
+    startup = (project / cli.CONTEXT_DIR / 'stage_startup.md').read_text()
+    section = cli._recovery_check_text()
+    assert startup.count(section) == 1
+    for check in ('REC-STATE', 'REC-OPTION', 'REC-PARAM', 'REC-ADOPT', 'REC-FLOW', 'REC-RESULT'):
+        assert check in section
+    basis = json.loads((project / cli.CONTEXT_DIR / 'task_basis.json').read_text())
+    authority = cli.ROOT / 'skills/_shared/knowledge-access.md'
+    assert {'path': str(authority), 'sha256': cli.digest(authority)} in basis['standards']['local_documents']
+
+
+def test_missing_active_recovery_section_cannot_silently_prepare(tmp_path, monkeypatch):
+    repo = copy_source_fixture(cli.ROOT, tmp_path / 'repo')
+    monkeypatch.setattr(cli, 'ROOT', repo)
+    path = repo / 'skills/_shared/knowledge-access.md'
+    text = path.read_text()
+    section = cli._recovery_check_text()
+    path.write_text(text.replace(section, ''))
+    with pytest.raises(cli.StageContextError, match='主动恢复核对正文缺失'):
+        _prepared(_project(tmp_path))
+
+
+def test_video_links_active_recovery_without_reintroducing_prepare():
+    text = (cli.ROOT / 'skills/voiceover-to-video-script/SKILL.md').read_text()
+    assert 'knowledge-access.md#压缩后的主动恢复核对' in text
+    assert '本 Skill 继续直接读取，不建 prepare 或阅读凭据' in text

@@ -7,7 +7,7 @@ from unittest.mock import patch
 from core.story_sources import validate_asset_decisions
 from core.asset_refs import build_asset_list
 from visual_asset_choices import image_work_items, save_choices, read_choices
-from test_visual_asset_projects import fixture
+from test_visual_asset_projects import fixture, update_narrative_checksum
 
 
 class ImageDecisions(unittest.TestCase):
@@ -31,6 +31,7 @@ class ImageDecisions(unittest.TestCase):
             n['asset_requirements'][0].update(image_decision='无需独立图', image_reason='随分镜表现')
             n['asset_requirements'][1].update(image_decision='待定', image_reason='等拍法明确')
             (root / 'narrative.json').write_text(json.dumps(n), encoding='utf-8')
+            update_narrative_checksum(root)
             result = lib.projects.sync(p['id'])
             self.assertEqual(result['rows'], [])
             with self.assertRaisesRegex(ValueError, '待定'):
@@ -44,6 +45,7 @@ class ImageDecisions(unittest.TestCase):
             self.assertIn('随分镜表现', table)
             n['asset_requirements'][1].update(image_decision='无需独立图', image_reason='随场景表现')
             (root / 'narrative.json').write_text(json.dumps(n), encoding='utf-8')
+            update_narrative_checksum(root)
             lib.projects.sync(p['id'])
             self.assertTrue(lib.projects.export({'project_id': p['id'], 'confirm': True}))
 

@@ -4,12 +4,14 @@
 
 ## 同一份 JSON
 
-复用既有 `drafts`、`prompt`、`parameters`、`ordered_media`。业务修订写在顶层 `revision`，来源写 `source_artifacts`（每项准确 artifact_id、revision、sha256）。网页目标仍用准确 `target_url`。历史无 revision 的快照继续按原范围只读比较，返回 submission_checks=not_checked，不得据此宣称完整提交检查或用于新交付采用。
+复用既有 `drafts`、`prompt`、`parameters`、`ordered_media`。业务修订写在顶层 `revision`，来源写 `source_artifacts`（每项准确 artifact_id、revision、sha256）。网页目标用准确 `target_url`。开工或冻结快照登记了平台 `target_project_id` 时，正式回读也须提供刷新后实际读取的同一 ID，纯文本和带素材草稿都适用。历史无 revision 的快照继续按原范围只读比较，返回 submission_checks=not_checked，不得据此宣称完整提交检查或用于新交付采用。
+
+正式交付的冻结正文须逐字匹配已采用来源段正文。平台原生引用按独立实体核对，回读正文取编辑器的实际可提交文字，引用芯片单独采集。修订对白或其他正文应先修订来源稿，不能靠将已改文字同时写入冻结稿和编辑器通过比对。
 
 逐 draft 增补本轮确有需要的声明，仍存在同一 JSON：
 
 - `duration_bounds: [min, max]`：来自本轮已核实的平台能力，单位秒；不内置或猜测模型上限。
-- `shot_durations: [seconds, ...]`：按提交顺序保存实际承载的时间，合计等于 parameters.duration；不能漏时间、写负数、NaN 或布尔值。
+- `shot_durations: [seconds, ...]`：按提交顺序保存实际承载的时间，合计等于 `parameters.duration`。数组须非空且各项为有限正数。源稿同时声明逐镜安排和生成总时长时，分段检查、正式采用和画布预检共用同一合计校验，时长别名相互冲突时拒绝。源稿尚无生成总时长时仍可核逐镜安排，正式画布继续要求平台参数。
 - `required_entities: [entity_id, ...]` 与 `required_reference_roles: {entity_id: [role, ...]}`：实际需要参考覆盖的实体及职责。没有独立参考的剧情实体不虚造参考。
 - `reference_checks`：与 ordered_media 一一对应，按实际上传顺序保存每份参考的 artifact_id、revision、sha256、kind（image/video/audio）、roles 职责集合、entity_ids（兼容旧单值 role）；不省掉未在提示词中显式提及的上传素材。role 为 identity/appearance/start_frame/end_frame/action/scale/layout/voice。首尾帧同时保存明确 state_id；action 须为视频，duration 与本地 ffprobe 实际时长核对。此入口要求参考作为具体已确认产物登记，不能以旧快照的 confirmed 字样或文件名替代确认。AST 母图仍先走现有 asset_refs 的具体 output 检查，不伪造通用登记来绕过。
 - `continuity: {event_id, previous_node_id?}`：真实连续事件保持相同 event_id；确因时长拆段时，后段准确指向实际前段，并同时提供前段 end_frame 与后段 start_frame。沿每个事件的前驱链核对，不要求两个段落在全片列表中相邻。重复出现的事件必须指向同事件上一片段，拒绝漏前驱、断链、环、分叉或跨事件引用。边界 state_id、entity_ids 必须相同；可共用确认图，也可使用下述准确获准的不同机位参考组。
@@ -30,7 +32,7 @@ python scripts/canvas_readback.py --delivery --project <隔离项目> --frozen <
 
 第二条命令只比较读数，不执行网页操作。读取者必须真实刷新并读取原生编辑器；输出含本修订、frozen_sha256、实际读数摘要及各项差异。没有实际读取时不可填造通过。
 
-将这份业务 JSON 用现有 `record_candidate` 登记。`record_review` 仍记录执行者实际审核结论；若候选为网页交付快照（target_url + drafts），approved 还要求 report_ref 指向项目内本修订的完整比较结果。程序核对 revision/hash、全部实体检查、当前参考，以及报告字节摘要。之后 `confirm_candidate` 与 `commit_change` 重查同一候选和当前参考，旧 PASS 不会验证新内容。普通技术通过仍不等于用户确认，也不授予上传、生成或发布权限。
+将这份业务 JSON 用现有 `record_candidate` 登记。`record_review` 仍记录执行者实际审核结论；若候选为网页交付快照（target_url + drafts），approved 还要求 report_ref 指向项目内本修订的完整比较结果。程序核对 revision/hash、全部实体检查、当前参考，以及报告字节摘要。目标已登记项目 ID 时，比较报告须含实际回读的 `observed_target_project_id`。在途旧报告缺该字段时，刷新并生成新报告，用 `record_review` 为同一候选补登，保留已有确认。`confirm_candidate` 与 `commit_change` 重查同一候选和当前证据。普通技术通过仍不等于用户确认，也不授予上传、生成或发布权限。
 
 ## 来源映射与同状态参考组
 
@@ -48,9 +50,13 @@ validate-project.ps1 的通用图片路径检查复用现有 Python product_refs
 
 ## 依赖发现与文件包预算
 
-正式 validate_submission（包括 --delivery 的 preflight、回读和现有 revision_control 调用）递归检查本交付 JSON 可达的结构化依赖。支持 path/paths/path_or_url/file/files/localPath 及 *_path(s)/*_file(s)、reference(s)/image(s) 的已知文件扩展名、source_image/source_video/source_audio、reference_images/reference_videos、准确 artifact_id/source_artifact_id/artifact_ids/source_artifact_ids，以及 depends_on 的唯一 current logical_id（候选检查仅按本轮 input_artifact_ids 选择，保留 production_blocked/unreviewed）；相对路径始终按项目根解析，与 manifest 一致。选中文件也按准确路径反查 manifest 依赖，重复登记报歧义；JSON 循环去重，不全项目扫描，不从自由文字猜文件、不解析 Markdown 链接；空的可选 path 字段表示未选用，不制造声音/补图需求。已声明 required_reference_roles 的职责覆盖仍由原校验负责，未结构化的业务必要性仍须人工核对。
+正式 validate_submission（包括 --delivery 的 preflight、回读和现有 revision_control 调用）递归检查本交付 JSON 可达的结构化依赖。支持 path/paths/path_or_url/file/files/localPath 及 *_path(s)/*_file(s)、reference(s)/image(s) 的已知文件扩展名、source_image/source_video/source_audio、reference_images/reference_videos、准确 artifact_id/source_artifact_id/artifact_ids/source_artifact_ids，以及 depends_on 的唯一 current logical_id（候选检查仅按本轮 input_artifact_ids 选择，保留 production_blocked/unreviewed）；相对路径始终按项目根解析，与 manifest 一致。每处引用分别核对 manifest 身份。同一文件路径对应多个登记时，该处须有准确 `artifact_id` 和匹配的 SHA-256，引用顺序不改变结果。JSON 循环去重，不全项目扫描，不从自由文字猜文件、不解析 Markdown 链接；空的可选 path 字段表示未选用，不制造声音/补图需求。已声明 required_reference_roles 的职责覆盖仍由原校验负责，未结构化的业务必要性仍须人工核对。
 
 外置输入只在直接读取 CLI 中通过准确 --input-root 允许；正式画布交付依赖要求位于项目内。丢失、空文件、越界、无效 JSON、manifest 缺失/歧义或远端不可核验均不返回成功。文件可读不是确认或版本证据，既有 current/revision/hash/确认检查继续执行，候选生产阻塞不改变。
+
+图片质量证据既有 `source_files` 是观察来源的准确原件：逐份检查可读、JSON 完整性及 SHA256，不把这些原件内的历史制作计划再次展开为本次活动输入。例如已完成图的原计划仍可记着失败的 v001 目标，而当前交付实际选择 v002；这不要求恢复失败图。该处理仅适用于完整图片 QA 结构，不适用于普通 `source_files` 或本次明确选择的输入；同一文件另被活动引用时仍递归检查，当前图片、来源原件或字节有缺失/变化继续失败。原质量及失败记录不改写，不产生确认或生成授权。
+
+manifest 的 `metadata.previous_quality_evidence_records` 保存已被替代的准确观察，不作为当前依赖再次展开或按今天的来源字节追认旧观察。当前 `quality_evidence` 的源字节与获准用途仍由图片准入校验；开启 `verify_hashes` 时依赖发现也核其摘要。同一旧文件若另被当前明确选用，仍执行当前检查。
 
 文件包交付在原命令追加 --package <实际成品.zip>（多包重复），可显式设置 --max-package-bytes；每包实际字节严格小于默认 19000000，成功输出实际 SHA-256。无包时不要求造包，也不声称测过包大小。生成包后发送前重跑；工具不负责创建/拆包、传输或安全解压未知归档。可单独使用 python -m scripts.core.product_refs --project <项目> --package <成品>。外部上传绕过命令不会被自动拦截。
 
@@ -137,7 +143,7 @@ python scripts/canvas_readback.py --private-preview --project <准确候选项�
 
 该条目 `preview_origin` 必须包含 purpose="private_preview_only_not_generation_baseline"、source_sha256、history_gaps（真实未重验/缺失/迁移事实列表）、historical_evidence（每项 location 为原证据绝对文件名，sha256 为证据实际字节）。原生成收据若存在，必须连同原 request 与全部后续 review-overrides 保存引用；至少一份原证据结构必须绑定该图片 SHA。旧方法缺失/改字节只能如实报告，不伪恢复或改 request 来求通过。字段 location 明确表示历史出处，不把历史 JSON 内旧文件路径重新当本轮生产依赖。
 
-每个引用 limited_use 还必须用 review_evidence={location,sha256} 指向上述证据中的真实 root 限定用途复核或沿用的实际审图记录。生成失败、后续失败审图会阻止本轮活动引用，不能把更换登记类型或限定用途当洗白。历史原图仍保留，不自动删除现有画布。结果明确 historical_generation_revalidated=false，并列出 history_gaps；不宣称旧方法链通过，不允许以此作为生成基准或正式交付输入。普通来源与正式入口的既有依赖/确认门禁不变。
+每个引用 limited_use 还必须用 review_evidence={location,sha256} 指向上述证据中本轮图片执行者的真实限定用途复核或沿用的实际审图记录，保留准确观察者与范围，不要求主协调方重复加载全部图片。生成失败、后续失败审图会阻止本轮活动引用，不能把更换登记类型或限定用途当洗白。历史原图仍保留，不自动删除现有画布。结果明确 historical_generation_revalidated=false，并列出 history_gaps；不宣称旧方法链通过，不允许以此作为生成基准或正式交付输入。普通来源与正式入口的既有依赖/确认门禁不变。
 
 预览时，`state_reference` 是可用的图片职责，必须写准确 state_id。连续两段若只共享物理状态、不采用平台硬首尾帧，后一段 continuity 可加 mode="state_reference" 与 boundary：claim="shared_state_only_not_hard_frames"、state_id、description、previous_node_id、current_node_id、previous_sha256s、current_sha256s。两侧哈希须精确等于对应段实际 state_reference 的文件哈希，且 state_id 相同；前驱链仍不得漏段、成环或跨事件。不同机位不冒充像素相同，也不虚造确认组；真实已有采用记录保留其原有范围。正式模式不接受 state_reference 替代原首尾帧门禁。
 
@@ -155,6 +161,10 @@ python scripts/canvas_readback.py --private-preview --project <准确候选项�
 - persistent_objects：同场常驻物完整继承，核身份/类别/尺度/位置/内容物；改一件也回归同桌其他物件，撤参考后必须有真实替代身份依据或合法不出镜处理。
 - state_boundaries：相邻全文和真实尾首观察，膜态按五区核，清水前末处湿擦→巾离脸/放下→无大片连续主膜；不以时间省略掩盖必需状态，未生成不能称动态已核。
 - framing、timing、reference_conflicts：具体画幅草验；自然语速试读/实际操作估时与实测区分；阶段参考职责不冲突。保留锋利嘴部特写与有意义快切。
+
+导演包在具体镜号声明 `required_visuals` 时，来源视频分段校验和画布预检分别在实际 `prompt` 正文检查对应指令独立成行。若声明 `min_seconds`，源稿和实际交付均按该段准确镜号顺序提供逐镜 `shot_durations`，同一镜的一条完整承载须达到最低时长。源视频覆盖的首尾镜号之间漏掉必保镜头也会失败；部分交付只核本次实际镜号，仍以准确全源校验为前提。适用于带这些声明的正式交付和私有候选，历史未声明稿保持兼容。此检查核对作者选定的要求是否传到最终正文与计划，不能发现上游未登记的语义遗漏或验证模型输出。
+
+导演为具体必保画面登记 `action_reference` 时，视频源校验按该镜号、产品资产和动作核对 `materials`（或兼容拟传清单）里的实际动作视频。画布预检再核相应原片是否进入本次活动引用，并核对镜号与文件身份。缺项直接报镜号与动作；局部交付按实际提交镜号核对。动作需求和媒体声明写法见[产品使用交接](../../skills/_shared/product-usage-contract.md#广告中的产品展示与使用)。
 
 所有活动 image 引用（包括私有候选预览）还从现有 manifest 条目读取 [图像观察证据](../../skills/storyboard-director/references/image-evidence-admission.md)，draft 用 source_shot_ids 指明实际镜号。音频、视频和文档不套静态图检查。预览的外置文件仅沿原有明确 roots/input_roots 范围读取，不放宽磁盘根。
 
@@ -221,6 +231,8 @@ python scripts/canvas_readback.py --private-preview --project <准确候选项�
 ## 分段参数与已有前驱
 
 现行生成段的实际 `parameters.model`、参考模式（`reference_mode` / `mode`）与生成时长（`duration` / `duration_seconds`）绑定准确源稿；别名可适配，但不得互相冲突。选定能力上限取自源的已核证据，交付自填 `duration_bounds` 不是能力证明。需改参数时先另出源修订，不在交付时静默替换。
+
+同一已选模型使用多种实际参考模式时，可在既有 `selected_video_model` 增补 `reference_modes` 和逐模式 `reference_mode_evidence`；每种模式都须有准确能力证据且支持所声明的共同上限。各段仍逐项绑定自己的实际模式，不接受未知模式、跨模型套用或只给模式名而无证据。没有该集合的旧稿仍按原单模式精确匹配。
 
 只交付连续事件的后段时，保留真实 `continuity.previous_node_id` 和 `event_id`，并在同一 `continuity` 内添加 `previous_delivery`，仅含已有前次快照的 `artifact_id`、`revision`、`sha256`。该快照也须列于本次 `source_artifacts`，沿用正式已确认来源或当前私有候选范围，不创建新的批准。没有已有可核证据就报告缺口，不能删前驱、另起事件或补造快照通过。
 

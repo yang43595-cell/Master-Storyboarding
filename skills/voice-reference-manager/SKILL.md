@@ -7,9 +7,9 @@ description: 仅在用户明确要求声音参考时，登记和核对可复用�
 
 开始本职任务前读取[共用三层规范](../_shared/skill-layers.md)。本 Skill 适用边界：仅用户明确要求声音参考时进入；核对来源授权、角色/对白映射和用途，保留候选与 current 区别，不因三层统一强加声音输入。
 
-按 [项目规则的可选声音参考边界](../../PROJECT_RULES.md#导演稿之后的生产顺序) 启用；用户未提出时不进入本阶段，也不要求声音输入或交付声音参考项。
+按 [项目规则的可选声音参考边界](../../docs/rules/visual-production.md#导演稿之后的生产顺序) 启用；用户未提出时不进入本阶段，也不要求声音输入或交付声音参考项。统一入口的网站通过和下游自主检查授权，不替代声音的明确选用，也不替代具体声音版本、角色及用途范围的用户确认。
 
-由当前执行者按 [PROJECT_RULES.md 的 Skill 执行分工](../../PROJECT_RULES.md#skill-执行分工) 执行本阶段；默认由主 agent 直接执行和自检，已明确委派时由受派执行者完成。
+由当前执行者按 [PROJECT_RULES.md 的 Skill 执行分工](../../docs/rules/execution.md#skill-执行分工) 执行本阶段；默认由主 agent 直接执行和自检，已明确委派时由受派执行者完成。
 
 读取 `PROJECT_RULES.md`、`../_shared/knowledge-access.md`、当前 `stage_startup.md`、`../_shared/draft-lifecycle.md` 等共享红线、`modules/voice-method.md`、`../../schemas/voice-reference-library.schema.json` 与 `../../schemas/voice-reference-manifest.schema.json`。需要执行确定性导入、绑定、换声或校验时才使用 `../../scripts/voice_reference_cli.py`；普通审查不运行写入命令。
 
@@ -24,7 +24,12 @@ description: 仅在用户明确要求声音参考时，登记和核对可复用�
 
 ## 执行
 
-按“角色与对白归属 → 来源与授权 → 候选试听 → 技术核对 → 用户确认 → current 快照 → 下游引用校验”执行。
+1. 仅在用户明确选用后进入；正式登记或绑定生产时，按共享普通准备入口自行完成 `prepare`、实际方法阅读和 `ensure-prepared`，再核对已确认角色与对白的准确版本、角色 ID 和本次用途；普通只读查询/审查只核本轮指定事实，不运行准备或写入命令。缺身份或归属依据先停止相关绑定，不按声音补人物。
+2. 核对准确音频、来源授权及允许用途是否覆盖本次使用；需要导入时才运行 `voice_reference_cli.py init/add`，再用 `validate --library <声音库>` 核实际文件、时长与哈希。来源或授权不明可保留候选，不能进入 current；技术通过也不能代替试听。
+3. 按[声音参考方法](modules/voice-method.md)实际试听准确候选，或核对仍适用的既有试听依据，记录角色适配结论与真实听核范围。未听、无法播放或适配问题未解决时停在候选；试听通过的候选交用户确认准确声音版本及用途范围，不能先绑定再补确认。
+4. 取得准确确认且来源授权覆盖用途后，首次绑定用 `bind`，换声或范围变化用 `replace`，均显式传 `--intended-use <本次用途>`（可重复，准确匹配已核授权的 `permitted_uses`）；保留旧快照。实际执行后运行 `validate-project --project <项目>`，核对复制后的路径、哈希、唯一 current 和用途覆盖。旧快照没有 `intended_uses` 时结果明确 `usage_checked=false`，不能说本次用途已核；可按方法只读补查，不改写旧确认。CLI 成功与用户确认分开记录；未要求绑定时交付候选即止。
+5. 对本轮实际存在的下游引用，按角色、对白和适用/排除范围核对准确快照；换声同时核查受影响依赖是否失效。没有下游稿件时标未执行，不创建退役 `production_plan` 只为完成检查；实际下游缺少可核映射时报告缺口，不宣称引用已通过。
+6. 交付既有声音清单或本轮说明，分别列候选、已选但未绑定、current 及被拒绝的本轮候选；注明实际试听和工具结果的位置、已完成范围与剩余缺口。失败返回对应来源、试听、确认或绑定步骤，修复后复核改动与直接依赖。归档按共享规则收尾，完成本阶段即停。
 
 - `voice-reference-library.json` 保存可复用候选事实，不等于项目确认。
 - `07_声音与配音/voice_reference_manifest.json` 只保存项目 current 绑定；同一角色只能有一个 current 声音快照，快照复制到项目内并记录哈希。
