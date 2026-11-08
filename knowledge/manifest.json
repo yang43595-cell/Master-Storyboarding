@@ -518,15 +518,6 @@
       "upstream_sha256": "f6651b5136573cec68f7be005cea648401554663570a154173cd14320c36da67",
       "approval_assessment": "existing_user_confirmed_face_template",
       "inclusion_basis": "active asset and visual-supplement profile dependency; identify real images by task-local media and original checksums"
-    },
-    {
-      "path": "projects/Master-Storyboarding/经验/跨片段尺度连续性/缩放角色的共享尺度参照缺口.md",
-      "role": "reference_only",
-      "sha256": "d2fa2621054fba56f6fdc210bd19af5a2fb08325119ce147c49e49bb1724c321",
-      "size_bytes": 9720,
-      "approval_assessment": "existing_conditional_case_not_validated_remediation",
-      "inclusion_basis": "existing video conditional case lookup; reference only",
-      "upstream_sha256": "05143b59971f78d266c4730c80a69a97490b9863187a954e7eeeb744c7cddb1c"
     }
   ],
   "conditional_gaps": [

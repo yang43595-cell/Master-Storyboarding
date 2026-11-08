@@ -71,7 +71,7 @@
 
 | 方法与路径 | 已提供的字段与范围 | 本轮验证边界 |
 | --- | --- | --- |
-| `POST /api/agent/review/create-case` | JSON 为 `name`、`operationId`；回包含 `ok` 与 `case.id/name/projectId/createdAt` | 已按用户授权创建一个明确标记的独立合成案例 `13`，未操作已有业务案例 |
+| `POST /api/agent/review/create-case` | JSON 为 `name`、`operationId`；回包含 `ok` 与 `case.id/name/projectId/createdAt` | 验收时使用独立项目，核对返回的项目身份及创建回执 |
 | `POST /api/agent/review/publish` | JSON 为 `caseId`、`stage`、`name`、`text`、`operationId`，`purpose` 可选；成功字段有 `projectId/scope/caseId/stage/version/headGeneration/url/assetId` | 合成 R01 发布为第 1 代；原请求精确重试回同一回执且未增代；R02 新 UUID 与新正文发布为第 2 代。用户登录 Edge 后已回读 R02 故事原文及完整 JSON 附录，内容一致，仍待审核 |
 | `GET /api/agent/review/status?caseId=<准确案例ID>&stage=script` | 实测返回 `case`、`stage`、`head`、`expectations`、`sourceScriptVersion`，不含意见或批准回执 | 已核新案例初始 head 为空、R01／重复请求仍第 1 代、R02 第 2 代且版本准确匹配发布回执；没有以 head 代替正文读取或批准 |
 
@@ -121,13 +121,12 @@ python scripts/review_text_cli.py status \
 
 同一次操作重试必须保持相同 `operationId`、案例、文件名、正文及用途，并指定新的本地回执路径；改内容、文件名或用途则为新操作。超时结果未知时先核原操作和当前状态，不自动换 UUID 重发。返修另存新 JSON 修订并重新导出；不要修改已发布 Markdown 反向覆盖 JSON。程序检查不能代替实际读稿和网页正文核对，`status` 也不代替意见／批准读取。
 
-本次独立案例、实际回执与 Edge 网页回读见[文本送审现网验收](../reviews/2026-11-05-review-text-api-smoke.md)。
 
-本轮实际打开发布回包的 URL 时，外层地址保留了案例与版本参数，内嵌工作台仍先显示项目列表；须从实际可见的案例 `13` 入口进入后才能读取正文。不要把带参数的 URL 或项目总览当作准确正文已打开；该深链定位限制尚未修改服务端。网页回读已核完整内容，不表示批注／批准回拉已接通。
+发布回包的 URL 可能先打开项目列表。进入本轮准确项目与版本后，实际读取正文及附录；项目总览、深链和状态响应均不能代替正文或审核决定。
 
 ## 审核站 API 对接要求
 
-2026-11-07 现网已开放 `publish-assets` 和 `decision`。在隔离案例 21，已读回准确编导版本的 `pending` 决定。以下命令使用项目内发布回执来定位网站版本，凭据仍只由运行时从本机文件读取。
+现网接口包括 `publish-assets` 和 `decision`。以下命令使用项目内发布回执定位网站版本，凭据仍只由运行时从本机文件读取。
 
 1. 编导送审后，运行 `python scripts/review_text_cli.py decision --project <项目> --publication <编导发布回执> --stage script --adopt-script-id <叙事包产物ID> --token-file <本机凭据文件> --receipt <新决定回执>`。命令在采用时读取当前有效的网站整稿通过，并核对实际采用的文件与送审 JSON 的路径、修订和 SHA-256。返修先沿现有修订控制登记变更案及新候选，再在命令追加 `--change-id <活动变更案ID>`，用本次网站决定确认和提交修订。待审、修改意见、历史版、失效版及送审后字节漂移的稿件保留候选。
 2. 资产制作端准备并选好实际制作项后，运行 `python scripts/review_text_cli.py publish-asset --project <项目> --script-publication <编导发布回执> --image <项目内候选图> --artifact-id <产物ID> --ast-id <AST-ID> --output-id <输出ID> --purpose <制作项准确用途> --operation-id <UUID> --token-file <本机凭据文件> --receipt <新发布回执>`。送审和资产网页使用同一份当前有效需求，包括已登记的用户调整。原件上限 8 MiB，支持 PNG、JPEG 和 WebP。上传成功先保存图片 ID 和版本，再单独登记 `readback.status`。`unknown` 表示状态待核，`historical` 表示已不是当前版。两者的准确发布回执仍可用于同一编导版本的 `--reference-publication`。读回明确发现项目或上游版本不符时，保留上传证据并阻止作为审核包成员。按原操作重试仍用相同 UUID 和请求字节，另存本地回执。
@@ -234,13 +233,13 @@ python scripts/stage_context_cli.py accept-artifact \
 
 ## 接线现状与开发交接
 
-核对日期为 2026-11-05，以下区分本地接线与实际远端结果；本轮已实测独立合成案例的文本发布，并重新打开其准确 R02 链接核对会话。
+以下区分现有接口、执行检查和仍需在线复核的范围。项目级回执及验收记录保存在对应项目目录。
 
 | 项目 | 本次已核事实 | 下一步与验收 |
 | --- | --- | --- |
-| 网站 | Chrome 与最初 Edge 的登录缺口已保留。用户随后完成 Edge 登录；实际 GPT-6.1 Terra 从可见案例 `13` 入口进入 R02，读取正文与完整附录。协调方核两段原文准确、JSON 全字段深度一致；页面显示“正在查看当前稿”“待审核”。未点击批准或生成 | 文本送达及内容核对已完成。发布深链仍先落总览，需选择实际案例；未取得正文新鲜截图，不以旧总览截图冒充。批注与批准另核 |
-| 上传／回拉 API | 三路已由 [review_text_cli.py](../../scripts/review_text_cli.py) 接入编导文本。独立合成案例 `13` 已实测创建、R01 发布、精确重试不增代、R02 新版本及 status 回读，用户登录后网页正文核对通过；status 不含意见／批准，publish 不接收客户端 expectedHead 字段；connector 仍只读 `01–07` | 补并发版本保护、意见／批准读取合同和资产媒体路径。真实发布回执不等于批准；未操作已有业务案例，未做完整审核往返 |
-| 资产回执（2026-11-07 更新） | 新版 Agent API 支持候选图发布和按版读取决定。现网隔离案例 `21` 已发布编导稿并读到对应待审状态；本地资产测试覆盖待审保留、有效通过、备份和正式导出 | 继续用隔离案例验证真实人审、正式采用与画布保存。旧本地逐项确认和整表导出属于兼容路径 |
+| 网站 | 文本发布后可从项目列表进入对应版本核对正文和附录 | 深链可能先落总览；实际意见和批准通过版本决定接口读取 |
+| 编导文本 API | [review_text_cli.py](../../scripts/review_text_cli.py) 接入创建、发布、按版读回与精确重试。status 不含意见或批准，publish 不接收客户端 expectedHead | 更新前预读当前版本，并分别核对真实决定、批准范围与并发冲突处理 |
+| 资产回执 | Agent API 支持候选图发布和按版读取决定；本地回归覆盖待审保留、有效通过、备份和正式导出 | 真实项目按准确回执核对人审、正式采用和画布回读。旧本地逐项确认和整表导出属于兼容路径 |
 | 旧适配 | [web_content.py](../../scripts/core/web_content.py) 只离线编译；v78 固定合同不是当前站点合同，旧资产路径拒绝未确认候选 | 新接口接真实源稿与候选媒体，不伪改资产状态，也不为本 SOP 额外开发导演／提示词网站审核 |
 | 下游自主验收采用 | 本地增加 [流程授权与自查绑定](../../scripts/core/agent_acceptance.py) 及 [已登记候选首次采用](../../scripts/core/artifacts.py)，CLI 见上节；采用保留人工与 agent 两种依据 | 以合成项目检查授权、准确字节、全稿自查及来源失效；真实业务授权另行取得，编导／资产不可走此分支。返修仍走修订控制，不用首次采用覆盖 |
 | 下游消费 | [阶段输入](../../scripts/stage_context_cli.py) 改为核有效采用依据；[图片用途](../../scripts/core/asset_refs.py) 与 [画布回读](../../scripts/canvas_readback.py) 沿各自入口检查准确引用、版本及用途 | 本地消费通过只证明所覆盖的合成路径；真实上游回执、实际图片观察及平台原生回读仍须分别核对，不改成人审，不以本地结果宣称远端交付 |
