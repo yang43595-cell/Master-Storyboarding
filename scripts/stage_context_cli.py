@@ -37,7 +37,7 @@ try:
     from .core.io import project_lock, write_json
     from .core.revision_control import RevisionControlError, guard_action, show_change
     from .core.review_delta import fingerprint, revision_delta, lightweight_revision
-    from .session_usage import measure, measure_boundaries, check_budget
+    from .session_usage import checkpoint
 except ImportError:  # direct CLI execution
     from core.candidate_test import context as test_context, configure as configure_test, resolve_inputs as test_inputs, result_metadata as test_metadata, require_production, validate_stage as validate_test_stage, validate_usage_contract
     from core.artifacts import (artifact_is_adopted, project_path, digest,
@@ -59,7 +59,7 @@ except ImportError:  # direct CLI execution
     from core.io import project_lock, write_json
     from core.revision_control import RevisionControlError, guard_action, show_change
     from core.review_delta import fingerprint, revision_delta, lightweight_revision
-    from session_usage import measure, measure_boundaries, check_budget
+    from session_usage import checkpoint
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -638,12 +638,12 @@ def _current_handoff_text(project: Path, target_skill: str) -> str:
         raise StageContextError("交接卡运行模式与项目不一致；重新 handoff")
     expected = [tuple(str(item.get(field, "")) for field in fields[:-1])
                 + (str(project_path(project, item["path_or_url"])),) for item in inputs]
-    if test_context(project):
-        hashes = re.findall(r"(?m)^  - candidate_sha256：`([a-f0-9]{64})`$", text)
-        if hashes != [digest(project_path(project, item["path_or_url"])) for item in inputs]:
-            raise StageContextError("候选交接来源字节已改变；重新核对并 handoff")
     if sorted(records) != sorted(expected):
         raise StageContextError("已有交接卡的产物、版本或路径已过期；先按当前确认输入重新运行 handoff。")
+    hashes = re.findall(r"(?m)^  - (?:candidate_)?sha256：`([a-f0-9]{64})`$", text)
+    if test_context(project) or hashes:
+        if hashes != [digest(project_path(project, item["path_or_url"])) for item in inputs]:
+            raise StageContextError("交接卡来源字节已改变；重新核对并 handoff")
     return text
 
 
@@ -1318,41 +1318,10 @@ def _read_candidate_exact(vault: Path, record: dict[str, Any]) -> Any:
 
 
 def _check_run_budget(args: argparse.Namespace) -> dict[str, Any] | None:
-    project_arg = getattr(args, 'project', None)
-    project = Path(project_arg).expanduser().resolve() if project_arg else None
-    testing = test_context(project) if project is not None and project.is_dir() else None
-    contract = testing.get('usage_contract') if testing else None
-    if contract:
-        if contract['turn_id'] is None:
-            raise StageContextError('受控试跑要求先计量：准确 turn 尚未知，保留要求并补合法用量证据，不得继续准备。')
-        if getattr(args, 'usage_boundaries_json', None) or getattr(args, 'usage_turn_id', None) != contract['turn_id']:
-            raise StageContextError('受控试跑计量须使用已登记准确 turn；不能省略或改用另一边界。')
-        for key, limit in contract['limits'].items():
-            provided = getattr(args, key, None)
-            if provided is not None and provided > limit:
-                raise StageContextError('不能通过命令行提高已登记计量预算。')
-    logs = getattr(args, "usage_log", None)
-    turn = getattr(args, "usage_turn_id", None)
-    boundaries = getattr(args, "usage_boundaries_json", None)
-    limits = {key: getattr(args, key, None) for key in ("max_input", "max_total", "max_requests")}
-    if contract:
-        limits = {key: contract['limits'][key] if value is None else value for key, value in limits.items()}
-    if not logs and not turn and not boundaries and not any(value is not None for value in limits.values()):
-        return None
-    if not any(value is not None for value in limits.values()):
-        raise StageContextError("计量门禁须至少给出一个预算。")
-    if boundaries:
-        if logs or turn:
-            raise StageContextError("--usage-boundaries-json 不能与单轮用量参数同用。")
-        report = measure_boundaries(_read_json(Path(boundaries), default=None))
-    elif logs and turn:
-        report = measure([Path(p) for p in logs], turn)
-    else:
-        raise StageContextError("计量门禁须给出单轮日志+turn，或显式边界集合。")
-    budget = check_budget(report, **limits)
-    if not budget["ok"]:
-        raise StageContextError(f"执行预算停止：{'; '.join(budget['stop_reasons'])}；保留当前产物，报告已知用量与下一步。")
-    return {"requests": report["requests"], "totals": report["totals"], "budget": budget}
+    try:
+        return checkpoint(args)
+    except ValueError as exc:
+        raise StageContextError(str(exc)) from exc
 
 
 def _task_basis_path(project: Path) -> Path:
@@ -1726,6 +1695,8 @@ def handoff(args: argparse.Namespace) -> dict[str, Any]:
         "# 下一阶段交接卡", "",
         f"- 来源阶段：`{current_stage}`",
         f"- 目标 Skill：`{target_skill}`",
+        f"- 本轮目标：{getattr(args, 'objective', None) or '按目标 Skill 完成本轮已授权工作'}",
+        f"- 本轮停止点：{getattr(args, 'stop_at', None) or '完成本职自查并交回回执，遇缺来源、授权或预算停止相关动作'}",
         ("- execution_mode: candidate_test；review_status: unreviewed；production_blocked: true。只试写，不生成、不发布、不采用。" if testing else "- 交接状态：上游当前输入的有效采用依据与依赖已核对；本卡不启动、路由或批准下一阶段。"), "",
         ("## 本轮未确认候选输入" if testing else "## 当前有效上游产物"), "",
         "- 语义自查：本卡未读取结论。沿用当前修订有效的检查结论，核对未决项及本阶段新增用途。独立审核仅在用户明确要求时执行。", "",
@@ -1739,7 +1710,7 @@ def handoff(args: argparse.Namespace) -> dict[str, Any]:
             *([f"  - business_status：`{item['business_status']}`；return_upstream：{json.dumps(item['return_upstream'], ensure_ascii=False)}"]
               if testing and "business_status" in item else []),
             f"  - path：`{project_path(project, item['path_or_url'])}`",
-            *([f"  - candidate_sha256：`{digest(project_path(project, item['path_or_url']))}`"] if testing else []),
+            f"  - sha256：`{digest(project_path(project, item['path_or_url']))}`",
         ])
     startup_requirement = (
         "- `voiceover-to-video-script` 直接按其 Skill 的原始资料读取例外建立本段输入范围；不生成或校验 stage_startup.md。"
@@ -1747,6 +1718,12 @@ def handoff(args: argparse.Namespace) -> dict[str, Any]:
         "- 按根规则为已授权的下一 Skill 建立执行者。统一入口的网站通过或有效自主采用后，按已登记的流程授权继续；兼容人工流程才要求另行明确继续。创作新轮由专属生产 agent 准备并校验 stage_startup.md。"
     )
     lines.extend([
+        "", "## 本轮依据与停止点", "",
+        f"- 项目路径：`{project}`；仓库入口：`{ROOT / 'AGENTS.md'}` 与目标 Skill。",
+        "- 原始证据：从以上准确产物的 source_artifacts / 来源引用按需实读，不用交接摘要替代。",
+        f"- 决定及授权：实读 `{project / REQUEST_PATH}` 的本轮需求、kickoff 和 `{project / '00_项目管理/project_state.json'}` 的确认及 workflow_authorizations；缺文件或范围保留未决。",
+        "- 未决项：核以上当前产物的未决字段、现有 review_report 与 accepted_issues，已接受问题只覆盖原记录的准确范围。",
+        "- 停止点：完成本职目标和自查后交回准确版本、检查结果、未完成项与证据路径；画布仅保存刷新核验草稿，生成另核授权。",
         "", "## 接收约束", "",
         *([f"- 从 `{project / REQUEST_PATH}` 直接读取本轮 `kickoff`；已有决定随项目沿用，缺项只影响依赖它的动作。"] if not testing and load_kickoff(project) else []),
         ("- 仅按独立测试授权继续候选试写；保留所有未核对事实和素材阻塞。视频 Skill 仍直接读取，不重建准备包。" if testing else startup_requirement),
@@ -2272,11 +2249,14 @@ def parser() -> argparse.ArgumentParser:
     gate.add_argument("--task-id", help="稳定任务标识")
     gate.add_argument("--required-rule", action="append", default=[], help="本任务必需的动态规则 ID，可重复")
     gate.add_argument("--required-reference", action="append", default=[], help="本任务必需的本地规范，仓库相对路径，可重复")
+    usage_check = commands.add_parser("usage-check", help="直接读取或画布批次的只读计量检查，不创建准备包")
+    usage_check.add_argument("--project", required=True)
     for command in (start, gate):
         command.add_argument("--candidate-test", action="store_true", help="仅隔离候选试跑；不构成生产放行")
         command.add_argument("--candidate-source-id", help="profile 中固定的候选来源 ID，仅 candidate-test 使用")
         command.add_argument("--candidate-source-snapshot", help="显式提供来源快照物化文件，仅 candidate-test 使用")
         command.add_argument("--candidate-rule", action="append", default=[], help="指定进入隔离试用包的 candidate 状态规则，可重复")
+    for command in (start, gate, usage_check):
         command.add_argument("--usage-log", action="append", help="本次 Codex 原始日志，可重复提供窗口分片")
         command.add_argument("--usage-turn-id", help="准确的本轮 turn_id；不以文件名代替边界")
         command.add_argument("--usage-boundaries-json", help="显式累计边界 JSON；不自动发现宿主历史")
@@ -2323,6 +2303,8 @@ def parser() -> argparse.ArgumentParser:
     handoff_cmd.add_argument("--candidate-test", action="store_true")
     handoff_cmd.add_argument("--project", required=True)
     handoff_cmd.add_argument("--to-skill", required=True)
+    handoff_cmd.add_argument("--objective", help="本轮准确目标，写入现有交接卡")
+    handoff_cmd.add_argument("--stop-at", help="本轮完成条件与停止点，不能扩展已有授权")
     for command in (start, gate, receipt, review, handoff_cmd):
         command.add_argument("--context-id", help="可选独立批次上下文 ID；仅隔离准备/阅读/交接文件，不隔离项目状态或批准")
     check = commands.add_parser("validate")
@@ -2376,6 +2358,11 @@ def main(argv: list[str] | None = None) -> int:
         result = {"ok": kickoff is not None, "path": str(project / REQUEST_PATH), "kickoff": kickoff}
         if kickoff and (pack := resolve_product_pack(kickoff["product"])):
             result["product_reference_pack"] = pack
+    elif args.command == "usage-check":
+        usage = _check_run_budget(args)
+        if usage is None:
+            raise StageContextError("usage-check 必须提供本轮日志边界和预算")
+        result = {"ok": True, "run_usage": usage}
     elif args.command == "prepare":
         result = prepare(args)
     elif args.command == "ensure-prepared":

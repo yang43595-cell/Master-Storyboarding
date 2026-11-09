@@ -54,6 +54,14 @@ def validate_kickoff(kickoff, *, for_registration=False):
     product = kickoff.get("product")
     if not isinstance(product, dict) or not _text(product.get("mode")) or product["mode"] not in PRODUCT_MODES:
         raise ValueError("开工产品须明确选择 none / retain / replace / insert")
+    promotion_fields = {"promotion_copy", "promotion_decision_ref", "promotion_dialogue"}
+    if promotion_fields & product.keys():
+        if product["mode"] == "none" or not all(
+            _text(product.get(key)) for key in ("promotion_copy", "promotion_decision_ref")
+        ):
+            raise ValueError("活动口径须登记对应产品、promotion_copy 和 promotion_decision_ref")
+        if "promotion_dialogue" in product and not _text(product["promotion_dialogue"]):
+            raise ValueError("promotion_dialogue 须为用户确认的完整口播原文")
     if product["mode"] == "none":
         if "product_id" in product or "product_usage" in product:
             raise ValueError("无广告项目不能同时选定广告产品或用法")
@@ -73,7 +81,7 @@ def validate_kickoff(kickoff, *, for_registration=False):
     kickoff = {**kickoff, "product": product}
     canvas = kickoff.get("canvas")
     if for_registration and isinstance(canvas, dict) and canvas.get("platform") == "redframe":
-        canvas = {**canvas, "model": REDFRAME_MODEL}
+        canvas = {"aspect_ratio": "9:16", "resolution": "480p", **canvas, "model": REDFRAME_MODEL}
         kickoff = {**kickoff, "canvas": canvas}
     if not isinstance(canvas, dict) or not all(_text(canvas.get(key)) for key in (
         "platform", "model", "aspect_ratio", "resolution"

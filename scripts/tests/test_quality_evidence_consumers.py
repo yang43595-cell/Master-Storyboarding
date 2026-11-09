@@ -220,11 +220,11 @@ def test_preview_valid_image_only_checks_evidence_not_approval(tmp_path):
 @pytest.mark.parametrize('actual,declared,expected', [(1,2,'至少2秒'),(2,3,'differs'),(2,2,None)])
 def test_xiaoyunque_probes_actual_video_not_internal_cuts(tmp_path,actual,declared,expected):
     frozen,manifest=fixture(tmp_path);d=frozen['drafts'][0];entry=manifest['artifacts'][0]
-    video=tmp_path/'reference.mp4'
+    video=tmp_path/'reference.mov'
     subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=c=black:s=16x16:r=10',
-                    '-t',str(actual),'-c:v','libx264','-y',str(video)],check=True)
+                    '-t',str(actual),'-c:v','png','-pix_fmt','rgb24','-y',str(video)],check=True)
     sha=artifacts.digest(video);url='https://xyq.jianying.com/canvas/test'
-    entry.update(path_or_url='reference.mp4',checksum=sha);entry.pop('quality_evidence')
+    entry.update(path_or_url='reference.mov',checksum=sha);entry.pop('quality_evidence')
     entry['upload_bindings'][0].update(sha256=sha,target_url=url)
     write_json(tmp_path/artifacts.MANIFEST_PATH,manifest)
     frozen.update(target_url=url,source_artifacts=[dict(artifact_id='IMG',revision='R1',sha256=sha)])

@@ -230,6 +230,7 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
         from .story_sources import validate_story_sources
         validate_story_sources(payload, project_root=root, narrative_path=path, require_dialogue_evidence=True,
                                require_character_output=not reading_existing,
+                               require_promotion_dialogue=not reading_existing,
                                exact_human_approval=_exact_narrative_approval(approval_receipt, entry, candidate_sha256))
     elif logical_id == "storyboard.package":
         if payload.get("schema_version") != "4.0":
