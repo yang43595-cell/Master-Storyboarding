@@ -1,5 +1,6 @@
 {
   "schema_version": 1,
+  "record_status": "historical validation output (2026-10-20); one-off verification record, not a current contract",
   "verified_at_utc": "2026-10-20T18:59:45Z",
   "source_commit": "c0bf64f62f2e0cb05a6c72787d33f5066983c760",
   "source_tree": "a28da1616e514894da27289787decd3ae6533671",

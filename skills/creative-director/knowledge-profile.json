@@ -28,7 +28,7 @@
         "method_version": "2026-11-05",
         "method_sha256": "894f570fa9961388052ff7f8aff3156410e8851e4a66b19d593fc9298a77cf2a",
         "scope": "仅 creative-director：限定原创/改编/局部返修与可选植入方法的适用范围，保留既有事实、来源、确认及职责边界；本轮未做成稿效果实验。",
-        "source_ref": "docs/reviews/2026-11-05-creative-director-prompt-optimization.md；本仓库运行副本的对应修订，未同步外部 Vault。",
+        "source_ref": "docs/archive/reviews/2026-11-05-creative-director-prompt-optimization.md；本仓库运行副本的对应修订，未同步外部 Vault。",
         "user_instruction_ref": "2026-11-05 当前对话：用户在六项优化建议后明确要求“出一个详细的修改方案，然后执行”。此依据授权实施所列调整，不表示用户逐字审阅最终版本。",
         "conflict_resolution": "局部返修保留最小充分改动；原创及获准重构允许必要事件设计；日常使用后揭示仅为可选路径。旧 2026-10-23 legacy 基准不扩张，原历史批准不重新分类。",
         "rollback": "从版本历史恢复 2026-10-23 原正文及匹配的 knowledge-profile.json、knowledge/manifest.json；保留当前维护记录，不改历史批准。",

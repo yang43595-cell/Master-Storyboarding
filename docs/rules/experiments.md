@@ -20,6 +20,23 @@
 禁止正式采用、图片/视频生成、发布及其他外部提交；仅下文“明确授权的私有候选画布预览”允许指定私有画布的参考上传与未生成草稿保存，不放开正式生产。已接线的产物 promote、修订确认/commit、付费授权、canvas 提交前检查及项目关联图片生成入口会拒绝测试项目；移除状态开关不清除 manifest 的测试标记。直接浏览器、独立提供商 CLI 及脱离项目身份的工具并未形成统一技术沙箱，执行者不得调用，不宣称全部出口已被程序封闭。进入正常生产须重新建立真实确认与合法输入，不能删标记自动晋升测试稿。
 
 
+## 历史正文批准与原声证据分层（仅隔离候选）
+
+用户真实批准的准确正文，不因历史原声审核附件未恢复就被当成“从未批准”；但正文批准不替代原声保真、资产确认或完整结构化包正式采用。先核原字节、项目/修订、真实批准消息与实际可见范围，不凭文件名、摘要或旧网页 pending 推断。
+
+若本轮明确授权仅用该正文写有限段落候选，沿已有 `candidate-test` 隔离入口登记原 `narrative.package` 和 `source.evidence`，保持原 JSON 字节/历史路径不变，全部仍为 candidate/unreviewed/production_blocked，不写 user_confirmations/current。范围证据亦登记为 source.evidence，内容为：
+
+```json
+{"purpose":"approved_text_candidate_input","source":{"artifact_id":"准确叙事ID","project_id":"原项目","revision":"准确修订","sha256":"原文件SHA256"},"paragraph_ids":["本轮允许的STP"],"approval":{"reference":"真实历史用户批准引用","evidence_artifact_id":"真实批准上下文证据ID","sha256":"该证据文件SHA256"}}
+```
+
+叙事、批准附件、范围证据均必须登记准确 checksum，并列入本轮 candidate-test 输入白名单。历史批准范围由执行者实读原消息/原显示版本核实；程序只能检查绑定一致性，不自动证明批准语义。不得把候选级记录升为正式确认，也不得以另一个版本/项目/后续待批改动替换原批准正文。
+
+运行 `python -m scripts.core.story_sources --project <隔离项目> --narrative <原JSON> --candidate-test --candidate-source-evidence <范围证据ID>` 先核输入；本轮导演候选再加 `--storyboard <候选JSON> --candidate-paragraph-id <准确STP>`（可重复，必须在证据范围内）。仍核原文、对白/说话者顺序、资产与镜号引用。缺历史对白证据明确报告 missing_unverified，全部原声核验仍未通过；存在但 hash 或对白不一致直接拒绝，不能抓住异常后忽略。
+
+此入口不修改普通正式 adopt-package/返修提交规则，不允许用局部来源检查充整稿交接或生成许可。若无法满足真实输入/范围绑定，保留缺口，不制作虚假附件、不删除原证据字段。
+
+
 ## 明确授权的隔离资产实图试验
 
 可按 [持续制作授权](../../PROJECT_RULES.md#持续制作授权不逐批重复询问) 承接同一项目后续已登记资产及必要返修。每个试验仍冻结准确白名单和真实授权依据；分批冻结是执行记录，不是要求用户逐批审批。每次 preflight 对应一次调用，不将其误读为“每个目标永远只能生成一次”；视觉问题可在既有授权内另建准确修订和尝试记录，失败或结果未知仍不自动重提。
