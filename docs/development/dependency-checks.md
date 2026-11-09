@@ -37,6 +37,11 @@ uv pip compile config/requirements-asr.in --universal --python-version 3.12 --ge
 
 pytest 显式收集 `scripts/tests` 与根目录 `tests`，不依赖从当前目录递归发现。`pytest -ra` 会列出当前明确的可选 ASR、Windows 与私有来源缺口；跳过不算通过。FFmpeg/ffprobe 缺失会直接使前置检查失败，而不是默默缩小预期覆盖。要让失败真正阻止 GitHub 合并，须在线上成功运行并获授权后另行设置 required check，不能仅凭 workflow 文件宣称已经强制保护 `main`。
 
+## 本机验收环境
+
+- 测试一律使用本轮独占的临时目录，并把 TMPDIR、basetemp、cache 规范化为真实 `/private/var` 路径；macOS 的 `/var` 是别名，混用会造成路径字符串断言误报，这类失败先按环境问题处理，不改断言迁就。
+- 测试进程在 PATH 里找不到某个工具，只证明该进程环境缺失，不证明本机未安装。先沿项目已登记的工具入口核实工具真实存在与版本，再只给验收子进程补 PATH，并记录补的是哪条路径；不据此修改系统配置或项目依赖。
+
 ## 本轮本地验证（2026-11-04）
 
 基线为 `e6d96a5d29a70fa705a1bd1ce10fff5a764965f5`，在独立维护分支验证，不改 `main`。复用已有隔离 Python 3.12.14 环境，核对全部适用 dev 锁版本逐包一致；Node 24.22.1 与已有 Zod 3.25.76。未安装全局包，未触发 GitHub Actions。

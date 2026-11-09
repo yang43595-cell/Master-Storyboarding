@@ -19,7 +19,7 @@ description: 承接已确认故事与对白，创作并自查完整的视听分�
 
 本阶段同时验收“拍法可执行”和“重要情绪有视听表达”：整段拍法已经清楚，关键情绪与关系转折能从实际画面、表演和声音中读到，可供用户审定并被下游忠实实现。叙事与对白覆盖完整不等于表达充分。表格完整、引用正确与镜头数量只是辅助检查；本阶段不承诺模型生成效果，也不要求先制作全套分镜图。逐镜复刻须以原片证据核对；只依据故事创作的拍法明确标为候选导演设计。
 
-按 [PROJECT_RULES.md 的干净上下文启动规则](../../docs/rules/execution.md#创作执行开始前干净上下文) 执行本阶段；新一轮导演创作或实质重跑由全新专属生产 agent 执行，同轮逐段推进与局部返修可继续原执行者。
+按 [干净上下文启动规则](../../docs/rules/execution.md#创作执行开始前干净上下文) 执行本阶段；新一轮导演创作或实质重跑由全新专属生产 agent 执行，同轮逐段推进与局部返修可继续原执行者。
 
 纯错字、标点或排版维护先按 [共享局部维护边界](../_shared/knowledge-access.md#局部维护边界) 判断；符合时只做局部检查，下述整阶段准备适用于实质创作与修改。
 
@@ -101,21 +101,7 @@ python -m scripts.core.story_sources --project <项目> --narrative <完整已�
 
 以下局部网页仅用于未采用统一入口的既有人工路径；统一入口继续段落自查，不发起该网页步骤。兼容路径按[适配说明](../../docs/development/web-content-adapter.md#导演逐段候选来源范围)，同次提供完整原叙事及相同 STP 范围，强制 `reviewable:false`，只供阅读/反馈。用户段落确认仍走原 segment 范围记录，绝不变成网页整稿批准。全片写完后去掉局部参数重跑默认严格校验，之后才按本轮合法验收及正式采用合同处理；局部参数不传入 adopt-package/commit，恢复稿也无例外。
 
-### 历史正文批准与原声证据分层（仅隔离候选）
-
-用户真实批准的准确正文，不因历史原声审核附件未恢复就被当成“从未批准”；但正文批准不替代原声保真、资产确认或完整结构化包正式采用。先核原字节、项目/修订、真实批准消息与实际可见范围，不凭文件名、摘要或旧网页 pending 推断。
-
-若本轮明确授权仅用该正文写有限段落候选，沿已有 `candidate-test` 隔离入口登记原 `narrative.package` 和 `source.evidence`，保持原 JSON 字节/历史路径不变，全部仍为 candidate/unreviewed/production_blocked，不写 user_confirmations/current。范围证据亦登记为 source.evidence，内容为：
-
-```json
-{"purpose":"approved_text_candidate_input","source":{"artifact_id":"准确叙事ID","project_id":"原项目","revision":"准确修订","sha256":"原文件SHA256"},"paragraph_ids":["本轮允许的STP"],"approval":{"reference":"真实历史用户批准引用","evidence_artifact_id":"真实批准上下文证据ID","sha256":"该证据文件SHA256"}}
-```
-
-叙事、批准附件、范围证据均必须登记准确 checksum，并列入本轮 candidate-test 输入白名单。历史批准范围由执行者实读原消息/原显示版本核实；程序只能检查绑定一致性，不自动证明批准语义。不得把候选级记录升为正式确认，也不得以另一个版本/项目/后续待批改动替换原批准正文。
-
-运行 `python -m scripts.core.story_sources --project <隔离项目> --narrative <原JSON> --candidate-test --candidate-source-evidence <范围证据ID>` 先核输入；本轮导演候选再加 `--storyboard <候选JSON> --candidate-paragraph-id <准确STP>`（可重复，必须在证据范围内）。仍核原文、对白/说话者顺序、资产与镜号引用。缺历史对白证据明确报告 missing_unverified，全部原声核验仍未通过；存在但 hash 或对白不一致直接拒绝，不能抓住异常后忽略。
-
-此入口不修改普通正式 adopt-package/返修提交规则，不允许用局部来源检查充整稿交接或生成许可。若无法满足真实输入/范围绑定，保留缺口，不制作虚假附件、不删除原证据字段。
+历史已批准正文用作隔离候选输入时的证据分层（批准正文的证据登记格式、原声核验口径）见 [隔离试验细则](../../docs/rules/experiments.md)「历史正文批准与原声证据分层（仅隔离候选）」节；普通导演任务不适用，仅在本轮明确授权 candidate-test 时按该节执行。
 
 ## 视觉生产衔接细则
 

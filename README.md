@@ -16,7 +16,7 @@ Image production runs in clean-context child agents, with up to 8 target images 
 
 - `main`: formal source branch; review and test proposed changes on a separate branch before adoption.
 - `audit/review-web-20261017`: separately reviewed website patches; not the project source entry.
-- `backup/*` and notices under `recovery/`: historical provenance, not current production entry points.
+- `backup/*` and notices under `docs/archive/recovery/`: historical provenance, not current production entry points.
 - Future fixes should use separate branches, be tested against the accepted baseline, and be merged only with explicit approval. Version tags should identify tested, accepted commits; none is created at setup.
 
 ## Source and assets

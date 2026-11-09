@@ -93,7 +93,11 @@ def test_video_profile_keeps_only_direct_read_conditions() -> None:
     methods = {item["id"]: item for item in profile["professional_methods"]}
     assert set(methods) == {"VGEN-PROMPT-FOUNDATION", "VGEN-MATERIAL-RESPONSIBILITY", "VGEN-SEEDANCE25-CONTROLS", "VGEN-CREATOR-POLISHING-MASK-USE"}
     assert all(item["path"].startswith("projects/Master-Storyboarding/应用知识/视频提示词/") for item in methods.values())
-    assert all(item["requires"] == {"skill": "voiceover-to-video-script", "direct_read": True} for item in methods.values())
+    base = {"skill": "voiceover-to-video-script", "direct_read": True}
+    assert methods["VGEN-PROMPT-FOUNDATION"]["requires"] == base
+    assert methods["VGEN-MATERIAL-RESPONSIBILITY"]["requires"] == base
+    assert methods["VGEN-SEEDANCE25-CONTROLS"]["requires"] == {**base, "request.selected_video_model.id": "seedance2.5"}
+    assert methods["VGEN-CREATOR-POLISHING-MASK-USE"]["requires"] == {**base, "request.product_id": "creator-polishing-mask-2"}
     assert "seedance2.5" in methods["VGEN-SEEDANCE25-CONTROLS"]["direct_read_when"]
     assert "造物者抛光面膜" in methods["VGEN-CREATOR-POLISHING-MASK-USE"]["direct_read_when"]
     assert "optional_experience_scopes" not in profile
@@ -158,3 +162,31 @@ def test_required_method_rejects_paths_outside_vault(tmp_path: Path, relative: s
     profile["professional_methods"][0]["path"] = relative
     with pytest.raises(MethodDocumentError):
         resolve_method_documents(tmp_path / "vault", profile, {"skill": "voiceover-to-video-script"})
+
+
+def test_shared_method_bindings_have_consistent_machine_gates() -> None:
+    root = Path(__file__).resolve().parents[2]
+    gates: dict[str, list[tuple[str, set[str]]]] = {}
+    for profile_path in sorted((root / "skills").glob("*/knowledge-profile.json")):
+        profile = json.loads(profile_path.read_text(encoding="utf-8"))
+        for entry in profile.get("professional_methods", []):
+            request_keys = {k for k in entry.get("requires", {}) if k.startswith("request.")}
+            gates.setdefault(entry["id"], []).append((profile["skill"], request_keys))
+    offenders = {
+        method_id: bindings for method_id, bindings in gates.items()
+        if any(keys for _, keys in bindings) and any(not keys for _, keys in bindings)
+    }
+    assert offenders == {}
+
+
+def test_video_profile_gates_product_and_model_methods() -> None:
+    root = Path(__file__).resolve().parents[2]
+    profile = json.loads((root / "skills/voiceover-to-video-script/knowledge-profile.json").read_text(encoding="utf-8"))
+    vault = root / "knowledge/runtime"
+    base = {"skill": "voiceover-to-video-script", "direct_read": True}
+    bare = resolve_method_documents(vault, profile, dict(base))
+    assert {m.id for m in bare.required} == {"VGEN-PROMPT-FOUNDATION", "VGEN-MATERIAL-RESPONSIBILITY"}
+    with_product = resolve_method_documents(vault, profile, {**base, "request": {"product_id": "creator-polishing-mask-2"}})
+    assert {m.id for m in with_product.required} == {"VGEN-PROMPT-FOUNDATION", "VGEN-MATERIAL-RESPONSIBILITY", "VGEN-CREATOR-POLISHING-MASK-USE"}
+    with_model = resolve_method_documents(vault, profile, {**base, "request": {"selected_video_model": {"id": "seedance2.5"}}})
+    assert {m.id for m in with_model.required} == {"VGEN-PROMPT-FOUNDATION", "VGEN-MATERIAL-RESPONSIBILITY", "VGEN-SEEDANCE25-CONTROLS"}

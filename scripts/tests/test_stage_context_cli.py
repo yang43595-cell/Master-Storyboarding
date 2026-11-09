@@ -1483,3 +1483,81 @@ def test_video_links_active_recovery_without_reintroducing_prepare():
     text = (cli.ROOT / 'skills/voiceover-to-video-script/SKILL.md').read_text()
     assert 'knowledge-access.md#压缩后的主动恢复核对' in text
     assert '本 Skill 继续直接读取，不建 prepare 或阅读凭据' in text
+
+
+def test_cross_skill_registry_targets_exist_with_reasons():
+    for (skill, reference), reason in cli._CROSS_SKILL_READS.items():
+        assert reason.strip()
+        assert (cli.ROOT / reference).is_file(), f"{skill}: {reference}"
+    for (skill, trigger), references in cli._CROSS_SKILL_DEPENDENCIES.items():
+        assert (cli.ROOT / trigger).is_file(), f"{skill}: {trigger}"
+        for reference in references:
+            assert (cli.ROOT / reference).is_file(), f"{skill}: {reference}"
+
+
+def test_stage_sets_respect_skill_boundaries():
+    visual = cli.ROOT / 'docs/rules/visual-production.md'
+    seedance_package = cli.ROOT / 'skills/voiceover-to-video-script/references/seedance-delivery-package.md'
+    redframe = cli.ROOT / 'skills/_shared/redframe-operations.md'
+    web_modules = {(cli.ROOT / 'skills/asset-image-assistant/modules' / name).resolve() for name in
+                   ('library-mode.md', 'project-web-mode.md', 'web-input-contract.md')}
+    creative_branches = {(cli.ROOT / 'skills/creative-director/references' / name).resolve() for name in
+                         ('dialogue-legacy-workflows.md', 'knowledge-candidates.md')}
+    maintenance = cli.ROOT / 'skills/knowledge-maintainer/modules/maintenance-method.md'
+    # Multi-hop artifacts of the pre-boundary traversal: a foreign document's
+    # own links must never expand a stage set (foreign documents are leaves).
+    multihop = {
+        'asset-image-assistant': [
+            'skills/storyboard-planner/references/foundations/01_分镜与剪辑组织.md',
+            'skills/storyboard-planner/references/segment-sequence-method.md',
+            'skills/storyboard-planner/templates/专业影视分镜输出模板.md',
+            'skills/voiceover-to-video-script/modules/video-method.md',
+            'skills/voiceover-to-video-script/references/seedance-delivery-package.md',
+        ],
+        'storyboard-director': [
+            'skills/asset-image-assistant/modules/project-web-mode.md',
+            'skills/asset-image-assistant/references/01-style-master-guide.md',
+            'skills/storyboard-planner/references/visual-conception.md',
+        ],
+        'storyboard-planner': [
+            'skills/creative-director/references/dialogue-legacy-workflows.md',
+            'skills/creative-director/references/knowledge-candidates.md',
+        ],
+    }
+    expectations = {
+        'creative-director': False,
+        'storyboard-planner': True,
+        'blender-previs': True,
+        'asset-image-assistant': True,
+        'voice-reference-manager': True,
+        'storyboard-director': True,
+    }
+    for skill_name, expects_visual in expectations.items():
+        paths = cli._local_standard_documents(cli.ROOT / 'skills' / skill_name)
+        assert (visual in paths) is expects_visual, f"{skill_name} 的 visual-production 成员资格与边界表不符"
+        assert seedance_package not in paths, f"{skill_name} 串入 seedance 交付包（P4）"
+        assert redframe not in paths, f"{skill_name} 默认集合不应含 redframe-operations（仅显式选中才进）"
+        assert web_modules.isdisjoint(paths), f"{skill_name} 串入 Web 路由模块（定性排除）"
+        if skill_name != 'creative-director':
+            assert creative_branches.isdisjoint(paths), f"{skill_name} 串入编导分支文档（定性排除）"
+        for reference in multihop.get(skill_name, []):
+            assert (cli.ROOT / reference).resolve() not in paths, f"{skill_name} 串入多跳文档：{reference}"
+    planner = cli._local_standard_documents(cli.ROOT / 'skills/storyboard-planner')
+    assert maintenance in planner, "导演必读集应含登记共读的 maintenance-method（Q1）"
+    creative = cli._local_standard_documents(cli.ROOT / 'skills/creative-director')
+    assert maintenance not in creative, "编导未选中候选分支时不应含 maintenance-method"
+
+
+def test_explicit_reference_cannot_admit_seedance_delivery_package():
+    reference = 'skills/voiceover-to-video-script/references/seedance-delivery-package.md'
+    for skill_name in ('creative-director', 'storyboard-planner', 'asset-image-assistant'):
+        skill = cli.ROOT / 'skills' / skill_name
+        with pytest.raises(cli.StageContextError, match='voiceover 内部交付合同'):
+            cli._local_standard_documents(skill, {'local_references': [reference]})
+
+
+def test_voiceover_keeps_own_delivery_package():
+    reference = 'skills/voiceover-to-video-script/references/seedance-delivery-package.md'
+    skill = cli.ROOT / 'skills/voiceover-to-video-script'
+    selected = cli._local_standard_documents(skill, {'local_references': [reference]})
+    assert (cli.ROOT / reference).resolve() in {path.resolve() for path in selected}
