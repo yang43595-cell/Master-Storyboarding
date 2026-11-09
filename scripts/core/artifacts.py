@@ -583,6 +583,15 @@ def dependency_closure(manifest: dict[str, Any], roots: set[str], *, unchanged_e
     return impacted
 
 
+def stamp_user_approval(entry: dict[str, Any], approval_ref: str) -> dict[str, Any]:
+    """给非正式稿件条目盖用户批准戳：旗与凭据必须同写，缺凭据不许盖旗。"""
+    if not str(approval_ref or "").strip():
+        raise ValueError("user_approved 盖戳必须提供 approval_ref 凭据")
+    entry["user_approved"] = True
+    entry["confirmation_ref"] = approval_ref
+    return entry
+
+
 @project_locked
 def register_workspace_artifact(project_root: Path, artifact: dict[str, Any]) -> dict[str, Any]:
     """登记一个新产物（默认 candidate）。不覆盖用户已有确认，不删除任何文件。"""

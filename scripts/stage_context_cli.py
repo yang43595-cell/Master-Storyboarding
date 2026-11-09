@@ -985,14 +985,52 @@ def _recovery_check_text() -> str:
     return match.group(0).rstrip()
 
 
+# Cross-Skill reading registry (必读集边界规范 P5; approved by the user on
+# 2026-11-09 after the BUG-3 review). A document owned by another Skill may
+# enter a stage's standard set only through an entry here, and only as a
+# leaf: its own outbound links never expand the set. Unregistered cross-Skill
+# links are skipped silently (blocked is not missing, P7); a registered
+# target that does not exist fails closed like any required standard.
+_CROSS_SKILL_READS: dict[tuple[str, str], str] = {
+    ("storyboard-planner", "skills/knowledge-maintainer/modules/maintenance-method.md"):
+        "导演阶段沿用知识维护方法，既有测试断言其在导演必读集内；2026-11-09 用户审定保留并登记（规范 Q1）。",
+}
+
+# Registered dependencies: when the trigger document is in the set, the
+# listed foreign documents follow as leaves.
+_CROSS_SKILL_DEPENDENCIES: dict[tuple[str, str], tuple[str, ...]] = {
+    ("creative-director", "skills/creative-director/references/knowledge-candidates.md"):
+        ("skills/knowledge-maintainer/modules/maintenance-method.md",),
+}
+
+
+def _registered_read_path(reference: str) -> Path | None:
+    """Resolve a registry target. Missing target file fails closed when the
+    target Skill exists in this repository; a repository that does not carry
+    the target Skill at all (synthetic test roots) simply has no such read."""
+    path = (ROOT / reference).resolve()
+    if path.is_file():
+        return path
+    if (ROOT / "skills" / Path(reference).parts[1]).is_dir():
+        raise StageContextError(f"跨 Skill 登记共读目标缺失：{reference}")
+    return None
+
+
 def _local_standard_documents(skill_dir: Path, request: dict[str, Any] | None = None) -> list[Path]:
     """Freeze applicable contracts plus exact linked dependencies.
 
     Unknown conditions retain the conservative local set. References for
     explicitly selected branches do not become mandatory through links alone.
+    Link traversal never crosses a Skill boundary (P2): a document owned by
+    another Skill enters only via _CROSS_SKILL_READS, _CROSS_SKILL_DEPENDENCIES
+    or an explicit local_references selection, and then only as a leaf.
     """
     request = request or {}
     excluded: set[Path] = set()
+    # Web-route modules are entry-specific by nature, not by calling stage:
+    # no prepare set may contain them, whichever stage is being prepared (P6).
+    excluded.update((ROOT / "skills/asset-image-assistant/modules" / name).resolve() for name in
+                    ("library-mode.md", "project-web-mode.md", "web-input-contract.md"))
     if skill_dir.name == "asset-image-assistant":
         # The Skill explicitly replaces prepare with bounded Web reading in
         # both Web modes. Those route-only modules cannot govern this entry.
@@ -1031,6 +1069,13 @@ def _local_standard_documents(skill_dir: Path, request: dict[str, Any] | None = 
             raise StageContextError(f"本轮本地规范不存在、为空或越出仓库：{reference}")
         if path in excluded:
             raise StageContextError(f"本地规范与当前普通 prepare 入口或 asset_method_scopes 不一致：{reference}；先核对实际入口和类别。")
+        # Nature-excluded contracts stay out through every channel (P4): the
+        # Seedance delivery package is voiceover's internal contract, read
+        # through its own direct-read entry; for any other stage an explicit
+        # local_references selection does not admit it either.
+        if (skill_dir.name != "voiceover-to-video-script"
+                and path == (ROOT / "skills/voiceover-to-video-script/references/seedance-delivery-package.md").resolve()):
+            raise StageContextError(f"本地规范是 voiceover 内部交付合同、不进其他阶段的 prepare 集：{reference}")
         local.append(path)
     if skill_dir.name == "creative-director":
         legacy = (skill_dir / "references/dialogue-legacy-workflows.md").resolve()
@@ -1056,7 +1101,14 @@ def _local_standard_documents(skill_dir: Path, request: dict[str, Any] | None = 
     # RedFrame instructions apply only when referenced by the task or Skill.
     shared = sorted(_local_knowledge_path(path) for path in shared_root.glob("*.md")
                     if path.name != "redframe-operations.md")
-    seen: set[Path] = set([*local, *shared])
+    leaf_paths: set[Path] = set()
+    is_repository_skill = skill_dir.resolve() == (ROOT / "skills" / skill_dir.name).resolve()
+    for (registered_skill, registered_reference) in _CROSS_SKILL_READS:
+        if registered_skill == skill_dir.name and is_repository_skill:
+            registered_path = _registered_read_path(registered_reference)
+            if registered_path is not None:
+                leaf_paths.add(registered_path)
+    seen: set[Path] = set([*local, *shared, *leaf_paths])
     visited: set[Path] = set()
     pending = [_local_knowledge_path(ROOT / "PROJECT_RULES.md"), *local, *shared]
     while pending:
@@ -1066,10 +1118,20 @@ def _local_standard_documents(skill_dir: Path, request: dict[str, Any] | None = 
         visited.add(document)
         if document.suffix != ".md":
             continue
+        skills_root = (ROOT / "skills").resolve()
+        document_owner = (document.relative_to(skills_root).parts[0]
+                          if document.is_relative_to(skills_root) else None)
+        if document_owner is not None and document_owner not in {skill_dir.name, "_shared"}:
+            continue
         text = _local_knowledge_path(document).read_text(encoding="utf-8")
         references = re.findall(r"(?:skills/|\.\./)*_shared/[A-Za-z0-9_-]+\.md", text)
         if document.parent == shared_root:
             references.extend(re.findall(r"\]\(([A-Za-z0-9_-]+\.md)(?=[#)])", text))
+        # Like the seed glob above, RedFrame instructions are not pulled in
+        # by mere mention; they enter only via an explicit local_references
+        # selection for this task.
+        references = [reference for reference in references
+                      if Path(reference).name != "redframe-operations.md"]
         dependencies = []
         for reference in references:
             path = _local_knowledge_path(shared_root / Path(reference).name)
@@ -1096,6 +1158,22 @@ def _local_standard_documents(skill_dir: Path, request: dict[str, Any] | None = 
                         and not linked.is_relative_to(skill_dir.resolve())
                         and linked.parent != shared_root):
                     continue
+                # Boundary gate (P2, spec §4.1 equivalent form): outbound
+                # links are followed only from first-party documents (this
+                # Skill's own documents and _shared). A first-party link into
+                # another Skill declares that dependency; the foreign document
+                # then enters as a leaf whose own links never expand the set.
+                if (target is not None and target.is_relative_to(skills_root)
+                        and target.relative_to(skills_root).parts[0] not in {skill_dir.name, "_shared"}
+                        and document_owner not in {skill_dir.name, "_shared"}):
+                    continue
+                # The Seedance delivery package is voiceover's internal
+                # contract, governed by its direct-read list; it never enters
+                # a prepare set (P4), not even via a _shared reference.
+                if target == (ROOT / "skills/voiceover-to-video-script/references/seedance-delivery-package.md").resolve():
+                    continue
+                if target == (shared_root / "redframe-operations.md").resolve():
+                    continue
                 is_rule = any(path.is_relative_to((ROOT / "docs/rules").resolve()) for path in choices)
                 if (target is None and not any(path in excluded for path in choices)
                         and (is_rule or {"references", "modules", "templates", "schemas"}.intersection(Path(reference).parts))):
@@ -1107,6 +1185,12 @@ def _local_standard_documents(skill_dir: Path, request: dict[str, Any] | None = 
             if path not in seen:
                 seen.add(path)
                 pending.append(path)
+    for (dependency_skill, trigger_reference), dependency_references in _CROSS_SKILL_DEPENDENCIES.items():
+        if dependency_skill == skill_dir.name and is_repository_skill and (ROOT / trigger_reference).resolve() in seen:
+            for dependency_reference in dependency_references:
+                dependency_path = _registered_read_path(dependency_reference)
+                if dependency_path is not None:
+                    seen.add(dependency_path)
     return sorted(seen)
 
 

@@ -20,7 +20,7 @@
         "method_version": "2026-11-05",
         "method_sha256": "a265ce76baa27427f84a8c068e3f9c25e64db6ad1dc3fc5b040e0171142d39b6",
         "scope": "仅 voiceover-to-video-script：统一一个主职责与相容附加用途，有风险或边界不清才补解释；区分候选拟传与实传事实；保留真实素材、来源及冲突检查，未做生成效果实验。",
-        "source_ref": "docs/reviews/2026-11-05-video-prompt-skill-correction.md；本仓库内置方法修订，未同步外部 Vault。",
+        "source_ref": "docs/archive/reviews/2026-11-05-video-prompt-skill-correction.md；本仓库内置方法修订，未同步外部 Vault。",
         "user_instruction_ref": "2026-11-05 当前对话：用户在十项视频提示词 Skill 优化建议后要求“出一个详细的修正方案，然后执行”；授权实施这些修正，不表示已逐字审阅最终稿。",
         "conflict_resolution": "相容多用途不要求拆图或解释不能拆分原因；不相容的身份、年龄、衣装、空间或动作相位仍须先解决；不改变其他方法的批准依据。",
         "rollback": "从版本历史恢复原 2026-09-10 方法、匹配的 knowledge-profile.json 与 knowledge/manifest.json；保留本轮维护记录，不改历史批准事实。",
@@ -38,7 +38,7 @@
       "binding_status": "user_confirmed",
       "direct_read_when": "本轮模型为 seedance2.5 时",
       "applies_when": "当前直读视频提示词流程",
-      "requires": {"skill": "voiceover-to-video-script", "direct_read": true}
+      "requires": {"skill": "voiceover-to-video-script", "direct_read": true, "request.selected_video_model.id": "seedance2.5"}
     },
     {
       "id": "VGEN-CREATOR-POLISHING-MASK-USE",
@@ -46,7 +46,7 @@
       "binding_status": "user_confirmed",
       "direct_read_when": "明确选用造物者温泉酸面膜，即造物者抛光面膜（温泉酸 2.0，creator-polishing-mask-2）时，读取同一方法的「可直接套用的制作模板」及当前展示或真实使用适用部分",
       "applies_when": "当前直读视频提示词流程",
-      "requires": {"skill": "voiceover-to-video-script", "direct_read": true}
+      "requires": {"skill": "voiceover-to-video-script", "direct_read": true, "request.product_id": "creator-polishing-mask-2"}
     }
   ]
 }

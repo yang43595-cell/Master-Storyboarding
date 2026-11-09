@@ -1,6 +1,8 @@
 # 项目蓝图（北星文档）
 
-> 这个项目的「为什么 + 往哪走」。**做任何改动、加任何东西之前，先读这一份**；它和 `PROJECT_RULES.md` 的「方向」段一致，是更高一层的展开。
+> 这个项目的「为什么 + 往哪走」：方向与取舍的参考图，**不是规则正文，也不是开工必读清单**。
+> 进入项目的读取顺序以 `AGENTS.md` 为准：先读 `PROJECT_RULES.md` 与目标 Skill 的 `SKILL.md`。本蓝图只在需要展开「方向」时对照阅读；与 `PROJECT_RULES.md` 不一致时，以 `PROJECT_RULES.md` 及其链接细则为准。
+> 流程与执行分工不在本蓝图维护正文：默认流程见 `PROJECT_RULES.md`「网站审核到画布的统一入口」，执行分工见 `docs/rules/execution.md`「Skill 执行分工」。
 
 ## 一、这是什么
 
@@ -10,7 +12,7 @@
 
 ## 二、核心（拍片之路，永远优先保留）
 
-每一步由当前主 agent 直接执行一个 Skill 并自检；按需独立审核，执行分工以 `PROJECT_RULES.md` 为准。
+执行分工不在本蓝图复述：每一步由谁执行、如何自查，以 `docs/rules/execution.md`「Skill 执行分工」为准；本节只列步骤与产出。
 
 | 步 | Skill | 产出 |
 |---|---|---|
@@ -21,25 +23,25 @@
 | 4 | `asset-image-assistant` 资产 | 人物/场景/道具/产品母版图 |
 | 5 | `voice-reference-manager` 声音（可选·已有导入/绑定 CLI，按当前输入验收） | 声音参考库 |
 | 6 | `storyboard-director` 画面（按需） | 正式分镜图 |
-| 7 | `voiceover-to-video-script` 成片 | 已确认导演包、原文对白与真实素材 → 完整分段 Markdown 提示词 → Seedance |
+| 7 | `voiceover-to-video-script` 视频脚本 | 已确认导演包、原文对白与真实素材 → 完整分段 JSON 提示词（Markdown 按需导出） → 画布草稿（由你点击生成） |
 
-- **每步之间**：除 `voiceover-to-video-script` 外使用 `stage_context_cli` 的 `prepare` / `review-pack` / `handoff` / `validate`；视频提示词按其 Skill 入口直接读取和自查。
-- **生产与审核**：主 agent 直接产出并自检；只有用户明确要求时才启动空白独立审核，返修回当前执行者，复审回原审核者。你确认且明确继续后进入下一阶段。
+- **每步之间**：除 `voiceover-to-video-script` 外使用 `stage_context_cli` 的 `prepare` / `ensure-prepared` / `review-pack` / `handoff` / `validate`（入口全集以 `PROJECT_RULES.md`「工作边界」为准）；视频提示词按其 Skill 入口直接读取和自查。
+- **生产与审核**：默认流程（哪些阶段走网站人工审核、通过后如何流转、完成点在哪）以 `PROJECT_RULES.md`「网站审核到画布的统一入口」为准，不在本蓝图复述；独立审核只在用户明确要求时启动，返修回当前执行者，复审回原审核者。
 
 ### 运行流程（一图看懂）
 
 ```mermaid
 flowchart TD
-    YOU[你 · 终审] --> GO[主 agent]
-    GO --> WORK[直接做这一步并自检]
-    WORK --> DRAFT[出一份草稿]
-    DRAFT --> DECIDE{用户明确要求独立审核？}
-    DECIDE -->|需要| CHECK[空白只读审查员核对]
-    CHECK -->|发现问题| WORK
-    CHECK -->|完成| YOU
-    DECIDE -->|不需要| YOU
-    YOU -->|确认 → 进入下一步| NEXT[下一步]
-    YOU -->|要改 → 退回重做| WORK
+    YOU[你 · 开工确认 / 网站人审] --> LEAD[主对话 · 协调与检查]
+    LEAD --> PROD[专属生产 agent · 做这一步并自检]
+    PROD --> DRAFT[出一份候选]
+    DRAFT --> GATE{这一步走网站人审？}
+    GATE -->|编导稿 / 资产图| YOU
+    GATE -->|其余阶段| SELF[执行者自查后继续]
+    YOU -->|网站通过 = 确认并继续| NEXT[下一步]
+    YOU -->|要改 → 退回重做| PROD
+    SELF --> NEXT
+    NEXT --> CANVAS[完成点：画布草稿 · 由你点击生成]
 ```
 
 > 一大步怎么切成上面这几步、每一部的产出是什么，见上方**步骤表**；每个 Skill 的具体职责与产出见 `skills/<skill>/SKILL.md`。
@@ -69,7 +71,7 @@ flowchart TD
 - 死脚本 + `scene_topology` 引擎 + `core/archive`、2 个一次性脚本。
 - 历史上删除了 29 个冗余测试、保留 8 个核心；该数量是历史记录，不是后续上限。
 - `sync-log`、死模板、`visual-benchmarks`、13 个空 `references` 脚手架。
-- 治理规范细节 + 生产/空白对话分割的繁文缛节（安全红线和原生空白子 agent 隔离保留，见 `PROJECT_RULES.md` 的执行分工）。
+- 治理规范细节 + 生产/空白对话分割的繁文缛节（安全红线和原生空白子 agent 隔离保留，见 `docs/rules/execution.md` 的执行分工）。
 
 ## 六、安全红线（保护你的东西）
 
@@ -77,7 +79,7 @@ flowchart TD
 
 ## 七、怎么用这份蓝图
 
-- 想改 / 加东西：第一件事读它，按「三、边界」「四、决策标准」判断。
-- **技术决策记录见 [docs/decisions.md](decisions.md)**：记的是"为什么这么定 + 否掉了什么"，改动前和蓝图一起读，避免走回头路 / 重新发明。
+- 想改 / 加东西：先按 `PROJECT_RULES.md` 判断能不能做，再用本蓝图「三、边界」「四、决策标准」对照方向与取舍。
+- **技术决策记录见 [docs/decisions.md](decisions.md)**：记的是"为什么这么定 + 否掉了什么"，是历史与理由参考，查阅可避免走回头路 / 重新发明；其中条目与现行规则冲突时以现行规则为准（条目末尾有现行状态注的以注为准）。
 - 它和 PROJECT_RULES「方向」段一致；本蓝图是更详细的一张图。
 - **你（唯一用户）有最终决定权。** 蓝图帮你和 AI 保持同一条线，不替你拍板。
