@@ -260,4 +260,6 @@ python scripts/stage_context_cli.py accept-artifact \
 
 ## 画布排版文件
 
+红帧另有按用户 2026-11-12 要求复制的[模块及行列规则](../../skills/voiceover-to-video-script/references/redframe-canvas-layout.md)，经[红帧操作](../../skills/_shared/redframe-operations.md#画布排版)读取；卡住报错先刷新，再确认保存状态后重试。
+
 现行规则在 [素材与提交交付](../../skills/voiceover-to-video-script/references/seedance-delivery-package.md)：小云雀和红帧分别说明按场景／片段排序、参考／草稿／已有结果分组、节点对齐与间距、避免遮挡、保存后刷新及全景／关键细节截图。未找到固定坐标、列宽或现成自动布局模板；正文模板用于提示词组织，不能当作画布布局模板。
