@@ -28,6 +28,29 @@ def _dialogue_comparison_text(text):
                    if not unicodedata.category(c).startswith('P') or significant(i, c))
 
 
+def _validate_promotion_dialogue(narrative, project_root):
+    from .project_kickoff import load_kickoff
+
+    kickoff = load_kickoff(project_root)
+    product = kickoff["product"] if kickoff else {}
+    if "promotion_copy" not in product:
+        return
+    wording = product.get("promotion_dialogue", product["promotion_copy"])
+    expected = _dialogue_comparison_text(wording)
+    rows = narrative["dialogues"]
+    for start, first in enumerate(rows):
+        spoken = ""
+        for row in rows[start:]:
+            if row["speaker_id"] != first["speaker_id"]:
+                break
+            spoken += _dialogue_comparison_text(row["text"])
+            if spoken == expected and expected:
+                return
+            if not expected.startswith(spoken):
+                break
+    raise ValueError(f"编导对白缺少同一说话人连续说出的项目确认活动口播：{wording}")
+
+
 def _origin(row):
     """Origin is provenance, never an approval or audio verification."""
     value = row.get('origin')
@@ -430,6 +453,7 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
                            candidate_source_evidence: str | None = None,
                            require_dialogue_evidence: bool = False,
                            require_character_output: bool = False,
+                           require_promotion_dialogue: bool = False,
                            review_ready: bool = False,
                            narrative_path: Path | None = None,
                            exact_human_approval: bool = False) -> dict | None:
@@ -543,6 +567,8 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
         if len({item[key] for item in narrative[collection]}) != len(narrative[collection]):
             raise ValueError('重复编号：' + key)
     validate_body_dialogues(narrative)
+    if (review_ready or require_promotion_dialogue) and project_root is not None:
+        _validate_promotion_dialogue(narrative, project_root)
     if not narrative.get('human_readable_path'):
         for item in narrative['asset_requirements']:
             if not item.get('image_decision') or not str(item.get('image_reason') or '').strip():

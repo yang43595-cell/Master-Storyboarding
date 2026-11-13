@@ -101,7 +101,7 @@ def test_native_parameter_type_change_is_not_equal():
 
 
 def test_frozen_delivery_cannot_override_project_kickoff(tmp_path):
-    from scripts.tests.test_delivery_preflight import bind_synthetic_quality, delivery
+    from scripts.tests.test_delivery_preflight import bind_synthetic_quality, bind_synthetic_canvas, delivery
 
     frozen, observed = delivery(tmp_path)
     canvas = {"platform": "redframe", "model": "fixture", "aspect_ratio": "9:16",
@@ -109,7 +109,7 @@ def test_frozen_delivery_cannot_override_project_kickoff(tmp_path):
     for row, readback in zip(frozen["drafts"], observed["drafts"]):
         row["parameters"].update(model="fixture", aspect_ratio="9:16", resolution="720p")
         readback["parameters"] = copy.deepcopy(row["parameters"])
-    bind_synthetic_quality(tmp_path, frozen)
+    bind_synthetic_canvas(tmp_path, frozen, observed)
     observed["frozen_sha256"] = digest(frozen)
     write_json(tmp_path / REQUEST_PATH, {"kickoff": {
         "decision_ref": "synthetic fixture", "product": {"mode": "none"}, "canvas": canvas}})
@@ -126,7 +126,7 @@ def test_frozen_delivery_cannot_override_project_kickoff(tmp_path):
 @pytest.mark.parametrize("kickoff_bound", [False, True])
 @pytest.mark.parametrize("text_only", [False, True])
 def test_formal_readback_checks_declared_project_id(tmp_path, kickoff_bound, text_only):
-    from scripts.tests.test_delivery_preflight import bind_synthetic_quality, delivery
+    from scripts.tests.test_delivery_preflight import bind_synthetic_quality, bind_synthetic_canvas, delivery
 
     frozen, observed = delivery(tmp_path)
     frozen["target_project_id"] = "confirmed-project"
@@ -146,7 +146,10 @@ def test_formal_readback_checks_declared_project_id(tmp_path, kickoff_bound, tex
             readback["parameters"] = copy.deepcopy(row["parameters"])
         write_json(tmp_path / REQUEST_PATH, {"kickoff": {
             "decision_ref": "synthetic fixture", "product": {"mode": "none"}, "canvas": canvas}})
-    bind_synthetic_quality(tmp_path, frozen)
+    if kickoff_bound:
+        bind_synthetic_canvas(tmp_path, frozen, observed)
+    else:
+        bind_synthetic_quality(tmp_path, frozen)
     observed["frozen_sha256"] = digest(frozen)
     with pytest.raises(ValueError, match="readback project differs"):
         compare(frozen, observed, tmp_path)

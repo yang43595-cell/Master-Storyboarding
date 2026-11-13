@@ -7,6 +7,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
+import re
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -55,6 +57,93 @@ def rows_by_id(rows: list) -> dict:
             raise ValueError('missing or duplicate exact draft node_id')
         result[node_id] = row
     return result
+
+
+def validate_canvas_inputs(row: dict) -> None:
+    """Check declared graph/slot uses in the existing draft, without UI access."""
+    media, refs = row.get('ordered_media'), row.get('reference_checks')
+    if not isinstance(media, list) or not isinstance(refs, list) or len(media) != len(refs):
+        raise ValueError('canvas inputs require one reference check per actual slot')
+    expected_edges, expected_sources, uses = [], {}, set()
+    for slot, (native, ref) in enumerate(zip(media, refs), 1):
+        binding = ref.get('canvas_binding')
+        if (not isinstance(binding, dict) or binding.get('mode') not in {'edge', 'direct'}
+                or not isinstance(binding.get('purpose'), str) or not binding['purpose'].strip()
+                or type(binding.get('prompt_reference')) is not bool):
+            raise ValueError(f'canvas slot {slot}: exact binding mode, purpose and prompt_reference required')
+        use = (ref.get('sha256'), binding['purpose'].strip())
+        if use in uses:
+            raise ValueError(f'canvas slot {slot}: duplicate same-purpose media slot')
+        uses.add(use)
+        if not binding['prompt_reference'] and (not isinstance(binding.get('unmentioned_reason'), str)
+                                                or not binding['unmentioned_reason'].strip()):
+            raise ValueError(f'canvas slot {slot}: unmentioned input needs its actual purpose/reason')
+        if binding['mode'] == 'direct':
+            if ref.get('product_reference') or 'action' in ref.get('roles', [ref.get('role')]):
+                raise ValueError('canvas product/action reference requires an independent source node and edge')
+            if 'source_port' in binding or 'target_port' in binding:
+                raise ValueError('direct input cannot declare graph ports')
+            continue
+        if any(not isinstance(binding.get(key), str) or not binding[key].strip()
+               for key in ('source_port', 'target_port')):
+            raise ValueError(f'canvas slot {slot}: exact source and target ports required')
+        if native.get('reference_port', binding['source_port']) != binding['source_port']:
+            raise ValueError('canvas source port differs from native reference port')
+        if native.get('node_id') == row['node_id']:
+            raise ValueError('canvas edge requires an independent source node')
+        edge = dict(source_node_id=native['node_id'], source_port=binding['source_port'],
+                    target_node_id=row['node_id'], target_port=binding['target_port'], slot=slot)
+        expected_edges.append(edge)
+        source = dict(node_id=native['node_id'], port=binding['source_port'], sha256=ref['sha256'])
+        source_key = (source['node_id'], source['port'])
+        if source_key in expected_sources and expected_sources[source_key] != source:
+            raise ValueError('canvas source node/port names conflicting file bytes')
+        expected_sources[source_key] = source
+    for field, expected in (('edges', expected_edges), ('source_nodes', list(expected_sources.values()))):
+        actual = row.get(field)
+        if not isinstance(actual, list) or sorted(map(digest, actual)) != sorted(map(digest, expected)):
+            raise ValueError(f'canvas {field}: missing, extra or conflicting source/edge')
+    # Read actual ranges from the submitted body, not a second timing ledger.
+    number = r'\d+(?:\.\d+)?'
+    ranges = re.findall(rf'(?<![\d.])({number})\s*(?:秒|s)?\s*[-–—~～至到]\s*({number})\s*(?:秒|s)(?![a-z])',
+                        row.get('prompt', ''), flags=re.IGNORECASE)
+    shots = row.get('shot_durations')
+    if not ranges or not isinstance(shots, list) or len(ranges) != len(shots):
+        raise ValueError('canvas prompt timeline needs one explicit seconds range per shot')
+    cursor = 0.0
+    for (start, end), seconds in zip(ranges, shots):
+        start, end = float(start), float(end)
+        if (type(seconds) not in (int, float) or not math.isfinite(seconds)
+                or seconds <= 0 or end <= start or not math.isclose(start, cursor, abs_tol=0.01)
+                or not math.isclose(end - start, seconds, abs_tol=0.01)):
+            raise ValueError('canvas prompt timeline conflicts with shot_durations')
+        cursor = end
+    parameters = row.get('parameters', {})
+    duration = parameters.get('duration', parameters.get('duration_seconds'))
+    if (type(duration) not in (int, float) or not math.isfinite(duration)
+            or not math.isclose(cursor, duration, abs_tol=0.01)):
+        raise ValueError('canvas prompt end conflicts with total duration')
+
+
+def compare_baseline(baseline: dict, current: dict) -> dict:
+    """Compare two collected whole-node readings before any scoped update."""
+    if (baseline.get('phase') != 'after_refresh' or current.get('phase') != 'before_write'
+            or target_url(baseline['target_url']) != target_url(current['target_url'])
+            or baseline.get('target_project_id') != current.get('target_project_id')):
+        raise ValueError('baseline requires exact target and after_refresh/before_write readings')
+    expected, actual = rows_by_id(baseline['drafts']), rows_by_id(current['drafts'])
+    for row in [*expected.values(), *actual.values()]:
+        if not isinstance(row.get('edges'), list) or not isinstance(row.get('source_nodes'), list):
+            raise ValueError('baseline requires collected edges and source_nodes lists')
+        if (not isinstance(row.get('prompt'), str) or not row['prompt'].strip()
+                or not isinstance(row.get('parameters'), dict) or not row['parameters']
+                or not isinstance(row.get('ordered_media'), list)
+                or not isinstance(row.get('native_mentions'), list)):
+            raise ValueError('baseline requires complete collected node fields')
+    changed = sorted(node for node in expected.keys() | actual.keys()
+                     if digest(expected.get(node)) != digest(actual.get(node)))
+    return dict(ok=not changed, changed_node_ids=changed, baseline_sha256=digest(baseline),
+                current_sha256=digest(current), scope='collected whole nodes before write')
 
 
 def _port_expected(frozen, row, ref, media, slot):
@@ -142,7 +231,7 @@ def preview_scope(frozen: dict, project: Path, *, json_projections=None, context
     for row in scoped_rows:
         if set(row) - {'node_id','prompt','parameters','duration_bounds','shot_durations',
                       'native_entity_type','native_identity_mode','state_control','required_entities','required_reference_roles',
-                      'ordered_media','reference_checks','continuity','timing_scope','source_shot_ids','source_shots','source_segment_id','quality_evidence','native_binding'}:
+                      'ordered_media','reference_checks','continuity','timing_scope','source_shot_ids','source_shots','source_segment_id','quality_evidence','native_binding','edges','source_nodes'}:
             raise ValueError('unknown preview draft execution fields')
         if set(row['parameters']) - {'duration','duration_seconds','aspect','aspect_ratio','ratio','resolution','model','reference_mode','mode'}:
             raise ValueError('unknown preview parameters; generation controls are forbidden')
@@ -455,6 +544,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         from core.prompt_body import generated_overlay_issues
     host = (urlsplit(target_url(frozen['target_url'])).hostname or '').lower()
     xiaoyunque = host in {'xiaoyunque.com', 'www.xiaoyunque.com', 'xyq.jianying.com'}
+    redframe = host == 'redframe-ai.xmpaohong.com' or bool(canvas and canvas.get('platform') == 'redframe')
     for row in rows_by_id(frozen['drafts']).values():
         if canvas:
             params = row.get("parameters", {})
@@ -658,6 +748,8 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         if 'timing_scope' in row and (not private_preview or row['timing_scope'] != 'segment_total_only'):
             raise ValueError('only private preview may explicitly declare segment-total timing without a shot schedule')
         validate_shot_durations(row, row['parameters'])
+        if redframe or 'edges' in row or 'source_nodes' in row:
+            validate_canvas_inputs(row)
         media, refs = row.get('ordered_media'), row.get('reference_checks')
         if not isinstance(media, list) or not isinstance(refs, list) or len(refs) != len(media):
             raise ValueError('every uploaded media needs one explicit role/authority check in actual order')
@@ -861,6 +953,8 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             'dependency_checks': dependencies,
             'endpoint_control_checks': endpoint_control_checks,
             'predecessor_context_nodes': list(context_scopes),
+            'canvas_input_checks': {row['node_id']: ('passed' if redframe or 'edges' in row else 'not_checked')
+                                    for row in frozen['drafts']},
             'quality_evidence_checks': 'image_evidence_only_not_draft_release' if private_preview else 'evidence_consistency_only',
             'packaging_checks': 'not_checked' if private_preview else 'declared_scope_and_evidence_consistency_only',
             'native_refresh_binding': 'not_checked',
@@ -900,12 +994,14 @@ def compare(frozen: dict, observed: dict, project: Path | None = None, *, privat
         if observed.get('cleanup_results') != expected_cleanup:
             differences.append({'field': 'cleanup_results', 'expected': expected_cleanup})
     native_reference_checks = {}
+    canvas_input_checks = {}
     endpoint_control_checks = {}
     if set(actual) != set(expected):
         differences.append({'field': 'node_ids', 'missing': sorted(set(expected)-set(actual)),
                             'extra': sorted(set(actual)-set(expected))})
     for node_id, row in expected.items():
         got = actual.get(node_id, {})
+        canvas_input_checks[node_id] = 'not_checked'
         identity_mode = row.get('native_identity_mode', 'media_id')
         if not isinstance(identity_mode, str) or identity_mode not in {'media_id', 'node_port_download', 'first_last_frame_download'}:
             raise ValueError('unsupported native_identity_mode')
@@ -920,6 +1016,16 @@ def compare(frozen: dict, observed: dict, project: Path | None = None, *, privat
                 differences.append({'node_id': node_id, 'field': field,
                                     'expected_sha256': digest(value),
                                     'observed_sha256': digest(got[field]) if field in got else None})
+        for field in ('edges', 'source_nodes'):
+            if field in row:
+                expected_graph = sorted(map(digest, row[field]))
+                observed_graph = sorted(map(digest, got[field])) if isinstance(got.get(field), list) else None
+                if observed_graph != expected_graph:
+                    differences.append({'node_id': node_id, 'field': field,
+                                        'expected_sha256': digest(expected_graph),
+                                        'observed_sha256': digest(observed_graph)})
+        if project is not None and 'edges' in row:
+            canvas_input_checks[node_id] = 'passed'
         # Native rich-text entities are distinct evidence from plain prompt text
         # and media edges. Opt in per draft so historical/plain-text clients keep
         # their original comparison scope without claiming entity verification.
@@ -938,12 +1044,20 @@ def compare(frozen: dict, observed: dict, project: Path | None = None, *, privat
             if row['ordered_media'] and (not isinstance(entity_type, str) or not entity_type.strip()):
                 raise ValueError(f'incomplete frozen {node_id}: native_entity_type')
             mentions = got.get('native_mentions')
-            status = reference_readback_status(row['ordered_media'], mentions, entity_type, identity_mode)
+            mentioned_media = row['ordered_media']
+            if 'edges' in row:
+                mentioned_media = [media for media, ref in zip(row['ordered_media'], row['reference_checks'])
+                                   if ref['canvas_binding']['prompt_reference']]
+            status = reference_readback_status(mentioned_media, mentions, entity_type, identity_mode)
             native_reference_checks[node_id] = status
             if status == 'failed':
                 differences.append({'node_id': node_id, 'field': 'native_mentions',
                                     'expected_sha256': digest(row['ordered_media']),
                                     'observed_sha256': digest(mentions) if mentions is not None else None})
+    for difference in differences:
+        node = difference.get('node_id')
+        if node in canvas_input_checks and canvas_input_checks[node] == 'passed':
+            canvas_input_checks[node] = 'failed'
     return {'ok': not differences, 'scope': 'selected post-refresh editor fields only',
             'native_refresh_binding': 'selected_fields_match' if not differences else 'failed',
             'generation_authorization': 'not_checked', 'production_ready': False,
@@ -952,6 +1066,7 @@ def compare(frozen: dict, observed: dict, project: Path | None = None, *, privat
             'observed_sha256': digest(observed), 'differences': differences,
             **({'observed_target_project_id': observed['target_project_id']} if platform_project_id is not None else {}),
             'native_reference_checks': native_reference_checks,
+            'canvas_input_checks': canvas_input_checks,
             'endpoint_control_checks': endpoint_control_checks,
             'limitations': 'Evidence collector must actually refresh and read native editor values. '
                            'Native entity checks only cover explicitly requested drafts. '
@@ -970,11 +1085,38 @@ def main() -> int:
                         help='正式交付：强制当前项目与修订核验；不替代人工动作自查或生成授权')
     parser.add_argument('--package', type=Path, action='append', default=[], help='交付文件包时必传实际成品路径，可重复；严格检查实际字节')
     parser.add_argument('--max-package-bytes', type=int, default=19_000_000, help='每包字节数必须严格小于此值')
+    parser.add_argument('--baseline', type=Path, help='更新前最后可信的完整刷新回读')
+    parser.add_argument('--current', type=Path, help='写前实际完整节点回读，phase=before_write')
+    parser.add_argument('--usage-log', action='append')
+    parser.add_argument('--usage-turn-id')
+    parser.add_argument('--usage-boundaries-json')
+    parser.add_argument('--max-input', type=int)
+    parser.add_argument('--max-total', type=int)
+    parser.add_argument('--max-requests', type=int)
     args = parser.parse_args()
     if args.preflight and args.readback is not None:
         parser.error('--preflight only checks local inputs; use --readback without --preflight for actual binding comparison')
     try:
+        try:
+            from .session_usage import checkpoint
+        except ImportError:
+            from session_usage import checkpoint
+        usage = checkpoint(args)
+        if bool(args.baseline) != bool(args.current) or (args.baseline and not args.preflight):
+            raise ValueError('--baseline and --current must be paired in --preflight')
         frozen = json.loads(args.frozen.read_text(encoding='utf-8'))
+        baseline_check = None
+        if args.baseline:
+            baseline = json.loads(args.baseline.read_text(encoding='utf-8'))
+            current = json.loads(args.current.read_text(encoding='utf-8'))
+            if (target_url(current['target_url']) != target_url(frozen['target_url'])
+                    or current.get('target_project_id') != frozen.get('target_project_id')
+                    or set(rows_by_id(current['drafts'])) != set(rows_by_id(frozen['drafts']))):
+                raise ValueError('write baseline does not cover the exact frozen target/nodes')
+            baseline_check = compare_baseline(baseline, current)
+            if not baseline_check['ok']:
+                print(json.dumps({'ok': False, 'baseline_check': baseline_check}, ensure_ascii=False))
+                return 2
         if args.delivery or args.private_preview:
             if args.project is None:
                 raise ValueError('selected delivery/preview mode requires --project; legacy comparison is insufficient')
@@ -994,6 +1136,10 @@ def main() -> int:
             except ImportError:
                 from core.delivery_files import check_package_files
             result['packages'] = check_package_files(args.package, args.max_package_bytes)
+        if baseline_check is not None:
+            result['baseline_check'] = baseline_check
+        if usage is not None:
+            result['run_usage'] = usage
     except (ValueError, KeyError, TypeError, OSError, RuntimeError) as error:
         print(json.dumps({'ok': False, 'error': str(error)}, ensure_ascii=False))
         return 2

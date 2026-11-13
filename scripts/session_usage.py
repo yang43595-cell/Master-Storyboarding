@@ -16,6 +16,10 @@ FIELDS = ("input_tokens", "cached_input_tokens", "cache_write_input_tokens",
 
 def measure(logs: list[Path], turn_id: str, *, through_ordinal: int | None = None,
             after_response: str | None = None) -> dict[str, Any]:
+    if not isinstance(turn_id, str) or not turn_id.strip():
+        raise ValueError("计量须给出非空准确 turn_id。")
+    if through_ordinal is not None and (type(through_ordinal) is not int or through_ordinal < 0):
+        raise ValueError("through_ordinal 必须是非负整数。")
     records: dict[tuple[str, str], dict[str, Any]] = {}
     unknown: list[str] = []
     scanned = 0
@@ -33,11 +37,6 @@ def measure(logs: list[Path], turn_id: str, *, through_ordinal: int | None = Non
                     raise ValueError(f"损坏日志：{path}:{line_number}")
                 scanned += 1
                 ordinal = event.get("ordinal")
-                if through_ordinal is not None:
-                    if not isinstance(ordinal, int):
-                        continue
-                    if ordinal > through_ordinal:
-                        continue
                 payload = event.get("payload") or {}
                 kind = event.get("type")
                 if kind == "token_usage_record":
@@ -48,6 +47,12 @@ def measure(logs: list[Path], turn_id: str, *, through_ordinal: int | None = Non
                     continue
                 if record.get("turn_id") != turn_id:
                     continue
+                if through_ordinal is not None:
+                    if type(ordinal) is not int:
+                        unknown.append(f"missing_usage_ordinal:{path.name}:{line_number}")
+                        continue
+                    if ordinal > through_ordinal:
+                        continue
                 response = record.get("response_id")
                 thread = record.get("thread_id")
                 if not response or not thread:
@@ -61,6 +66,13 @@ def measure(logs: list[Path], turn_id: str, *, through_ordinal: int | None = Non
                 if values["input_tokens"] is not None and values["cached_input_tokens"] is not None:
                     if values["cached_input_tokens"] > values["input_tokens"]:
                         raise ValueError(f"缓存输入超过输入：{response}")
+                required = ("input_tokens", "cached_input_tokens", "output_tokens", "total_tokens")
+                if (all(values[field] is not None for field in required)
+                        and values["total_tokens"] != values["input_tokens"] + values["output_tokens"]):
+                    raise ValueError(f"输入输出与总用量冲突：{response}")
+                if (values["reasoning_output_tokens"] is not None and values["output_tokens"] is not None
+                        and values["reasoning_output_tokens"] > values["output_tokens"]):
+                    raise ValueError(f"推理输出超过输出：{response}")
                 key = (thread, response)
                 if key in records:
                     if records[key]["usage"] != values:
@@ -80,10 +92,14 @@ def measure(logs: list[Path], turn_id: str, *, through_ordinal: int | None = Non
         if not positions:
             raise ValueError("计量起点 response 不在所选 turn/日志/截止范围内。")
         rows = rows[positions[0] + 1:]
+    for row in rows:
+        if any(row["usage"][field] is None for field in
+               ("input_tokens", "cached_input_tokens", "output_tokens", "total_tokens")):
+            unknown.append(f"missing_response_usage:{row['response_id']}")
     totals = {}
     for field in FIELDS:
         values = [row["usage"][field] for row in rows]
-        totals[field] = sum(values) if values and all(v is not None for v in values) else None
+        totals[field] = sum(values) if not unknown and values and all(v is not None for v in values) else None
     if not rows:
         unknown.append("no_response_usage_in_selected_scope")
     inputs = totals["input_tokens"]
@@ -95,7 +111,7 @@ def measure(logs: list[Path], turn_id: str, *, through_ordinal: int | None = Non
         "accounting": "unique_response_usage; cache is a subset of input; reasoning is a subset of output",
         "requests": len(rows), "totals": totals,
         "first_input_tokens": known_inputs[0] if known_inputs else None,
-        "peak_input_tokens": max(known_inputs) if known_inputs and all(v is not None for v in known_inputs) else None,
+        "peak_input_tokens": max(known_inputs) if not unknown and known_inputs and all(v is not None for v in known_inputs) else None,
         "last_response_id": rows[-1]["response_id"] if rows else None,
         "last_timestamp": rows[-1]["timestamp"] if rows else None,
         "unknown": unknown, "cost": None, "cost_note": "无账单或订阅额度换算证据；不推算费用。",
@@ -110,7 +126,7 @@ def check_budget(report: dict[str, Any], *, max_input: int | None = None,
                                 ("requests", max_requests, report["requests"])):
         if limit is None:
             continue
-        if limit <= 0:
+        if type(limit) is not int or limit <= 0:
             raise ValueError("预算必须大于零。")
         if actual is None or report["unknown"]:
             reasons.append(f"{name}:usage_unknown")
@@ -147,6 +163,53 @@ def measure_boundaries(boundaries: list[dict[str, Any]]) -> dict[str, Any]:
     return {"scope": {"boundaries": scopes}, "accounting": "explicit_boundaries; unique(thread_id,response_id); no host-history discovery; requests count observed records only", "requests": len(rows), "totals": totals, "first_input_tokens": known_inputs[0] if known_inputs else None, "peak_input_tokens": max(known_inputs) if not unknown and known_inputs and all(item is not None for item in known_inputs) else None, "last_response_id": rows[-1]["response_id"] if rows else None, "last_timestamp": rows[-1]["timestamp"] if rows else None, "unknown": unknown or ([] if rows else ["no_response_usage_in_selected_scope"]), "cost": None, "cost_note": "无账单或订阅额度换算证据；不推算费用。", "scanned_events": scanned, "calls": rows}
 
 
+def checkpoint(args: argparse.Namespace) -> dict[str, Any] | None:
+    """Reuse the stage budget gate for direct reading and canvas checkpoints."""
+    try:
+        from .core.candidate_test import context as candidate_context
+    except ImportError:
+        from core.candidate_test import context as candidate_context
+    project_arg = getattr(args, 'project', None)
+    project = Path(project_arg).expanduser().resolve() if project_arg else None
+    if project is not None and not project.is_dir():
+        raise ValueError(f'计量项目目录不存在：{project}')
+    testing = candidate_context(project) if project is not None else None
+    contract = testing.get('usage_contract') if testing else None
+    if contract:
+        if contract['turn_id'] is None:
+            raise ValueError('受控试跑要求先计量：准确 turn 尚未知，保留要求并补合法用量证据，不得继续准备。')
+        if getattr(args, 'usage_boundaries_json', None) or getattr(args, 'usage_turn_id', None) != contract['turn_id']:
+            raise ValueError('受控试跑计量须使用已登记准确 turn；不能省略或改用另一边界。')
+        for key, limit in contract['limits'].items():
+            provided = getattr(args, key, None)
+            if provided is not None and provided > limit:
+                raise ValueError('不能通过命令行提高已登记计量预算。')
+    logs = getattr(args, "usage_log", None)
+    turn = getattr(args, "usage_turn_id", None)
+    boundaries = getattr(args, "usage_boundaries_json", None)
+    limits = {key: getattr(args, key, None) for key in ("max_input", "max_total", "max_requests")}
+    if contract:
+        limits = {key: contract['limits'][key] if value is None else value for key, value in limits.items()}
+    if not logs and not turn and not boundaries and not any(value is not None for value in limits.values()):
+        return None
+    if not any(value is not None for value in limits.values()):
+        raise ValueError("计量门禁须至少给出一个预算。")
+    if boundaries:
+        if logs or turn:
+            raise ValueError("--usage-boundaries-json 不能与单轮用量参数同用。")
+        report = measure_boundaries(json.loads(Path(boundaries).read_text(encoding="utf-8-sig")))
+    elif logs and turn:
+        report = measure([Path(p) for p in logs], turn)
+    else:
+        raise ValueError("计量门禁须给出单轮日志+turn，或显式边界集合。")
+    budget = check_budget(report, **limits)
+    if not budget["ok"]:
+        summary = {key: report[key] for key in ('peak_input_tokens', 'totals', 'requests', 'unknown')}
+        raise ValueError(f"执行预算停止：{'; '.join(budget['stop_reasons'])}；"
+                         f"{json.dumps(summary, ensure_ascii=False)}；保留当前产物与未完成位置。")
+    return {**{key: value for key, value in report.items() if key != "calls"}, "budget": budget}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--log", action="append")
@@ -161,7 +224,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     source_paths: set[Path] = set()
     if args.boundaries_json:
-        if args.log or args.turn_id:
+        if args.log or args.turn_id or args.through_ordinal is not None or args.after_response:
             raise ValueError("--boundaries-json 不能与 --log/--turn-id 同用。")
         boundary_path = Path(args.boundaries_json).resolve()
         report = measure_boundaries(json.loads(boundary_path.read_text(encoding="utf-8")))
