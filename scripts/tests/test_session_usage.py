@@ -54,6 +54,22 @@ def test_unknown_is_not_zero_and_conflicting_duplicates_fail(tmp_path):
         meter.measure([path], "turn-1")
 
 
+def test_after_response_excludes_missing_usage_outside_selected_scope(tmp_path):
+    incomplete = record("before")
+    incomplete['usage'].pop('cached_input_tokens')
+    events = [dict(type='token_usage_record', ordinal=index, payload=payload)
+              for index, payload in enumerate([incomplete, record('checkpoint'), record('after')], 1)]
+    path = tmp_path / 'usage.jsonl'
+    path.write_text('\n'.join(map(json.dumps, events)) + '\n', encoding='utf-8')
+    whole = meter.measure([path], 'turn-1')
+    assert whole['unknown'] == ['missing_response_usage:before']
+    assert not meter.check_budget(whole, max_total=1000)['ok']
+    selected = meter.measure([path], 'turn-1', after_response='checkpoint')
+    assert selected['unknown'] == []
+    assert selected['requests'] == 1 and selected['totals']['total_tokens'] == 107
+    assert meter.check_budget(selected, max_total=108)['ok']
+
+
 def test_explicit_boundaries_sum_turns_deduplicate_and_preserve_unknown(tmp_path):
     one, two = tmp_path / "one.jsonl", tmp_path / "two.jsonl"
     one.write_text(json.dumps({"type": "token_usage_record", "payload": record("one", 100, turn="turn-1")}), encoding="utf-8")

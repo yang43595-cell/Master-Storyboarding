@@ -81,6 +81,32 @@ def bind_synthetic_quality(root, frozen):
     write_json(root / artifacts.MANIFEST_PATH, manifest)
 
 
+def bind_synthetic_canvas(root, frozen, observed):
+    """Add declared graph/timing fixture data, never a real platform receipt."""
+    for row in frozen['drafts']:
+        cursor = 0
+        lines = ['时间仅用于控制动作与切镜，不显示为文字。']
+        row['edges'], row['source_nodes'] = [], []
+        for duration in row['shot_durations']:
+            lines.append(f'{cursor:g}–{cursor + duration:g}秒 合成画面。')
+            cursor += duration
+        row['prompt'] = '\n'.join(lines)
+        for slot, (media, ref) in enumerate(zip(row['ordered_media'], row['reference_checks']), 1):
+            ref['canvas_binding'] = dict(mode='edge', purpose='synthetic boundary', prompt_reference=True,
+                                         source_port='image', target_port=f'input-{slot}')
+            row['edges'].append(dict(source_node_id=media['node_id'], source_port='image',
+                                     target_node_id=row['node_id'], target_port=f'input-{slot}', slot=slot))
+            source = dict(node_id=media['node_id'], port='image', sha256=ref['sha256'])
+            if source not in row['source_nodes']:
+                row['source_nodes'].append(source)
+    bind_synthetic_quality(root, frozen)
+    observed['drafts'] = copy.deepcopy(frozen['drafts'])
+    for row in observed['drafts']:
+        row['native_mentions'] = [{**media, 'entity_type': row.get('native_entity_type'),
+                                    'native_noneditable_entity': True} for media in row['ordered_media']]
+    observed['frozen_sha256'] = digest(frozen)
+
+
 def test_full_reference_and_native_readback_then_mutation_fails(tmp_path):
     frozen, observed = delivery(tmp_path)
     assert compare(frozen, observed, tmp_path)['ok']
@@ -123,9 +149,9 @@ def test_reference_duration_and_boundary_negatives(tmp_path, mutation):
 @pytest.mark.skipif(not shutil.which('ffmpeg') or not shutil.which('ffprobe'), reason='local video tools unavailable')
 def test_action_reference_checks_actual_video_duration(tmp_path):
     frozen, _ = delivery(tmp_path)
-    video = tmp_path / 'action.mp4'
+    video = tmp_path / 'action.mov'
     subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=16x16:r=10',
-                    '-t', '1', '-pix_fmt', 'yuv420p', str(video)], check=True, capture_output=True)
+                    '-t', '1', '-c:v', 'png', '-pix_fmt', 'rgb24', str(video)], check=True, capture_output=True)
     manifest = artifacts.load_manifest(tmp_path)
     item = {'artifact_id': 'ACTION', 'logical_id': 'ACTION', 'revision': 'R01',
             'status': 'current', 'user_approved': True, 'path_or_url': video.name, 'checksum': artifacts.digest(video),
