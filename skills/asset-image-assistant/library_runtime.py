@@ -4,6 +4,7 @@ import hashlib
 import re
 import sys
 from core.character_assets import production_kinds
+from core.character_layout import CHARACTER_PROMPT_PATH, render_character_prompt
 from core.image_technical import technical_check
 from core.knowledge_runtime import resolve_knowledge_root, verify_selected_file
 from pathlib import Path
@@ -58,6 +59,8 @@ def local_references(kind, request=None):
         common.append('skills/asset-image-assistant/references/' + recipe(kind)['guide'])
     if request and request.get('mode') == 'project':
         common.remove('skills/asset-image-assistant/modules/library-mode.md')
+        if any(record.get('layout_only') for record in request.get('reference_records', [])):
+            common.append(CHARACTER_PROMPT_PATH.relative_to(ROOT).as_posix())
         common.append('skills/asset-image-assistant/modules/project-web-mode.md')
         kinds = profile()['category_kinds']
         for row in request.get('rows', []):
@@ -187,6 +190,12 @@ def _template_excerpt(raw, kind, view='', index=None):
 def executable_template(kind, subject='', notes='', *, raw='', view='', index=None,
                         allow_unreferenced_design=False, reference_records=(), has_references=True):
     """Render the same bounded template for the seed and the model's task package."""
+    if reference_records and reference_records[-1].get('layout_only'):
+        if raw and Path(raw).resolve() != CHARACTER_PROMPT_PATH:
+            raise ValueError('人物灰模的提示词须使用项目已确认模板')
+        body = render_character_prompt(kind, reference_records)
+        return {'path': str(CHARACTER_PROMPT_PATH), 'sha256': _digest(CHARACTER_PROMPT_PATH.read_text(encoding='utf-8')),
+                'content': body, 'content_sha256': _digest(body), 'status': 'loaded'}
     template = _template_excerpt(raw, kind, view, index)
     if template['status'] != 'loaded':
         return template
@@ -285,11 +294,13 @@ def build_task_package(request, refs=None, startup_text='', methods=()):
                    **({'template_path': m.template_path, 'template_sha256': m.template_checksum,
                        'template_content': m.template_content} if m.template_path else {})} for m in methods]}
     if not request.get('rows'):
+        actual_paths = set(request.get('reference_paths', [])) - {
+            record['original'] for record in request.get('reference_records', []) if record.get('layout_only')}
         template = executable_template(request['kind'], request.get('subject', request.get('requirement', {}).get('name', '')),
             request.get('template_notes', ''), raw=request.get('template_source', ''), view=request.get('view', ''),
             index=request.get('index') if request.get('mode', 'asset-library') == 'asset-library' else None,
             allow_unreferenced_design=request.get('allow_unreferenced_design', False),
-            reference_records=request.get('reference_records', []), has_references=bool(request.get('reference_paths')))
+            reference_records=request.get('reference_records', []), has_references=bool(actual_paths))
         if request['kind'] == '环境' and template['status'] == 'loaded' and not request.get('reference_paths'):
             raise ValueError('场景派生模板需要参考母图；首张场景请使用分类指南')
         if template['status'] == 'category-guide':

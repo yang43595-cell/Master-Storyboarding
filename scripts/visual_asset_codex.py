@@ -178,6 +178,7 @@ def run(exe, folder, phase, request, draft, task_package):
             '实际阅读模板正文、适用规范和动态知识；已附带的参考图必须查看，文件不可读时passed=false。'
             'reference_records中的project_confirmed与确认ID记录本项目已确认的前置图，role说明各图用途。'
             '人物1×4使用已确认大头照和服装三视图作为输入；不要求先提供另一张最终人物1×4。'
+            '项目大头照、服装三视图和人物1×4以production_item.template.content为底稿，只按本轮需要补充实际造型或参考编号，保留模板的参考职责与构图要求。'
             '有相应前置图时不得笼统声称面部或服装素材缺失；实际不可读或确有冲突时指明具体哪张图和原因。'
             'reference_paths为空不等于参考图不可读；允许无参考设计时，不得将空参考或未定款式作为阻断理由。'
             '无法完成写词时prompt留空，具体原因放issues，不把拒绝说明当作生图提示词。'

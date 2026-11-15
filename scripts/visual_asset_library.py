@@ -97,7 +97,8 @@ def template_prompt(kind, subject, notes, index=0, *, allow_unreferenced_design=
                     reference_records=(), has_references=True):
     recipe = asset_skill.recipe(kind)
     index = asset_skill.template_step(kind, index=index)
-    source = asset_skill.template_source(kind)
+    source = (asset_skill.CHARACTER_PROMPT_PATH if reference_records and reference_records[-1].get('layout_only')
+              else asset_skill.template_source(kind))
     if 'template' not in recipe:
         basis = '依据本次需求设计' if allow_unreferenced_design else '从真实参考图制作'
         return (f'{basis}「{subject}」的{recipe["steps"][index]}。' + recipe['description'] +
@@ -1234,6 +1235,10 @@ class Library:
             request = self.step_request(job, index)
             folder = self.root / 'requests' / ident / str(index)
             path = folder / 'request.json'
+            for slot, reference in enumerate(request.get('reference_records', []), 1):
+                if (reference.get('layout_only') and reference['role'] not in request['prompt']
+                        and not re.search(rf'参考图 {slot} 是[^。\n]*灰模，只参考', request['prompt'])):
+                    request['prompt'] += f"\n图{slot}：{reference['role']}。"
             dump(path, request)
             text = (f"请读取 {path}，使用其中指定的 {'ImageGen' if job['provider'] == 'imagegen' else '即梦 CLI'}，"
                     '先查看所有 reference_paths 图片，再按 prompt 制作这一张候选。保留独立原图，不覆盖已确认资产。'

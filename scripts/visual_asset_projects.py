@@ -20,6 +20,7 @@ from visual_asset_characters import (character_route, prepare_character, choose_
                                      enable_character_ai_finals, character_final_ids, final_output_updates)
 from core.character_assets import uses_wardrobe, production_kinds, character_type, final_output_problems, step_output_id
 from core.asset_refs import character_output_contract
+from core.character_layout import character_layout_reference
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -874,6 +875,8 @@ class Projects:
                          '本项目已确认前置图片' if prior else '用户提供的生成参考，按可见内容采用')})
         allow_design = (row['requirement']['category'] == 'PROP' or step['kind'] == '角色外观'
                         or (row['requirement']['category'] == 'CHARACTER' and step['kind'] in {'人物单图', '大头照', '服装'}))
+        if layout := character_layout_reference(step['kind']):
+            reference_records.append(layout)
         recipe = self.skill.recipe(step['kind'])
         template = recipe.get('template') or '依据分类指南编写：' + recipe['guide']
         template_notes = '依据当前 AST 和分类指南，制作' + step['purpose'] + '；状态：' + step['state'] + '；视角：' + step['view']
@@ -894,7 +897,7 @@ class Projects:
                 'index': index, 'output_id': step_output_id(step), 'kind': step['kind'], 'view': step['view'], 'purpose': step['purpose'],
                 'state': step['state'], 'character_outfit': next((v for v in job.get('character_workflow', {}).get('outfits', []) if v['id'] == step.get('outfit_id')), None), 'ratio': step['ratio'], 'provider': job['provider'],
                 'model': job['model'] if job['provider'] == 'dreamina' else 'Codex 内置 ImageGen（宿主管理模型）',
-                'prompt': step.get('prompt', seed), 'reference_paths': [str(self.copy_to_project(p, a)) for a in refs],
+                'prompt': step.get('prompt', seed), 'reference_paths': [record['original'] for record in reference_records],
                 'reference_records': reference_records,
                 'template_source': template, 'count': 1, 'resolution': '2k',
                 'must_inherit': row['requirement']['identity_constraints'], 'must_not_inherit': step.get('must_not_inherit', []),

@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import visual_asset_library as m
 import visual_asset_projects as pmod
 from core.artifacts import load_manifest
+from core.character_layout import character_layout_reference, character_prompt_templates
 from core.project_state import new_project_state, write_project_state, load_project_state
 
 
@@ -1093,7 +1094,8 @@ class ProjectTests(unittest.TestCase):
         self.assertIsNone(saved_step(job, wardrobe)['project_confirmation'])
         self.assertFalse(service.get(ident).get('export'))
         wardrobe_request = service.request(self.lib.get(job['id'], 'jobs'), wardrobe)
-        self.assertEqual(wardrobe_request['reference_paths'], [str(head_image)])
+        self.assertEqual(wardrobe_request['reference_paths'],
+                         [str(head_image), character_layout_reference('服装')['original']])
 
         wardrobe_image = select(job, wardrobe, 'wardrobe', '服装三视图', (160, 90), 'green')
         current_version = 'c' * 64
@@ -1102,7 +1104,9 @@ class ProjectTests(unittest.TestCase):
         wardrobe_confirmation = saved_step(job, wardrobe)['project_confirmation']
         self.assertEqual(saved_step(job, head)['project_confirmation'], head_confirmation)
         final_request = service.request(self.lib.get(job['id'], 'jobs'), final)
-        self.assertEqual(final_request['reference_paths'], [str(wardrobe_image), str(head_image)])
+        self.assertEqual(final_request['reference_paths'],
+                         [str(wardrobe_image), str(head_image), character_layout_reference('人物1x4')['original']])
+        self.assertEqual(self.lib.prepare(job['id'], final)['prompt'], character_prompt_templates()['人物1x4'])
         self.assertEqual(final_request['output_id'], 'HOME-FINAL')
         self.assertNotEqual(job['steps'][final]['key'], final_request['output_id'])
 

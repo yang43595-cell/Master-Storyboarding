@@ -11,6 +11,7 @@ from threading import Barrier
 import pytest
 
 from scripts import stage_context_cli as cli
+from scripts.core.character_layout import character_layout_reference, character_prompt_templates
 from test_stage_context_cli import _method_vault, _project, isolated_stage_knowledge
 
 
@@ -106,6 +107,17 @@ def test_eight_exact_targets_are_allowed_and_frozen(tmp_path, skill):
     assert cli.prepare(args)["valid"]
     basis = json.loads((batch_folder(args) / "task_basis.json").read_text(encoding="utf-8"))
     assert basis["scope"]["image_targets"] == targets
+    if skill == "asset-image-assistant":
+        templates = basis["character_layout_references"]
+        assert set(templates) == {"大头照", "服装", "人物1x4"}
+        assert templates["服装"] == character_layout_reference("服装三视图")
+        assert all(row["layout_only"] and Path(row["original"]).is_file() for row in templates.values())
+        record_batch_methods(args)
+        reading = cli.ensure_prepared(argparse.Namespace(**vars(args), show_task_basis=True))
+        assert reading["task_basis"]["character_layout_references"] == templates
+        assert reading["task_basis"]["character_prompt_templates"] == character_prompt_templates()
+    else:
+        assert "character_layout_references" not in basis
 
 
 @pytest.mark.parametrize("context_id", ["", "../escape", "/absolute", "a/b", "a\\b", ".", "a b", "BATCH-A", "batch-A"])

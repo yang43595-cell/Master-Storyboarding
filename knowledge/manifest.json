@@ -426,15 +426,16 @@
     },
     {
       "path": "wiki/reference/提示词模板/1x4三视图模板提示词.md",
-      "sha256": "d311538d9a78f05059075814484a2908b84c7e61d9d759ad17fff669542b55ed",
-      "size_bytes": 9100,
+      "sha256": "ad7b36da39e18e1292b0a9d385349868853793027725337954dc18851006a41b",
+      "size_bytes": 9281,
       "role": "template",
       "inclusion_basis": "Existing asset-image-assistant library-profile recipe dependency; current upstream bytes read on 2026-11-04",
+      "local_adaptation": "Project character layout guidance and headwear spacing, based on original SHA-256 d311538d9a78f05059075814484a2908b84c7e61d9d759ad17fff669542b55ed",
       "source": {
         "observed_on": "2026-11-04",
         "thread_id": "01a19f19-5f11-7240-90a7-7ef812f60032",
         "turn_id": "01a1a640-4219-7697-a882-5dc496bed8b1",
-        "format": "complete_original_utf8_lf"
+        "format": "complete_original_with_project_adaptation"
       }
     },
     {
