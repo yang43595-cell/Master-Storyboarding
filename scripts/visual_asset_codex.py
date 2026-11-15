@@ -288,6 +288,7 @@ def plan_assets(exe, folder, request, rules):
             '环境一致性优先，默认45°、正面、反面、俯视四图是可靠起点；用户已明确选四图时保留所选职责。已有视图能覆盖本轮机位与空间余量时可只补必要视角，在purpose/rationale说明覆盖、盲区与余量；不追求临界最少。dependencies按实际使用的母图及必要视图登记，不自动上传全部血缘。'
             '已选择character_output_mode=single的人物只列人物单图，按实际用途覆盖身份、服装与必要状态，不强制拆头照和1×4。CHARACTER必须先读取character_type：ANIMAL、NON_HUMANOID和PET只能使用角色外观类型，必须一张16:9正面、左侧、背面三视图，每格含同一完整角色与固定服饰配件，state可填外观三视图；不要求人类大头照或服装。情绪和奔跑等动作留给分镜，只有真实必要的外观变化才增加母图。'
             '人物1x4必须依赖同AST服装和脸，或在blockers明确需要已有确认参考。PROP的required_states按外观变化决定必要图，不机械补图。其余逐项覆盖required_states，state照录本行原文。'
+            '先从本行image_reason确定独立图的数量上限与目标状态。写明共用一张、仅需一张等，整个AST的outputs就只能有这一张。required_states要求覆盖剧情状态，不能把已限定的独立图数量增加；其他状态可由已有参考覆盖，有真实缺口才列blockers。'
             'outputs只列实际需要准备或选用的图片，至少一项。仅在REAL_PRODUCT已登记复用、或OTHER的image_reason明确不另制某状态时，'
             '把由有效参考覆盖且不另成图的状态逐条列到covered_states，不在outputs重复。每条填state、实际参考和适用性的basis，'
             '以及source_quote：产品直接填原决策复用现有素材，OTHER逐字摘录本行image_reason中的范围依据。没有这种状态时填空数组。'
