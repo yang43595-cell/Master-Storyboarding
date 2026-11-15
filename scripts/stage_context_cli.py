@@ -1841,11 +1841,10 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     write_text_if_changed(output, content)
     write_text_if_changed(_task_basis_path(project), json.dumps(task_basis, ensure_ascii=False, indent=2) + "\n")
     if methods.required or result.candidates:
-        restored = False
-        if _evidence_current(project) is None:
-            restored = _restore_reading_cache(project, args.skill, task_basis['reading_reuse_key'])
+        current_reading = _evidence_current(project) is not None
+        restored = not current_reading and _restore_reading_cache(project, args.skill, task_basis['reading_reuse_key'])
         report['stage_reading_restored'] = restored
-        if _evidence_current(project) is None:
+        if not (current_reading or restored):
             write_text_if_changed(_context_dir(project, "method_reading_packet.md"), base_packet)
             stale = _context_dir(project, "method_reading_evidence.json")
             if stale.is_file(): stale.unlink()
@@ -2198,7 +2197,7 @@ def review_pack(args: argparse.Namespace) -> dict[str, Any]:
         f"- 唯一依据：`{basis_path}`（实质任务身份：`{scope['task_basis_identity']}`；文件 SHA-256 仅供追溯）",
         f"- 交付对象：{json.dumps(task_basis['deliverables'], ensure_ascii=False)}",
         f"- 非目标：{json.dumps(task_basis['non_goals'], ensure_ascii=False)}",
-        f"- 输入版本：{json.dumps(task_basis['input_versions'], ensure_ascii=False)}",
+        "- 输入版本见本轮任务依据的 `input_versions`。",
         "- 适用标准、方法全文和版本见该依据及下列明确证据；不得在审核中另加标准。", "",
         "## 当前候选产物", "",
     ]
@@ -2223,16 +2222,17 @@ def review_pack(args: argparse.Namespace) -> dict[str, Any]:
         lines.append("- 只核对 task_basis 已列当前输入与相关确认；不读取全部候选或历史登记。")
         lines.extend(["", "## 项目状态与用户确认事实", ""])
         lines.append(f"- {'缺少：' if not state_path.is_file() else ''}`{state_path}`")
-        candidate_evidence = _evidence_current(project, args.skill)
         lines.extend(["", "## 本轮按需知识依据", ""])
-        raw_candidate_evidence = _read_json(_context_dir(project, "method_reading_evidence.json"), default=None)
-        if candidate_evidence:
-            _, _, candidate_packet = candidate_evidence
+        if reading:
+            _, _, candidate_packet = reading
             lines.extend([f"- 完整方法/已采用知识快照：`{candidate_packet}`", f"- 读取声明与版本证据：`{_context_dir(project, 'method_reading_evidence.json')}`"])
-        elif isinstance(raw_candidate_evidence, dict) and raw_candidate_evidence.get("skill") == args.skill and raw_candidate_evidence.get("adopted_candidates"):
-            lines.append("- 已登记候选证据无效：`method_reading_evidence.json`（不得作为本轮依据）")
         else:
-            lines.append("- 无有效读取快照；若任务依据列有必读方法，先完成读取登记再打包审核。")
+            raw_candidate_evidence = _read_json(_context_dir(project, "method_reading_evidence.json"), default=None)
+            if (isinstance(raw_candidate_evidence, dict) and raw_candidate_evidence.get("skill") == args.skill
+                    and raw_candidate_evidence.get("adopted_candidates")):
+                lines.append("- 已登记候选证据无效：`method_reading_evidence.json`（不得作为本轮依据）")
+            else:
+                lines.append("- 无有效读取快照；若任务依据列有必读方法，先完成读取登记再打包审核。")
     else:
         lines.extend(["", "## 合同审核边界", "", "- 仅审核当前 Skill 合同候选的触发、职责、输入输出、引用和硬禁区；不把真实项目产物结论混入本轮。"])
     if delta is not None:
@@ -2362,11 +2362,13 @@ def _ensure_prepared_base(args: argparse.Namespace) -> dict[str, Any]:
         content = re.sub(r"(?m)^适用条件：.*$", "", content).strip()
         if not content:
             raise StageContextError(f"知识块正文为空：{block.group(1)}，请重新 prepare。")
-    reading = _evidence_current(project, skill)
-    adopted_ids = {item["id"] for item in reading[1].get("adopted_candidates", [])} if reading else set()
-    for rule in getattr(args, "required_rule", None) or []:
-        if rule not in ids and rule not in adopted_ids:
-            raise StageContextError(f"当前任务必需动态规则未命中：{rule}")
+    missing_rules = [rule for rule in getattr(args, "required_rule", None) or [] if rule not in ids]
+    if missing_rules:
+        reading = _evidence_current(project, skill)
+        adopted_ids = {item["id"] for item in reading[1].get("adopted_candidates", [])} if reading else set()
+        for rule in missing_rules:
+            if rule not in adopted_ids:
+                raise StageContextError(f"当前任务必需动态规则未命中：{rule}")
     for reference in getattr(args, "required_reference", None) or []:
         path = (ROOT / reference).resolve()
         if not path.is_relative_to(ROOT.resolve()) or not path.is_file() or not path.stat().st_size:
