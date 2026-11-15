@@ -317,6 +317,29 @@ class WebReadingTests(unittest.TestCase):
                 self.assertEqual(cli.call_count, 1)
         self.assertEqual(source.read_bytes(), before)
 
+    def test_project_character_package_loads_approved_bodies_at_standard_slots(self):
+        from core.character_layout import character_layout_reference, character_prompt_templates
+        import visual_asset_library as library
+
+        head = {"original": "head.png", "category": "大头照"}
+        wardrobe = {"original": "wardrobe.png", "category": "服装三视图"}
+        for kind, originals in (("大头照", [head]), ("服装", [wardrobe]),
+                                ("人物1x4", [wardrobe, head])):
+            with self.subTest(kind=kind):
+                records = [*originals, character_layout_reference(kind)]
+                seed, path = library.template_prompt(kind, "测试人物", "", reference_records=records)
+                request = self.request(kind, "project")
+                request.update(reference_records=records, reference_paths=[r["original"] for r in records],
+                               prompt=seed, template_source=path)
+                package = asset.build_task_package(request)
+                self.assertEqual(seed, character_prompt_templates()[kind])
+                self.assertEqual(package["production_item"]["template"]["content"], seed)
+
+        records = [head, wardrobe, character_layout_reference("服装")]
+        prompt, _ = library.template_prompt("服装", "测试人物", "", reference_records=records)
+        self.assertIn("用参考图 2 制作同一套服装", prompt)
+        self.assertIn("参考图 3 是服装灰模", prompt)
+
     def test_scene_seed_and_package_share_actual_view_order_in_both_web_modes(self):
         import visual_asset_library as library
         source = self.vault / 'wiki/reference/提示词模板/环境一致性模板提示词.md'

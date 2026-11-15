@@ -14,9 +14,11 @@ from pathlib import Path
 if __package__:
     from .core.prompt_body import submitted_prompt_body, generated_overlay_issues
     from .core.quality_evidence import source_shot_ids
+    from .core.web_content import SOURCE_SEGMENT_FIELDS, source_review_segments
 else:
     from core.prompt_body import submitted_prompt_body, generated_overlay_issues
     from core.quality_evidence import source_shot_ids
+    from core.web_content import SOURCE_SEGMENT_FIELDS, source_review_segments
 
 
 HEADING_RE = re.compile(r"^##[ \t]+[^\n]+", re.MULTILINE)
@@ -96,36 +98,18 @@ def _json_segments(text: str) -> list[tuple[str, str, str]]:
     data = json.loads(text)
     if not isinstance(data, dict):
         raise ValueError("JSON 顶层不是对象")
-    if "drafts" in data and ("generation_segments" in data or "creative_sections" in data):
+    has_segments = any(key in data for key in SOURCE_SEGMENT_FIELDS)
+    if "drafts" in data and has_segments:
         raise ValueError("JSON 同时存在 drafts 与生成段，不猜权威正文")
     legacy_drafts = False
-    if "generation_segments" in data:
-        rows = data["generation_segments"]
-    elif "creative_sections" in data:
-        sections = data["creative_sections"]
-        if not isinstance(sections, list) or any(
-                not isinstance(s, dict) or not isinstance(s.get("generation_segments"), list)
-                for s in sections):
-            raise ValueError("创作段 generation_segments 格式无法识别")
-        rows = [row for section in sections for row in section["generation_segments"]]
+    if has_segments:
+        rows = source_review_segments(data)
     elif "drafts" in data:
         rows, legacy_drafts = data["drafts"], True
     else:
         return []
     if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
         raise ValueError("生成段列表格式无法识别")
-    if "generation_segments" in data and "creative_sections" in data:
-        sections = data["creative_sections"]
-        if not isinstance(sections, list) or any(
-                not isinstance(s, dict) or not isinstance(s.get("generation_segments"), list)
-                for s in sections):
-            raise ValueError("创作段生成段引用列表格式无法识别")
-        links = [ident for section in sections for ident in section["generation_segments"]]
-        ids = [row.get("segment_id") for row in rows]
-        if (any(not isinstance(ident, str) for ident in links + ids)
-                or set(links) != set(ids)):
-            raise ValueError("顶层生成段与创作段引用不一致，不猜权威正文")
-
     for row in rows:
         source_shot_ids(row)
 

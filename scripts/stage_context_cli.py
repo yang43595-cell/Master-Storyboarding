@@ -23,6 +23,7 @@ try:
                                  register_workspace_artifact, adopt_initial_package,
                                  adopt_initial_agent_artifact, validate_candidate_submission)
     from .core.asset_refs import check_output_plan
+    from .core.character_layout import character_layout_references, character_prompt_templates
     from .core.agent_acceptance import register_workflow_authorization
     from .core.io import write_text, write_text_if_changed
     from .core.knowledge_runtime import resolve_knowledge_root, is_bundled_root, verify_bundle, verify_selected_file
@@ -45,6 +46,7 @@ except ImportError:  # direct CLI execution
                                 register_workspace_artifact, adopt_initial_package,
                                 adopt_initial_agent_artifact, validate_candidate_submission)
     from core.asset_refs import check_output_plan
+    from core.character_layout import character_layout_references, character_prompt_templates
     from core.agent_acceptance import register_workflow_authorization
     from core.io import write_text, write_text_if_changed
     from core.knowledge_runtime import resolve_knowledge_root, is_bundled_root, verify_bundle, verify_selected_file
@@ -1198,7 +1200,7 @@ def _review_identity(basis: dict[str, Any], adopted: list[dict[str, Any]] | None
     # Rebuild the substantive projection, never trust a stored hash or include
     # actor IDs, reading cache/catalog metadata, request location or packet bytes.
     fields = ("schema_version", "skill", "objective", "deliverables", "non_goals", "input_versions",
-              "scope", "delivery_contract", "standards", "review_acceptance", "revision", "task_request", "input_snapshot", "character_output_requirements")
+              "scope", "delivery_contract", "standards", "review_acceptance", "revision", "task_request", "input_snapshot", "character_output_requirements", "character_layout_references", "character_prompt_templates")
     return _identity_hash({**{key: basis[key] for key in fields if key in basis}, "adopted_knowledge": adopted or []})
 
 
@@ -1233,6 +1235,10 @@ def _validate_current_inputs(project: Path, basis: dict[str, Any]) -> dict[str, 
                                                     **({"candidate_test_mode": True} if snapshot.get("candidate_test") else {}))
         except ValueError as exc:
             raise StageContextError(str(exc)) from exc
+        if (layout_refs := basis.get("character_layout_references")) and layout_refs != character_layout_references():
+            raise StageContextError("本批人物灰模已变化；请重新 prepare。")
+        if (templates := basis.get("character_prompt_templates")) and templates != character_prompt_templates():
+            raise StageContextError("本批人物生图提示词模板已变化；请重新 prepare。")
         if output_requirements != basis.get("character_output_requirements", {}):
             raise StageContextError("本批人物最终输出规格已变化；请重新 prepare 并核对受影响范围。")
     inputs = basis["input_versions"]
@@ -1570,6 +1576,9 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "input_snapshot": _input_snapshot(project, input_versions, raw_state),
         "task_request": _semantic_request(request),
         **({"character_output_requirements": output_requirements} if output_requirements else {}),
+        **({"character_layout_references": character_layout_references(),
+            "character_prompt_templates": character_prompt_templates()}
+           if args.skill == "asset-image-assistant" and image_targets is not None else {}),
         "request_path": str(Path(args.request_json).resolve()) if args.request_json else None,
         "knowledge_profile": fingerprint(profile_path),
         "scope": {key: request[key] for key in ("task_kind", "scope", "source_shot_ids", "generation_authorized", "model_selected", "image_targets") if key in request},
@@ -1611,6 +1620,8 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "- 执行分工：遵守根规则的干净上下文启动规则；新一轮编导等创作生产或实质重跑由全新专属生产 agent 执行，不继承长主会话；本轮执行者读取、准备、产出并自查。其他任务按根规则执行。",
         "- 上下文边界：交接当前有效规则、原始素材、本轮约束与已确认决定及依据、现行版本、未决事项、范围和停止点；不得以摘要替代原片。已在本轮专属 agent 内的逐段推进和局部返修可继续；目标、来源或基线重大变化时新开，不按修订号机械重开。",
         *([f"- 图片批次：`{_CONTEXT_ID.get()}`，本批冻结 {len(image_targets)} 个 image_targets；阶段负责人统筹整体方向、跨批连续性和正式交接，本批执行者读取真实参考、完成获准图片及实看自查，只回传准确路径与检查摘要。批次目录不构成已生成、已检查、人工确认或正式采用。"] if image_targets is not None else []),
+        *(["- 人物生图按输出类型读取 task_basis.json 的 character_prompt_templates 与 character_layout_references，使用对应模板正文，原参考在前、灰模在最后。按实际槽位绑定原生引用。"]
+          if task_basis.get("character_layout_references") else []),
         "- prepare 只生成文件，不清空宿主对话。读取规则见共享 knowledge-access.md；计量和停止条件见 docs/development/token-budget.md。",
         _recovery_check_text(), "",
         "## 本轮范围", "",

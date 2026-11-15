@@ -52,6 +52,33 @@ def check(root, record):
     return story_sources.validate_dialogue_review(record, root)
 
 
+def test_hard_subtitles_require_opt_in_and_exact_script_approval(tmp_path, monkeypatch):
+    from scripts.core import project_kickoff
+
+    record = fixture(tmp_path, isolated=False)
+    record['dialogues'].pop(1)
+    package = bind(tmp_path, record)
+    package['open_questions'] = []
+    with pytest.raises(ValueError, match='未核对白证据'):
+        story_sources.validate_story_sources(package, project_root=tmp_path, review_ready=True)
+
+    monkeypatch.setattr(project_kickoff, 'load_kickoff', lambda _: {
+        'product': {'mode': 'none'},
+        'creation': {'dialogue_review_basis': 'hard_subtitle_with_whole_script_review'}})
+    result = story_sources.validate_story_sources(package, project_root=tmp_path, review_ready=True)
+    assert result['awaiting_subtitle_approval_ids'] == ['DLG-01', 'DLG-02']
+    with pytest.raises(ValueError, match='未核对白证据'):
+        story_sources.validate_story_sources(package, project_root=tmp_path, require_dialogue_evidence=True)
+    story_sources.validate_story_sources(package, project_root=tmp_path, require_dialogue_evidence=True,
+                                         exact_human_approval=True)
+
+    record['dialogues'][0]['speaker_status'] = 'unresolved'
+    package = bind(tmp_path, record)
+    package['open_questions'] = []
+    with pytest.raises(ValueError, match='未核对白证据.*DLG-01'):
+        story_sources.validate_story_sources(package, project_root=tmp_path, review_ready=True)
+
+
 # 1: Insert between originals; full text/table still agrees; never approved.
 def test_mixed_origin_candidate_chain(tmp_path):
     record = fixture(tmp_path)

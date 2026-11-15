@@ -149,6 +149,13 @@ python scripts/review_text_cli.py status \
 
 ## 本地流程授权与自主采用
 
+### 资产分批确认与使用
+
+网站通过和获准的对话确认按准确输出登记。已确认且备份的图片可先写入现有资产清单，下游按 `AST-ID@OUTPUT-ID` 消费。缺项只阻塞引用它的镜段。全部必需输出通过后再交接整表。
+
+对话通道沿用 `register_asset_workflow_authorization` 的准确项目授权和 `visual_asset_library.py apply-chat-confirmation`。每批提交 `quote`、`at`、`review_ref` 和 `outputs`。输出逐项填写 `ast_id`、`output_id`、`asset_id`、`image_sha256`、`purpose`。后批保留前批的确认出处；待备份的已确认输出可在备份完成后用空 `outputs` 恢复导出。
+
+
 本地自主验收沿既有产物清单和项目状态记录，不创建逐稿 `user_confirmations`，不将 `user_approved` 改成 true。当前开放范围为 `storyboard-planner`、`storyboard-director`、`voiceover-to-video-script`；编导和资产图仍走真实人审，可选声音及白模不因本入口启用。
 
 **开发接线授权不等于真实业务流程授权。** 用户同意开发本能力，只允许实现和合成验证。执行真实业务前，必须已有用户对准确业务项目及列明阶段的流程授权；只把该真实依据传给下列命令，不把本轮开发指令、文档示例或 agent 自查当成用户授权。

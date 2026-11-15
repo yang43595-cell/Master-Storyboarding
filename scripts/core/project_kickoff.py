@@ -10,7 +10,7 @@ from .product_reference_pack import current_product_pack_revision, resolve_produ
 REQUEST_PATH = Path("00_项目管理/project_request.json")
 REDFRAME_MODEL = "Seedance 2.5"
 PRODUCT_MODES = {"none", "retain", "replace", "insert"}
-IMAGE_PROVIDERS = {"imagegen", "dreamina"}
+IMAGE_PROVIDERS = {"imagegen", "dreamina", "redframe"}
 IMAGE_SCOPES = ("required_asset_outputs", "required_assets_and_supplements")
 
 _CREATOR_MASK_ID = "creator-polishing-mask-2"

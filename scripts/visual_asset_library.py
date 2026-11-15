@@ -97,7 +97,8 @@ def template_prompt(kind, subject, notes, index=0, *, allow_unreferenced_design=
                     reference_records=(), has_references=True):
     recipe = asset_skill.recipe(kind)
     index = asset_skill.template_step(kind, index=index)
-    source = asset_skill.template_source(kind)
+    source = (asset_skill.CHARACTER_PROMPT_PATH if reference_records and reference_records[-1].get('layout_only')
+              else asset_skill.template_source(kind))
     if 'template' not in recipe:
         basis = '依据本次需求设计' if allow_unreferenced_design else '从真实参考图制作'
         return (f'{basis}「{subject}」的{recipe["steps"][index]}。' + recipe['description'] +
@@ -1234,6 +1235,10 @@ class Library:
             request = self.step_request(job, index)
             folder = self.root / 'requests' / ident / str(index)
             path = folder / 'request.json'
+            for slot, reference in enumerate(request.get('reference_records', []), 1):
+                if (reference.get('layout_only') and reference['role'] not in request['prompt']
+                        and not re.search(rf'参考图 {slot} 是[^。\n]*灰模，只参考', request['prompt'])):
+                    request['prompt'] += f"\n图{slot}：{reference['role']}。"
             dump(path, request)
             text = (f"请读取 {path}，使用其中指定的 {'ImageGen' if job['provider'] == 'imagegen' else '即梦 CLI'}，"
                     '先查看所有 reference_paths 图片，再按 prompt 制作这一张候选。保留独立原图，不覆盖已确认资产。'
@@ -1892,6 +1897,11 @@ if __name__ == '__main__':
     review.add_argument('--publication', required=True, type=Path)
     review.add_argument('--token-file', required=True, type=Path)
     review.add_argument('--base-url')
+    chat = subs.add_parser('apply-chat-confirmation')
+    chat.add_argument('--project-id', required=True)
+    chat.add_argument('--authorization-id', required=True)
+    chat.add_argument('--confirmation-file', required=True, type=Path,
+                      help='JSON with the exact quote, at, review_ref and approved outputs; outputs=[] resumes existing confirmed outputs')
     subs.add_parser('list')
     args = parser.parse_args()
     lib = Library(args.library, vault=args.asset_vault)
@@ -1903,6 +1913,11 @@ if __name__ == '__main__':
         from core.agent_review_api import AgentReviewClient, DEFAULT_BASE_URL
         client = AgentReviewClient(base_url=args.base_url or DEFAULT_BASE_URL, token_file=args.token_file)
         result = lib.projects.apply_website_review(args.project_id, args.publication, client)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    elif args.command == 'apply-chat-confirmation':
+        confirmation = json.loads(args.confirmation_file.read_text(encoding='utf-8-sig'))
+        result = lib.projects.apply_chat_confirmation(
+            args.project_id, authorization_id=args.authorization_id, confirmation=confirmation)
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         print(json.dumps(lib.import_tree(args.source) if args.command == 'import' else lib.items(), ensure_ascii=False, indent=2))

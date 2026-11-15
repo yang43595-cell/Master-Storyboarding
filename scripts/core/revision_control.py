@@ -100,25 +100,13 @@ def _destination_within_project(project: Path, value: str | Path) -> tuple[Path,
 
 def _generation_segments(payload: Any) -> list[dict[str, Any]] | None:
     """Return actual prompt segments, or None when this is not a segmented prompt."""
-    if not isinstance(payload, dict):
+    from .web_content import SOURCE_SEGMENT_FIELDS, source_review_segments
+    if not isinstance(payload, dict) or not any(key in payload for key in SOURCE_SEGMENT_FIELDS):
         return None
-    if "generation_segments" in payload:
-        rows = payload["generation_segments"]
-    elif isinstance(payload.get("creative_sections"), list) and payload["creative_sections"]:
-        sections = payload["creative_sections"]
-        if any(not isinstance(section, dict) or not isinstance(section.get("generation_segments"), list)
-               for section in sections):
-            raise RevisionControlError("视频提示词创作段缺 generation_segments；材料分组不能代替生成段")
-        rows = [row for section in sections for row in section["generation_segments"]]
-    else:
-        return None
-    if (not isinstance(rows, list) or not rows
-            or any(not isinstance(row, dict) or not isinstance(row.get("segment_id"), str)
-                   or not row["segment_id"].strip() for row in rows)):
-        raise RevisionControlError("视频提示词 generation_segments/segment_id 缺失或无效")
-    ids = [row["segment_id"] for row in rows]
-    if len(ids) != len(set(ids)):
-        raise RevisionControlError("视频提示词 generation_segments 含重复 segment_id")
+    try:
+        rows = source_review_segments(payload)
+    except ValueError as exc:
+        raise RevisionControlError("视频提示词生成段不完整：" + str(exc)) from exc
     # A materials/grouping object is not a video generation segment. Require its
     # submitted prompt body using the same body resolver as the existing adapter.
     try:
@@ -665,7 +653,7 @@ def _validate_delivery(project: Path, payload: dict) -> None:
     else:
         from canvas_readback import validate_submission
     try:
-        validate_submission(payload, project)
+        validate_submission(payload, project, formal_delivery=True)
     except (ValueError, KeyError, TypeError, OSError) as exc:
         raise RevisionControlError(f'交付快照当前参考检查失败：{exc}') from exc
 

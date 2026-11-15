@@ -16,6 +16,10 @@ from pathlib import Path
 from .quality_evidence import (generation_duration_values, required_visuals, reference_shot_ids, scene_state_requirements,
                                source_shot_ids, validate_required_visuals,
                                validate_scene_state_coverage, validate_shot_durations)
+from .prompt_body import submitted_prompt_body
+from .project_kickoff import load_kickoff
+
+_CREATOR_BOWL_BRUSH_OFFER = re.compile(r"送(?:给?你|给大家)?\s*高定\s*调膜\s*碗\s*(?:[、和与及]\s*)?刷")
 
 _PHYSICAL_DIMENSIONS = ("positions", "props", "visibility")
 _PHYSICAL_ROLES = {
@@ -81,9 +85,9 @@ def _source_boundary(record, left, right, shots, reason):
     _need(isinstance(value, str) and quote in value, "拆段依据不在准确导演字段原文中")
 
 
-def _model_limit(payload, left, right, root):
+def _model_capability(payload, root, *, platform=None):
     model = payload.get("selected_video_model")
-    _need(isinstance(model, dict), "时长拆段缺少本轮已核模型能力")
+    _need(isinstance(model, dict), "缺少本轮实际模型、参考方式和已核生成时长能力")
     # A delegated draft choice is a capability/parameter binding only. Its
     # explicit blocked state cannot stand in for user model confirmation or
     # permission to generate, including when the permission field is absent.
@@ -99,6 +103,11 @@ def _model_limit(payload, left, right, root):
           and (model.get("confirmed_by_user") is True or draft_selection)
           and _seconds(model.get("max_duration_seconds")),
           "模型、入口、参考模式、确认选择与真实时长上限不完整")
+    minimum, maximum = model.get("min_duration_seconds"), model["max_duration_seconds"]
+    if "min_duration_seconds" in model or platform is not None:
+        _need(_seconds(minimum) and minimum <= maximum, "缺少有效的本轮已核生成时长下限")
+    if platform is not None:
+        _need(model["platform"] == platform, "源能力证据所属平台与实际交付平台不一致")
     _evidence_file(model.get("capability_evidence"), root)
     modes = model.get("reference_modes")
     if modes is None:
@@ -111,20 +120,60 @@ def _model_limit(payload, left, right, root):
               "每种参考模式须有本轮实际能力证据")
         for mode in modes:
             _evidence_file(proofs[mode], root)
+    return model["id"], modes, minimum, maximum
+
+
+def _check_generation_duration(row, parameters, capability):
+    model, modes, minimum, maximum = capability
+    reference_modes = [parameters[key] for key in ("reference_mode", "mode") if key in parameters]
+    _need(parameters.get("model") == model and reference_modes and reference_modes[0] in modes
+          and all(mode == reference_modes[0] for mode in reference_modes),
+          "拆段能力与实际段落模型/参考方式不一致")
+    values = generation_duration_values(row, parameters)
+    _need(values and all(_seconds(value) and value == values[0] for value in values),
+          "生成时长缺失或冲突")
+    _need(values[0] <= maximum, "生成时长超过本轮已核上限")
+    if minimum is not None:
+        _need(values[0] >= minimum, f"生成时长 {values[0]:g} 秒低于本轮已核下限 {minimum:g} 秒")
+
+
+def _check_target_edit_duration(row, minimum, *, platform, required=False):
+    if minimum is None:
+        return
+    ident = row["segment_id"]
+    target = row.get("target_edit_duration_seconds")
+    if "target_edit_duration_seconds" in row:
+        _need(_seconds(target), f"{ident} 的目标剪辑时长必须为有效正数")
+    if "edit_in_seconds" in row or "edit_out_seconds" in row:
+        start, end = row.get("edit_in_seconds"), row.get("edit_out_seconds")
+        _need(type(start) in (int, float) and math.isfinite(start) and start >= 0
+              and _seconds(end) and end > start, f"{ident} 的目标剪辑起止时间无效")
+        _need(target is None or math.isclose(target, end - start, abs_tol=1e-6),
+              f"{ident} 的目标剪辑时长与源起止时间不一致")
+        target = end - start
+    if required:
+        _need(target is not None, f"{ident} 须在准确源稿登记目标剪辑时长或源剪辑起止时间")
+    if target is not None and target < minimum and not math.isclose(target, minimum, abs_tol=1e-6):
+        guidance = ("默认并入下一段并保留原切点；无可用下一段时核对能否并入前一段或重划相邻段"
+                    if platform == "redframe" else "须与允许接续的相邻镜合并")
+        raise ValueError(f"generation_boundary: {ident} 的目标剪辑时长 {target:g} 秒低于本轮已核下限 "
+                         f"{minimum:g} 秒；{guidance}")
+
+
+def _model_limit(payload, left, right, root):
+    capability = _model_capability(payload, root)
+    _, _, _, maximum = capability
     for row in (left, right):
         parameters = row.get("parameters", payload.get("platform", {}))
-        _need(isinstance(parameters, dict) and parameters.get("model") == model["id"]
-              and parameters.get("reference_mode", parameters.get("mode")) in modes,
-              "拆段能力与实际段落模型/参考方式不一致")
-        values = generation_duration_values(row, parameters)
-        _need(values and all(_seconds(v) and v <= model["max_duration_seconds"] for v in values)
-              and all(v == values[0] for v in values), "生成时长缺失、冲突或超过本轮已核上限")
-    return model["max_duration_seconds"]
+        _need(isinstance(parameters, dict), "交付/源参数结构无效")
+        _check_generation_duration(row, parameters, capability)
+    return maximum
 
 
-def validate_delivery_parameters(rows, payload, project):
+def validate_delivery_parameters(rows, payload, project, *, platform=None):
     """Bind submission values to the exact source; caller bounds are not proof."""
     sources = {row["segment_id"]: row for row in _rows(payload)}
+    capability = None
     for actual in rows:
         source = sources.get(actual.get("source_segment_id", actual.get("node_id")))
         if source is None:
@@ -144,10 +193,19 @@ def validate_delivery_parameters(rows, payload, project):
             _need(all(_seconds(v) and v == duration[0] for v in duration) and observed
                   and all(_seconds(v) and v == duration[0] for v in observed),
                   "实际交付生成时长与准确源稿不一致，不能用自填 bounds 改时长")
-        if "selected_video_model" in payload:
-            limit = _model_limit(payload, source, source, Path(project).resolve())
-            _need(_seconds(parameters.get("duration")) and parameters["duration"] <= limit,
-                  "实际交付生成时长超过源已核能力上限")
+        if "selected_video_model" in payload or platform is not None:
+            if capability is None:
+                capability = _model_capability(payload, Path(project).resolve(), platform=platform)
+            minimum, maximum = capability[2:]
+            _check_target_edit_duration(source, minimum, platform=payload["selected_video_model"]["platform"],
+                                        required=platform is not None)
+            bounds = actual.get("duration_bounds")
+            if minimum is not None and (bounds is not None or platform is not None):
+                _need(isinstance(bounds, list) and len(bounds) == 2 and all(_seconds(v) for v in bounds)
+                      and bounds[0] == minimum and bounds[1] == maximum,
+                      "冻结交付 duration_bounds 与同模型/参考方式的已核源能力上下限不一致")
+            _check_generation_duration(source, expected, capability)
+            _check_generation_duration(actual, parameters, capability)
 
 
 def _cutpoint(left, right):
@@ -230,7 +288,8 @@ def _require_physical_refs(refs, row, shot, dimension, side, hashes, boundary, *
     _need(hashes <= covered, f"{boundary} 的 {dimension} 缺 {segment_id} 侧实际匹配的画面参考")
 
 
-def validate_generation_boundaries(payload, storyboard, project, *, require_physical=True, action_shots=None):
+def validate_generation_boundaries(payload, storyboard, project, *, require_physical=True,
+                                   action_shots=None):
     """Validate a full or partial current draft without writing/approving it.
 
     Missing facts may remain in a candidate, but this strict check fails until
@@ -247,6 +306,13 @@ def validate_generation_boundaries(payload, storyboard, project, *, require_phys
 
 def _validate(payload, storyboard, root, *, require_physical, action_shots):
     rows = _rows(payload)
+    offer_rows = [row['segment_id'] for row in rows
+                  if _CREATOR_BOWL_BRUSH_OFFER.search(submitted_prompt_body(row))]
+    if offer_rows:
+        kickoff = load_kickoff(root)
+        product = kickoff["product"] if kickoff else payload.get("product_reference_pack")
+        if isinstance(product, dict) and product.get("product_id") == "creator-polishing-mask-2":
+            raise ValueError("、".join(offer_rows) + " 的赠品口播请在视频生成正文使用「还送高定条膜碗刷」")
     shots = {}
     staged_scenes = set()
     for scene in storyboard.get("scenes", []):
@@ -259,15 +325,26 @@ def _validate(payload, storyboard, root, *, require_physical, action_shots):
     mapped = []
     order = {key: index for index, key in enumerate(shots)}
     previous = -1
+    selected_model = payload.get("selected_video_model")
+    capability = (_model_capability(payload, root) if isinstance(selected_model, dict)
+                  and "min_duration_seconds" in selected_model else None)
     for row in rows:
         ids = source_shot_ids(row)
         _need(ids and all(key in shots for key in ids), "每个生成段必须映射准确导演镜号，不能省略映射绕过分段检查")
         for key in ids:
             _need(order[key] >= previous, "生成段来源顺序与导演顺序冲突")
             previous = order[key]
+        parameters = row.get("parameters", payload.get("platform", {}))
+        if capability is not None:
+            _need(isinstance(parameters, dict), "交付/源参数结构无效")
+            _check_target_edit_duration(row, capability[2], platform=selected_model["platform"])
+            _check_generation_duration(row, parameters, capability)
         if "shot_durations" in row:
-            validate_shot_durations(row, row.get("parameters", payload.get("platform", {})))
+            validate_shot_durations(row, parameters)
         mapped.append(ids)
+    scope = payload.get("scope")
+    if isinstance(scope, dict) and scope.get("type") == "full_local_authored":
+        _need({shot for ids in mapped for shot in ids} == set(shots), "全片稿生成段未完整覆盖准确导演镜号")
     validate_required_visuals(rows, required_visuals(storyboard), shot_order=tuple(shots), project=root,
                               action_shots=action_shots)
     checked = 0
@@ -275,8 +352,6 @@ def _validate(payload, storyboard, root, *, require_physical, action_shots):
         before, after = mapped[index:index + 2]
         before_scene, after_scene = shots[before[-1]][0], shots[after[0]][0]
         same_scene = before_scene == after_scene
-        # A new scene can establish its own staging. Declared carryover still
-        # binds the selected states across either kind of cut.
         if "physical_continuity" in right or (require_physical and same_scene and before_scene in staged_scenes):
             by_side = {left["segment_id"]: left, right["segment_id"]: right}
             for ident, shot, dimension, side, hashes, boundary in _physical_requirements(left, right):

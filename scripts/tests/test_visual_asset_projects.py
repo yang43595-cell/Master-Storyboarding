@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import visual_asset_library as m
 import visual_asset_projects as pmod
 from core.artifacts import load_manifest
+from core.character_layout import character_layout_reference, character_prompt_templates
 from core.project_state import new_project_state, write_project_state, load_project_state
 
 
@@ -1066,6 +1067,12 @@ class ProjectTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, '确认共用大头照'):
             service.request(job, wardrobe)
+        head_request = self.lib.prepare(job['id'], head)
+        head_layout = character_layout_reference('大头照')
+        self.assertEqual(head_request['reference_paths'], [head_layout['original']])
+        self.assertEqual(head_request['reference_records'], [head_layout])
+        self.assertIn('参考图 1 是大头照灰模，只参考', head_request['prompt'])
+        self.assertTrue(head_request['allow_unreferenced_design'])
         head_image = select(job, head, 'head', '大头照', (300, 400), 'red')
         current_version = 'b' * 64
         head_publication = publish('head', head_image, current_version, job, head)
@@ -1093,7 +1100,8 @@ class ProjectTests(unittest.TestCase):
         self.assertIsNone(saved_step(job, wardrobe)['project_confirmation'])
         self.assertFalse(service.get(ident).get('export'))
         wardrobe_request = service.request(self.lib.get(job['id'], 'jobs'), wardrobe)
-        self.assertEqual(wardrobe_request['reference_paths'], [str(head_image)])
+        self.assertEqual(wardrobe_request['reference_paths'],
+                         [str(head_image), character_layout_reference('服装')['original']])
 
         wardrobe_image = select(job, wardrobe, 'wardrobe', '服装三视图', (160, 90), 'green')
         current_version = 'c' * 64
@@ -1102,7 +1110,10 @@ class ProjectTests(unittest.TestCase):
         wardrobe_confirmation = saved_step(job, wardrobe)['project_confirmation']
         self.assertEqual(saved_step(job, head)['project_confirmation'], head_confirmation)
         final_request = service.request(self.lib.get(job['id'], 'jobs'), final)
-        self.assertEqual(final_request['reference_paths'], [str(wardrobe_image), str(head_image)])
+        layout = character_layout_reference('人物1x4')
+        self.assertEqual(final_request['reference_paths'], [str(wardrobe_image), str(head_image), layout['original']])
+        self.assertEqual(final_request['reference_records'][-1], layout)
+        self.assertEqual(self.lib.prepare(job['id'], final)['prompt'], character_prompt_templates()['人物1x4'])
         self.assertEqual(final_request['output_id'], 'HOME-FINAL')
         self.assertNotEqual(job['steps'][final]['key'], final_request['output_id'])
 
@@ -1113,6 +1124,20 @@ class ProjectTests(unittest.TestCase):
         self.assertIsNone(service.get(ident)['rows'][0]['job_id'])
         self.assertFalse(service.get(ident).get('export'))
         board_confirmation = saved_step(job, final)['project_confirmation']
+
+        self.backup()
+        # A newer pending website package may advance the review head before
+        # backup completes. Reading A's old publication can still export A's
+        # stored exact approval, without approving any current waiting member.
+        current_version = 'e' * 64
+        partial = service.apply_website_review(ident, final_publication, client)
+        self.assertFalse(partial['validity']['isCurrent'])
+        self.assertTrue(partial['adopted'])
+        self.assertTrue(partial['waiting_for_remaining_outputs'])
+        self.assertEqual(partial['export']['count'], 3)
+        from core.asset_refs import require_final_images
+        self.assertEqual(require_final_images(root, ['AST-PERSON@HOME-FINAL']), (True, []))
+        self.assertFalse(service.get(ident).get('export'))
 
         prop_job = service.prepare_reuse({'project_id': ident, 'ast_id': prop['asset_id']})['rows'][0]['job']
         prop_image = select(prop_job, 0, 'prop', '物品', (160, 90), 'purple')
@@ -1128,7 +1153,7 @@ class ProjectTests(unittest.TestCase):
         full_publication = publish('full', prop_image, current_version, prop_job, 0, ['head', 'wardrobe', 'board'])
         result = service.apply_website_review(ident, full_publication, client)
         self.assertTrue(result['waiting_for_backup'])
-        self.assertFalse(result['adopted'])
+        self.assertEqual(result['export'], partial['export'])
         self.backup()
         result = service.apply_website_review(ident, full_publication, client)
         self.assertTrue(result['adopted'])
@@ -1160,7 +1185,7 @@ class ProjectTests(unittest.TestCase):
         self.assertTrue(service.apply_website_review(ident, revised_publication, client)['waiting_for_backup'])
         self.backup()
         revised = service.apply_website_review(ident, revised_publication, client)['export']
-        self.assertEqual(revised['revision'], 'R02')
+        self.assertGreater(int(revised['revision'][1:]), int(result['export']['revision'][1:]))
         self.assertEqual(saved_step(prop_job, 0)['project_confirmation'], prop_confirmation)
         self.assertEqual(old_receipt_path.read_bytes(), old_receipt_bytes)
         self.assertEqual(saved_step(job, final)['project_confirmation']['website_review']['approval']['scope']['version'],
@@ -1168,6 +1193,227 @@ class ProjectTests(unittest.TestCase):
         revised_receipt = pmod.read(Path(revised['folder']) / '用户确认记录.json')
         self.assertEqual(revised_receipt['website_review']['approval']['scope']['version'], current_version)
         self.assertEqual(service.apply_website_review(ident, revised_publication, client)['export'], revised)
+
+    def kickoff_project(self, name, extra_requirements=()):
+        from scripts.tests.test_review_text_cli import narrative
+        from core.artifacts import adopt_initial_package, register_workspace_artifact
+        from core.project_kickoff import REQUEST_PATH
+        root = (self.base / name).resolve()
+        root.mkdir()
+        script_path, package = narrative(root)
+        for req in package['asset_requirements']:
+            req.update(image_decision='复用现有素材', image_reason='合成测试图片')
+        package['asset_requirements'].extend(extra_requirements)
+        pmod.write(script_path, package)
+        register_workspace_artifact(root, {'artifact_id': 'N-1', 'logical_id': 'narrative.package',
+            'type': 'narrative.package', 'revision': 'R01', 'path_or_url': script_path.name, 'depends_on': []})
+        adopt_initial_package(root, 'N-1', 'synthetic upstream approval')
+        pmod.write(root / REQUEST_PATH, {'kickoff': {'decision_ref': 'synthetic kickoff',
+            'product': {'mode': 'none'}, 'canvas': {'platform': 'redframe', 'model': 'fixture',
+                'aspect_ratio': '9:16', 'resolution': '720p', 'create_new': True}}})
+        service = self.lib.projects
+        return root, service, service.bind(str(root))
+
+    def test_chat_confirmation_adopts_exact_asset_with_dual_basis(self):
+        from core.agent_acceptance import register_asset_workflow_authorization, register_workflow_authorization
+        root, service, p = self.kickoff_project('chat-confirmation')
+        ast_id = p['rows'][0]['requirement']['asset_id']
+        planned = service.prepare_reuse({'project_id': p['id'], 'ast_id': ast_id})
+        job = planned['rows'][0]['job']
+        service.select({'project_id': p['id'], 'job_id': job['id'], 'index': 0, 'asset_id': self.asset['id']})
+        confirmation = {'quote': '确认这批资产，继续推', 'at': '2026-11-13T05:30:00Z',
+                        'review_ref': '04_资产/资产清单.md「协调方复核」一节'}
+        # The kickoff default is unchanged: no basis, no adoption.
+        with self.assertRaisesRegex(ValueError, '审核站真实通过回执'):
+            service.confirm({'project_id': p['id'], 'job_id': job['id'], 'index': 0, 'confirm': True})
+        with self.assertRaisesRegex(ValueError, '审核站真实通过回执'):
+            service.export({'project_id': p['id'], 'confirm': True})
+        # Missing authorization and wrong-scope authorization both fail closed.
+        with self.assertRaisesRegex(ValueError, '流程授权不存在或不唯一'):
+            service.apply_chat_confirmation(p['id'], authorization_id='MISSING', confirmation=confirmation)
+        register_workflow_authorization(root, authorization_id='FLOW-TEXT-ONLY',
+            authorization_ref='synthetic manuscript-only authorization', skills=['storyboard-director'])
+        with self.assertRaisesRegex(ValueError, '未覆盖资产采用范围'):
+            service.apply_chat_confirmation(p['id'], authorization_id='FLOW-TEXT-ONLY', confirmation=confirmation)
+        register_asset_workflow_authorization(root, authorization_id='FLOW-ASSET-TEST',
+            authorization_ref='synthetic user decision for the chat confirmation route')
+        # The recorded user confirmation itself must be complete.
+        with self.assertRaisesRegex(ValueError, '对话确认依据'):
+            service.apply_chat_confirmation(p['id'], authorization_id='FLOW-ASSET-TEST',
+                                            confirmation={'quote': '确认这批资产，继续推'})
+        first = service.apply_chat_confirmation(p['id'], authorization_id='FLOW-ASSET-TEST',
+                                                confirmation=confirmation)
+        self.assertFalse(first['adopted'])
+        self.backup()
+        result = service.apply_chat_confirmation(p['id'], authorization_id='FLOW-ASSET-TEST',
+                                                 confirmation=confirmation)
+        self.assertTrue(result['adopted'])
+        self.assertEqual(result['confirmation_channel'], 'chat_confirmation')
+        step = self.lib.get(job['id'], 'jobs')['steps'][0]
+        self.assertEqual(step['project_confirmation']['method'], '用户对话整批确认')
+        self.assertEqual(step['project_confirmation']['chat_confirmation']['confirmation']['quote'],
+                         '确认这批资产，继续推')
+        self.assertNotIn('website_review', step['project_confirmation'])
+        folder = Path(result['export']['folder'])
+        receipt = pmod.read(folder / '用户确认记录.json')
+        self.assertEqual(receipt['chat_confirmation']['authorization_id'], 'FLOW-ASSET-TEST')
+        self.assertEqual(receipt['chat_confirmation']['confirmation']['review_ref'],
+                         '04_资产/资产清单.md「协调方复核」一节')
+        self.assertNotIn('website_review', receipt)
+        self.assertTrue(all(item['confirmation']['method'] == '用户对话整批确认'
+                            and 'website_review' not in item['confirmation']
+                            for item in receipt['items']))
+        manifest = pmod.read(result['export']['manifest'])
+        self.assertTrue(manifest['assets'][0]['confirmed_outputs'])
+        state = load_project_state(root)
+        self.assertEqual(state['user_confirmations'][-1]['method'], '用户对话整批确认')
+        self.assertEqual(state['user_confirmations'][-1]['artifact_ids'], [result['export']['artifact_id']])
+        entry = next(a for a in load_manifest(root)['artifacts']
+                     if a['artifact_id'] == result['export']['artifact_id'])
+        self.assertTrue(entry['user_approved'])
+        again = service.apply_chat_confirmation(p['id'], authorization_id='FLOW-ASSET-TEST',
+                                                confirmation=confirmation)
+        self.assertEqual(again['export'], result['export'])
+
+    def test_chat_confirmation_waits_for_remaining_outputs(self):
+        from core.agent_acceptance import register_asset_workflow_authorization, register_workflow_authorization
+        extra = {'asset_id': 'AST-PROP-CUP', 'category': 'PROP', 'name': '合成杯子',
+                 'narrative_purpose': '承载合成验收动作', 'source_paragraph_ids': ['STP-01'],
+                 'identity_constraints': [], 'required_states': [], 'interactions': [],
+                 'reference_paths': [], 'unknowns': [], 'image_decision': '复用现有素材',
+                 'image_reason': '合成测试图片'}
+        root, service, p = self.kickoff_project('chat-partial', [extra])
+        register_asset_workflow_authorization(root, authorization_id='FLOW-ASSET-TEST',
+            authorization_ref='synthetic user decision for the chat confirmation route')
+        jobs = {}
+        for row in service.get(p['id'])['rows']:
+            planned = service.prepare_reuse({'project_id': p['id'], 'ast_id': row['requirement']['asset_id']})
+            jobs[row['requirement']['asset_id']] = next(
+                r['job'] for r in planned['rows'] if r['requirement']['asset_id'] == row['requirement']['asset_id'])
+        first_ast = p['rows'][0]['requirement']['asset_id']
+        service.select({'project_id': p['id'], 'job_id': jobs[first_ast]['id'], 'index': 0,
+                        'asset_id': self.asset['id']})
+        confirmation = {'quote': '确认这批资产，继续推', 'at': '2026-11-13T05:30:00Z',
+                        'review_ref': '04_资产/资产清单.md「协调方复核」一节'}
+        result = service.apply_chat_confirmation(p['id'], authorization_id='FLOW-ASSET-TEST',
+                                                 confirmation=confirmation)
+        self.assertFalse(result['adopted'])
+        self.assertTrue(result['waiting_for_remaining_outputs'])
+        self.assertNotIn('export', service.get(p['id']))
+        done = self.lib.get(jobs[first_ast]['id'], 'jobs')['steps'][0]
+        self.assertEqual(done['project_confirmation']['method'], '用户对话整批确认')
+        other_ast = next(ast for ast in jobs if ast != first_ast)
+        pending = self.lib.get(jobs[other_ast]['id'], 'jobs')['steps'][0]
+        self.assertIsNone(pending['project_confirmation'])
+
+        from core.asset_refs import require_final_images
+        first_key = pmod.step_output_id(done)
+        self.backup()
+        partial = service.apply_chat_confirmation(p['id'], authorization_id='FLOW-ASSET-TEST',
+                                                  confirmation={'outputs': []})
+        self.assertTrue(partial['adopted'])
+        self.assertTrue(partial['waiting_for_remaining_outputs'])
+        self.assertEqual(partial['export']['count'], 1)
+        self.assertEqual(require_final_images(root, [first_ast + '@' + first_key]), (True, []))
+        self.assertEqual(service.apply_chat_confirmation(p['id'], authorization_id='FLOW-ASSET-TEST',
+                                                         confirmation={'outputs': []}), partial)
+        other_image = self.base / 'cup.png'
+        Image.new('RGB', (160, 90), 'green').save(other_image)
+        distinct, _ = self.lib.import_file(other_image, category='物品')
+        service.select({'project_id': p['id'], 'job_id': jobs[other_ast]['id'], 'index': 0,
+                        'asset_id': distinct['id']})
+        # Replaying A's old unscoped receipt must not confirm newly selected B.
+        service.apply_chat_confirmation(p['id'], authorization_id='FLOW-ASSET-TEST',
+                                        confirmation=confirmation)
+        selected = self.lib.get(jobs[other_ast]['id'], 'jobs')['steps'][0]
+        self.assertIsNone(selected['project_confirmation'])
+        second_key = pmod.step_output_id(selected)
+        scope = {'ast_id': other_ast, 'output_id': second_key, 'asset_id': distinct['id'],
+                 'purpose': selected['purpose'], 'image_sha256': pmod.digest(Path(distinct['original']))}
+        with self.assertRaisesRegex(ValueError, '原确认范围不能扩大'):
+            service.apply_chat_confirmation(p['id'], authorization_id='FLOW-ASSET-TEST',
+                                            confirmation={**confirmation, 'outputs': [scope]})
+        new_basis = {**confirmation, 'quote': '确认这张杯子', 'at': '2026-11-13T06:00:00Z'}
+        with self.assertRaisesRegex(ValueError, '选图、用途或字节'):
+            service.apply_chat_confirmation(p['id'], authorization_id='FLOW-ASSET-TEST',
+                                            confirmation={**new_basis, 'outputs': [{**scope, 'purpose': '错误用途'}]})
+        result = service.apply_chat_confirmation(p['id'], authorization_id='FLOW-ASSET-TEST',
+                                                 confirmation={**new_basis, 'outputs': [scope]})
+        self.assertTrue(result['waiting_for_backup'])
+        self.assertEqual(result['export'], partial['export'])
+        self.assertFalse(require_final_images(root, [other_ast + '@' + second_key])[0])
+        self.backup()
+        complete = service.apply_chat_confirmation(p['id'], authorization_id='FLOW-ASSET-TEST',
+                                                    confirmation={'outputs': []})
+        self.assertTrue(complete['adopted'])
+        self.assertNotIn('waiting_for_remaining_outputs', complete)
+        self.assertEqual(require_final_images(root, [first_ast + '@' + first_key,
+                                                     other_ast + '@' + second_key]), (True, []))
+        receipts = pmod.read(Path(complete['export']['folder']) / '用户确认记录.json')['items']
+        self.assertEqual([item['confirmation']['chat_confirmation']['confirmation']['quote'] for item in receipts],
+                         [confirmation['quote'], new_basis['quote']])
+        self.assertEqual(self.lib.get(jobs[first_ast]['id'], 'jobs')['steps'][0], done)
+
+    def test_two_outfits_publish_one_current_output_and_keep_it_on_other_reopen(self):
+        from core.agent_acceptance import register_asset_workflow_authorization
+        from core.asset_refs import require_final_images
+
+        ast = 'AST-PERSON'
+        character = {'asset_id': ast, 'category': 'CHARACTER', 'entity_id': 'CHR-PERSON', 'name': '人物甲',
+                     'narrative_purpose': '保持居家和外出服装区分', 'source_paragraph_ids': ['STP-01'],
+                     'identity_constraints': [], 'required_states': [], 'interactions': [],
+                     'reference_paths': [], 'unknowns': [], 'image_decision': '需要制作',
+                     'image_reason': '人物分两套服装', 'character_output_kind': '人物1x4',
+                     'wardrobe_states': [{'name': '居家装', 'evidence': '居家装', 'output_id': 'HOME-FINAL'},
+                                         {'name': '外出装', 'evidence': '外出装', 'output_id': 'VISIT-FINAL'}]}
+        root, service, project = self.kickoff_project('same-ast-outputs', [character])
+        ident = project['id']
+        auth = 'FLOW-ASSET-TEST'
+        register_asset_workflow_authorization(root, authorization_id=auth,
+            authorization_ref='synthetic user decision for the chat confirmation route')
+        payload = {'project_id': ident, 'ast_id': ast}
+        service.prepare_reuse({'project_id': ident, 'ast_id': project['rows'][0]['requirement']['asset_id']})
+        pmod.prepare_character(service, payload)
+        job_id = service.row(service.get(ident), ast)['job_id']
+
+        def current():
+            return self.lib.get(job_id, 'jobs')
+
+        def index(output_id):
+            return next(i for i, step in enumerate(current()['steps'])
+                        if pmod.step_output_id(step) == output_id)
+
+        for outfit in current()['character_workflow']['outfits']:
+            pmod.choose_character_route(service, {**payload, 'outfit_id': outfit['id'],
+                'route': 'reuse' if outfit['name'] == '居家装' else 'build'})
+        home = index('HOME-FINAL')
+        visit = index('VISIT-FINAL')
+        for i, color in ((home, 'blue'), (visit, 'green')):
+            path = self.base / (color + '-board.png')
+            Image.new('RGB', (160, 90), color).save(path)
+            selected, _ = self.lib.import_file(path, category='人物1x4')
+            if i == visit:
+                with self.assertRaisesRegex(ValueError, '先在项目表中确认前置制作项'):
+                    service.select({'project_id': ident, 'job_id': job_id, 'index': i, 'asset_id': selected['id']})
+                continue
+            service.select({'project_id': ident, 'job_id': job_id, 'index': i, 'asset_id': selected['id']})
+        step = current()['steps'][home]
+        receipt = {'quote': '确认居家装', 'at': '2026-11-13T06:00:00Z', 'review_ref': 'Synthetic fixture',
+                   'outputs': [{'ast_id': ast, 'output_id': 'HOME-FINAL', 'asset_id': step['selected'],
+                                'purpose': step['purpose'],
+                                'image_sha256': pmod.digest(Path(self.lib.get(step['selected'])['original']))}]}
+        service.apply_chat_confirmation(ident, authorization_id=auth, confirmation=receipt)
+        self.backup()
+        partial = service.apply_chat_confirmation(ident, authorization_id=auth, confirmation={'outputs': []})
+        self.assertEqual(partial['export']['count'], 1)
+        self.assertEqual(require_final_images(root, [ast + '@HOME-FINAL']), (True, []))
+        self.assertFalse(require_final_images(root, [ast + '@VISIT-FINAL'])[0])
+        self.assertFalse(require_final_images(root, [ast])[0])
+        original = current()['steps'][home]['project_confirmation']
+        service.reopen({'project_id': ident, 'job_id': job_id, 'index': visit})
+        self.assertEqual(require_final_images(root, [ast + '@HOME-FINAL']), (True, []))
+        self.assertFalse(require_final_images(root, [ast + '@VISIT-FINAL'])[0])
+        self.assertEqual(current()['steps'][home]['project_confirmation'], original)
 
     def test_export_interruption_resumes_same_revision_without_duplicates(self):
         for row in self.lib.projects.detail(self.p['id'])['rows']:
