@@ -599,7 +599,8 @@ class Projects:
             request = {'mode': 'project', 'project_path': p['path'], 'source_narrative': p['source'],
                        'narrative': prompt_context(p['narrative'], [r['requirement']['asset_id'] for r in rows]),
                        'kind': self.row_kinds(rows[0])[0], 'codex_model': 'gpt-6-luna', 'reference_paths': list(dict.fromkeys(refs)),
-                       'rows': [{**r, 'character_output_mode': self.row_character_mode(r)} for r in rows],
+                       'rows': [{**r, 'character_output_mode': self.row_character_mode(r),
+                                 'allowed_output_kinds': self.row_kinds(r)} for r in rows],
                        'inventory': [{k: a.get(k) for k in ('id', 'name', 'category', 'status', 'tags', 'project')}
                                                 for a in self.lib.items() if not a.get('trashed_at')]}
             request.update(reference_evidence(p['path'], [r['requirement'] for r in rows],
@@ -632,7 +633,22 @@ class Projects:
             slots = planned['outputs']
             if not slots or len(slots) > 16:
                 raise ValueError('每项需求须有 1 至 16 个必要输出；不能静默省略需求')
-            if req['category'] != 'PROP' and production_kinds(req) != ['角色外观'] and not set(req['required_states']).issubset({s['state'] for s in slots}):
+            required_states = set(req['required_states'])
+            output_states = {s['state'] for s in slots}
+            coverage = planned.get('covered_states', [])
+            reuse = req['category'] == 'REAL_PRODUCT' and req.get('image_decision') == '复用现有素材'
+            source = ('复用现有素材' if reuse else req.get('image_reason', '')
+                      if req['category'] == 'OTHER' and req.get('image_decision') == '需要制作' else '')
+            covered = set()
+            for state in coverage:
+                label, quote, basis = state['state'], state['source_quote'], state['basis']
+                if (label not in required_states - output_states - covered or not quote.strip()
+                        or not source or (quote != source if reuse else quote not in source)
+                        or not basis.strip()):
+                    raise ValueError('非独立成图状态须绑定本项已登记的复用或用途依据，且不重复制作项')
+                covered.add(label)
+            if (req['category'] != 'PROP' and production_kinds(req) != ['角色外观']
+                    and not required_states <= output_states | covered):
                 raise ValueError('制作项未完整覆盖 AST 所需状态，请重新盘点')
             seen = set()
             for s in slots:
@@ -677,7 +693,7 @@ class Projects:
             for s in slots:
                 recipe = self.skill.recipe(s['kind'])
                 steps.append({**s, 'name': (s['kind'] + ('四视图' if req['category'] == 'PROP' else '主图') + (' · ' + s['state'] if s.get('state') else '')) if s['kind'] in {'物品', '产品'} else s['view'], 'status': 'waiting', 'outputs': [],
-                              'generation_enabled': row.get('production_route') != 'reuse',
+                              'generation_enabled': not reuse and row.get('production_route') != 'reuse',
                               'reference_ids': row['reference_ids'][:], 'project_confirmation': None,
                               'template_source': recipe.get('template') or '依据分类指南编写：' + recipe['guide']})
             job = {'id': uid(), 'title': req['name'], 'kind': slots[0]['kind'], 'source_id': None,
@@ -687,7 +703,8 @@ class Projects:
                    'requirement': copy.deepcopy(req), 'steps': steps, 'planning_evidence': evidence,
                    'character_output_mode': self.row_character_mode(row),
                    'scene_output_mode': row.get('scene_output_mode'),
-                   'plan_rationale': planned['rationale'], 'blockers': planned['blockers']}
+                   'plan_rationale': planned['rationale'], 'blockers': planned['blockers'],
+                   **({'covered_states': coverage} if coverage else {})}
             jobs.append((row, job))
         for row, job in jobs:
             self.lib.save(job, 'jobs')

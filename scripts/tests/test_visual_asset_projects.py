@@ -367,12 +367,64 @@ class ProjectTests(unittest.TestCase):
 
     def test_scene_still_requires_all_visual_states(self):
         project = self.lib.projects.get(self.p['id'])
-        project['rows'][0]['requirement']['required_states'] = ['白天', '夜晚']
+        project['rows'][0]['requirement'].update(required_states=['白天', '夜晚'],
+                                                 image_decision='需要制作', image_reason='已登记昼夜场景')
         result = plan_result()
         for step in result['rows'][0]['outputs']:
             step['state'] = '白天'
         with self.assertRaisesRegex(ValueError, '完整覆盖'):
             self.lib.projects.apply_plan(project, project['rows'], result, {})
+        result['rows'][0]['covered_states'] = [
+            {'state': '夜晚', 'source_quote': '已登记昼夜场景', 'basis': '声称可由镜内照明覆盖'}]
+        with self.assertRaises(ValueError):
+            self.lib.projects.apply_plan(project, project['rows'], result, {})
+
+    def test_plan_keeps_only_needed_other_image_with_approved_state_coverage(self):
+        service = self.lib.projects
+        project = service.get(self.p['id'])
+        quote = '净脸和已擦一颊由镜头呈现，不另出图'
+        project['rows'][1]['requirement'].update(
+            category='OTHER', required_states=['净脸', '湿润薄膜', '已擦一颊'],
+            image_decision='需要制作', image_reason='只制作湿润薄膜特写；' + quote + '。')
+        result = plan_result()
+        planned = result['rows'][1]
+        planned['outputs'][0].update(state='湿润薄膜', view='正面特写')
+        expected = [{'state': state, 'source_quote': quote, 'basis': '已登记该状态由镜头动作承载'}
+                    for state in ('净脸', '已擦一颊')]
+        planned['covered_states'] = expected
+        for label, covered in (
+            ('missing', []),
+            ('duplicate', [*expected, expected[0]]),
+            ('invented quote', [{**expected[0], 'source_quote': '已同意删掉净脸'}, expected[1]]),
+            ('invented state', [{**expected[0], 'state': '更换演员'}, expected[1]]),
+            ('output overlap', [*expected, {**expected[0], 'state': '湿润薄膜'}]),
+        ):
+            with self.subTest(label=label):
+                rejected = copy.deepcopy(result)
+                rejected['rows'][1]['covered_states'] = covered
+                with self.assertRaises(ValueError):
+                    service.apply_plan(project, project['rows'], rejected, {})
+        service.apply_plan(project, project['rows'], result, {})
+        job = self.job(1)
+        self.assertEqual(job['covered_states'], expected)
+        self.assertEqual([(s['state'], s['view'], s['ratio']) for s in job['steps']],
+                         [('湿润薄膜', '正面特写', '4:3')])
+
+    def test_plan_reuses_real_product_state_without_enabling_generation(self):
+        service = self.lib.projects
+        project = service.get(self.p['id'])
+        project['rows'][1]['requirement'].update(
+            category='REAL_PRODUCT', required_states=['闭盒', '开盒'], image_decision='复用现有素材',
+            image_reason='采用既有包材原图和同版开盒动作参考', reference_paths=[self.asset['original']])
+        result = plan_result()
+        planned = result['rows'][1]
+        planned['outputs'][0].update(kind='产品', state='闭盒')
+        expected = [{'state': '开盒', 'source_quote': '复用现有素材', 'basis': '采用同版开盒动作参考'}]
+        planned['covered_states'] = expected
+        service.apply_plan(project, project['rows'], result, {})
+        job = self.job(1)
+        self.assertEqual(job['covered_states'], expected)
+        self.assertEqual([(s['state'], s['generation_enabled']) for s in job['steps']], [('闭盒', False)])
 
     def test_scene_dependencies_and_library_confirmation_are_separate(self):
         job = self.job()
