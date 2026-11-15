@@ -32,7 +32,7 @@ python scripts/canvas_readback.py --delivery --project <隔离项目> --frozen <
 
 中断时没有完整刷新回读就未完成交付核验，先只读核实已保存部分，不自动重试写入/生成。重复运行这两条命令只读且重新核验当前来源；源版本、字节、引用或正文改变后必须重跑，不能复用先前 PASS。动作语义仍执行视频方法的同次自查，不将技术通过写为人工已看图。
 
-第二条命令只比较读数，不执行网页操作。读取者必须真实刷新并读取原生编辑器；输出含本修订、frozen_sha256、实际读数摘要及各项差异。没有实际读取时不可填造通过。
+第二条命令只比较读数，不执行网页操作。读取者必须真实刷新并读取原生编辑器；输出含本修订、frozen_sha256、实际读数摘要及各项差异。没有实际读取时不可填造通过。已锁定的产品参考按[正式红帧回读的产品包规则](../../skills/_shared/product-reference.md#正式红帧回读复用已确认产品包)取用。
 
 将这份业务 JSON 用现有 `record_candidate` 登记。`record_review` 仍记录执行者实际审核结论；若候选为网页交付快照（target_url + drafts），approved 还要求 report_ref 指向项目内本修订的完整比较结果。程序核对 revision/hash、全部实体检查、当前参考，以及报告字节摘要。目标已登记项目 ID 时，比较报告须含实际回读的 `observed_target_project_id`。在途旧报告缺该字段时，刷新并生成新报告，用 `record_review` 为同一候选补登，保留已有确认。`confirm_candidate` 与 `commit_change` 重查同一候选和当前证据。普通技术通过仍不等于用户确认，也不授予上传、生成或发布权限。
 

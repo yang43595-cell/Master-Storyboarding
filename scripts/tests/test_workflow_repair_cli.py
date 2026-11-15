@@ -9,8 +9,8 @@ import sys
 
 import pytest
 
-from scripts.canvas_readback import compare_baseline, digest
-from scripts.core import artifacts
+from scripts.canvas_readback import compare, compare_baseline, digest, validate_submission
+from scripts.core import artifacts, product_reference_pack, quality_evidence
 from scripts.core.io import write_json
 from scripts.core.project_state import load_project_state, write_project_state
 from scripts.core.project_kickoff import REQUEST_PATH
@@ -40,7 +40,8 @@ def redframe_fixture(root, *, include_cross_scene_review=True):
     return frozen, observed
 
 
-def bind_redframe_production_sources(root, frozen, observed, *, include_cross_scene_review=True):
+def bind_redframe_production_sources(root, frozen, observed, *, include_cross_scene_review=True,
+                                     product_assets=(), shot_packaging=None):
     manifest = artifacts.load_manifest(root)
     state = load_project_state(root)
 
@@ -58,7 +59,10 @@ def bind_redframe_production_sources(root, frozen, observed, *, include_cross_sc
                                                approval_ref='synthetic only'))
         return dict(artifact_id=ident, revision='R01', sha256=sha)
 
-    narrative = register('NARRATIVE', 'narrative.package', 'narrative.json', {'fixture': 'narrative'})
+    narrative_payload = {'fixture': 'narrative'}
+    if product_assets:
+        narrative_payload['asset_requirements'] = list(product_assets)
+    narrative = register('NARRATIVE', 'narrative.package', 'narrative.json', narrative_payload)
     capability = root / 'synthetic-duration-capability.json'
     write_json(capability, {'model': {'type': 'video', 'providerId': 'fixture',
         'modelId': 'fixture', 'label': frozen['drafts'][0]['parameters']['model'],
@@ -74,6 +78,8 @@ def bind_redframe_production_sources(root, frozen, observed, *, include_cross_sc
         entry = 'The same actor enters the next room with the box still in both hands.'
         exit_note = 'The actor crosses the doorway holding the box with both hands.'
         shots.append(dict(scene_id=ident, shots=[dict(shot_id=shot, cut=dict(entry=entry, exit=exit_note))]))
+        if shot_packaging and shot in shot_packaging:
+            shots[-1]['shots'][0]['packaging_requirements'] = shot_packaging[shot]
         segment = dict(segment_id=ident, source_shot_ids=[shot], prompt=row['prompt'],
                        parameters=copy.deepcopy(row['parameters']),
                        target_edit_duration_seconds=sum(row['shot_durations']),
@@ -106,6 +112,8 @@ def bind_redframe_production_sources(root, frozen, observed, *, include_cross_sc
     write_json(root / artifacts.MANIFEST_PATH, manifest)
     write_project_state(root, state)
     frozen['source_artifacts'] = [video, director]
+    if product_assets:
+        frozen['source_artifacts'].append(narrative)
     bind_synthetic_quality(root, frozen)
     observed['source_artifacts'] = copy.deepcopy(frozen['source_artifacts'])
     observed['drafts'] = copy.deepcopy(frozen['drafts'])
@@ -143,6 +151,90 @@ def test_redframe_full_cli_and_saved_graph_readback(tmp_path):
     # Source validity is rechecked even with a matching saved graph and old PASS.
     (tmp_path / 'director.json').write_text('{"fixture":"changed"}')
     assert canvas_cli(tmp_path, frozen, observed).returncode != 0
+
+
+@pytest.mark.parametrize('mutation', ['none', 'purpose', 'order', 'hash', 'explicit_sku', 'missing_action',
+                                      'separate_product'])
+def test_formal_redframe_readback_reuses_selected_product_pack(tmp_path, monkeypatch, mutation):
+    from PIL import Image
+
+    root = tmp_path / 'project'
+    root.mkdir()
+    frozen, observed = redframe_fixture(root)
+    pack_root = tmp_path / 'packs'
+    pack = pack_root / 'fixture-product' / 'R01'
+    pack.mkdir(parents=True)
+    monkeypatch.setattr(product_reference_pack, 'PACK_ROOT', pack_root)
+    original = pack / 'packaging.png'
+    Image.new('RGB', (8, 8), 'yellow').save(original)
+    project_image = root / original.name
+    shutil.copyfile(original, project_image)
+    sha256 = artifacts.digest(original)
+    pack_manifest = pack / 'manifest.json'
+    write_json(pack_manifest, {
+        'product_id': 'fixture-product', 'revision': 'R01', 'product_name': 'Synthetic product',
+        'references': [dict(id='box', path=original.name, role='packaging', usages=['real_use'],
+                            sha256=sha256, source='fixture', coverage='closed packaging')],
+    })
+    request = json.loads((root / REQUEST_PATH).read_text())
+    request['kickoff']['product'] = dict(mode='replace', product_id='fixture-product', product_usage='real_use',
+                                        reference_pack_revision='R01', reference_pack_sha256=artifacts.digest(pack_manifest))
+    write_json(root / REQUEST_PATH, request)
+
+    manifest = artifacts.load_manifest(root)
+    manifest['artifacts'].append(dict(artifact_id='PACK-IMAGE', status='current', user_approved=True,
+                                      revision='R01', path_or_url=project_image.name, checksum=sha256))
+    write_json(root / artifacts.MANIFEST_PATH, manifest)
+    row = frozen['drafts'][0]
+    row['ordered_media'].append(dict(node_id=row['node_id'], media_id='box-media', sha256=sha256))
+    row['reference_checks'].append(dict(
+        artifact_id='PACK-IMAGE', asset_id='product', product_reference_id='box', path=project_image.name,
+        source_pack_path=str(original), sha256=sha256, kind='image', role='appearance', entity_ids=['PRODUCT'],
+        canvas_binding=dict(mode='direct', purpose='product appearance', prompt_reference=True),
+    ))
+    row['required_entities'].append('PRODUCT')
+    row['required_reference_roles']['PRODUCT'] = ['appearance']
+    product = dict(asset_id='product', category='REAL_PRODUCT', reference_paths=[str(pack_manifest)])
+    requirement = dict(entity_id='PRODUCT', classification='product', source_basis='explicit fixture SKU requirement',
+                       product_reference=dict(product_id='fixture-product', sku='fixture-sku', version='fixture-version'))
+    bind_redframe_production_sources(root, frozen, observed, product_assets=[product],
+                                     shot_packaging={'one-shot': [requirement]} if mutation == 'explicit_sku' else None)
+    if mutation == 'separate_product':
+        row['quality_evidence']['checks']['packaging_identity'].update(scope='present', result='pass', items=[dict(
+            entity_id='OTHER_PRODUCT', classification='product', source_basis='separate product fixture',
+            source_shot_ids=['one-shot'], prompt_claim='product', prompt_quote=row['prompt'],
+            product_reference=dict(product_id='other-product', sku='other-sku', version='other-version'),
+        )])
+    else:
+        row['quality_evidence']['checks'].pop('packaging_identity')
+    if mutation == 'purpose':
+        row['reference_checks'][-1]['roles'] = ['identity']
+    elif mutation == 'order':
+        row['reference_checks'].reverse()
+        row['ordered_media'].reverse()
+    elif mutation == 'hash':
+        observed['drafts'][0]['ordered_media'][-1]['sha256'] = '0' * 64
+    elif mutation == 'missing_action':
+        row['quality_evidence']['checks'].pop('action_chain')
+    row['quality_evidence']['input_sha256'] = quality_evidence.fingerprint(quality_evidence.draft_binding(row))
+    observed['frozen_sha256'] = digest(frozen)
+
+    errors = {'purpose': '产品参考的媒体类型或实际用途', 'order': '素材字节或顺序',
+              'explicit_sku': 'packaging', 'missing_action': 'action_chain', 'separate_product': 'packaging'}
+    if mutation in errors:
+        with pytest.raises(ValueError, match=errors[mutation]):
+            compare(frozen, observed, root, formal_delivery=True)
+    else:
+        report = compare(frozen, observed, root, formal_delivery=True)
+        if mutation == 'hash':
+            assert not report['ok']
+            assert report['differences'][0]['field'] == 'ordered_media'
+        else:
+            assert report['ok'], report['differences']
+            assert report['native_reference_checks'] == {'one': 'passed', 'two': 'passed'}
+            assert report['submission_checks']['product_pack_packaging_nodes'] == ['one']
+            with pytest.raises(ValueError, match='packaging_identity'):
+                validate_submission(frozen, root, formal_delivery=True)
 
 
 def test_formal_redframe_cross_scene_action_cannot_omit_review(tmp_path):

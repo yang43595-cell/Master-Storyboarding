@@ -131,12 +131,46 @@ def draft_binding(draft):
     return {key: value for key, value in draft.items() if key != 'quality_evidence'}
 
 
-def validate_draft_evidence(draft, packaging_requirements=()):
+def packaging_covered_by_pack(draft, product_id, packaging_ids, requirements):
+    """Use pack authority only when it covers all declared packaging for this draft."""
+    refs = draft['reference_checks']
+    packed = [ref for ref in refs if ref.get('product_reference_id') in packaging_ids]
+    shots = set(source_shot_ids(draft))
+    if (not packed or any(ref not in packed and 'product_reference' in ref for ref in refs)
+            or any(shots.intersection(required['source_shot_ids']) for required in requirements)):
+        return False
     evidence = draft.get('quality_evidence')
-    _observations(evidence, DRAFT_ASPECTS)
+    checks = evidence.get('checks') if isinstance(evidence, dict) else None
+    packaging = checks.get('packaging_identity') if isinstance(checks, dict) else None
+    items = packaging.get('items', []) if isinstance(packaging, dict) else []
+    if not isinstance(items, list):
+        return False
+    for item in items:
+        product = item.get('product_reference') if isinstance(item, dict) else None
+        if (not isinstance(product, dict) or item.get('classification') != 'product'
+                or product.get('product_id') != product_id):
+            return False
+        used = item.get('source_shot_ids')
+        covered = {shot for ref in packed if item.get('entity_id') in ref.get('entity_ids', [])
+                   for shot in reference_shot_ids(ref, draft)}
+        if not isinstance(used, list) or not used or not set(used) <= covered:
+            return False
+    return True
+
+
+def validate_draft_evidence(draft, packaging_requirements=(), *, packaging_from_pack=False):
+    evidence = draft.get('quality_evidence')
+    aspects = DRAFT_ASPECTS
+    if packaging_from_pack:
+        aspects = tuple(aspect for aspect in aspects if aspect != 'packaging_identity')
+        if isinstance(evidence, dict) and isinstance(evidence.get('checks'), dict):
+            checks = {name: check for name, check in evidence['checks'].items() if name != 'packaging_identity'}
+            evidence = {**evidence, 'checks': checks}
+    _observations(evidence, aspects)
     if evidence.get('input_sha256') != fingerprint(draft_binding(draft)):
         raise ValueError('quality_evidence: 正文、参数或有序引用已变化；旧检查失效')
-    validate_packaging_scope(draft, packaging_requirements)
+    if not packaging_from_pack:
+        validate_packaging_scope(draft, packaging_requirements)
     return {'verification': 'evidence_consistency_only', 'visual_quality_verified': False}
 
 

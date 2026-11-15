@@ -666,7 +666,8 @@ def predecessor_contexts(frozen, project, manifest, private_preview):
 
 def validate_submission(frozen: dict, project: Path, *, private_preview: bool = False,
                         formal_delivery: bool = False, preflight: bool = False,
-                        current: dict | None = None, baseline: dict | None = None) -> dict:
+                        current: dict | None = None, baseline: dict | None = None,
+                        readback: bool = False) -> dict:
     """Check the existing frozen delivery JSON, using current project authority.
 
     Roles/states are explicit production decisions, not inferred visual facts.
@@ -784,11 +785,11 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         raise ValueError('exact confirmed source_artifacts required')
     scene_requirements = []
     try:
-        from .core.quality_evidence import (packaging_requirements, validate_registered_product_reference,
-                                            validate_draft_evidence)
+        from .core.quality_evidence import (packaging_covered_by_pack, packaging_requirements,
+                                            validate_draft_evidence, validate_registered_product_reference)
     except ImportError:
-        from core.quality_evidence import (packaging_requirements, validate_registered_product_reference,
-                                           validate_draft_evidence)
+        from core.quality_evidence import (packaging_covered_by_pack, packaging_requirements,
+                                           validate_draft_evidence, validate_registered_product_reference)
     package_requirements = []
     scene_sources = []
     for ref in sources:
@@ -801,6 +802,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                 scene_sources.append((ref, source_path.resolve(), source_payload))
     face_requirements = {}
     product_pack = None
+    pack_packaging_ids = set()
     product_requirements = []
     if formal_redframe:
         try:
@@ -819,12 +821,6 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         if (len(videos) != 1 or not videos[0].get('source_storyboard') or len(boards) != 1
                 or not boards[0].get('source_narrative')):
             raise ValueError('正式红帧写入须绑定已采用的视频稿、导演稿和已确认的来源编导稿')
-        if any('product_reference_id' in ref for row in drafts.values() for ref in row.get('reference_checks', [])
-               if isinstance(ref, dict)):
-            product_pack = resolve_product_pack(kickoff['product'])
-            narrative_id = boards[0]['source_narrative'].get('artifact_id')
-            product_requirements = [asset for ref, _, payload in scene_sources if ref['artifact_id'] == narrative_id
-                                    for asset in payload.get('asset_requirements', [])]
         source_segments = {row['segment_id']: row for row in source_review_segments(videos[0])}
         for row in drafts.values():
             source = source_segments.get(row.get('source_segment_id'))
@@ -853,6 +849,15 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             context_scopes[node['node_id']] = prior
             validation_rows.append(node)
         validation_rows.append(row)
+    pack_rows = validation_rows if readback else drafts.values()
+    if formal_redframe and any('product_reference_id' in ref for row in pack_rows
+                               for ref in row.get('reference_checks', []) if isinstance(ref, dict)):
+        product_pack = resolve_product_pack(kickoff['product'])
+        narrative_id = boards[0]['source_narrative'].get('artifact_id')
+        product_requirements = [asset for ref, _, payload in scene_sources if ref['artifact_id'] == narrative_id
+                                for asset in payload.get('asset_requirements', [])]
+        if readback and not preflight and product_pack:
+            pack_packaging_ids = {entry['id'] for entry in product_pack['references'] if entry['role'] == 'packaging'}
     if contexts:
         remaining = validate_scene_source_mapping(
             validation_rows, scene_sources, project, delivery_platform='redframe' if formal_redframe else None,
@@ -936,6 +941,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             from core.asset_refs import resolve_final_images
         asset_outputs = resolve_final_images(project, sorted(exact_outputs))
     endpoint_control_checks = {}
+    pack_packaging_nodes = []
     for row in validation_rows:
         row_frozen = context_scopes.get(row['node_id'], frozen)
         before_upload = formal_redframe and preflight and row['node_id'] in planned_ids
@@ -950,8 +956,13 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             if 'state_control' in row:
                 raise ValueError('endpoint state_control requires its explicit verified identity mode')
             validate_scene_state_references(row, scene_requirements)
+        refs = row.get('reference_checks')
+        packaging_from_pack = bool(pack_packaging_ids) and packaging_covered_by_pack(
+            row, product_pack['product_id'], pack_packaging_ids, package_requirements)
         if not private_preview:
-            validate_draft_evidence(row, package_requirements)
+            validate_draft_evidence(row, package_requirements, packaging_from_pack=packaging_from_pack)
+        if packaging_from_pack:
+            pack_packaging_nodes.append(row['node_id'])
         if not isinstance(row.get('prompt'), str) or not row['prompt'].strip():
             raise ValueError('complete submitted prompt body required')
         duration = seconds(row['parameters']['duration'])
@@ -963,7 +974,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         validate_shot_durations(row, row['parameters'])
         if redframe or 'edges' in row or 'source_nodes' in row:
             validate_canvas_inputs(row, redframe=redframe, before_upload=before_upload)
-        media, refs = row.get('ordered_media'), row.get('reference_checks')
+        media = row.get('ordered_media')
         if before_upload:
             media = [None] * len(refs)
         if not isinstance(media, list) or not isinstance(refs, list) or len(refs) != len(media):
@@ -1011,10 +1022,11 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                     if (not isinstance(product, dict) or product.get('reference_role') != 'packaging'
                             or product.get('product_id') != product_pack['product_id']):
                         raise ValueError('包装声明与已锁产品不一致')
-                    validate_registered_product_reference(project, ref, ref,
-                        allowed_roots=(Path(product_pack['manifest_path']).parent,))
-                    if (project / product['source']['path']).resolve() != path:
-                        raise ValueError('包装声明须绑定本槽实际参考原件')
+                    if not packaging_from_pack:
+                        validate_registered_product_reference(project, ref, ref,
+                            allowed_roots=(Path(product_pack['manifest_path']).parent,))
+                        if (project / product['source']['path']).resolve() != path:
+                            raise ValueError('包装声明须绑定本槽实际参考原件')
             elif output is not None:
                 path = Path(output['path'])
                 if (ref.get('sha256') != output['sha256'] or ref.get('kind') != 'image'
@@ -1221,7 +1233,10 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             'canvas_input_checks': {row['node_id']: ('passed' if redframe or 'edges' in row else 'not_checked')
                                     for row in frozen['drafts']},
             'quality_evidence_checks': 'image_evidence_only_not_draft_release' if private_preview else 'evidence_consistency_only',
-            'packaging_checks': 'not_checked' if private_preview else 'declared_scope_and_evidence_consistency_only',
+            'packaging_checks': ('not_checked' if private_preview else
+                                 'confirmed_pack_usage_and_declared_scope' if pack_packaging_nodes else
+                                 'declared_scope_and_evidence_consistency_only'),
+            **({'product_pack_packaging_nodes': pack_packaging_nodes} if pack_packaging_nodes else {}),
             'native_refresh_binding': 'not_checked',
             'generation_authorization': 'not_checked', 'production_ready': False,
             'visual_quality_verified': False, 'generation_input_provenance': 'unknown',
@@ -1240,7 +1255,7 @@ def compare(frozen: dict, observed: dict, project: Path | None = None, *, privat
     if port_mode and project is None:
         raise ValueError('download identity modes require --project and original slot evidence')
     submission = validate_submission(frozen, project, private_preview=private_preview,
-                                     formal_delivery=formal_delivery) if project is not None else None
+                                     formal_delivery=formal_delivery, readback=True) if project is not None else None
     platform_project_id = _declared_project_id(frozen)
     if ((platform_project_id is not None or port_mode or private_preview)
             and observed.get('target_project_id') != platform_project_id):
