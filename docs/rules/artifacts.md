@@ -4,9 +4,9 @@
 
 ## JSON 交付与按需导出
 
-业务候选、修订与交接只维护现有 JSON 合同；故事原文、对白、资产需求和导演决定完整保存在对应字段。沿用开工决定，集中澄清新增且确需用户决定的事实缺口，再完善 JSON 并自查。统一入口的编导稿及资产图走网站人审，导演、按需分镜和视频提示词走下游自主采用。未知事实不猜填，不以结构完整冒充用户确认。整稿与局部确认边界不变。
+业务候选、修订与交接只维护现有 JSON 合同；故事原文、对白、资产需求和导演决定完整保存在对应字段。沿用开工决定，集中澄清新增且确需用户决定的事实缺口，再完善 JSON 并自查。统一入口的编导稿及资产图走人工确认，导演、按需分镜和视频提示词走下游自主采用。未知事实不猜填，不以结构完整冒充用户确认。整稿与局部确认边界不变。
 
-已登记开工的项目通过[审核站决定命令](../development/review-to-canvas-entry.md#审核站-api-对接要求)首次采用或返修编导稿。采用事务核对网站当前有效的整稿通过及本地送审路径、修订和准确字节。兼容流程取得准确整稿确认后，仍可对编导、导演或平台无关视频稿运行 `python scripts/stage_context_cli.py adopt-package --project <项目> --artifact-id <新ID> --logical-id <逻辑产物> --path <项目内JSON路径> --revision <正文修订> --approval-ref <准确确认依据> [--depends-on <上游逻辑产物> ...]`。
+统一入口的编导采用使用[网站通过](../development/review-to-canvas-entry.md#审核站-api-对接要求)或[整稿对话确认](../development/review-to-canvas-entry.md#编导对话确认)。首次和返修均核对准确范围、路径、修订和文件字节。兼容流程取得准确整稿确认后，仍可对编导、导演或平台无关视频稿运行 `python scripts/stage_context_cli.py adopt-package --project <项目> --artifact-id <新ID> --logical-id <逻辑产物> --path <项目内JSON路径> --revision <正文修订> --approval-ref <准确确认依据> [--depends-on <上游逻辑产物> ...]`。
 
 采用入口在登记 current 前重跑适用的原文/来源、上游确认与哈希、导演引用及生成段续跑检查，并写入整稿确认和当前产物选择。`next_stage` 仍由项目流转决定。已有 current/stale 正式版本的返修沿 `scripts.core.revision_control` 的既有变更事务另存版本。渠道冻结快照走自身检查入口。历史导入仍可登记并读取，不能通过普通 `promote_candidate`、`save_manifest` 或网页审查结果晋升为正式 current。历史 Markdown 与旧事件包须先整理成当前 JSON 合同，再经正式入口重新确认。外部直接改文件或 manifest 不在仓库 API 门禁范围内，交接消费会重新校验已确认产物。
 

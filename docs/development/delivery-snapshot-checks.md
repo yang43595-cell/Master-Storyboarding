@@ -238,7 +238,13 @@ python scripts/canvas_readback.py --private-preview --project <准确候选项�
 
 现行生成段的实际 `parameters.model`、参考模式（`reference_mode` / `mode`）与生成时长（`duration` / `duration_seconds`）绑定准确源稿；别名可适配，但不得互相冲突。红帧正式写入和回读均从已采用源稿 `selected_video_model` 读取 `min_duration_seconds`、`max_duration_seconds`，并核目标平台、模型、参考模式及原始能力证据的文件哈希。冻结稿必须沿用这一对上下限。源段须声明 `target_edit_duration_seconds` 或准确的 `edit_in_seconds` 与 `edit_out_seconds`，两种同时声明时须一致。红帧独立段目标剪辑低于本轮已核下限时，按[短镜优先并入下一段](../../skills/voiceover-to-video-script/modules/video-method.md#红帧短镜优先并入下一段)在源稿中处理；单独增加生成或逐镜时长不会解除拒绝。高于下限的原剪辑可保留合理的原生时长余量。需改参数时先另出源修订，不在交付时静默替换。
 
+现行生成段的实际 `parameters.model`、参考模式（`reference_mode` / `mode`）与生成时长（`duration` / `duration_seconds`）绑定准确源稿；别名可适配，但不得互相冲突。红帧正式写入和回读均从已采用源稿 `selected_video_model` 读取 `min_duration_seconds`、`max_duration_seconds`，并核目标平台、模型、参考模式及原始能力证据的文件哈希。冻结稿必须沿用这一对上下限。源段须声明 `target_edit_duration_seconds` 或准确的 `edit_in_seconds` 与 `edit_out_seconds`，两种同时声明时须一致。红帧独立段目标剪辑低于本轮已核下限时，按[短镜优先并入下一段](../../skills/voiceover-to-video-script/modules/video-method.md#红帧短镜优先并入下一段)在源稿中处理；单独增加生成或逐镜时长不会解除拒绝。高于下限的原剪辑可保留合理的原生时长余量。需改参数时先另出源修订，不在交付时静默替换。
+
 同一已选模型使用多种实际参考模式时，可在既有 `selected_video_model` 增补 `reference_modes` 和逐模式 `reference_mode_evidence`；每种模式都须有准确能力证据且支持所声明的共同上下限。各段仍逐项绑定自己的实际模式，不接受未知模式、跨模型套用或只给模式名而无证据。没有该集合的旧稿仍按原单模式精确匹配。
+
+分开交付已有稿与新增稿时，`scope.type` 使用 `selected_ranges`，在现有 `scope.independent_ranges` 中按成片顺序列准确段号。仅当两范围之间确有未覆盖的导演镜头和剪辑时码空档时，略过该处的接缝检查。同一范围、相邻范围间真实接续及全片稿仍核镜头与剪辑时码连续。
+
+红帧写前预检沿准确导演稿核每个跨场段边界。后段须有[跨场接续判断](../../skills/voiceover-to-video-script/modules/video-method.md#红帧跨场写前检查)及两侧导演镜头依据；动作继续时还须记录动作前后态并核实际引用。局部写入同样核源稿中与本批段落相邻的前后跨场接缝。
 
 只交付连续事件的后段时，保留真实 `continuity.previous_node_id` 和 `event_id`，并在同一 `continuity` 内添加 `previous_delivery`，仅含已有前次快照的 `artifact_id`、`revision`、`sha256`。该快照也须列于本次 `source_artifacts`，沿用正式已确认来源或当前私有候选范围，不创建新的批准。没有已有可核证据就报告缺口，不能删前驱、另起事件或补造快照通过。
 

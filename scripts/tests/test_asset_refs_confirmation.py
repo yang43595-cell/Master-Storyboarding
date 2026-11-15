@@ -89,6 +89,28 @@ class AssetReferenceConfirmationTests(unittest.TestCase):
         self.assertEqual({item["output_id"] for item in published["outputs"]},
                          {item["output_id"] for item in asset["confirmed_outputs"]})
 
+    def test_shared_confirmation_receipt_is_read_once_per_operation(self):
+        from unittest.mock import patch
+
+        entry = next(item for item in asset_refs.load_manifest(self.root)["artifacts"]
+                     if item["artifact_id"] == self.export["artifact_id"])
+        with (patch.object(asset_refs, "_read", wraps=asset_refs._read) as read,
+              patch.object(asset_refs, "verify_image_confirmation", wraps=asset_refs.verify_image_confirmation) as verify):
+            outputs = asset_refs.registered_output_snapshot(self.root, entry)
+            self.assertGreater(len(outputs), 1)
+            receipt_path = Path(next(iter(outputs.values()))["confirmation_ref"].partition("#")[0])
+            self.assertEqual([call.args[0] for call in read.call_args_list], [receipt_path])
+            self.assertEqual(verify.call_count, len(outputs))
+
+        with patch.object(asset_refs, "_read", wraps=asset_refs._read) as read:
+            self.assertTrue(asset_refs.confirmed_images(self.root))
+            self.assertEqual([call.args[0] for call in read.call_args_list].count(receipt_path), 1)
+
+        receipt = pmod.read(receipt_path)
+        receipt["items"].append(receipt["items"][0])
+        pmod.write(receipt_path, receipt)
+        self.assertIsNone(asset_refs.registered_output_snapshot(self.root, entry))
+
     def test_old_cached_list_is_not_reused_and_current_narrative_is_resolved_from_manifest(self):
         stale = {"items": [{"asset_id": "AST-ROOM", "state": "needs_image",
                             "image": {"status": "confirmed", "files": ["candidate.png"]}}]}

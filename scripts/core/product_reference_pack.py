@@ -55,19 +55,20 @@ def validate_selection(product, *, for_registration=False):
         raise ValueError("所选产品参考包须锁定清单 SHA-256；请通过 kickoff 登记")
 
 
-def _local_file(root, relative):
+def _local_file(root, relative, *, require_file=True):
     if not isinstance(relative, str) or not relative or "\\" in relative or ":" in relative:
         raise ValueError("产品参考包文件须使用包内相对路径")
     path = PurePosixPath(relative)
     if path.is_absolute() or ".." in path.parts:
         raise ValueError(f"产品参考包文件路径越界：{relative}")
     resolved = root.joinpath(*path.parts).resolve()
-    if not resolved.is_relative_to(root) or not resolved.is_file() or resolved.stat().st_size == 0:
+    if (not resolved.is_relative_to(root)
+            or require_file and (not resolved.is_file() or resolved.stat().st_size == 0)):
         raise ValueError(f"产品参考包文件缺失、为空或越界：{relative}（{root}）")
     return resolved
 
 
-def resolve_product_pack(product, *, for_registration=False):
+def resolve_product_pack(product, *, for_registration=False, include_evidence=False):
     """Verify the pinned manifest and the files allowed for the selected usage."""
     if not product:
         return None
@@ -116,5 +117,49 @@ def resolve_product_pack(product, *, for_registration=False):
         selected.append({**item, "path": str(file)})
     if not selected:
         raise ValueError(f"产品参考包没有适用 {usage} 的参考：{path}")
-    return {"product_id": product_id, "product_name": name, "aliases": aliases, "revision": revision, "usage": usage,
-            "manifest_path": str(path), "manifest_sha256": manifest_hash, "references": selected, "gaps": gaps}
+    result = {"product_id": product_id, "product_name": name, "aliases": aliases, "revision": revision, "usage": usage,
+              "manifest_path": str(path), "manifest_sha256": manifest_hash, "references": selected, "gaps": gaps}
+    if include_evidence:
+        evidence = manifest.get("evidence_files", [])
+        if not isinstance(evidence, list):
+            raise ValueError(f"产品参考包证据须为列表：{path}")
+        result["evidence_files"] = {}
+        for item in evidence:
+            if not isinstance(item, dict) or not _matches(_SHA256, item.get("sha256")):
+                raise ValueError(f"产品参考包证据须登记文件和 SHA-256：{path}")
+            file = _local_file(root, item.get("path"), require_file=False)
+            result["evidence_files"][file] = item["sha256"]
+    return result
+
+
+def resolve_pack_media(project, pack, reference, asset_requirements):
+    """Resolve an exact medium from the project-selected pack and approved product requirement."""
+    identity = reference.get("product_reference_id")
+    entry = next((item for item in (pack or {}).get("references", []) if item["id"] == identity), None)
+    if not entry or reference.get("sha256") != entry["sha256"] or not isinstance(reference.get("path"), str):
+        raise ValueError("参考素材须匹配已锁产品包的条目和文件字节")
+    canonical = Path(entry["path"])
+    path = (project / reference["path"]).resolve()
+    if path != canonical and (reference.get("source_pack_path") != str(canonical)
+                              or not path.is_relative_to(project) or not path.is_file()
+                              or sha256_file(path) != entry["sha256"]):
+        raise ValueError("产品参考须为已锁产品包原件或来源和字节相同的项目副本")
+    if not any(asset.get("asset_id") == reference.get("asset_id") and asset.get("category") == "REAL_PRODUCT"
+               and any((project / raw).resolve() == Path(pack["manifest_path"])
+                       for raw in asset.get("reference_paths", []) if isinstance(raw, str))
+               for asset in asset_requirements):
+        raise ValueError("产品参考须对应已采用编导稿中选用本包的真实商品")
+    roles = reference.get("roles", [reference.get("role")])
+    permitted = {
+        "action": {"action"}, "technique": {"action"}, "packaging": {"appearance", "scale"},
+        "material": {"appearance", "scale"}, "state": {"appearance", "state_reference"},
+    }.get(entry["role"], set())
+    if (not isinstance(roles, list) or not roles or any(not isinstance(role, str) or role not in permitted for role in roles)
+            or path.suffix.lower() not in MEDIA_EXTENSIONS.get(reference.get("kind"), set())):
+        raise ValueError("产品参考的媒体类型或实际用途与已锁产品包不符")
+    if entry["role"] in {"action", "technique"}:
+        actions = reference.get("action_references")
+        if not isinstance(actions, list) or not actions or any(
+                not isinstance(action, dict) or action.get("action_key") != entry["action_key"] for action in actions):
+            raise ValueError("产品动作参考须匹配已锁产品包的准确动作")
+    return path

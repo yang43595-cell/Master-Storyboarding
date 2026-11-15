@@ -38,6 +38,40 @@ def test_stale_adopted_version_still_connects_current_downstream():
     assert manifest["artifacts"][-1]["status"] == "candidate"
 
 
+def test_dependency_snapshot_reuses_shared_source_and_still_checks_each_edge(tmp_path):
+    from functools import lru_cache
+    from unittest.mock import patch
+
+    source = tmp_path / "source.json"
+    write_json(source, {"revision": "R01"})
+    parent = entry("SOURCE", "narrative.package")
+    parent.update(path_or_url=source.name, checksum=artifacts.digest(source), revision="R01", user_approved=True)
+    roots = []
+    for artifact_id, revision in (("A", "R01"), ("B", "R01"), ("C", "R00")):
+        item = entry(artifact_id, artifact_id, dependencies=["narrative.package"])
+        path = tmp_path / (artifact_id + ".json")
+        write_json(path, {"source_narrative": {"revision": revision, "path": source.name}})
+        item["path_or_url"] = path.name
+        roots.append(item)
+    manifest = {"artifacts": [parent, *roots]}
+    state = {"user_confirmations": [{"artifact_ids": ["SOURCE"]}]}
+    checked = set()
+    file_digest = lru_cache(maxsize=None)(artifacts.digest)
+    with patch.object(artifacts, "read_json", wraps=artifacts.read_json) as read_json:
+        for item in roots[:2]:
+            artifacts.validate_current_dependencies(item, manifest, state, tmp_path,
+                                                    checked=checked, file_digest=file_digest)
+        assert [call.args[0] for call in read_json.call_args_list].count(source) == 1
+        assert file_digest.cache_info().misses == 1
+        with pytest.raises(ValueError, match="来源修订与 current 上游不一致"):
+            artifacts.validate_current_dependencies(roots[2], manifest, state, tmp_path,
+                                                    checked=checked, file_digest=file_digest)
+
+    source.write_text('{"revision":"changed"}', encoding="utf-8")
+    with pytest.raises(ValueError, match="已偏离登记字节"):
+        artifacts.validate_current_dependencies(roots[0], manifest, state, tmp_path)
+
+
 def test_revision_inherits_its_baseline_and_replaces_only_selected_ids(tmp_path):
     entries = [
         entry("B-R01", "board", "superseded", ["source.old"]),

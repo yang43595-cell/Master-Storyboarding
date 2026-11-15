@@ -1,6 +1,7 @@
 """Read the current production decisions from the existing project request."""
 
 import json
+import math
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -10,7 +11,7 @@ from .product_reference_pack import current_product_pack_revision, resolve_produ
 REQUEST_PATH = Path("00_项目管理/project_request.json")
 REDFRAME_MODEL = "Seedance 2.5"
 PRODUCT_MODES = {"none", "retain", "replace", "insert"}
-IMAGE_PROVIDERS = {"imagegen", "dreamina", "redframe"}
+IMAGE_PROVIDERS = {"imagegen", "dreamina", "chatgpt", "redframe"}
 IMAGE_SCOPES = ("required_asset_outputs", "required_assets_and_supplements")
 
 _CREATOR_MASK_ID = "creator-polishing-mask-2"
@@ -31,6 +32,47 @@ def _normalize_product_id(record):
 
 def _text(value):
     return isinstance(value, str) and bool(value.strip())
+
+
+def _positive_seconds(value):
+    if type(value) not in (int, float) or value <= 0:
+        return None
+    try:
+        return value if math.isfinite(value) else None
+    except OverflowError:
+        return None
+
+
+def product_demo_timing_advisory(kickoff):
+    """Report the current window against a referenced estimate, without changing the decision."""
+    if not kickoff or kickoff["product"].get("product_usage") != "real_use":
+        return None
+    creation = kickoff.get("creation")
+    if not isinstance(creation, dict):
+        return None
+    timing = creation.get("product_demo_timing")
+    if not isinstance(timing, dict):
+        if _positive_seconds(creation.get("target_duration_seconds")) is None:
+            return None
+        timing = {}
+
+    original = _positive_seconds(timing.get("original_seconds"))
+    target = _positive_seconds(timing.get("target_seconds"))
+    confirmed = target is not None and _text(timing.get("decision_ref"))
+    window = target if confirmed else original
+    if window is None:
+        return {"status": "unchecked", "reason": "missing_window"}
+
+    report = {"window_seconds": window, "window_source": "confirmed" if confirmed else "original"}
+    estimate = _positive_seconds(timing.get("estimated_minimum_seconds"))
+    basis = timing.get("estimate_basis")
+    if estimate is None or not _text(basis):
+        return {**report, "status": "unchecked", "reason": "missing_estimate_or_basis"}
+
+    conflict = estimate > window and not math.isclose(estimate, window, rel_tol=0, abs_tol=1e-6)
+    return {**report, "status": "conflict" if conflict else "fits",
+            "estimated_minimum_seconds": estimate, "estimate_basis": basis.strip(),
+            "shortfall_seconds": round(estimate - window, 6) if conflict else 0}
 
 
 def load_kickoff(project):

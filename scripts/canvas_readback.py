@@ -81,6 +81,9 @@ def validate_source_material_order(row: dict, source: dict) -> dict[int, bool | 
             raise ValueError(f'{node_id}: 采用源段第 {slot} 槽与声明的素材顺序不符')
         if ref.get('sha256') != sha:
             raise ValueError(f'{node_id}: 冻结第 {slot} 槽的素材字节或顺序与采用源段不符')
+        if any(material.get(key) is not None and material[key] != ref.get(key)
+               for key in ('asset_id', 'output_id', 'artifact_id', 'product_reference_id', 'kind', 'role')):
+            raise ValueError(f'{node_id}: 冻结第 {slot} 槽的素材身份或用途与采用源段不符')
         binding = ref.get('canvas_binding')
         if not isinstance(binding, dict) or binding.get('mode') != 'direct' or ref.get('kind') not in {'image', 'video'}:
             continue
@@ -662,9 +665,9 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
     # New submissions use current output policy. Legacy compare without a project
     # remains an evidence comparison and must not rewrite historical payloads.
     try:
-        from .core.prompt_body import generated_overlay_issues
+        from .core.prompt_body import generated_overlay_issues, submitted_body_issues
     except ImportError:
-        from core.prompt_body import generated_overlay_issues
+        from core.prompt_body import generated_overlay_issues, submitted_body_issues
     host = (urlsplit(target_url(frozen['target_url'])).hostname or '').lower()
     xiaoyunque = host in {'xiaoyunque.com', 'www.xiaoyunque.com', 'xyq.jianying.com'}
     redframe = host == 'redframe-ai.xmpaohong.com' or bool(canvas and canvas.get('platform') == 'redframe')
@@ -691,16 +694,16 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         if xiaoyunque and str(row.get('parameters', {}).get('resolution', '')).lower() != '480p':
             raise ValueError('小云雀新写入分辨率必须显式为 480p；不沿用 720p，不自动改时长或模型')
         if isinstance(row.get('prompt'), str):
-            issues = generated_overlay_issues(row['prompt'])
+            issues = submitted_body_issues(row['prompt']) if formal_redframe else generated_overlay_issues(row['prompt'])
             if issues:
                 raise ValueError(f"{row['node_id']}: " + '; '.join(issues))
     try:
         from .core.quality_evidence import (validate_native_binding_claims, scene_state_requirements,
-                                            validate_scene_state_references, reference_shot_ids, validate_scene_source_mapping,
+                                            validate_scene_state_references, reference_shot_ids, source_shot_ids, validate_scene_source_mapping,
                                             validate_shot_durations)
     except ImportError:
         from core.quality_evidence import (validate_native_binding_claims, scene_state_requirements,
-                                           validate_scene_state_references, reference_shot_ids, validate_scene_source_mapping,
+                                           validate_scene_state_references, reference_shot_ids, source_shot_ids, validate_scene_source_mapping,
                                            validate_shot_durations)
     validate_native_binding_claims(frozen, project)
     manifest, state = load_manifest(project), load_project_state(project)
@@ -750,11 +753,11 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         raise ValueError('exact confirmed source_artifacts required')
     scene_requirements = []
     try:
-        from .core.quality_evidence import (packaging_requirements, validate_packaging_scope,
-                                            validate_registered_product_reference)
+        from .core.quality_evidence import (packaging_requirements, validate_registered_product_reference,
+                                            validate_draft_evidence)
     except ImportError:
-        from core.quality_evidence import (packaging_requirements, validate_packaging_scope,
-                                           validate_registered_product_reference)
+        from core.quality_evidence import (packaging_requirements, validate_registered_product_reference,
+                                           validate_draft_evidence)
     package_requirements = []
     scene_sources = []
     for ref in sources:
@@ -766,13 +769,17 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                 package_requirements.extend(packaging_requirements(source_payload))
                 scene_sources.append((ref, source_path.resolve(), source_payload))
     face_requirements = {}
+    product_pack = None
+    product_requirements = []
     if formal_redframe:
         try:
             from .core.web_content import source_review_segments
             from .core.prompt_body import submitted_prompt_body
+            from .core.product_reference_pack import resolve_product_pack, resolve_pack_media
         except ImportError:
             from core.web_content import source_review_segments
             from core.prompt_body import submitted_prompt_body
+            from core.product_reference_pack import resolve_product_pack, resolve_pack_media
         entries = {item['artifact_id']: item for item in manifest['artifacts']}
         videos = [payload for ref, _, payload in scene_sources
                   if entries[ref['artifact_id']].get('logical_id') == 'video.prompt']
@@ -781,6 +788,12 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         if (len(videos) != 1 or not videos[0].get('source_storyboard') or len(boards) != 1
                 or not boards[0].get('source_narrative')):
             raise ValueError('正式红帧写入须绑定已采用的视频稿、导演稿和已确认的来源编导稿')
+        if any('product_reference_id' in ref for row in drafts.values() for ref in row.get('reference_checks', [])
+               if isinstance(ref, dict)):
+            product_pack = resolve_product_pack(kickoff['product'])
+            narrative_id = boards[0]['source_narrative'].get('artifact_id')
+            product_requirements = [asset for ref, _, payload in scene_sources if ref['artifact_id'] == narrative_id
+                                    for asset in payload.get('asset_requirements', [])]
         source_segments = {row['segment_id']: row for row in source_review_segments(videos[0])}
         for row in drafts.values():
             source = source_segments.get(row.get('source_segment_id'))
@@ -879,6 +892,18 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             if len(members) != 1:
                 return False
         return True
+    exact_outputs = {
+        f"{ref.get('asset_id', '')}@{ref.get('output_id', '')}"
+        for row in validation_rows for ref in row.get('reference_checks', [])
+        if formal_redframe and ref.get('output_id') is not None
+    }
+    asset_outputs = {}
+    if exact_outputs:
+        try:
+            from .core.asset_refs import resolve_final_images
+        except ImportError:
+            from core.asset_refs import resolve_final_images
+        asset_outputs = resolve_final_images(project, sorted(exact_outputs))
     endpoint_control_checks = {}
     for row in validation_rows:
         row_frozen = context_scopes.get(row['node_id'], frozen)
@@ -895,12 +920,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                 raise ValueError('endpoint state_control requires its explicit verified identity mode')
             validate_scene_state_references(row, scene_requirements)
         if not private_preview:
-            try:
-                from .core.quality_evidence import validate_draft_evidence
-            except ImportError:
-                from core.quality_evidence import validate_draft_evidence
-            validate_draft_evidence(row)
-            validate_packaging_scope(row, package_requirements)
+            validate_draft_evidence(row, package_requirements)
         if not isinstance(row.get('prompt'), str) or not row['prompt'].strip():
             raise ValueError('complete submitted prompt body required')
         duration = seconds(row['parameters']['duration'])
@@ -931,10 +951,40 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             raise ValueError('required reference roles must cover exactly the required entities')
         covered, covered_roles, frames = set(), {}, {}
         for slot, (media_item, ref) in enumerate(zip(media, refs), 1):
-            path = row_authority(ref)
+            output = asset_outputs.get(f"{ref.get('asset_id', '')}@{ref.get('output_id', '')}")
+            packed = formal_redframe and 'product_reference_id' in ref
+            direct_slot = (formal_redframe and not before_upload and identity_mode == 'media_id'
+                           and ref.get('canvas_binding', {}).get('mode') == 'direct'
+                           and 'sha256' in media_item)
+            if direct_slot and (media_item['node_id'] != row['node_id']
+                                or media_item['sha256'] != ref.get('sha256')):
+                raise ValueError('direct upload slot does not match the exact draft node and source bytes')
+            if packed:
+                if output is not None or ref.get('canvas_binding', {}).get('mode') != 'direct' or not (before_upload or direct_slot):
+                    raise ValueError('产品包装与动作参考须以直传槽对应准确原件，回读时提供实际文件字节')
+                path = resolve_pack_media(project, product_pack, ref, product_requirements)
+                if 'product_reference' in ref:
+                    product = ref['product_reference']
+                    if (not isinstance(product, dict) or product.get('reference_role') != 'packaging'
+                            or product.get('product_id') != product_pack['product_id']):
+                        raise ValueError('包装声明与已锁产品不一致')
+                    validate_registered_product_reference(project, ref, ref,
+                        allowed_roots=(Path(product_pack['manifest_path']).parent,))
+                    if (project / product['source']['path']).resolve() != path:
+                        raise ValueError('包装声明须绑定本槽实际参考原件')
+            elif output is not None:
+                path = Path(output['path'])
+                if (ref.get('sha256') != output['sha256'] or ref.get('kind') != 'image'
+                        or (ref.get('path') is not None and project_path(project, ref['path']).resolve() != path.resolve())):
+                    raise ValueError('direct image differs from the confirmed asset output')
+                if ref.get('canvas_binding', {}).get('mode') != 'direct' or not (before_upload or direct_slot):
+                    raise ValueError('confirmed asset output requires a direct slot with downloaded bytes')
+                item = {}
+            else:
+                path = row_authority(ref)
             if private_preview:
                 row_preview_usage(row, ref, media_item, slot)
-            else:
+            elif output is None and not packed:
                 item = next(a for a in manifest['artifacts'] if a['artifact_id'] == ref['artifact_id'])
                 if item.get('type') == 'visual-supplement-image' and item.get('agent_acceptance') is not None:
                     try:
@@ -1012,7 +1062,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                 raise ValueError('unknown reference role/kind')
             if path.suffix.lower() not in MEDIA_EXTENSIONS[kind]:
                 raise ValueError('reference kind differs from actual registered file type')
-            if kind == 'image' and not private_preview:
+            if kind == 'image' and not private_preview and output is None and not packed:
                 try:
                     from .core.quality_evidence import validate_image_evidence, reference_shot_ids
                 except ImportError:

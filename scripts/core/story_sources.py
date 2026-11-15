@@ -12,6 +12,7 @@ from .schema_contracts import require_schema
 from .artifacts import project_path
 from .character_assets import board_outfit_ids, uses_wardrobe
 from .director_reading import director_scene_reading, readable_fields
+from .io import sha256_file
 
 
 def _dialogue_comparison_text(text):
@@ -137,11 +138,12 @@ def _validate_source_projection(record, root):
 
 def validate_dialogue_review(record, project_root):
     """Check declared evidence and provenance, not pixels, sound or human approval."""
-    import hashlib
     import math
     if not isinstance(record, dict) or not isinstance(record.get('sources'), list):
         raise ValueError('对白审核记录须为对象且 sources 为数组')
     sources = {}
+    evidence_paths = {}
+    structured_paths = set()
     for source in record['sources']:
         if not isinstance(source, dict):
             raise ValueError('原始证据须为对象')
@@ -154,17 +156,37 @@ def validate_dialogue_review(record, project_root):
                for k in ('text', 'evidence_path', 'evidence_sha256', 'locator', 'producer')):
             raise ValueError('原始证据缺少文字、路径、hash、定位或记录者/模型')
         path = project_path(project_root, source['evidence_path'])
-        if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != source['evidence_sha256']:
-            raise ValueError('原始证据文件缺失或 hash 不符：' + ident)
-        # ASR must point into the retained machine output, not a manually copied paraphrase.
         pointer = source.get('text_pointer')
         if source['kind'] == 'asr_hypothesis' and not pointer:
             raise ValueError('ASR 原始证据须定位原输出 text_pointer')
         if pointer is not None:
             if not isinstance(pointer, str) or not pointer.startswith('/'):
                 raise ValueError('原始证据 text_pointer 无效')
+            structured_paths.add(path)
+        sources[ident] = source
+        evidence_paths[ident] = path
+
+    evidence_digests, evidence_payloads = {}, {}
+    for ident, source in sources.items():
+        path = evidence_paths[ident]
+        if path not in evidence_digests:
+            if not path.is_file():
+                raise ValueError('原始证据文件缺失或 hash 不符：' + ident)
+            if path in structured_paths:
+                raw = path.read_bytes()
+                evidence_digests[path] = hashlib.sha256(raw).hexdigest()
+                evidence_payloads[path] = raw
+            else:
+                evidence_digests[path] = sha256_file(path)
+        if evidence_digests[path] != source['evidence_sha256']:
+            raise ValueError('原始证据文件缺失或 hash 不符：' + ident)
+        # Resolve every pointer against the same bytes checked above.
+        pointer = source.get('text_pointer')
+        if pointer is not None:
             try:
-                value = json.loads(path.read_text(encoding='utf-8-sig'))
+                value = evidence_payloads[path]
+                if isinstance(value, bytes):
+                    value = evidence_payloads[path] = json.loads(value.decode('utf-8-sig'))
                 for part in pointer[1:].split('/'):
                     key = part.replace('~1', '/').replace('~0', '~')
                     value = value[int(key)] if isinstance(value, list) else value[key]
@@ -172,7 +194,6 @@ def validate_dialogue_review(record, project_root):
                 raise ValueError('原始证据字段不可解析：' + ident) from exc
             if value != source['text']:
                 raise ValueError('原始证据文字被改写：' + ident)
-        sources[ident] = source
     rows = record.get('dialogues')
     if not isinstance(rows, list) or not rows:
         raise ValueError('对白审核记录需要非空 dialogues')

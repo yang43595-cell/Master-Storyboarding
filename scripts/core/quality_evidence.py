@@ -131,12 +131,12 @@ def draft_binding(draft):
     return {key: value for key, value in draft.items() if key != 'quality_evidence'}
 
 
-def validate_draft_evidence(draft):
+def validate_draft_evidence(draft, packaging_requirements=()):
     evidence = draft.get('quality_evidence')
     _observations(evidence, DRAFT_ASPECTS)
     if evidence.get('input_sha256') != fingerprint(draft_binding(draft)):
         raise ValueError('quality_evidence: 正文、参数或有序引用已变化；旧检查失效')
-    validate_packaging_scope(draft)
+    validate_packaging_scope(draft, packaging_requirements)
     return {'verification': 'evidence_consistency_only', 'visual_quality_verified': False}
 
 
@@ -499,12 +499,12 @@ def source_shot_ids(row):
     return direct if direct is not None else mapped or []
 
 
-def required_visuals(storyboard):
+def required_visuals(storyboard, *, shot_ids=None):
     """Read only explicit director requirements; do not infer them from prose."""
     requirements = {}
     for scene in storyboard.get('scenes', []):
         for shot in scene.get('shots', []):
-            if 'required_visuals' not in shot:
+            if 'required_visuals' not in shot or (shot_ids is not None and shot.get('shot_id') not in shot_ids):
                 continue
             items = shot['required_visuals']
             shot_id = shot['shot_id']

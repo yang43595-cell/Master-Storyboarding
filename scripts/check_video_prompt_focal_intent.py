@@ -12,11 +12,11 @@ import sys
 from pathlib import Path
 
 if __package__:
-    from .core.prompt_body import submitted_prompt_body, generated_overlay_issues
+    from .core.prompt_body import submitted_prompt_body, submitted_body_issues
     from .core.quality_evidence import source_shot_ids
     from .core.web_content import SOURCE_SEGMENT_FIELDS, source_review_segments
 else:
-    from core.prompt_body import submitted_prompt_body, generated_overlay_issues
+    from core.prompt_body import submitted_prompt_body, submitted_body_issues
     from core.quality_evidence import source_shot_ids
     from core.web_content import SOURCE_SEGMENT_FIELDS, source_review_segments
 
@@ -37,10 +37,6 @@ PURPOSE_LABEL_RE = re.compile(r"光学目的[：:][ \t]*\S[^\n]*")
 PURPOSE_RE = re.compile(r"保留|保持|看清|看见|看得到|清楚|可辨|可读|突出|分离|压缩|拉出|集中|呈现|显示|纵深|层次|比例|自然距离|焦点|柔化")
 MM_RE = re.compile(r"(?<!\d)\d{1,3}\s*(?:mm|毫米)(?![A-Za-z0-9])", re.IGNORECASE)
 MM_SOURCE_RE = re.compile(r"(?:焦距来源|焦段依据|导演依据|证据来源)[：:][^\n]+")
-META_RE = re.compile(r"与(?:上|前一)段不连续|(?:视频)?模型没有上下文|(?:接|承接|沿用)(?:上一|前一|上)段|见导演包|同上")
-INTERNAL_ID_RE = re.compile(r"(?<![A-Za-z0-9_-])(?:(?:DLG|AST|STP|ART)-[A-Z0-9-]+|S\d{2}-\d{3})(?![A-Za-z0-9_-])")
-PATH_RE = re.compile(r"[A-Za-z]:[\\/]|/(?:Users|home|tmp)/")
-CHECKLIST_RE = re.compile(r"(?:^|\n)[^\n]{0,20}(?:完成条件|自查结论|验收清单)[：:]")
 
 
 def _body_text(text: str) -> str:
@@ -167,8 +163,8 @@ def inspect_document(path: Path, *, require_focal_intent: bool = False, project:
     if not segments:
         return 0, ["无法检查：当前格式未识别提交正文；可检查实际提交 TXT。此结果不是内容不合格，也不按0段通过"]
     for number, body, section in segments:
+        errors.extend(f"第 {number} 段{issue}" for issue in submitted_body_issues(body))
         if not body:
-            errors.append(f"第 {number} 段缺少非空、完整的提交正文")
             continue
         focal_values = _focal_measurements(body)
         declared = any(FOCAL_RE.search(line) or _focal_measurements(line)
@@ -180,15 +176,6 @@ def inspect_document(path: Path, *, require_focal_intent: bool = False, project:
             errors.append(f"第 {number} 段缺少可观察光学目的")
         if focal_values and not MM_SOURCE_RE.search(section):
             errors.append(f"第 {number} 段出现未标注来源的精确毫米数；依据可写在正文外的制作备注中")
-        if META_RE.search(body):
-            errors.append(f"第 {number} 段出现生成提示词元话语；改为可直接生成的具体画面")
-        if INTERNAL_ID_RE.search(body):
-            errors.append(f"第 {number} 段混入内部对白、镜头或资产编号")
-        if PATH_RE.search(body):
-            errors.append(f"第 {number} 段混入本地文件路径；改用实际上传引用标记")
-        if CHECKLIST_RE.search(body):
-            errors.append(f"第 {number} 段混入内部完成条件或自查清单；移到制作备注")
-        errors.extend(f"第 {number} 段{issue}" for issue in generated_overlay_issues(body))
     if check_scene_realism:
         if __package__:
             from .core.scene_realism import inspect_scene_realism

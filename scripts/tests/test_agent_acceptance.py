@@ -128,6 +128,29 @@ def test_changed_authorization_invalidates_an_existing_pointer(tmp_path):
         aa.validate_agent_acceptance(tmp_path, entry)
 
 
+def test_asset_workflow_authorization_scopes_only_asset_adoption(tmp_path):
+    confirmed_narrative(tmp_path)
+    # The manuscript registration entry still refuses the asset stage.
+    with pytest.raises(ValueError):
+        aa.register_workflow_authorization(tmp_path, authorization_id="SYNTHETIC-ASSET",
+            authorization_ref="SYNTHETIC ASSET AUTHORIZATION ONLY", skills=["asset-image-assistant"])
+    aa.register_asset_workflow_authorization(tmp_path, authorization_id="SYNTHETIC-ASSET",
+        authorization_ref="SYNTHETIC ASSET AUTHORIZATION ONLY")
+    record = aa.require_asset_workflow_authorization(tmp_path, "SYNTHETIC-ASSET")
+    assert record["id"] == "SYNTHETIC-ASSET"
+    assert record["skills"] == ["asset-image-assistant"]
+    # The manuscript self-check entry still refuses the asset skill outright.
+    with pytest.raises(ValueError):
+        aa.require_workflow_authorization(tmp_path, "SYNTHETIC-ASSET", "asset-image-assistant")
+    # An authorization without the asset skill does not cover asset adoption.
+    aa.register_workflow_authorization(tmp_path, authorization_id="SYNTHETIC-TEXT",
+        authorization_ref="SYNTHETIC TEXT ONLY", skills=["storyboard-director"])
+    with pytest.raises(ValueError, match="未覆盖资产采用范围"):
+        aa.require_asset_workflow_authorization(tmp_path, "SYNTHETIC-TEXT")
+    with pytest.raises(ValueError, match="不存在或不唯一"):
+        aa.require_asset_workflow_authorization(tmp_path, "MISSING")
+
+
 @pytest.mark.parametrize("skills", [[], ["unknown"], [{}], ["storyboard-planner", "storyboard-planner"]])
 def test_malformed_registration_has_no_side_effects(tmp_path, skills):
     confirmed_narrative(tmp_path)

@@ -33,7 +33,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / 'scripts') not in sys.path:
     sys.path.insert(0, str(ROOT / 'scripts'))
 from core.artifacts import (load_manifest, save_manifest, register_workspace_artifact,
-                            promote_candidate, mark_impacted_artifacts_stale)
+                            promote_candidate, mark_impacted_artifacts_stale, asset_export_snapshot,
+                            asset_output_impact)
 from core.io import project_lock
 from core.project_state import load_project_state, write_project_state
 from core.project_kickoff import grant_covers_asset, load_kickoff
@@ -150,18 +151,45 @@ class Projects:
         if source != p['source'] or narrative != p['narrative']:
             raise ValueError('上游叙事包已变化，请点击“同步需求”查看差异并重新核对')
 
-    def invalidate_export(self, p, reason):
+    def invalidate_export(self, p, reason, *, output_keys=None):
         exported = p.get('export') or p.get('partial_export')
-        if not exported:
-            return
+        pending = p.get('export_pending')
+        if not exported and (output_keys is None or not pending):
+            return False, None
         root = Path(p['path'])
         with project_lock(root):
             manifest = load_manifest(root)
-            mark_impacted_artifacts_stale(manifest, {'visual.asset.manifest'}, reason, p['source']['revision'])
+            unchanged_edges, segments = set(), {}
+            previous_snapshot = None
+            if output_keys is not None:
+                lineage = [entry for entry in manifest['artifacts']
+                           if entry.get('logical_id') == 'visual.asset.manifest']
+                entries = [entry for entry in lineage if entry.get('status') == 'current']
+                if not entries and exported:
+                    # A previous interruption can leave the old export stale already.
+                    entries = [entry for entry in lineage if entry.get('status') == 'stale'
+                               and entry['artifact_id'] == exported['artifact_id']]
+                ids = ({exported['artifact_id']} if exported else set())
+                if pending:
+                    ids.add('visual-assets-' + pending['id'])
+                if not exported and not any(entry['artifact_id'] in ids for entry in entries):
+                    return False, None
+                if len(entries) == 1 and entries[0]['artifact_id'] in ids:
+                    previous_snapshot = asset_export_snapshot(root, entries[0])
+                    outputs = previous_snapshot[1]
+                    if outputs is not None:
+                        if output_keys.isdisjoint(outputs):
+                            return False, previous_snapshot
+                        retained = {key: selected for key, selected in outputs.items() if key not in output_keys}
+                        unchanged_edges, segments = asset_output_impact(root, manifest, outputs, retained)
+            mark_impacted_artifacts_stale(manifest, {'visual.asset.manifest'}, reason, p['source']['revision'],
+                                         unchanged_edges=unchanged_edges, asset_output_segments=segments)
             save_manifest(root, manifest)
-            p.setdefault('export_history', []).append(exported)
+            if exported:
+                p.setdefault('export_history', []).append(exported)
             p.pop('export', None)
             p.pop('partial_export', None)
+            return True, previous_snapshot
 
     def sync(self, ident):
         with self.lib.lock:
@@ -677,13 +705,19 @@ class Projects:
                 return keys
             keys = expanded
 
-    def reset_steps(self, job, keys):
+    def reset_steps(self, job, keys, *, review_change=None):
         for step in job['steps']:
             if step['key'] not in keys:
                 continue
-            step.setdefault('history', []).append({k: copy.deepcopy(step.get(k)) for k in (
+            previous = {k: copy.deepcopy(step.get(k)) for k in (
                 'selected', 'outputs', 'project_confirmation', 'prompt', 'audit',
-                'generation_run_id', 'submit_id', 'authorization', 'visual_self_check', 'output_id')})
+                'generation_run_id', 'submit_id', 'authorization', 'visual_self_check', 'output_id')}
+            step.setdefault('history', []).append(previous)
+            if review_change is not None:
+                previous['website_review_change'] = review_change
+                if previous['selected']:
+                    step.update(status='awaiting_review', project_confirmation=None)
+                    continue
             step.update(status='waiting', outputs=[], project_confirmation=None, audit={'status': 'stale'})
             step.pop('selected', None)
             for key in ('prompt_approval', 'generation_run_id', 'submit_id', 'authorization',
@@ -793,8 +827,10 @@ class Projects:
                 problems.append(ast_id + '：当前上游要求人物单图，请重新核对交接')
         if problems:
             raise ValueError(' / '.join(problems))
+        confirmation_cache = {}
         if (len(outputs) != exported['count'] or any(
-                _confirmed_output(root, ast_id, output) is None for ast_id, output in outputs)):
+                _confirmed_output(root, ast_id, output, confirmation_cache=confirmation_cache) is None
+                for ast_id, output in outputs)):
             raise ValueError('已导出确认图片内容已变化或缺失，请保留原记录并重新核对交接')
 
     def dependencies(self, job, step):
@@ -1138,6 +1174,91 @@ class Projects:
             self.lib.backup_wakeup.set()
             return self.detail(p['id'])
 
+    def _website_members(self, publication, read_receipt):
+        members = [publication, *(read_receipt(path) for path in publication['reference_publications'])]
+        response = publication['response']
+        if ([member['response']['assetId'] for member in members[1:]] != publication['request']['parameters']['references']
+                or any(member['script_version'] != publication['script_version']
+                       or any(member['response'][key] != response[key] for key in ('projectId', 'caseId'))
+                       for member in members)):
+            raise ValueError('审核包的引用和上游版本不一致')
+        by_output = {}
+        for member in members:
+            parameters = member['request']['parameters']
+            key = (parameters['astId'], parameters['outputId'])
+            if key in by_output:
+                raise ValueError('审核包包含重复的 AST / 输出身份')
+            by_output[key] = member
+        return by_output
+
+    def _withdraw_website_approval(self, project, publication, publication_path, script_sha256, decision):
+        """Withdraw only confirmations whose actual approval is this reviewed version."""
+        root = Path(project['path'])
+        published = publication['response']
+        scope = {key: published[key] for key in ('projectId', 'scope', 'caseId', 'stage', 'version')}
+        references = publication['request']['parameters']['references']
+        if not isinstance(references, list) or any(not isinstance(asset_id, str) or not asset_id for asset_id in references):
+            raise ValueError('审核回执的引用范围无效，请核对原发布回执')
+        member_ids = {published['assetId'], *references}
+        evidence = {'publication': str(publication_path), 'website_scope': scope,
+                    'decision': {key: decision[key] for key in ('decisionStatus', 'validity', 'latestEvent')
+                                 if key in decision}}
+        changes, withdrawn = [], []
+        retry_keys = set()
+        retained_assets = set()
+        for row in project['rows']:
+            if not row.get('job_id'):
+                continue
+            job = self.lib.get(row['job_id'], 'jobs')
+            affected = set()
+            for step in job['steps']:
+                key = (job['ast_id'], step_output_id(step))
+                confirmation = step.get('project_confirmation') or {}
+                history = step.get('history') or []
+                if not confirmation and history:
+                    last = history[-1].get('website_review_change') or {}
+                    if (last.get('website_scope') == scope and last.get('publication') == str(publication_path)
+                            and step.get('selected') == history[-1].get('selected')):
+                        retry_keys.add(key)
+                previous = confirmation.get('website_review') or {}
+                previous_file = previous.get('publication')
+                binding = previous.get('binding')
+                if (step.get('status') != 'confirmed'
+                        or confirmation.get('source') != project['source']
+                        or step.get('selected') != confirmation.get('asset_id')
+                        or not previous_file or project_path(root, previous_file) != publication_path
+                        or (previous.get('approval') or {}).get('scope') != scope
+                        or previous.get('asset_id') not in member_ids
+                        or not confirmation.get('image_sha256')
+                        or previous.get('image_sha256') != confirmation['image_sha256']
+                        or previous.get('purpose') != step.get('purpose')
+                        or (binding and (binding.get('ast_id'), binding.get('output_id'), binding.get('base_url'),
+                                         binding.get('script_version'), binding.get('script_sha256')) != (
+                                             *key, publication['base_url'], publication['script_version'], script_sha256))):
+                    continue
+                affected.add(step['key'])
+            if affected:
+                # In-flight work retains its platform record. It may not be
+                # confirmed while its prerequisite is awaiting review.
+                dependent = self.dependent_keys(job, affected)
+                affected = {step['key'] for step in job['steps']
+                            if step['key'] in dependent and step.get('status') == 'confirmed'}
+                withdrawn.extend(job['ast_id'] + '@' + step_output_id(step) for step in job['steps']
+                                 if step['key'] in affected)
+                self.reset_steps(job, affected, review_change=evidence)
+                changes.append((job, affected))
+            retained_assets.update(step['selected'] for step in job['steps']
+                                   if step.get('required') is not False and step.get('selected')
+                                   and step.get('status') == 'confirmed' and step.get('project_confirmation'))
+        resume = retry_keys and (project.get('export') or project.get('partial_export') or project.get('export_pending')
+                                or (project.get('export_history') and any(
+                                    self.lib.get(asset).get('backup', {}).get('status') == 'saved'
+                                    for asset in retained_assets)))
+        if changes or resume:
+            self._save_output_changes(project, changes, '原网站资产版已退回，暂停使用依赖该版的确认输出',
+                                      retry_keys=retry_keys, reexport=bool(retained_assets))
+        return {'withdrawn_outputs': withdrawn, 'feedback_scope_unverified': bool(references)}
+
     def apply_website_review(self, ident, publication_path, client):
         """Confirm exactly the reviewed outputs and export the backed current selections."""
         from review_text_cli import read_decision, read_publication
@@ -1174,6 +1295,9 @@ class Projects:
                     # A new pending package does not revoke the outputs already
                     # confirmed under an earlier exact review of this script.
                     decision_status = decision['decisionStatus']
+                    if decision_status == 'changes' and decision['validity']['isCurrent']:
+                        result.update(self._withdraw_website_approval(p, publication, (root / publication_path).resolve(),
+                                                                     source_json['sha256'], decision))
                     earlier_approval = decision_status == 'approved' and not decision['validity']['isCurrent']
                     if ((decision_status == 'pending' or earlier_approval)
                             and effective_approval(read_decision(client, script))):
@@ -1181,20 +1305,7 @@ class Projects:
                     return {**result, 'decision_status': decision['decisionStatus'], 'validity': decision['validity']}
                 if not effective_approval(read_decision(client, script)):
                     raise ValueError('上游编导稿的网站通过已经失效')
-                members = [publication, *(read_receipt(path) for path in publication['reference_publications'])]
-                response = publication['response']
-                if ([member['response']['assetId'] for member in members[1:]] != publication['request']['parameters']['references']
-                        or any(member['script_version'] != publication['script_version']
-                               or any(member['response'][key] != response[key] for key in ('projectId', 'caseId'))
-                               for member in members)):
-                    raise ValueError('审核包的引用和上游版本不一致')
-                by_output = {}
-                for member in members:
-                    parameters = member['request']['parameters']
-                    key = (parameters['astId'], parameters['outputId'])
-                    if key in by_output:
-                        raise ValueError('审核包包含重复的 AST / 输出身份')
-                    by_output[key] = member
+                by_output = self._website_members(publication, read_receipt)
                 approval = decision['approval']
                 package = {'approval': approval, 'publication': str((root / publication_path).resolve()), 'assets': {}}
                 targets = []
@@ -1412,15 +1523,32 @@ class Projects:
             if any(s['status'] in BUSY or s.get('audit', {}).get('status') in {'drafting', 'reviewing'} for s in job['steps'] if s['key'] in keys):
                 raise ValueError('关联图片仍在生成，请等待后再返工')
             self.reset_steps(job, keys)
-            self.lib.save(job, 'jobs')
-            with project_lock(Path(p['path'])):
-                had_export = p.get('export') or p.get('partial_export')
-                self.invalidate_export(p, '用户重新选择资产，相关制作项待再次确认')
-                p.pop('export_pending', None)
-                self.save(p)
-                if had_export and load_kickoff(p['path']):
-                    self._export_locked({'project_id': p['id']}, chat_package={})
+            self._save_output_changes(p, [(job, keys)], '用户重新选择资产，相关制作项待再次确认')
             return self.detail(p['id'])
+
+    def _save_output_changes(self, p, changes, reason, *, retry_keys=(), reexport=True):
+        output_keys = {(job['ast_id'], step_output_id(step)) for job, keys in changes
+                       for step in job['steps'] if step['key'] in keys} | set(retry_keys)
+        with project_lock(Path(p['path'])):
+            # A previous completed partial export already excludes these outputs.
+            partial = p.get('partial_export')
+            if (not changes and partial and 'items' in partial and not p.get('export_pending')
+                    and output_keys.isdisjoint(tuple(item[:2]) for item in partial['items'])):
+                return
+            invalidated, previous_snapshot = self.invalidate_export(p, reason, output_keys=output_keys)
+            for job, _ in changes:
+                self.lib.save(job, 'jobs')
+            pending = p.get('export_pending')
+            clear_pending = pending and (invalidated or 'items' not in pending
+                                         or not output_keys.isdisjoint(tuple(item[:2]) for item in pending['items']))
+            if clear_pending:
+                p.pop('export_pending')
+            if invalidated or clear_pending:
+                self.save(p)
+            interrupted = (retry_keys and (pending or p.get('export_history'))
+                           and not (p.get('export') or p.get('partial_export')))
+            if reexport and (invalidated or interrupted) and load_kickoff(p['path']):
+                self._export_locked({'project_id': p['id']}, chat_package={}, previous_asset_snapshot=previous_snapshot)
 
     def batch(self, payload):
         with self.lib.lock:
@@ -1606,7 +1734,7 @@ class Projects:
             with project_lock(Path(p['path'])):
                 return self._export_locked(payload)
 
-    def _export_locked(self, payload, *, website_package=None, chat_package=None):
+    def _export_locked(self, payload, *, website_package=None, chat_package=None, previous_asset_snapshot=None):
         with self.lib.lock:
             p = self.get(payload['project_id'])
             self.fresh(p)
@@ -1714,6 +1842,10 @@ class Projects:
             manifest = load_manifest(root)
             logical = 'visual.asset.manifest'
             previous = [a for a in manifest['artifacts'] if a.get('logical_id') == logical]
+            active = [entry for entry in previous if entry.get('status') in {'current', 'stale'}]
+            previous_asset_snapshot = (asset_export_snapshot(root, active[0], previous_asset_snapshot)
+                                       if len(active) == 1 else None)
+            previous_outputs = (previous_asset_snapshot[1] or {}) if previous_asset_snapshot else {}
             if not p.get('export_pending'):
                 serial = max([int(a['revision'][1:]) for a in previous if re.fullmatch(r'R\d+', a.get('revision', ''))] or [0]) + 1
                 p['export_pending'] = {'id': uid(), 'revision': f'R{serial:02d}', 'at': now()}
@@ -1787,7 +1919,15 @@ class Projects:
                     record['character_type'] = character_type(req)
                 for n, (_, job, step, asset, check) in enumerate(row_outputs, 1):
                     output_id = step_output_id(step)
-                    target = folder / req['asset_id'] / (req['asset_id'] + '_' + safe(step['key']) + '_' + safe(step['view']) + '_' + revision + Path(asset['original']).suffix.lower())
+                    original = previous_outputs.get((req['asset_id'], output_id))
+                    confirmation = step['project_confirmation']
+                    if (original and original['confirmation_ref'].partition('#')[2] == confirmation['id']
+                            and original['sha256'] == confirmation.get('image_sha256')
+                            and all(original.get(field) == step.get(field) for field in ('purpose', 'view', 'state'))
+                            and original.get('output_kind') == step['kind']):
+                        target = Path(original['path'])
+                    else:
+                        target = folder / req['asset_id'] / (req['asset_id'] + '_' + safe(step['key']) + '_' + safe(step['view']) + '_' + revision + Path(asset['original']).suffix.lower())
                     target.parent.mkdir(exist_ok=True)
                     source = Path(asset['original'])
                     if target.exists() and target.read_bytes() != source.read_bytes():
@@ -1896,9 +2036,8 @@ class Projects:
             if registered['status'] == 'candidate':
                 manifest = load_manifest(root)
                 next(a for a in manifest['artifacts'] if a['artifact_id'] == artifact_id)['checksum'] = digest(path)
-                mark_impacted_artifacts_stale(manifest, {logical}, '用户确认了新的资产表', revision)
                 save_manifest(root, manifest)
-                promote_candidate(root, logical, artifact_id)
+                promote_candidate(root, logical, artifact_id, previous_asset_snapshot=previous_asset_snapshot)
             # A current pending transaction already committed. Only complete its
             # missing state/cache/handoff; never rewrite its manifest or receipt.
             state = load_project_state(root)

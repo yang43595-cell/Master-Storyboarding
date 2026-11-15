@@ -1,5 +1,6 @@
 """Twelve synthetic regression groups: creation provenance is not approval."""
 import copy
+from pathlib import Path
 
 import pytest
 from scripts.core import artifacts, story_sources
@@ -50,6 +51,45 @@ def bind(root, record):
 
 def check(root, record):
     return story_sources.validate_dialogue_review(record, root)
+
+
+def test_shared_dialogue_evidence_reads_once_and_rechecks_on_next_call(tmp_path, monkeypatch):
+    evidence = tmp_path / 'captions.json'
+    texts = ['甲句。', '乙句。', '丙句。']
+    write_json(evidence, {'lines': texts})
+    source_digest = artifacts.digest(evidence)
+    record = {'sources': [dict(source_id=f'S{i}', kind='subtitle_verbatim', text=word,
+                evidence_path=evidence.name, evidence_sha256=source_digest, locator='synthetic frame',
+                producer='synthetic reader', **({'text_pointer': f'/lines/{i}'} if i else {}))
+                for i, word in enumerate(texts)],
+              'dialogues': [dict(dialogue_id=f'DLG-{i}', speaker_id='CHR-A', speaker_status='inferred_unverified',
+                text=word, source_ids=[f'S{i}']) for i, word in enumerate(texts)]}
+    reads = 0
+    read_bytes = Path.read_bytes
+    read_text = Path.read_text
+
+    def counted_bytes(path):
+        nonlocal reads
+        if path == evidence:
+            reads += 1
+        return read_bytes(path)
+
+    def reject_second_read(path, *args, **kwargs):
+        assert path != evidence
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, 'read_bytes', counted_bytes)
+    monkeypatch.setattr(Path, 'read_text', reject_second_read)
+    assert check(tmp_path, record)['unresolved_ids'] == ['DLG-0', 'DLG-1', 'DLG-2']
+    assert reads == 1
+    record['sources'][2]['text_pointer'] = '/lines/1'
+    with pytest.raises(ValueError, match='文字被改写：S2'):
+        check(tmp_path, record)
+    assert reads == 2
+    write_json(evidence, {'lines': ['证据已改变。']})
+    with pytest.raises(ValueError, match='hash 不符：S0'):
+        check(tmp_path, record)
+    assert reads == 3
 
 
 def test_hard_subtitles_require_opt_in_and_exact_script_approval(tmp_path, monkeypatch):

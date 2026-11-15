@@ -80,6 +80,119 @@ def test_two_concurrent_batches_keep_worker_inputs_receipts_and_cache_separate(t
     assert cli._context_dir(Path(first.project)) == Path(first.project) / cli.CONTEXT_DIR
 
 
+def test_parallel_ordinary_tasks_follow_their_bound_handoffs_and_reuse_reading(tmp_path):
+    project = _project(tmp_path)
+    manage = project / "00_项目管理"
+    state_path = manage / "project_state.json"
+    manifest_path = manage / "artifact_manifest.json"
+    base_context = project / cli.CONTEXT_DIR
+    source = project / "verified-source.txt"
+    source.write_text("Synthetic verified source", encoding="utf-8")
+    request = project / "creative-method.json"
+    request.write_text(json.dumps({"use_story_method": True}), encoding="utf-8")
+    manifest_path.write_text(json.dumps({"artifacts": [{"artifact_id": "REF", "logical_id": "reference.test",
+        "type": "reference", "revision": "R01", "path_or_url": source.name, "status": "current",
+        "user_approved": True, "checksum": cli.digest(source), "depends_on": []}]}), encoding="utf-8")
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state.update(current_artifacts=["REF"], user_confirmations=[{"scope": "artifact", "artifact_ids": ["REF"],
+        "approval_ref": "SYNTHETIC ONLY"}])
+    project_args = ["--project", str(project)]
+    stage_args = []
+    handoffs = []
+    for skill, actor, task in (("creative-director", "/root/creative", "draft-a"),
+                               ("storyboard-planner", "/root/planning", "board-a")):
+        # Shared authorization chooses each next stage, while its handoff does not mutate project state.
+        state_path.write_text(json.dumps({**state, "next_stage": skill}), encoding="utf-8")
+        identity = ["--actor-id", actor, "--task-id", task]
+        handoff_args = cli.parser().parse_args(["handoff", *project_args, "--to-skill", skill, *identity])
+        handoffs.append(cli.handoff(handoff_args))
+        stage_args.append([*project_args, "--skill", skill, *identity])
+    shared_before = (state_path.read_bytes(), manifest_path.read_bytes())
+    assert handoffs[0]["context_id"] != handoffs[1]["context_id"]
+    barrier = Barrier(2)
+
+    def run(commands):
+        stage, handoff = commands
+        prepare_args = cli.parser().parse_args(["prepare", *stage, "--objective", "Synthetic ordinary task",
+                                                "--request-json", str(request)])
+        barrier.wait(timeout=15)
+        prepared = cli.prepare(prepare_args)
+        barrier.wait(timeout=15)
+        folder = Path(prepared["path"]).parent
+        assert prepared["context_id"] == handoff["context_id"]
+        assert folder == Path(handoff["path"]).parent
+        assert "上一阶段交接事实" in Path(prepared["path"]).read_text(encoding="utf-8")
+        basis = json.loads((folder / "task_basis.json").read_text(encoding="utf-8"))
+        method_args = [arg for item in basis["reading_manifest"]["methods"] for arg in ("--method", item["id"])]
+        reading = cli.record_method_reading(cli.parser().parse_args(["record-method-reading", *stage, *method_args]))
+        ensure_args = cli.parser().parse_args(["ensure-prepared", *stage, "--show-task-basis"])
+        assert cli.ensure_prepared(ensure_args)["ok"]
+        assert Path(reading["path"]).parent == folder
+        return prepare_args, ensure_args, Path(reading["path"])
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first, second = pool.map(run, zip(stage_args, handoffs))
+    prepare_args, ensure_args, receipt_path = first
+    receipt = receipt_path.read_bytes()
+    cli.prepare(prepare_args)
+    assert receipt_path.read_bytes() == receipt
+    for _, ensure, _ in (first, second):
+        assert cli.ensure_prepared(ensure)["ok"]
+    explicit = ["handoff", *project_args, "--to-skill", "storyboard-planner", "--actor-id", "/root/planning",
+                "--task-id", "board-a", "--context-id", "explicit-context"]
+    assert cli.handoff(cli.parser().parse_args(explicit))["context_id"] == "explicit-context"
+    assert cli.ensure_prepared(second[1])["context_id"] == handoffs[1]["context_id"]
+    assert not (base_context / "stage_startup.md").exists()
+    assert not (base_context / "next_stage_handoff.md").exists()
+    assert (state_path.read_bytes(), manifest_path.read_bytes()) == shared_before
+
+
+def test_scoped_handoff_change_requires_preparation_and_drives_current_goal(tmp_path):
+    project = _project(tmp_path)
+    manage = project / "00_项目管理"
+    source = project / "verified-source.txt"
+    source.write_text("Verified source", encoding="utf-8")
+    state_path = manage / "project_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state.update(next_stage="creative-director", current_artifacts=["REF"],
+                 user_confirmations=[{"scope": "artifact", "artifact_ids": ["REF"], "approval_ref": "SYNTHETIC"}])
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    (manage / "artifact_manifest.json").write_text(json.dumps({"artifacts": [{"artifact_id": "REF", "logical_id": "reference.test",
+        "type": "reference", "revision": "R01", "path_or_url": source.name, "status": "current",
+        "user_approved": True, "checksum": cli.digest(source), "depends_on": []}]}), encoding="utf-8")
+    request = project / "request.json"
+    request.write_text('{"use_story_method": true}', encoding="utf-8")
+    identity = ["--project", str(project), "--actor-id", "worker", "--task-id", "draft"]
+    stage = [*identity, "--skill", "creative-director"]
+    handoff = ["handoff", *identity, "--to-skill", "creative-director"]
+    parse = cli.parser().parse_args
+
+    cli.handoff(parse([*handoff, "--objective", "Scope A", "--stop-at", "Stop A"]))
+    prepare = parse(["prepare", *stage, "--request-json", str(request), "--objective", "Scope A"])
+    folder = Path(cli.prepare(prepare)["path"]).parent
+    basis_path = folder / "task_basis.json"
+    basis = json.loads(basis_path.read_text(encoding="utf-8"))
+    methods = [arg for item in basis["reading_manifest"]["methods"] for arg in ("--method", item["id"])]
+    assert methods
+    evidence = Path(cli.record_method_reading(parse(["record-method-reading", *stage, *methods]))["path"])
+    attestation = evidence.read_bytes()
+    ensure = parse(["ensure-prepared", *stage, "--show-task-basis"])
+    assert cli.ensure_prepared(ensure)["ok"]
+
+    # Existing preparations stored the original card in startup before a separate scope field existed.
+    del basis["handoff_scope"]
+    basis_path.write_text(json.dumps(basis), encoding="utf-8")
+    assert cli.ensure_prepared(ensure)["ok"]
+    cli.handoff(parse([*handoff, "--objective", "Scope B", "--stop-at", "Stop B"]))
+    with pytest.raises(cli.StageContextError, match="交接目标、停止点.*已改变"):
+        cli.ensure_prepared(ensure)
+    cli.prepare(prepare)  # Even retrying an old command must expose the new authoritative goal.
+    current = cli.ensure_prepared(ensure)
+    assert current["ok"] and current["task_basis"]["objective"] == "Scope B"
+    assert current["task_basis"]["handoff_scope"] == {"objective": "Scope B", "stop_at": "Stop B"}
+    assert evidence.read_bytes() == attestation
+
+
 @pytest.mark.parametrize("targets,skill", [
     ([], "storyboard-director"),
     ([f"VS-OUT-{number}" for number in range(9)], "storyboard-director"),
@@ -89,6 +202,7 @@ def test_two_concurrent_batches_keep_worker_inputs_receipts_and_cache_separate(t
     (["../output.png"], "storyboard-director"),
     (["AST-CHAR"], "asset-image-assistant"),
     (["AST-CHAR@"], "asset-image-assistant"),
+    (["AST-CHAR@view@extra"], "asset-image-assistant"),
 ])
 def test_invalid_image_targets_fail_before_any_context_write(tmp_path, targets, skill):
     args, _ = make_batch_context(tmp_path, targets=targets, skill=skill)
@@ -248,6 +362,122 @@ def test_review_and_handoff_use_batch_context_without_changing_project_stage(tmp
     assert state_path.read_bytes() == state_before
     assert manifest_path.read_bytes() == manifest_before
     assert cli._context_dir(project) == project / cli.CONTEXT_DIR
+
+
+@pytest.mark.parametrize("entry", ["prepare", "handoff"])
+def test_asset_worker_receipt_is_bound_and_received_without_changing_project_stage(tmp_path, entry):
+    target = "AST-SYNTHETIC@view-a"
+    args, request = make_batch_context(tmp_path, skill="asset-image-assistant", targets=[target])
+    project = Path(args.project)
+    state_path = project / "00_项目管理/project_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state.update(current_artifacts=["REF"], next_stage=args.skill,
+        user_confirmations=[{"scope": "artifact", "artifact_ids": ["REF"],
+                             "approval_ref": "SYNTHETIC ONLY"}])
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    source = project / "source.txt"
+    source.write_text("Synthetic source only", encoding="utf-8")
+    manifest_path = project / "00_项目管理/artifact_manifest.json"
+    manifest_path.write_text(json.dumps({"artifacts": [{"artifact_id": "REF", "logical_id": "reference.test",
+        "type": "reference", "revision": "R01", "path_or_url": source.name, "status": "current",
+        "user_approved": True, "checksum": cli.digest(source), "depends_on": []}]}), encoding="utf-8")
+    state_before, manifest_before = state_path.read_bytes(), manifest_path.read_bytes()
+    receipt = request.with_name("visual-self-check.json")
+    batch_args = ["handoff", "--project", args.project, "--to-skill", args.skill,
+                  "--context-id", args.context_id]
+    if entry == "prepare":
+        args.vault = None
+        args.batch_receipt = str(receipt)
+        result = cli.prepare(args)
+    else:
+        result = cli.handoff(cli.parser().parse_args(batch_args + ["--request-json", str(request),
+                                                                 "--batch-receipt", str(receipt)]))
+        args.vault = None
+        assert cli.prepare(args)["valid"]
+        startup = (batch_folder(args) / "stage_startup.md").read_text(encoding="utf-8")
+        assert startup.count("- 图片批次依据 `") == 1
+        args.batch_receipt = str(receipt.with_name("unbound-receipt.json"))
+        with pytest.raises(cli.StageContextError, match="已有图片批次交接不一致"):
+            cli.prepare(args)
+    assert result["asset_batch"]["targets"] == [target]
+    receive = cli.parser().parse_args(batch_args + ["--receive-batch"])
+    assert cli.handoff(receive)["status"] == "pending"
+
+    image = project / "candidate.png"
+    image.write_bytes(b"Synthetic receipt fixture")
+    receipt.write_text(json.dumps({"context_id": args.context_id, "request_sha256": result["asset_batch"]["request_sha256"],
+        "full_log": "PRIVATE LOG", "items": [{"target": target,
+        "candidate_id": "SYNTHETIC-C1", "output_path": image.name, "sha256": cli.digest(image),
+        "review_actor": "worker-a", "review_result": "pass", "observations": "SYNTHETIC OBSERVATION"}]}),
+        encoding="utf-8")
+    received = cli.handoff(receive)
+    assert received["context_id"] == args.context_id
+    assert received["status"] == "ready_for_review"
+    assert received["items"][0]["path"] == str(image)
+    assert set(received["items"][0]) == {"target", "status", "candidate_id", "path", "sha256", "observer", "visual_status"}
+    assert state_path.read_bytes() == state_before
+    assert manifest_path.read_bytes() == manifest_before
+    assert "PRIVATE LOG" not in json.dumps(received)
+    with pytest.raises(cli.StageContextError, match="沿用本批交接卡"):
+        cli.handoff(cli.parser().parse_args(batch_args + ["--receive-batch", "--batch-receipt", str(receipt)]))
+    request.write_text('{"image_targets": ["AST-SYNTHETIC@different"]}', encoding="utf-8")
+    with pytest.raises(cli.StageContextError, match="原请求内容已改变"):
+        cli.handoff(receive)
+
+
+def test_reprepared_batch_rejects_old_receipt_of_unchanged_target(tmp_path):
+    target = "AST-SYNTHETIC@same-output"
+    args, request = make_batch_context(tmp_path, skill="asset-image-assistant", targets=[target])
+    project = Path(args.project)
+    args.vault = None
+    receipt = request.with_name("visual-self-check.json")
+    args.batch_receipt = str(receipt)
+    first = cli.prepare(args)["asset_batch"]
+    image = project / "candidate.png"
+    image.write_bytes(b"Synthetic receipt fixture")
+    result = {"context_id": args.context_id, "request_sha256": first["request_sha256"], "items": [{"target": target,
+        "candidate_id": "C1", "path": image.name, "sha256": cli.digest(image),
+        "observer": "worker-a", "visual_status": "passed", "observed": "Synthetic observation"}]}
+    receipt.write_text(json.dumps(result), encoding="utf-8")
+    receive = cli.parser().parse_args(["handoff", "--project", args.project, "--to-skill", args.skill,
+                                      "--context-id", args.context_id, "--receive-batch"])
+    assert cli.handoff(receive)["status"] == "ready_for_review"
+    request.write_text(json.dumps({"image_targets": [target], "constraint": "changed reference"}), encoding="utf-8")
+    second = cli.prepare(args)["asset_batch"]
+    assert second["request_sha256"] != first["request_sha256"]
+    assert cli.handoff(receive)["status"] == "pending"
+    result["request_sha256"] = second["request_sha256"]
+    receipt.write_text(json.dumps(result), encoding="utf-8")
+    assert cli.handoff(receive)["status"] == "ready_for_review"
+
+
+def test_asset_request_targets_and_sha_come_from_one_read(tmp_path, monkeypatch):
+    target = "AST-SYNTHETIC@view-a"
+    args, request = make_batch_context(tmp_path, skill="asset-image-assistant", targets=[target])
+    args.vault = None
+    args.batch_receipt = str(request.with_name("visual-self-check.json"))
+    request = request.resolve()
+    expected = cli.digest(request)
+    read_bytes = Path.read_bytes
+    swapped = False
+
+    def swap_after_read(path):
+        nonlocal swapped
+        raw = read_bytes(path)
+        if path == request and not swapped:
+            replacement = path.with_suffix(".new")
+            replacement.write_text('{"image_targets": ["AST-SYNTHETIC@view-b"]}', encoding="utf-8")
+            replacement.replace(path)
+            swapped = True
+        return raw
+
+    monkeypatch.setattr(Path, "read_bytes", swap_after_read)
+    batch = cli.prepare(args)["asset_batch"]
+    assert swapped and batch["targets"] == [target] and batch["request_sha256"] == expected
+    receive = cli.parser().parse_args(["handoff", "--project", args.project, "--to-skill", args.skill,
+                                      "--context-id", args.context_id, "--receive-batch"])
+    with pytest.raises(cli.StageContextError, match="原请求内容已改变"):
+        cli.handoff(receive)
 
 
 def test_symlinked_batch_cache_cannot_receive_reading_writes(tmp_path):

@@ -82,6 +82,37 @@ def test_cli_reports_planned_state_coverage_before_canvas(tmp_path, capsys, case
         assert result["status"] == "covered"
 
 
+def test_local_cli_checks_named_segment_and_both_adjacent_seams(tmp_path, capsys):
+    shots = [{"shot_id": f"S{i}", "take": f"action {i}"} for i in range(1, 6)]
+    director = tmp_path / "director.json"
+    director.write_text(json.dumps({"scenes": [{"scene_id": "ROOM", "shots": shots}]}))
+    ids = ["V06", "V08", "V07", "V04", "V02"]
+    rows = [{"segment_id": segment, "source_shot_ids": [shot["shot_id"]]}
+            for segment, shot in zip(ids, shots)]
+    for previous, current, shot in zip(rows, rows[1:4], shots):
+        current["same_scene_split"] = {"from_segment_id": previous["segment_id"], "reason": "event_complete",
+            "evidence": "action ends here", "source_boundary": {"shot_id": shot["shot_id"],
+                                                                 "field": "take", "quote": shot["take"]}}
+    path = tmp_path / "video.json"
+    path.write_text(json.dumps({"generation_segments": rows}))
+    args = ["--project", str(tmp_path), "--prompt", str(path), "--storyboard", str(director)]
+
+    assert main(args + ["--segment-id", "V07"]) == 0
+    checked = json.loads(capsys.readouterr().out)
+    assert checked["validation_scope"] == "local_review"
+    assert checked["checked_segment_ids"] == ["V07"]
+    assert checked["adjacent_boundaries_reviewed"] == [["V08", "V07"], ["V07", "V04"]]
+    assert checked["same_scene_boundaries_checked"] == 2
+    assert main(args) == 1  # Full validation still catches V04 -> V02.
+    assert "同场景默认合并" in json.loads(capsys.readouterr().out)["error"]
+    assert main(args + ["--segment-id", "V00"]) == 1
+    assert "V00" in json.loads(capsys.readouterr().out)["error"]
+    rows[3].pop("same_scene_split")
+    path.write_text(json.dumps({"generation_segments": rows}))
+    assert main(args + ["--segment-id", "V07"]) == 1  # A broken outgoing seam still blocks local review.
+    assert "同场景默认合并" in json.loads(capsys.readouterr().out)["error"]
+
+
 def fixture(tmp_path, maximum=18):
     evidence = tmp_path / "synthetic-capability.txt"
     evidence.write_text("Synthetic test observation, not a real platform capability.")
@@ -128,10 +159,29 @@ def test_merged_scene_has_no_fixed_minimum_maximum_or_model_guess(tmp_path):
     assert payload == before and "selected_video_model" not in payload
 
 
+def bind_redframe_capability(tmp_path, payload, durations):
+    evidence = tmp_path / 'redframe-capability.json'
+    evidence.write_text(json.dumps({'model': {
+        'type': 'video', 'providerId': 'volcengineArkVideo',
+        'modelId': 'doubao-synthetic-model', 'label': 'Doubao synthetic-model',
+        'mode': ['text', ['imageReference:30', 'videoReference:10']],
+        'durationResolutionMap': [
+            {'resolution': ['480p'], 'duration': durations},
+            {'resolution': ['720p'], 'duration': [durations[0], durations[-1]]},
+        ],
+    }}))
+    payload['platform'].update(reference_mode='reference', resolution='480p')
+    payload['selected_video_model'].update(platform='redframe', reference_mode='reference',
+        min_duration_seconds=durations[0], max_duration_seconds=durations[-1],
+        capability_evidence=dict(path=evidence.name, sha256=hashlib.sha256(evidence.read_bytes()).hexdigest(),
+                                 locator='model.durationResolutionMap', checked_at='2026-01-01T00:00:00Z'))
+    return evidence
+
+
 def test_redframe_duration_evidence_and_authored_edit_are_checked(tmp_path):
     payload, board = fixture(tmp_path, maximum=30)
+    bind_redframe_capability(tmp_path, payload, list(range(4, 31)))
     model = payload['selected_video_model']
-    model.update(platform='redframe', min_duration_seconds=4)
     source = dict(segment_id='MERGED', prompt='Synthetic continuous action.',
                   source_shot_ids=['S1', 'S2'], target_edit_duration_seconds=5.8,
                   edit_in_seconds=10, edit_out_seconds=15.8, shot_durations=[2.48, 3.52],
@@ -175,6 +225,92 @@ def test_redframe_duration_evidence_and_authored_edit_are_checked(tmp_path):
     (tmp_path / model['capability_evidence']['path']).write_text('Evidence bytes changed.')
     with pytest.raises(ValueError, match='限制证据 hash 已过期'):
         validate_delivery_parameters([actual], payload, tmp_path, platform='redframe')
+
+
+def test_redframe_duration_matches_exact_native_options_and_resolution(tmp_path):
+    payload, board = fixture(tmp_path, maximum=30)
+    bind_redframe_capability(tmp_path, payload, [4, 23, 30])
+    source = dict(segment_id='G1', source_shot_ids=['S1'], target_edit_duration_seconds=22.8,
+                  shot_durations=[23], parameters=dict(payload['platform'], duration=23))
+    payload['generation_segments'] = [source]
+    actual = dict(source_segment_id='G1', parameters=dict(source['parameters']), duration_bounds=[4, 30])
+    assert validate_generation_boundaries(payload, board, tmp_path)['segment_count'] == 1
+    validate_delivery_parameters([actual], payload, tmp_path, platform='redframe')
+
+    with pytest.raises(ValueError, match='实际交付分辨率'):
+        validate_delivery_parameters([{**actual, 'parameters': dict(actual['parameters'], resolution='720p')}],
+                                     payload, tmp_path, platform='redframe')
+    for change, seconds, error in [
+        ({}, 23.2, '23.2 秒不在.*原生选项'),
+        ({}, 24, '24 秒不在.*原生选项'),
+        ({'resolution': '720p'}, 23, '23 秒不在.*原生选项'),
+        ({'resolution': '1080p'}, 23, '不支持分辨率'),
+    ]:
+        source['shot_durations'] = [seconds]
+        source['parameters'] = dict(payload['platform'], duration=seconds) | change
+        actual['parameters'] = dict(source['parameters'])
+        with pytest.raises(ValueError, match=error):
+            validate_generation_boundaries(payload, board, tmp_path)
+        with pytest.raises(ValueError, match=error):
+            validate_delivery_parameters([actual], payload, tmp_path, platform='redframe')
+
+
+@pytest.mark.parametrize(('change', 'issue'), [
+    ({'modelId': 'another-model', 'label': 'Another Model'}, '原生模型与已选模型'),
+    ({'mode': ['text']}, '不支持已选参考模式'),
+    ({'durationResolutionMap': []}, '缺原生时长与分辨率选项'),
+])
+def test_redframe_duration_evidence_rejects_wrong_native_scope(tmp_path, change, issue):
+    payload, board = fixture(tmp_path)
+    evidence = bind_redframe_capability(tmp_path, payload, list(range(4, 19)))
+    captured = json.loads(evidence.read_text())
+    captured['model'].update(change)
+    evidence.write_text(json.dumps(captured))
+    payload['selected_video_model']['capability_evidence']['sha256'] = hashlib.sha256(evidence.read_bytes()).hexdigest()
+    with pytest.raises(ValueError, match=issue):
+        validate_generation_boundaries(payload, board, tmp_path)
+
+
+def test_selected_ranges_skip_only_a_declared_gap_with_omitted_director_shots(tmp_path):
+    payload, _ = fixture(tmp_path)
+    bind_redframe_capability(tmp_path, payload, list(range(4, 19)))
+    board = {"scenes": [
+        {"scene_id": f"C{i}", "shots": [{"shot_id": f"S{i}", "take": {"start": f"New action {i}"}}]}
+        for i in range(1, 5)
+    ]}
+    rows = [dict(segment_id=f"G{i}", source_shot_ids=[f"S{i}"], edit_in_seconds=start,
+                 edit_out_seconds=start + 5, parameters=dict(payload['platform'], duration=5))
+            for i, start in ((1, 0), (3, 10), (4, 15))]
+    rows[-1]['cross_scene_continuity'] = dict(from_segment_id="G3", decision="new_action_or_time_jump",
+        basis="C4 starts a new action.", previous_source=dict(shot_id="S3", field="take.start", quote="New action 3"),
+        current_source=dict(shot_id="S4", field="take.start", quote="New action 4"))
+    payload['generation_segments'] = rows
+    payload['scope'] = dict(type='selected_ranges', independent_ranges=[{'segment_ids': ['G1']},
+                                                                        {'segment_ids': ['G3', 'G4']}])
+    report = validate_generation_boundaries(payload, board, tmp_path)
+    assert report['selected_range_gaps_skipped'] == 1
+    assert report['cross_scene_boundaries_checked'] == 1
+    for scope in [dict(type='full_local_authored'),
+                  dict(type='selected_ranges'),
+                  dict(type='selected_ranges', independent_ranges=[{'segment_ids': ['G1', 'G3', 'G4']}])]:
+        with pytest.raises(ValueError, match='未完整覆盖|未覆盖镜号|时码重叠或全片空档'):
+            validate_generation_boundaries({**payload, 'scope': scope}, board, tmp_path)
+    board['scenes'][1]['shots'][0]['required_visuals'] = [{'prompt_clause': 'An action in the omitted range.'}]
+    assert validate_generation_boundaries(payload, board, tmp_path)['selected_range_gaps_skipped'] == 1
+    board['scenes'][2]['shots'][0]['required_visuals'] = [{'prompt_clause': 'An action in the selected range.'}]
+    with pytest.raises(ValueError, match='S3 正文缺少必保画面'):
+        validate_generation_boundaries(payload, board, tmp_path)
+    board['scenes'][2]['shots'][0].pop('required_visuals')
+    rows[-1].pop('cross_scene_continuity')
+    with pytest.raises(ValueError, match='G3→G4 缺跨场动作接续判断'):
+        validate_generation_boundaries(payload, board, tmp_path)
+    # A declared split must not skip the checks for a real adjacent pair.
+    payload['scope']['independent_ranges'] = [{'segment_ids': [row['segment_id']]} for row in rows]
+    with pytest.raises(ValueError, match='G3→G4 缺跨场动作接续判断'):
+        validate_generation_boundaries(payload, board, tmp_path)
+    rows[-1].update(edit_in_seconds=16, edit_out_seconds=21)
+    with pytest.raises(ValueError, match='G3→G4 .*时码空档'):
+        validate_generation_boundaries(payload, board, tmp_path)
 
 
 def test_required_director_beat_cannot_be_cut_from_middle_of_source_scope(tmp_path):
@@ -343,6 +479,27 @@ def test_authorized_agent_model_choice_validates_draft_without_inventing_confirm
     assert payload == before
     assert payload["selected_video_model"]["confirmed_by_user"] is False
     assert payload["generation_authorized"] is False and payload["production_blocked"] is True
+
+
+def test_authorized_ready_draft_uses_the_exact_kickoff_model(tmp_path):
+    payload, board = fixture(tmp_path)
+    authorized_draft(payload)
+    payload["production_blocked"] = False
+    path = tmp_path / REQUEST_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    canvas = dict(platform="synthetic-platform", model="synthetic-model", aspect_ratio="9:16",
+                  resolution="480p", create_new=True)
+    kickoff = dict(canvas=canvas, decision_ref="existing workflow scope", product={"mode": "none"})
+    path.write_text(json.dumps({"kickoff": kickoff}))
+    assert validate_generation_boundaries(payload, board, tmp_path)["same_scene_boundaries_checked"] == 2
+    with pytest.raises(ValueError, match="模型"):
+        payload["generation_authorized"] = True
+        validate_generation_boundaries(payload, board, tmp_path)
+    payload["generation_authorized"] = False
+    canvas["model"] = "changed-model"
+    path.write_text(json.dumps({"kickoff": kickoff}))
+    with pytest.raises(ValueError, match="模型"):
+        validate_generation_boundaries(payload, board, tmp_path)
 
 
 def mixed_modes(tmp_path):
@@ -616,6 +773,71 @@ def test_redframe_ordinary_cross_scene_cut_needs_no_physical_carryover(tmp_path)
     right['cross_scene_continuity']['current_source']['quote'] = 'Unsupported reconstruction.'
     with pytest.raises(ValueError, match='G1→G2 跨场判断依据无效'):
         validate_generation_boundaries(payload, board, tmp_path)
+
+
+@pytest.mark.parametrize("write_only_second", [False, True])
+def test_redframe_checks_cross_scene_action_before_writing(tmp_path, write_only_second):
+    payload, board = fixture(tmp_path)
+    bind_redframe_capability(tmp_path, payload, list(range(4, 19)))
+    left, right, third = payload["generation_segments"]
+    payload["generation_segments"] = [left, right]
+    right.pop("same_scene_split")
+    right.pop("continuity")
+    for row in (left, right):
+        row.update(materials=[], target_edit_duration_seconds=9)
+    indoors = board["scenes"][0]
+    outside_shot, third_shot = indoors["shots"][1:]
+    indoors["shots"] = indoors["shots"][:1]
+    indoors["shots"][0]["take"] = {"end": "Right hand pushes the door; left foot is over the threshold."}
+    outside_shot["take"] = {"start": "Right hand stays on the door; left foot comes down outside."}
+    board["scenes"].append({"scene_id": "STREET", "shots": [outside_shot]})
+    sources = [({}, tmp_path / "board.json", board), ({}, tmp_path / "video.json", payload)]
+    drafts = [dict(node_id=row["segment_id"], source_segment_id=row["segment_id"], prompt=row["prompt"],
+                   source_shot_ids=row["source_shot_ids"], duration_bounds=[4, 18],
+                   parameters=dict(payload["platform"], duration=9)) for row in (left, right)]
+    if write_only_second:
+        drafts = drafts[1:]
+
+    def preflight():
+        return validate_scene_source_mapping(drafts, sources, tmp_path, check_submitted_body=True,
+                                             delivery_platform="redframe")
+
+    model = payload.pop("selected_video_model")
+    with pytest.raises(ValueError, match="G1→G2 缺跨场动作接续判断"):
+        preflight()
+    payload["selected_video_model"] = model
+    review = dict(from_segment_id="G1", decision="action_continues", basis="The step continues across the cut.",
+                  previous_source=dict(shot_id="S1", field="take.end", quote="left foot is over the threshold"),
+                  current_source=dict(shot_id="S2", field="take.start", quote="left foot comes down outside"))
+    right["cross_scene_continuity"] = review
+    with pytest.raises(ValueError, match=r"G1→G2 .*physical_continuity\.action"):
+        preflight()
+    right["physical_continuity"] = dict(from_segment_id="G1", permitted_change="Camera passes to the outside.",
+        action=dict(status="no_visual_needed", previous_state="Right hand pushes; left foot is in the air.",
+                    current_state="Right hand stays on the door; left foot lands.",
+                    basis="The two adapted prompts preserve the same step and hand contact."))
+    assert preflight() == {}
+    assert validate_generation_boundaries(payload, board, tmp_path)["cross_scene_boundaries_checked"] == 1
+
+    review["current_source"]["quote"] = "left hand pushes"
+    with pytest.raises(ValueError, match="不在准确导演字段原文中"):
+        preflight()
+    outside_shot["take"]["start"] = "An hour later, the courier sits in a parked car."
+    review.update(decision="new_action_or_time_jump", basis="An hour has passed.",
+                  current_source=dict(shot_id="S2", field="take.start", quote="An hour later"))
+    right.pop("physical_continuity")
+    assert preflight() == {}
+
+    third.pop("same_scene_split")
+    third.pop("continuity")
+    third.update(materials=[], target_edit_duration_seconds=9)
+    payload["generation_segments"].append(third)
+    board["scenes"].append({"scene_id": "OFFICE", "shots": [third_shot]})
+    with pytest.raises(ValueError, match="G2→G3 缺跨场动作接续判断"):
+        preflight()
+    if not write_only_second:
+        drafts.pop()
+        assert preflight() == {}
 
 
 def test_new_topic_keeps_actor_positions_bound_to_real_inputs(tmp_path):

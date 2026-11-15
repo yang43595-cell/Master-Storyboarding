@@ -59,8 +59,11 @@ def bind_redframe_production_sources(root, frozen, observed, *, include_cross_sc
         return dict(artifact_id=ident, revision='R01', sha256=sha)
 
     narrative = register('NARRATIVE', 'narrative.package', 'narrative.json', {'fixture': 'narrative'})
-    capability = root / 'synthetic-duration-capability.txt'
-    capability.write_text('Synthetic RedFrame-like mode covering 2–8 seconds.', encoding='utf-8')
+    capability = root / 'synthetic-duration-capability.json'
+    write_json(capability, {'model': {'type': 'video', 'providerId': 'fixture',
+        'modelId': 'fixture', 'label': frozen['drafts'][0]['parameters']['model'],
+        'mode': ['fixture-reference'],
+        'durationResolutionMap': [{'resolution': ['480p'], 'duration': list(range(2, 9))}]}})
     shots = []
     segments = []
     for row in frozen['drafts']:
@@ -476,8 +479,15 @@ def test_redframe_action_file_native_reference_and_actual_duration(tmp_path, mod
         row['reference_checks'][0]['canvas_binding'] = dict(
             mode='direct', purpose='synthetic boundary', prompt_reference=True)
     bind_redframe_production_sources(tmp_path, frozen, observed)
+    observed['drafts'][0]['native_mentions'] = [dict(**media, entity_type='fixture-chip',
+        native_noneditable_entity=True) for media in row['ordered_media']]
+    observed['frozen_sha256'] = digest(frozen)
     result = canvas_cli(tmp_path, frozen, observed)
     assert result.returncode == 0, result.stdout
+    swapped = copy.deepcopy(frozen)
+    swapped['drafts'][0]['reference_checks'].reverse()
+    swapped['drafts'][0]['ordered_media'].reverse()
+    assert '素材字节或顺序与采用源段不符' in canvas_cli(tmp_path, swapped).stdout
     ref['duration'] = 2
     bind_synthetic_quality(tmp_path, frozen)
     assert 'actual video' in canvas_cli(tmp_path, frozen).stdout

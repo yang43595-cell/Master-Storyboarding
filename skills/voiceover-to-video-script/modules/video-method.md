@@ -32,7 +32,7 @@
 
 ### 现行生成段的只读检查
 
-分段仍由本轮执行者按上面的方法判断，不运行固定秒数分组器。交付本轮候选前，用同一 JSON 与准确导演原稿运行 `python -m scripts.core.generation_boundaries --project <项目> --prompt <提示词JSON> --storyboard <导演JSON>`。缺依据的候选可以保留并明确阻塞，但不能把检查失败写成分段已核、正式采用或画布可提交。正式采用与画布 preflight 已调用同一检查；历史只读比较不改写旧稿，不恢复 production_plan。
+分段由本轮执行者按上面的方法判断。局部返修交回前，用现有候选 JSON 与准确导演原稿运行 `python -m scripts.core.generation_boundaries --project <项目> --prompt <提示词JSON> --storyboard <导演JSON> --segment-id <本次所改段号>`。按直接影响追加段号。程序只报所列段、稿内实际相邻接缝及所列段的场景状态覆盖。稿件仅含局部时，仍从准确当前依据补核工具未覆盖的实际接缝。交完整稿时省略 `--segment-id`，做最后一次全片分段检查并完成全片复核。缺依据或检查失败的候选可保留并明确阻塞。正式采用与画布写前检查继续调用现有校验范围。
 
 每段沿用 `source_shot_ids` / `source_shots` 映射，场景取自导演，不按片段标题猜。相邻段的边界落在同一来源场景时，在后段现有 JSON 内记 `same_scene_split`：`from_segment_id`、`reason`、具体 `evidence`，以及 `source_boundary` 的准确 `shot_id`、`field`、`quote`。字段可定位动作、节奏、切点或对白（如 `audio.dialogue.0.text`），不得为了填字段改导演。
 
@@ -44,9 +44,17 @@
 
 先按导演动作和切点判断哪些状态实际继承。普通跨场硬切在正文或现有接续备注交代仍需保持的穿搭、随身物等，新场自行建立站位和空间。带调度设定（`space_rules`）的同场接续仍须在后段写 `physical_continuity`。跨场若继续同一动作、继承关键物理状态有风险或已有漂移，也在后段用同一字段登记。用 `from_segment_id`、`permitted_change` 定前驱和允许的变化，从 `positions`（人与锚点及彼此位置）、`props`（持物组合、持有人与落点）、`visibility`（关键物件或服装的可见状态）中只写实际继承的项，每项写 `previous_state`、`current_state`、`basis`。例如等待后湿擦只核必须接上的膜态、人物姿态和仍在场的相关物件，已重置或与动作无关的项省略。
 
-红帧稿逐个核对生成段间的跨场切点，在后段 `cross_scene_continuity` 记录 `from_segment_id`、`decision`、理由 `basis`，并在 `previous_source`、`current_source` 分别用 `shot_id`、`field`、`quote` 定位同版导演前段尾镜与后段首镜的准确依据。动作接着做用 `action_continues`，新动作或明确时间跳转用 `new_action_or_time_jump`。写前按本批段号检查涉及的切点，前段单独分批提交时仍查同版源稿的后段判断，后段单独提交也核对准确前段。
+### 红帧跨场写前检查
 
-动作继续时，后段 `physical_continuity.action` 写 `previous_state`、`current_state`、`basis` 和 `status`，核对动作进度、接触及手脚状态。仍继承的站位、持物和可见状态另按各项核对。用 `visual_reference` 时，两侧实际图、镜号与 `physical_scope: ["action"]` 一并绑定，状态参考或按侧对应的首尾帧继续走现有素材检查。导演依据和已有素材已足以说明该动作时可以写明原因并标 `no_visual_needed`。普通硬切保留上述跨场判断，有依据的新动作或时间跳转可沿原流程继续。程序核镜号、来源和材料绑定，执行者核动作是否真的成立。
+适配完后连读实际提示词的前段结尾和后段开头，逐个核对两段之间的跨场切点。在后段 `cross_scene_continuity` 记录准确 `from_segment_id`、判断 `decision` 和理由 `basis`，并以 `previous_source`、`current_source` 各引用导演尾镜、首镜的 `shot_id`、`field` 和 `quote`。动作继续用 `action_continues`；新动作或明确时间跳转用 `new_action_or_time_jump`，说明导演依据。场景编号变化本身不能作为判断依据。
+
+动作继续时，在后段 `physical_continuity.action` 记录 `previous_state`、`current_state`、`basis` 和 `status`，具体核对动作进度、触发、接触或手脚状态；仍继承的站位、持物和可见状态按对应字段一并核对。写前检查缺判断、缺来源或缺动作接续记录时阻止相关草稿写入；有冲突先改正文和相关素材再复查。只写前段时仍核对同版源稿的后段判断，只写后段时也核对同版源稿中的准确前段。脚本核验记录和来源，执行者负责判断实际正文能否接上。
+
+有高风险继承或已见漂移时用 `status: visual_reference`，逐侧填写 `previous_sha256s`／`current_sha256s` 和对应 `previous_observation`／`current_observation`，把实际图和准确镜号绑入两侧素材清单及交付 `reference_checks`，在引用 `physical_scope` 标明该图实看能承担的项。标为 `end_frame` 的图承担前段落幅，标为 `start_frame` 的图承担后段起幅。确实可跨侧使用的图按实际范围登记状态、布局或外观职责。可靠实拍、既有参考或动作已足以说明相应状态且无需图像证据时，写依据并标 `no_visual_needed`。同场换话题或省略时间后仍继承的项继续核对。图中没有演员，不能用于证明座次。单品白底图不能证明在手的袋盒组合。未看见的服装内状态不写为可见。先看相邻两侧成片，再采用合格实际尾帧。
+
+检查通过只说明所填来源、能力证据字节和引用职责一致，不证明证据内容正确/仍适用、估时真实、图片已确认、视觉接缝合格或用户批准。未知项不猜填；同一镜号跨段的连续子范围仍可保留，完整动作、对白与时间覆盖继续按现行自查及音频来源检查执行。未拆段的中立稿不因此强制选择模型，不自动生成或修改素材。
+
+实际交付的模型、参考模式和生成时长须逐段匹配准确源稿。红帧正式交付须在源稿现有 `selected_video_model` 记录本轮同模型、同参考方式的 `min_duration_seconds`、`max_duration_seconds` 及原始能力证据，并在源段登记目标剪辑时长或剪辑起止时间。红帧短镜按[前述顺序](#红帧短镜优先并入下一段)处理。详细写前与回读校验沿[交付快照检查](../../../docs/development/delivery-snapshot-checks.md#分段参数与已有前驱)执行；只交付后段时按同一入口保留确切前驱证据。
 
 ## 正文与素材
 

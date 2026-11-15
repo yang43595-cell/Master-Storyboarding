@@ -1,5 +1,26 @@
 """Read the two existing submitted-body fields without guessing authority."""
 
+import re
+
+
+_INTERNAL_BODY = (
+    (re.compile(r"与(?:上|前一)段不连续|(?:视频)?模型没有上下文|(?:接|承接|沿用)(?:上一|前一|上)段|见导演包|同上"),
+     "出现生成提示词元话语；改为可直接生成的具体画面"),
+    (re.compile(r"(?<![A-Za-z0-9_-])(?:(?:DLG|AST|STP|ART)-[A-Z0-9-]+|S\d{2}-\d{3})(?![A-Za-z0-9_-])"),
+     "混入内部对白、镜头或资产编号"),
+    (re.compile(r"[A-Za-z]:[\\/]|/(?:Users|home|tmp)/"),
+     "混入本地文件路径；改用实际上传引用标记"),
+    (re.compile(r"(?:^|\n)[^\n]{0,20}(?:完成条件|自查结论|验收清单)[：:]"),
+     "混入内部完成条件或自查清单；移到制作备注"),
+)
+
+
+def submitted_body_issues(body: str) -> list[str]:
+    """Check one actual generated-prompt body at adoption and delivery."""
+    if not body.strip():
+        return ["缺少非空、完整的提交正文"]
+    return [issue for pattern, issue in _INTERNAL_BODY if pattern.search(body)] + generated_overlay_issues(body)
+
 
 def submitted_prompt_body(row: dict) -> str:
     """Preserve source text; invalid/missing bodies are empty, conflicts reject.
@@ -23,7 +44,6 @@ def generated_overlay_issues(body: str) -> list[str]:
     Negation applies only to a nearby text/action phrase, not any earlier 不.
     This is a finite Chinese directive heuristic, not a general semantic parser.
     """
-    import re
     # Do not mistake a character talking about subtitles for an overlay request.
     visible = re.sub(r'(?:说|问|答|喊|念|旁白)[：:]\s*[“「"]([^”」"]*)[”」"]', '', body)
     target = r'(?:静默文字|无声文字|时间字|小字|字幕|片尾文字|片头文字|画面文字|屏幕文字|叠加文字|说明字卡|标题卡|字卡|时间码|倒计时|时间描述)'
