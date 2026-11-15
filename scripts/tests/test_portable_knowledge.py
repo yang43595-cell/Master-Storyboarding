@@ -70,6 +70,21 @@ class PortableKnowledgeTests(unittest.TestCase):
         with self.assertRaises(KnowledgeRuntimeError):
             build_knowledge_index(self.root, {})
 
+    def test_selected_lookup_rehashes_the_selected_file_while_startup_checks_the_bundle(self):
+        neighbour = self.root / 'unrelated.md'
+        neighbour.write_bytes(METHOD)
+        self.manifest['files'].append({'path': neighbour.name, 'role': 'reference_only',
+                                        'sha256': hashlib.sha256(METHOD).hexdigest()})
+        self.save()
+        self.assertEqual(resolve_knowledge_root(repo_root=self.repo), self.root)
+        neighbour.write_bytes(b'drift')
+        self.assertEqual(verify_selected_file(self.root, self.relative), self.file)
+        with self.assertRaisesRegex(KnowledgeRuntimeError, 'hash mismatch'):
+            resolve_knowledge_root(repo_root=self.repo)
+        self.file.write_bytes(b'drift')
+        with self.assertRaisesRegex(KnowledgeRuntimeError, 'hash mismatch'):
+            verify_selected_file(self.root, self.relative)
+
     def test_escape_and_symlink_rejected(self):
         for path in ('../outside.md', '/outside.md', 'C:/outside.md', 'wiki/../bad', 'wiki\\bad'):
             with self.subTest(path=path), self.assertRaises(KnowledgeRuntimeError):

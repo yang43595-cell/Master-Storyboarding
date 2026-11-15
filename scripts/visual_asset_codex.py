@@ -160,6 +160,9 @@ def run(exe, folder, phase, request, draft, task_package):
     specification = json.loads(task_package) if task_package.lstrip().startswith('{') else {}
     required_checks = specification.get('review_checks', [])
     response_schema = json.loads(json.dumps(SCHEMA))
+    if phase == 'review':
+        del response_schema['properties']['prompt']
+        response_schema['required'].remove('prompt')
     response_schema['properties']['checks']['description'] = '逐项写“检查ID：具体证据”，必须覆盖：' + '、'.join(c['id'] for c in required_checks)
     response_schema['properties']['checks']['minItems'] = len(required_checks)
     schema.write_text(json.dumps(response_schema, ensure_ascii=False), encoding='utf-8')
@@ -172,8 +175,8 @@ def run(exe, folder, phase, request, draft, task_package):
                if phase == 'draft' and request.get('kind') in {'物品', '产品'} else '')
     task = ('执行 asset-image-assistant，当前轮次：' + phase + '。' + purpose + brevity +
             ('在本次执行内完成撰写、自查、修正和复核，prompt返回最终全文。' if phase == 'draft' else
-             '本轮仅审查，不改写正文。prompt逐字返回当前编辑稿；发现问题在issues提出具体修改建议，passed=false。用户修改优先于旧稿，不擅自撤销。文字长短、措辞和可选构图改进只写observations建议，不得作为issues阻断；明确违反当前用户要求或适用硬规则时判不通过，包括关键身份、真实参考、连续性、语言红线及不可执行的矛盾。') +
-            'checks写具体检查结论，不得只写通过。passed针对最终返回的prompt。'
+             '本轮仅审查当前编辑稿，只返回判断及具体证据。发现问题在issues提出具体修改建议，passed=false。用户修改优先于旧稿，不擅自撤销。文字长短、措辞和可选构图改进只写observations建议，不得作为issues阻断；明确违反当前用户要求或适用硬规则时判不通过，包括关键身份、真实参考、连续性、语言红线及不可执行的矛盾。') +
+            'checks写具体检查结论，不得只写通过。passed针对本轮检查的准确正文。'
             '只处理下面任务包中的制作项；不生图、不改文件、不执行工具或其他阶段。'
             '实际阅读模板正文、适用规范和动态知识；已附带的参考图必须查看，文件不可读时passed=false。'
             'reference_records中的project_confirmed与确认ID记录本项目已确认的前置图，role说明各图用途。'
@@ -181,7 +184,7 @@ def run(exe, folder, phase, request, draft, task_package):
             '项目大头照、服装三视图和人物1×4以production_item.template.content为底稿，只按本轮需要补充实际造型或参考编号，保留模板的参考职责与构图要求。'
             '有相应前置图时不得笼统声称面部或服装素材缺失；实际不可读或确有冲突时指明具体哪张图和原因。'
             'reference_paths为空不等于参考图不可读；允许无参考设计时，不得将空参考或未定款式作为阻断理由。'
-            '无法完成写词时prompt留空，具体原因放issues，不把拒绝说明当作生图提示词。'
+            '无法完成本轮时把具体原因放issues；写词模式还须将prompt留空。'
             '区分已确认事实、可见参考和待用户审核的设计选择；未知项不可冒充已解决。'
             'generation_direction 是用户本次生成方向，优先用于设计和改写旧稿；留空按现有需求。'
             'allow_unreferenced_design=true时，可依据当前AST与用户生成方向设计本制作项未锁定的外观候选；'
@@ -197,7 +200,7 @@ def run(exe, folder, phase, request, draft, task_package):
         task = ('制作普通物品四视图。当前物品规则优先：提示词只写物品名称、用户明确外观及必要尺寸排版，少量润色即可。'
                 '默认一张16:9横图，2×2四格：左上正面、右上左侧、左下背面、右下俯视，同一物品同一状态，大小一致、浅色背景。不要增加手部、受力、灯光等细节。'
                 '保留指定品牌；无参考也可生成，不要求补图或实际厘米数。'
-                + ('写出简短提示词并自查。' if phase == 'draft' else '仅审查，prompt逐字保留用户原文，不改写。')
+                + ('写出简短提示词并自查。' if phase == 'draft' else '只审查用户原文并返回判断和证据。')
                 + '逐项执行review_checks：checks必须使用原检查ID，例如“ASSET-SCOPE：具体名称与需求证据”“ASSET-QC：具体排版证据”，不可用中文标题替换ID。只有明确冲突才passed=false并写issues，其他润色建议写observations，建议可为空。'
                 '不把方法中的完整身份卡、状态表、交付检查变成写词门槛。不调用工具、不生图。只返回指定JSON。'
                 '\n制作输入：\n' + task_package + '\n当前稿：\n' + json.dumps(original_prompt, ensure_ascii=False))
@@ -215,6 +218,7 @@ def run(exe, folder, phase, request, draft, task_package):
     try:
         result = _run_prompt_cli(command, completion_path=output, input=task, capture_output=True, text=True, encoding='utf-8',
                                 errors='replace', timeout=600,
+                                required_fields=response_schema['required'],
                                 creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
     except subprocess.TimeoutExpired as exc:
         def decode(value):
@@ -227,6 +231,10 @@ def run(exe, folder, phase, request, draft, task_package):
         raise ValueError(cli_failure_message('Codex未完成，请查看本次处理日志确认原因；未自动重试。',
                                              result.stdout + '\n' + result.stderr))
     data = json.loads(output.read_text(encoding='utf-8'))
+    if phase == 'review' and isinstance(data, dict):
+        # The review schema has no prompt field. Preserve the worker's
+        # unexpected-rewrite guard if a legacy response still provides one.
+        data.setdefault('prompt', original_prompt)
     if (not isinstance(data, dict) or not isinstance(data.get('prompt'), str) or
             (data.get('passed') is True and not data['prompt'].strip()) or len(data['prompt']) > 20000 or
             type(data.get('passed')) is not bool or

@@ -245,17 +245,36 @@ def executable_template(kind, subject='', notes='', *, raw='', view='', index=No
 
 
 def _writing_rules(ref, content, single_item):
-    """Remove named non-writing sections; all other source text passes through verbatim."""
+    """Keep exact sections relevant to writing or checking a single image prompt."""
+    if not single_item:
+        return content
+    if ref in {'docs/rules/execution.md', 'skills/_shared/skill-layers.md',
+               CHARACTER_PROMPT_PATH.relative_to(ROOT).as_posix()}:
+        # These files still contribute to the validated input list. The first
+        # two govern the coordinator, and the selected layout body is already
+        # in production_item.template.
+        return ''
+    selected = {
+        'skills/_shared/knowledge-access.md': {'压缩后的主动恢复核对'},
+        'skills/asset-image-assistant/SKILL.md': {'输入与启动', '候选与确认', '硬禁区'},
+    }.get(ref)
     omitted = {
+        'PROJECT_RULES.md': {'网站审核到画布的统一入口', '细则读取入口'},
         'docs/rules/artifacts.md': {'JSON 交付与按需导出', '确认范围'},
         'docs/rules/visual-production.md': {'导演稿之后的生产顺序'},
-        'skills/asset-image-assistant/SKILL.md': {'后续交接'},
-        'skills/_shared/knowledge-access.md': {'局部维护边界', '读取与执行开销'},
-    }.get(ref, set()) if single_item else set()
-    if not omitted:
+        'skills/storyboard-director/references/image-continuity-hard-rules.md': {
+            '连续事件因时长拆段时的实际衔接参考', '新边界分镜图独立取基础参考'},
+    }.get(ref, set())
+    if selected is None and not omitted:
         return content
-    parts = re.split(r'(?m)(?=^## )', content)
-    return ''.join(part for part in parts if part.split('\n', 1)[0].removeprefix('## ').strip() not in omitted)
+    parts = [(part.split('\n', 1)[0].removeprefix('## ').strip(), part)
+             for part in re.split(r'(?m)(?=^## )', content)]
+    if selected is not None:
+        missing = selected - {heading for heading, _ in parts}
+        if missing:
+            raise ValueError('资产 Web 单项合同章节缺失：' + ref + '：' + '、'.join(sorted(missing)))
+        return ''.join(part for heading, part in parts if heading in selected)
+    return ''.join(part for heading, part in parts if heading not in omitted)
 
 
 def build_task_package(request, refs=None, startup_text='', methods=()):
@@ -272,7 +291,9 @@ def build_task_package(request, refs=None, startup_text='', methods=()):
         if not content.strip():
             raise ValueError('资产 Web 本地合同为空：' + ref)
         if ref.endswith('.md'):
-            rules[ref] = _writing_rules(ref, content, not request.get('rows'))
+            writing_rules = _writing_rules(ref, content, not request.get('rows'))
+            if writing_rules:
+                rules[ref] = writing_rules
     rules['startup_dynamic_knowledge'] = startup_text
     context = {k: v for k, v in request.items()
                if k not in {'prompt', 'task_package_cache', 'asset_token_pilot'}}

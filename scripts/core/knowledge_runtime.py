@@ -56,7 +56,8 @@ def safe_knowledge_file(root: Path, relative: str) -> Path:
     return target
 
 
-def verify_bundle(root: Path | None = None) -> dict[str, Any]:
+def verify_bundle(root: Path | None = None, *, selected_file: str | None = None) -> dict[str, Any]:
+    """Validate the manifest and hash the full bundle or one explicitly selected file."""
     root = Path(root) if root is not None else bundled_root()
     if not root.resolve().is_relative_to(root.parent.resolve()):
         raise KnowledgeRuntimeError("knowledge runtime root escapes bundle")
@@ -84,17 +85,17 @@ def verify_bundle(root: Path | None = None) -> dict[str, Any]:
         seen.add(relative)
         if not isinstance(role, str) or role not in FILE_ROLES or not isinstance(checksum, str) or not re.fullmatch(r"[0-9a-f]{64}", checksum):
             raise KnowledgeRuntimeError(f"invalid knowledge manifest role/hash: {relative}")
-        if hashlib.sha256(target.read_bytes()).hexdigest() != checksum:
+        if (selected_file is None or selected_file == relative) and hashlib.sha256(target.read_bytes()).hexdigest() != checksum:
             raise KnowledgeRuntimeError(f"knowledge file hash mismatch: {relative}")
+    if selected_file is not None and selected_file not in seen:
+        raise KnowledgeRuntimeError(f"knowledge file not selected in manifest: {selected_file}")
     return manifest
 
 
 def verify_selected_file(root: Path, relative: str) -> Path:
     target = safe_knowledge_file(root, relative)
     if is_bundled_root(root):
-        manifest = verify_bundle(root)
-        if relative not in {entry["path"] for entry in manifest["files"]}:
-            raise KnowledgeRuntimeError(f"knowledge file not selected in manifest: {relative}")
+        verify_bundle(root, selected_file=relative)
     return target
 
 

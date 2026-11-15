@@ -677,10 +677,13 @@ class ProjectTests(unittest.TestCase):
         """An explicit recheck uses source inputs, not previous model assertions."""
         request = self.lib.step_request(self.job(1), 0)
         folder = self.base / 'review-input'
-        result = {'prompt': '最终服装提示词', 'passed': True, 'observations': ['独立观察'],
+        result = {'passed': True, 'observations': ['独立观察'],
                   'uncertainties': [], 'checks': ['ASSET-SCOPE：当前 AST'], 'issues': []}
         def fake_run(command, **kwargs):
             self.assertIn('最终服装提示词', kwargs['input'])
+            self.assertNotIn('prompt', kwargs['required_fields'])
+            schema = json.loads(Path(command[command.index('--output-schema') + 1]).read_text())
+            self.assertNotIn('prompt', schema['properties'])
             self.assertNotIn('写作者私有观察', kwargs['input'])
             self.assertIn('已组装实际输入', kwargs['input'])
             Path(command[command.index('--output-last-message') + 1]).write_text(json.dumps(result, ensure_ascii=False), encoding='utf-8')
@@ -689,6 +692,7 @@ class ProjectTests(unittest.TestCase):
             reviewed = m.codex_bridge.run('codex.exe', folder, 'review', request,
                                           {'prompt': '最终服装提示词', 'observations': ['写作者私有观察']}, '已组装实际输入')
         self.assertEqual(reviewed['prompt'], '最终服装提示词')
+        self.assertTrue(reviewed['passed'])
 
     def test_single_call_self_check_enforces_evidence_for_both_actions(self):
         request = self.lib.step_request(self.job(1), 0)
@@ -701,7 +705,7 @@ class ProjectTests(unittest.TestCase):
                     if defect:
                         result[defect] = ['未解决的冲突'] if defect == 'issues' else []
                     def fake_run(command, **kwargs):
-                        self.assertIn('写出简短提示词并自查' if phase == 'draft' else 'prompt逐字保留用户原文', kwargs['input'])
+                        self.assertIn('写出简短提示词并自查' if phase == 'draft' else '只审查用户原文并返回判断和证据', kwargs['input'])
                         self.assertNotIn('单独的审查轮次', kwargs['input'])
                         Path(command[command.index('--output-last-message') + 1]).write_text(
                             json.dumps(result, ensure_ascii=False), encoding='utf-8')

@@ -17,29 +17,6 @@ from core.method_documents import resolve_method_documents, MethodDocumentError
 
 
 class WebReadingTests(unittest.TestCase):
-    def test_writing_projection_only_omits_named_workflow_sections(self):
-        for ref, headings in {
-            'docs/rules/artifacts.md': {'JSON 交付与按需导出', '确认范围'},
-            'docs/rules/visual-production.md': {'导演稿之后的生产顺序'},
-            'skills/asset-image-assistant/SKILL.md': {'后续交接'},
-            'skills/_shared/knowledge-access.md': {'局部维护边界','读取与执行开销'},
-        }.items():
-            import re
-            original = (ROOT / ref).read_text(encoding='utf-8')
-            projected = asset._writing_rules(ref, original, True)
-            for section in re.split(r'(?m)(?=^## )', original):
-                heading = section.split('\n',1)[0].removeprefix('## ').strip()
-                if heading not in headings:
-                    self.assertIn(section, projected)
-            self.assertLess(len(projected), len(original))
-            self.assertEqual(asset._writing_rules(ref, original, False), original)
-        for ref in ['PROJECT_RULES.md', 'docs/rules/execution.md',
-                    'skills/storyboard-director/references/image-continuity-hard-rules.md',
-                    'skills/_shared/product-reference.md',
-                    'skills/voiceover-to-video-script/references/prompt-language-hard-rules.md']:
-            original = (ROOT / ref).read_text(encoding='utf-8')
-            self.assertEqual(asset._writing_rules(ref, original, True), original)
-
     def test_split_rules_reach_web_model_package_without_optional_branches(self):
         for mode in ['asset-library', 'project']:
             request = {'kind': '物品', 'mode': mode, 'subject': '隔离规则测试'}
@@ -48,9 +25,16 @@ class WebReadingTests(unittest.TestCase):
                                requirement={'name': '测试', 'source_paragraph_ids': []})
             rules = asset.build_task_package(request)['rules']
             execution = 'docs/rules/execution.md'
-            self.assertEqual(rules[execution], (ROOT / execution).read_text())
+            self.assertNotIn(execution, rules)
+            self.assertNotIn('skills/_shared/skill-layers.md', rules)
+            self.assertIn('## 方向与红线', rules['PROJECT_RULES.md'])
+            self.assertNotIn('## 网站审核到画布的统一入口', rules['PROJECT_RULES.md'])
             self.assertIn('用户调整资产图需求', rules['docs/rules/visual-production.md'])
             self.assertNotIn('## 导演稿之后的生产顺序', rules['docs/rules/visual-production.md'])
+            continuity = rules['skills/storyboard-director/references/image-continuity-hard-rules.md']
+            self.assertIn('## 返修参考与固定基准', continuity)
+            self.assertIn('## 唯一面部来源', continuity)
+            self.assertNotIn('## 连续事件因时长拆段时的实际衔接参考', continuity)
             self.assertNotIn('docs/rules/experiments.md', rules)
             self.assertNotIn('docs/rules/legacy-review.md', rules)
 
@@ -334,6 +318,7 @@ class WebReadingTests(unittest.TestCase):
                 package = asset.build_task_package(request)
                 self.assertEqual(seed, character_prompt_templates()[kind])
                 self.assertEqual(package["production_item"]["template"]["content"], seed)
+                self.assertNotIn('skills/asset-image-assistant/references/character-layout-prompts.md', package['rules'])
 
         records = [head, wardrobe, character_layout_reference("服装")]
         prompt, _ = library.template_prompt("服装", "测试人物", "", reference_records=records)
