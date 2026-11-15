@@ -208,16 +208,18 @@ def source_review_segments(business):
     if len(set(ids)) != len(ids):
         raise WebContentError('源稿审阅 segment_id 重复')
     scope = business.get('scope')
-    if ranges:
+    full = isinstance(scope, dict) and scope.get('type') == 'full_local_authored'
+    has_edit_windows = any('edit_in_seconds' in row or 'edit_out_seconds' in row for row in segments)
+    if ranges or (full and has_edit_windows):
         if any(not _valid_edit_window(row.get('edit_in_seconds'), row.get('edit_out_seconds'))
                for row in segments):
-            raise WebContentError('源稿审阅独立候选范围须提供所有生成段的绝对剪辑起止时码')
-        segments.sort(key=lambda row: row['edit_in_seconds'])
-        full = isinstance(scope, dict) and scope.get('type') == 'full_local_authored'
+            raise WebContentError('源稿审阅须提供所有生成段的有效绝对剪辑起止时码')
+        if ranges:
+            segments.sort(key=lambda row: row['edit_in_seconds'])
         for left, right in zip(segments, segments[1:]):
             gap = right['edit_in_seconds'] - left['edit_out_seconds']
             if gap < -1e-6 or (full and gap > 1e-6):
-                raise WebContentError('源稿审阅独立候选范围存在时码重叠或全片空档')
+                raise WebContentError(f"源稿审阅 {left['segment_id']}→{right['segment_id']} 存在时码重叠或全片空档")
     if 'generation_segments' in business and sections is not None:
         if (not isinstance(sections, list) or any(not isinstance(s, dict)
                 or not isinstance(s.get('generation_segments'), list) for s in sections)):

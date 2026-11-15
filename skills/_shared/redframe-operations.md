@@ -15,7 +15,7 @@
 
 ## 视频画布
 
-正式写入红帧视频草稿前，在实际上传参考、创建或更新节点、写正文前，用本批冻结稿运行 `python scripts/canvas_readback.py --delivery --project <业务项目> --frozen <本批JSON> --preflight`。只写同次返回 `ok: true` 覆盖的目标、段号和 `frozen_sha256`；未通过的段暂停，独立段可缩小范围后重跑预检。写入完成后用实际引用和节点回读验收。
+正式写入红帧视频草稿前，在实际上传参考、创建或更新节点、写正文前，用本批冻结稿运行 `python scripts/canvas_readback.py --delivery --project <业务项目> --frozen <本批JSON> --preflight --current <写前回读JSON>`。写前回读须覆盖本批全部目标节点。发现已有节点时，附 `--baseline <最后可信回读JSON>`，按[更新前核已有编辑](../../docs/development/delivery-snapshot-checks.md#更新前核已有编辑)比较。只写同次返回 `ok: true` 覆盖的目标、段号和 `frozen_sha256`。独立段可缩小范围后重跑预检，写入完成后用实际引用和节点回读验收。
 
 从[我的画布](https://redframe-ai.xmpaohong.com:28888/#/projects)打开登记的项目，核对项目和子画布。新建按本轮授权执行，并登记实际地址和项目 ID。项目使用 Seedance 2.5，其余参数核对开工记录和当前原生控件。
 

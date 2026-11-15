@@ -59,6 +59,29 @@ def rows_by_id(rows: list) -> dict:
     return result
 
 
+def validate_source_material_order(row: dict, source: dict) -> None:
+    """Bind the frozen slots to the adopted segment's ordered source bytes."""
+    planned = source.get('materials', source.get('candidate_upload_order', []))
+    inputs = row.get('reference_checks')
+    node_id = row['node_id']
+    if any(not isinstance(refs, list) or any(not isinstance(ref, dict) for ref in refs)
+           for refs in (planned, inputs)):
+        raise ValueError(f'{node_id}: 正式红帧写入须提供明确的源素材和引用列表')
+    if len(inputs) < len(planned):
+        raise ValueError(f'{node_id}: 正式红帧写入缺少采用源段指定的素材字节')
+    if len(inputs) > len(planned):
+        raise ValueError(f'{node_id}: 正式红帧写入含采用源段未列出的素材槽')
+    for slot, (material, ref) in enumerate(zip(planned, inputs), 1):
+        sha = material.get('sha256')
+        if not isinstance(sha, str) or not re.fullmatch(r'[0-9a-f]{64}', sha):
+            raise ValueError(f'{node_id}: 采用源段第 {slot} 槽缺准确素材 SHA-256')
+        if any(type(material[key]) is not int or material[key] != slot
+               for key in ('order', 'upload_index') if key in material):
+            raise ValueError(f'{node_id}: 采用源段第 {slot} 槽与声明的素材顺序不符')
+        if ref.get('sha256') != sha:
+            raise ValueError(f'{node_id}: 冻结第 {slot} 槽的素材字节或顺序与采用源段不符')
+
+
 def validate_canvas_inputs(row: dict, *, redframe: bool = False, before_upload: bool = False) -> None:
     """Check declared graph/slot uses in the existing draft, without UI access."""
     media, refs = row.get('ordered_media'), row.get('reference_checks')
@@ -147,6 +170,40 @@ def compare_baseline(baseline: dict, current: dict) -> dict:
                      if digest(expected.get(node)) != digest(actual.get(node)))
     return dict(ok=not changed, changed_node_ids=changed, baseline_sha256=digest(baseline),
                 current_sha256=digest(current), scope='collected whole nodes before write')
+
+
+def check_write_readings(frozen: dict, current: dict | None, baseline: dict | None, *,
+                         formal_redframe: bool) -> dict | None:
+    if current is None:
+        if formal_redframe:
+            raise ValueError('正式红帧预检须提供 --current 写前节点回读')
+        if baseline is not None:
+            raise ValueError('--baseline and --current must be paired in --preflight')
+        return None
+    if not formal_redframe and baseline is None:
+        raise ValueError('--baseline and --current must be paired in --preflight')
+    if not isinstance(current, dict) or (baseline is not None and not isinstance(baseline, dict)):
+        raise ValueError('写前回读与基线须为节点快照对象')
+    rows = current.get('drafts')
+    present = set() if rows == [] and formal_redframe else set(rows_by_id(rows))
+    missing = current.get('missing_node_ids', []) if formal_redframe else []
+    if (not isinstance(missing, list) or any(not isinstance(node, str) or not node for node in missing)
+            or len(set(missing)) != len(missing)):
+        raise ValueError('写前回读 missing_node_ids 须列出实际未找到的准确节点 ID')
+    absent = set(missing)
+    if (current.get('phase') != 'before_write'
+            or target_url(current['target_url']) != target_url(frozen['target_url'])
+            or current.get('target_project_id') != frozen.get('target_project_id')
+            or present & absent
+            or (present | absent) != set(rows_by_id(frozen['drafts']))):
+        raise ValueError('write baseline does not cover the exact frozen target/nodes; 写前回读须逐项记录现有或未找到的节点')
+    if not present:
+        if baseline is not None:
+            raise ValueError('写前回读未找到本批任一节点，不能使用更新基线')
+        return None
+    if baseline is None:
+        raise ValueError('写前回读发现已有节点，更新须提供 --baseline 最后可信回读')
+    return compare_baseline(baseline, current)
 
 
 def _port_expected(frozen, row, ref, media, slot):
@@ -513,7 +570,8 @@ def predecessor_contexts(frozen, project, manifest, private_preview):
 
 
 def validate_submission(frozen: dict, project: Path, *, private_preview: bool = False,
-                        formal_delivery: bool = False, preflight: bool = False) -> dict:
+                        formal_delivery: bool = False, preflight: bool = False,
+                        current: dict | None = None, baseline: dict | None = None) -> dict:
     """Check the existing frozen delivery JSON, using current project authority.
 
     Roles/states are explicit production decisions, not inferred visual facts.
@@ -553,6 +611,11 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
     if formal_redframe and (not canvas or canvas['platform'] != 'redframe' or not platform_project_id):
         raise ValueError('正式红帧写入须登记准确画布和项目 ID')
     drafts = rows_by_id(frozen['drafts'])
+    baseline_check = None
+    if preflight:
+        baseline_check = check_write_readings(frozen, current, baseline, formal_redframe=formal_redframe)
+        if baseline_check is not None and not baseline_check['ok']:
+            return {'ok': False, 'baseline_check': baseline_check}
     planned_ids = {ident for ident, row in drafts.items() if 'ordered_media' not in row}
     if planned_ids and formal_redframe and not preflight:
         raise ValueError('红帧正式回读须提供实际 ordered_media；写前计划不能用于交付')
@@ -661,15 +724,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             source = source_segments.get(row.get('source_segment_id'))
             if not source or not submitted_prompt_body(source):
                 raise ValueError(f"{row['node_id']}: 正式红帧写入须绑定已采用视频稿的准确段落及正文")
-            planned_materials = source.get('materials', source.get('candidate_upload_order', []))
-            inputs = row.get('reference_checks')
-            if any(not isinstance(refs, list) or any(not isinstance(ref, dict) for ref in refs)
-                   for refs in (planned_materials, inputs)):
-                raise ValueError(f"{row['node_id']}: 正式红帧写入须提供明确的源素材和引用列表")
-            source_hashes = {ref['sha256'] for ref in planned_materials if ref.get('sha256')}
-            input_hashes = {ref.get('sha256') for ref in inputs}
-            if not source_hashes <= input_hashes:
-                raise ValueError(f"{row['node_id']}: 正式红帧写入缺少采用源段指定的素材字节")
+            validate_source_material_order(row, source)
     external = validate_scene_source_mapping(
         frozen['drafts'], scene_sources, project, check_submitted_body=not private_preview,
         delivery_platform='redframe' if formal_redframe else None,
@@ -998,8 +1053,10 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
     return {'ok': True, 'mode': 'private_candidate_preview' if private_preview else 'formal_delivery',
             **({'status': 'candidate', 'review_status': 'unreviewed', 'production_blocked': True} if private_preview else {}),
             'revision': frozen['revision'], 'frozen_sha256': digest(frozen),
+            **({'baseline_check': baseline_check} if baseline_check is not None else {}),
             **({'target_url': frozen['target_url'], 'target_project_id': platform_project_id,
                 'source_segment_ids': [row['source_segment_id'] for row in frozen['drafts']],
+                'before_write_sha256': digest(current),
                 'upload_mapping_pending_nodes': sorted(planned_ids)} if formal_redframe and preflight else {}),
             'dependency_checks': dependencies,
             'endpoint_control_checks': endpoint_control_checks,
@@ -1139,7 +1196,7 @@ def main() -> int:
     parser.add_argument('--package', type=Path, action='append', default=[], help='交付文件包时必传实际成品路径，可重复；严格检查实际字节')
     parser.add_argument('--max-package-bytes', type=int, default=19_000_000, help='每包字节数必须严格小于此值')
     parser.add_argument('--baseline', type=Path, help='更新前最后可信的完整刷新回读')
-    parser.add_argument('--current', type=Path, help='写前实际完整节点回读，phase=before_write')
+    parser.add_argument('--current', type=Path, help='写前实际节点回读，phase=before_write；新节点记录在 missing_node_ids')
     parser.add_argument('--usage-log', action='append')
     parser.add_argument('--usage-turn-id')
     parser.add_argument('--usage-boundaries-json')
@@ -1155,21 +1212,9 @@ def main() -> int:
         except ImportError:
             from session_usage import checkpoint
         usage = checkpoint(args)
-        if bool(args.baseline) != bool(args.current) or (args.baseline and not args.preflight):
-            raise ValueError('--baseline and --current must be paired in --preflight')
+        if (args.baseline or args.current) and not args.preflight:
+            raise ValueError('--baseline and --current are only used in --preflight')
         frozen = json.loads(args.frozen.read_text(encoding='utf-8'))
-        baseline_check = None
-        if args.baseline:
-            baseline = json.loads(args.baseline.read_text(encoding='utf-8'))
-            current = json.loads(args.current.read_text(encoding='utf-8'))
-            if (target_url(current['target_url']) != target_url(frozen['target_url'])
-                    or current.get('target_project_id') != frozen.get('target_project_id')
-                    or set(rows_by_id(current['drafts'])) != set(rows_by_id(frozen['drafts']))):
-                raise ValueError('write baseline does not cover the exact frozen target/nodes')
-            baseline_check = compare_baseline(baseline, current)
-            if not baseline_check['ok']:
-                print(json.dumps({'ok': False, 'baseline_check': baseline_check}, ensure_ascii=False))
-                return 2
         if args.delivery or args.private_preview:
             if args.project is None:
                 raise ValueError('selected delivery/preview mode requires --project; legacy comparison is insufficient')
@@ -1178,8 +1223,14 @@ def main() -> int:
         if args.preflight:
             if args.project is None:
                 parser.error('--preflight requires --project')
+            baseline = json.loads(args.baseline.read_text(encoding='utf-8')) if args.baseline else None
+            current = json.loads(args.current.read_text(encoding='utf-8')) if args.current else None
             result = validate_submission(frozen, args.project, private_preview=args.private_preview,
-                                         formal_delivery=args.delivery, preflight=True)
+                                         formal_delivery=args.delivery, preflight=True,
+                                         current=current, baseline=baseline)
+            if not result['ok']:
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+                return 2
         else:
             if args.readback is None:
                 parser.error('--readback required unless --preflight')
@@ -1191,8 +1242,6 @@ def main() -> int:
             except ImportError:
                 from core.delivery_files import check_package_files
             result['packages'] = check_package_files(args.package, args.max_package_bytes)
-        if baseline_check is not None:
-            result['baseline_check'] = baseline_check
         if usage is not None:
             result['run_usage'] = usage
     except (ValueError, KeyError, TypeError, OSError, RuntimeError) as error:

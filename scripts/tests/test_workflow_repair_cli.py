@@ -101,6 +101,11 @@ def canvas_cli(root, frozen, observed=None, *extra):
     args = ['--delivery', '--project', root, '--frozen', root / 'frozen.json']
     if observed is None:
         args.append('--preflight')
+        if '--current' not in extra and '--baseline' not in extra:
+            write_json(root / 'before-create.json', dict(phase='before_write', target_url=frozen['target_url'],
+                target_project_id=frozen['target_project_id'], drafts=[],
+                missing_node_ids=[row['node_id'] for row in frozen['drafts']]))
+            args += ['--current', root / 'before-create.json']
     else:
         write_json(root / 'observed.json', observed)
         args += ['--readback', root / 'observed.json']
@@ -147,7 +152,7 @@ def test_redframe_preflight_rejects_declared_conflicts(tmp_path, mutation):
         row['prompt'] = row['prompt'].replace('1–4秒', '1–3秒')
     else:
         row['prompt'] = row['prompt'].replace('1–4秒', '2–5秒')
-    if mutation.startswith('timeline_'):
+    if mutation.startswith('timeline_') or mutation == 'duplicate_slot':
         bind_redframe_production_sources(tmp_path, frozen, observed)
     else:
         bind_synthetic_quality(tmp_path, frozen)
@@ -271,11 +276,9 @@ def test_same_file_distinct_purposes_and_unmentioned_input_are_explicit(tmp_path
     second['canvas_binding'] = dict(mode='direct', purpose='synthetic scale comparison',
                                    prompt_reference=False, unmentioned_reason='Visible input for scale comparison')
     row['reference_checks'].append(second)
-    bind_synthetic_quality(tmp_path, frozen)
-    observed['drafts'][0] = copy.deepcopy(row)
+    bind_redframe_production_sources(tmp_path, frozen, observed)
     observed['drafts'][0]['native_mentions'] = [{**row['ordered_media'][0],
         'entity_type': 'fixture-chip', 'native_noneditable_entity': True}]
-    observed['frozen_sha256'] = digest(frozen)
     result = canvas_cli(tmp_path, frozen, observed)
     assert result.returncode == 0, result.stdout
     # Renaming the upload route does not allow duplicate same-purpose slots.
@@ -294,6 +297,11 @@ def test_write_preflight_detects_existing_edit_and_requires_complete_baseline(tm
     args = ('--baseline', tmp_path / 'baseline.json', '--current', tmp_path / 'current.json')
     result = canvas_cli(tmp_path, frozen, None, *args)
     assert result.returncode == 0, result.stdout
+    result = run_cli('scripts.canvas_readback', '--delivery', '--preflight', '--project', tmp_path,
+                     '--frozen', tmp_path / 'frozen.json')
+    assert result.returncode == 2 and '--current' in result.stdout
+    result = canvas_cli(tmp_path, frozen, None, '--current', tmp_path / 'current.json')
+    assert result.returncode == 2 and '--baseline' in result.stdout
     current['drafts'][1]['parameters']['duration'] = 28
     write_json(tmp_path / 'current.json', current)
     result = canvas_cli(tmp_path, frozen, None, *args)
@@ -302,6 +310,23 @@ def test_write_preflight_detects_existing_edit_and_requires_complete_baseline(tm
     baseline['drafts'][0].pop('native_mentions')
     write_json(tmp_path / 'baseline.json', baseline)
     assert canvas_cli(tmp_path, frozen, None, *args).returncode == 2
+
+
+def test_redframe_write_preflight_checks_new_and_existing_nodes_in_one_batch(tmp_path):
+    frozen, baseline = redframe_fixture(tmp_path)
+    baseline['drafts'] = baseline['drafts'][:1]
+    write_json(tmp_path / 'baseline.json', baseline)
+    current = {**baseline, 'phase': 'before_write', 'missing_node_ids': ['two']}
+    write_json(tmp_path / 'current.json', current)
+    args = ('--baseline', tmp_path / 'baseline.json', '--current', tmp_path / 'current.json')
+    result = canvas_cli(tmp_path, frozen, None, *args)
+    assert result.returncode == 0, result.stdout
+    report = json.loads(result.stdout)
+    assert report['baseline_check']['ok'] and report['before_write_sha256'] == digest(current)
+
+    for missing in ([], ['other'], ['one', 'two'], ['two', 'two']):
+        write_json(tmp_path / 'current.json', {**current, 'missing_node_ids': missing})
+        assert canvas_cli(tmp_path, frozen, None, *args).returncode == 2
 
 
 @pytest.mark.parametrize('side', ['both', 'baseline', 'current'])
@@ -426,11 +451,7 @@ def test_redframe_action_file_native_reference_and_actual_duration(tmp_path, mod
         row['source_nodes'].clear()
         row['reference_checks'][0]['canvas_binding'] = dict(
             mode='direct', purpose='synthetic boundary', prompt_reference=True)
-    bind_synthetic_quality(tmp_path, frozen)
-    observed['drafts'][0] = copy.deepcopy(row)
-    observed['drafts'][0]['native_mentions'] = [dict(**media, entity_type='fixture-chip',
-        native_noneditable_entity=True) for media in row['ordered_media']]
-    observed['frozen_sha256'] = digest(frozen)
+    bind_redframe_production_sources(tmp_path, frozen, observed)
     result = canvas_cli(tmp_path, frozen, observed)
     assert result.returncode == 0, result.stdout
     ref['duration'] = 2

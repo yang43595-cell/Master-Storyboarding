@@ -22,13 +22,13 @@
 ## 操作与采用
 
 ```sh
-python scripts/canvas_readback.py --delivery --project <隔离项目> --frozen <本修订JSON> --preflight
+python scripts/canvas_readback.py --delivery --project <隔离项目> --frozen <本修订JSON> --preflight --current <红帧写前读数JSON>
 python scripts/canvas_readback.py --delivery --project <隔离项目> --frozen <本修订JSON> --readback <实际刷新后读数JSON>
 ```
 
 `--delivery` 是每次新画布交付的明确调用模式，要求准确项目和非空修订，继续复用当前来源、引用及原生回读校验。它不是后台拦截器：绕过此入口的外部操作不会自动获得检查。历史只读比较可不带该开关，但缺项目/修订的历史结果不能替代正式交付。缺 manifest 或真实确认时如实报告，不自动补审批。
 
-红帧正式草稿写入执行者用第一条命令核本批实际目标、已采用视频稿及导演稿、来源编导的确认和本段各引用的采用依据，按返回的段号和快照哈希执行。首次直传尚未取得平台身份时，段内保留 `reference_checks` 的准确文件身份、顺序和直传用途，填写 `edges: []`、`source_nodes: []`，省略 `ordered_media`，`node_id` 暂用唯一的计划标识。`upload_mapping_pending_nodes` 标记仍待平台身份的节点。此时预检核本地来源和段落，取得平台回执后再在同一冻结交付中填实际节点、槽位及绑定证据，更新证据绑定，用第二条命令核重开实读。写前计划不能作为正式回读输入。合法无媒体段明确使用 `ordered_media: []`。
+红帧正式草稿写入执行者用第一条命令核本批实际目标、已采用视频稿及导演稿、来源编导的确认和本段各引用的采用依据，按返回的段号和快照哈希执行。更新按[写前读数要求](#更新前核已有编辑)同时传 `--baseline`。其他平台在未比较更新基线时省略 `--current`。首次直传尚未取得平台身份时，段内保留 `reference_checks` 的准确文件身份、顺序和直传用途，填写 `edges: []`、`source_nodes: []`，省略 `ordered_media`，新建 `node_id` 暂用唯一的计划标识。`upload_mapping_pending_nodes` 标记仍待平台身份的节点。此时预检核本地来源和段落，取得平台回执后再在同一冻结交付中填实际节点、槽位及绑定证据，更新证据绑定，用第二条命令核重开实读。写前计划不能作为正式回读输入。合法无媒体段明确使用 `ordered_media: []`。
 
 中断时没有完整刷新回读就未完成交付核验，先只读核实已保存部分，不自动重试写入/生成。重复运行这两条命令只读且重新核验当前来源；源版本、字节、引用或正文改变后必须重跑，不能复用先前 PASS。动作语义仍执行视频方法的同次自查，不将技术通过写为人工已看图。
 
@@ -234,7 +234,7 @@ python scripts/canvas_readback.py --private-preview --project <准确候选项�
 
 ## 分段参数与已有前驱
 
-正式分段、自查与交付共用生成段读取入口。历史稿如带 `independent_candidate_ranges`，须按可靠的绝对剪辑时窗或已有全片顺序展开，并核声明范围、重复段和缺段。无法确定完整顺序或范围时报错，保持原稿字节。
+正式分段、自查与交付共用生成段读取入口。历史稿如带 `independent_candidate_ranges`，按绝对剪辑时窗展开，并核声明范围、重复段和缺段。全片稿只要有绝对时码，各段都须提供有效的起止时码，按顺序相邻且无重叠和空档，平铺稿和创作段同样适用。无法确定完整顺序或范围时报错，保持原稿字节。
 
 现行生成段的实际 `parameters.model`、参考模式（`reference_mode` / `mode`）与生成时长（`duration` / `duration_seconds`）绑定准确源稿；别名可适配，但不得互相冲突。红帧正式写入和回读均从已采用源稿 `selected_video_model` 读取 `min_duration_seconds`、`max_duration_seconds`，并核目标平台、模型、参考模式及原始能力证据的文件哈希。冻结稿必须沿用这一对上下限。源段须声明 `target_edit_duration_seconds` 或准确的 `edit_in_seconds` 与 `edit_out_seconds`，两种同时声明时须一致。红帧独立段目标剪辑低于本轮已核下限时，按[短镜优先并入下一段](../../skills/voiceover-to-video-script/modules/video-method.md#红帧短镜优先并入下一段)在源稿中处理；单独增加生成或逐镜时长不会解除拒绝。高于下限的原剪辑可保留合理的原生时长余量。需改参数时先另出源修订，不在交付时静默替换。
 
@@ -248,7 +248,7 @@ python scripts/canvas_readback.py --private-preview --project <准确候选项�
 
 新红帧正式提交根据开工 `canvas.platform=redframe` 或准确红帧域名启用整节点检查。其他平台显式带下列 `edges` / `source_nodes` 时同样核验。历史无项目的只读比较保留原范围，相关结果为 `not_checked`，不能充当新红帧交付通过。仍使用同一冻结 JSON、现有参考来源和原生回读。
 
-每个 `reference_checks` 沿准确槽位增加 `canvas_binding`。`purpose` 写具体镜号和本次用途，同一文件 SHA-256 与同一用途重复占槽即拒绝。同文件确实承担不同用途时分别说明，观察和确认范围仍须覆盖。`prompt_reference` 指明是否出现在正文原生引用中，保留无正文引用的槽须有 `unmentioned_reason`。执行者核用途语义，程序只能核声明一致性。
+每个 `reference_checks` 沿准确槽位增加 `canvas_binding`。正式红帧写前和回读均逐槽核对已采用源段的有序素材清单与冻结引用，拒绝换序、漏项及额外项。`purpose` 写具体镜号和本次用途，同一文件 SHA-256 与同一用途重复占槽即拒绝。同文件确实承担不同用途时分别说明，观察和确认范围仍须覆盖。`prompt_reference` 指明是否出现在正文原生引用中，保留无正文引用的槽须有 `unmentioned_reason`。执行者核用途语义，程序只能核声明一致性。
 
 ```json
 {
@@ -270,11 +270,11 @@ python scripts/canvas_readback.py --private-preview --project <准确候选项�
 
 ### 更新前核已有编辑
 
-沿现有回读文件保存最后可信 `after_refresh` 基线，在实际写前采集同一目标全部受影响节点的 `before_write`。两份数据都须包含完整正文、参数、有序输入及 native_mentions，每个节点还必须显式提供列表类型的 edges 和 source_nodes，并保存本轮采集到的其他节点字段。缺少图谱字段即拒绝，显式空列表表示实际回读的空图谱。更新预检用原命令附加两个只读输入。
+红帧正式预检必须传 `--current`，采集同一目标全部受影响节点的 `before_write`。把实际找到的节点放入 `drafts`，把已查明不存在的节点 ID 列入 `missing_node_ids`。纯新建时 `drafts` 为空列表，仅传 `--current`。只要发现已有节点，就另传最后可信的 `after_refresh` 基线 `--baseline`，覆盖其中全部已有节点。两份读数中的已有节点都须包含完整正文、参数、有序输入及 native_mentions，每个节点还必须显式提供列表类型的 edges 和 source_nodes，并保存本轮采集到的其他节点字段。缺少图谱字段即拒绝，显式空列表表示实际回读的空图谱。
 
 ```sh
 python scripts/canvas_readback.py --delivery --project '<项目>' --frozen '<冻结JSON>' \
   --preflight --baseline '<最后可信原生回读.json>' --current '<本次写前原生回读.json>'
 ```
 
-程序核目标 URL、项目 ID、准确节点集合，比较完整节点中所有已采集字段，变化返回非零及 changed_node_ids。没有实际采集的字段仍未验证。执行者先核已有编辑的准确范围，正文、来源或时长变化沿现有修订和采用处理，再取得可信基线，不能用当前读数覆盖旧基线求通过。新建节点无历史基线时明确记录创建范围。参数配对及差异可程序核验，更新任务必须使用此比较、采集完整性、用户编辑归属及检查后的并发修改仍由执行者/平台负责，CLI 不是远端事务锁。
+程序核目标 URL、项目 ID 和节点范围，写前读数的已有节点与未找到节点须互斥且合起来恰好覆盖冻结批次。比较已有节点的全部已采集字段，变化返回非零及 changed_node_ids。执行者先核已有编辑的准确范围，正文、来源或时长变化沿现有修订和采用处理，再取得可信基线。采集完整性、用户编辑归属及检查后的并发修改仍由执行者和平台负责。

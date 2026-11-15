@@ -120,6 +120,42 @@ def test_mixed_source_scope_rejects_ambiguity(change, error):
         source_review_segments(source)
 
 
+@pytest.mark.parametrize('sectioned', [False, True], ids=['flat', 'sectioned'])
+@pytest.mark.parametrize('start', [3, 4, 5], ids=['overlap', 'contiguous', 'gap'])
+def test_full_source_scope_checks_absolute_time_in_declared_order(sectioned, start):
+    first = {'segment_id': 'P01', 'edit_in_seconds': 0, 'edit_out_seconds': 4}
+    second = {'segment_id': 'P02', 'edit_in_seconds': start, 'edit_out_seconds': start + 4}
+    source = {'scope': {'type': 'full_local_authored', 'scope_seconds': 8}}
+    if sectioned:
+        source['creative_sections'] = [{'generation_segments': [row]} for row in (first, second)]
+    else:
+        source['generation_segments'] = [first, second]
+
+    if start == 4:
+        assert source_review_segments(source) == [first, second]
+    else:
+        with pytest.raises(WebContentError, match='P01→P02.*重叠或全片空档'):
+            source_review_segments(source)
+
+
+def test_full_source_supports_duration_only_but_rejects_incomplete_absolute_timing():
+    first = {'segment_id': 'P01', 'target_edit_duration_seconds': 4}
+    second = {'segment_id': 'P02', 'target_edit_duration_seconds': 4}
+    source = {'scope': {'type': 'full_local_authored'}, 'generation_segments': [first, second]}
+    assert source_review_segments(source) == [first, second]
+
+    first.update(edit_in_seconds=0, edit_out_seconds=4)
+    with pytest.raises(WebContentError, match='绝对剪辑起止时码'):
+        source_review_segments(source)
+
+
+def test_partial_source_keeps_disjoint_requested_edit_windows():
+    source, earlier = mixed_scope_fixture()
+    source['scope'] = {'type': 'partial_local_authored'}
+    earlier['edit_out_seconds'] = 5
+    assert source_review_segments(source) == [earlier, source['generation_segments'][0]]
+
+
 def test_generation_boundaries_checks_hidden_same_scene_seam_in_blank_task(tmp_path):
     from scripts.core.generation_boundaries import validate_generation_boundaries
     from scripts.init_desktop_project import initialize
