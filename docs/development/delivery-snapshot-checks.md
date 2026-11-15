@@ -238,8 +238,6 @@ python scripts/canvas_readback.py --private-preview --project <准确候选项�
 
 现行生成段的实际 `parameters.model`、参考模式（`reference_mode` / `mode`）与生成时长（`duration` / `duration_seconds`）绑定准确源稿；别名可适配，但不得互相冲突。红帧正式写入和回读均从已采用源稿 `selected_video_model` 读取 `min_duration_seconds`、`max_duration_seconds`，并核目标平台、模型、参考模式及原始能力证据的文件哈希。冻结稿必须沿用这一对上下限。源段须声明 `target_edit_duration_seconds` 或准确的 `edit_in_seconds` 与 `edit_out_seconds`，两种同时声明时须一致。红帧独立段目标剪辑低于本轮已核下限时，按[短镜优先并入下一段](../../skills/voiceover-to-video-script/modules/video-method.md#红帧短镜优先并入下一段)在源稿中处理；单独增加生成或逐镜时长不会解除拒绝。高于下限的原剪辑可保留合理的原生时长余量。需改参数时先另出源修订，不在交付时静默替换。
 
-现行生成段的实际 `parameters.model`、参考模式（`reference_mode` / `mode`）与生成时长（`duration` / `duration_seconds`）绑定准确源稿；别名可适配，但不得互相冲突。红帧正式写入和回读均从已采用源稿 `selected_video_model` 读取 `min_duration_seconds`、`max_duration_seconds`，并核目标平台、模型、参考模式及原始能力证据的文件哈希。冻结稿必须沿用这一对上下限。源段须声明 `target_edit_duration_seconds` 或准确的 `edit_in_seconds` 与 `edit_out_seconds`，两种同时声明时须一致。红帧独立段目标剪辑低于本轮已核下限时，按[短镜优先并入下一段](../../skills/voiceover-to-video-script/modules/video-method.md#红帧短镜优先并入下一段)在源稿中处理；单独增加生成或逐镜时长不会解除拒绝。高于下限的原剪辑可保留合理的原生时长余量。需改参数时先另出源修订，不在交付时静默替换。
-
 同一已选模型使用多种实际参考模式时，可在既有 `selected_video_model` 增补 `reference_modes` 和逐模式 `reference_mode_evidence`；每种模式都须有准确能力证据且支持所声明的共同上下限。各段仍逐项绑定自己的实际模式，不接受未知模式、跨模型套用或只给模式名而无证据。没有该集合的旧稿仍按原单模式精确匹配。
 
 分开交付已有稿与新增稿时，`scope.type` 使用 `selected_ranges`，在现有 `scope.independent_ranges` 中按成片顺序列准确段号。仅当两范围之间确有未覆盖的导演镜头和剪辑时码空档时，略过该处的接缝检查。同一范围、相邻范围间真实接续及全片稿仍核镜头与剪辑时码连续。
@@ -266,7 +264,7 @@ python scripts/canvas_readback.py --private-preview --project <准确候选项�
 }
 ```
 
-红帧新草稿统一用 `direct`，包括产品与动作参考。直传槽不填端口，整段均直传时 `edges` 和 `source_nodes` 均为空列表。素材区供认证和查看的卡片独立于槽位图谱。真实商品识别仍靠已有产品参考登记与实看，不从名称推断。原片裁切与完整画幅按准确文件版本区分。
+红帧普通参考沿用 `direct`，包括产品与动作参考。直传槽不填端口，整段均直传时 `edges` 和 `source_nodes` 均为空列表。产品仍按实际参考登记与实看。需要直连已认证人物时，沿下文的窄分支核对。
 
 既有连线快照和其他平台按实际 `edge` 绑定核对。绑定填写 `source_port`、`target_port`，源身份来自本槽 `ordered_media.node_id`。逐 draft 的 `edges` 保存全部实际入边，每项严格包含 `source_node_id/source_port/target_node_id/target_port/slot`，slot 从 1 开始。`source_nodes` 保存相应源输出的 `node_id/port/sha256`，同源输出只列一次。程序将源、端口、目标、槽和原片文件 hash 逐项核齐，缺边、多边、错端口、同源输出指向不同字节均拒绝。其他平台采用本合同核产品与动作引用时仍用独立源节点连线。
 
@@ -275,6 +273,10 @@ python scripts/canvas_readback.py --private-preview --project <准确候选项�
 保存刷新后，读回整个受影响节点的正文、参数、全部输入槽、正文原生实体、源节点 hash 和全部入边。回读 `source_nodes` / `edges` 不分列表顺序，其他原有有序媒体与正文比较保持严格。无正文引用槽只从预期 mentions 中排除，其来源、槽、用途及边继续检查。仅换两份素材也核完整节点。`canvas_input_checks` 给逐节点结论，技术通过仍不认证采集行为、媒体远端来源或视觉效果。
 
 红帧直传人脸认证沿同一冻结稿和同一份刷新回读核对。直传图像或视频在采用稿 `materials` 逐项注明 `contains_realistic_face`，冻结 `reference_checks` 可继承对应项。未知留空，已知适用性应与源稿一致。正式回读在对应 `drafts[]` 的 `face_certification` 列表中记录实际槽位证据，每项包含从 1 开始的 `slot`、`draft_node_id`、`node_id`、`media_id`、该槽的 `sha256`、平台实际状态 `status`（`certified`、`pending`、`not_certified`）和实际观察定位 `locator`。只记录能取得的真实槽位证据。素材区认证对象、源路径或同字节关系不足以证明直传槽的状态。
+
+`remote-characterNode` 的已认证人物图可沿已保存的 `image → in` 入边核对。采用源稿须列同一图片身份、SHA-256、`identity` 用途和 `contains_realistic_face: true`。冻结槽使用 `canvas_binding.mode: edge`、对应双端口和 `prompt_reference: true`，`ordered_media` 写 `{node_id, reference_port: "image", sha256}`，原生 `@` 读数写对应端口和实际 `download_sha256`。同段的直传项仍按真实 `media_id` 核对。
+
+采集在同一持久图中核边、源节点和输出文件。原生 chip 的 `[源节点 ID, "image"]` 与 `{{ref N}}` 定位连线槽，剩余槽沿直传顺序。认证记录须由角色节点的 `faceCertification` 与 `faceCertifications.image` 一致提供，角色 ID、资源 ID、源路径和 MIME 与该源输出相符，再下载实际原图并核其 SHA-256 等于 `imageDigest`。对应 `face_certification` 填 `reference_port`、`source_node_type` 和实际 `image_digest`。缺证、认证错位、连线或原生顺序错配使本次正式比较失败。首次上传待映射的计划仍只接受直传槽。此检查确认保存的认证与该原图一致，平台后续生成资格由实际平台决定。
 
 `native_reference_checks` 继续报告引用结构。`face_certification_status` 和 `face_certification_checks` 分别报告本批及逐草稿逐槽认证。明确无写实人脸的槽记 `not_applicable`，未登记适用性、无证据或待完成记 `unknown`，明确未认证或证据错位记 `failed`。只有已知适用且实际槽位、字节和认证状态均核对一致才记 `passed`。结构通过而认证仍有缺口时，如实报告当前草稿状态，不能作为认证已完成的交付。
 

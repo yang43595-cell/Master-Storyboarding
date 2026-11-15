@@ -4,14 +4,11 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 from contextlib import contextmanager
-from html.parser import HTMLParser
 import json
 import math
 from pathlib import Path
-import re
 import sys
 import time
-from urllib.parse import unquote
 
 if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -19,7 +16,9 @@ if not __package__:
 from scripts.canvas_readback import compare, digest, rows_by_id, validate_submission
 from scripts.core.artifacts import load_manifest, project_path
 from scripts.core.io import read_json, write_json
-from scripts.core.redframe_workspace import RedframeWorkspace, RedframeWorkspaceError
+from scripts.core.redframe_workspace import (
+    REF_TOKEN, RedframeWorkspace, RedframeWorkspaceError, native_prompt_mentions, native_reference_slots,
+)
 
 
 def canvas_nodes(graph):
@@ -77,20 +76,6 @@ def measured_placements(graph, sizes, target_ids):
     return {ident: rectangles[ident] for ident in target_ids}
 
 
-class NativeTag(HTMLParser):
-    def __init__(self, html):
-        super().__init__()
-        self.refs = []
-        self.feed(html)
-
-    def handle_starttag(self, tag, attrs):
-        values = dict(attrs)
-        if 'data-reference-id' in values:
-            if tag != 'span' or 'imageReference' not in values.get('class', '').split():
-                raise ValueError('原生提示词引用格式已改变')
-            self.refs.append((json.loads(unquote(values['data-reference-id'])), values['data-value']))
-
-
 def source_capabilities(project, frozen):
     registered = {item['artifact_id']: item for item in load_manifest(project)['artifacts']}
     source, = (registered[ref['artifact_id']] for ref in frozen['source_artifacts']
@@ -111,39 +96,50 @@ def native_draft(graph, node, slots, models):
     if (json.loads(data['model']) != [capabilities['providerId'], capabilities['modelId']]
             or json.loads(data['mode']) not in capabilities['mode']):
         raise ValueError(f'{ident} 的实际模型或参考模式与本轮能力不符')
-    if any(edge.get('target') == ident for edge in graph['edges']):
-        raise ValueError(f'{ident} 存在入边，不能按直传草稿验收')
-    refs = data['localReferences']['in']
+    refs, linked = native_reference_slots(graph, node)
     if len(refs) != len(slots):
         raise ValueError(f'{ident} 未收齐当前原生槽的下载证据')
     types = Counter()
     names, media = {}, []
+    edges, sources, certificates = [], [], []
     for index, (ref, slot) in enumerate(zip(refs, slots), 1):
-        if (ref['source'] != ident or
-                (slot['source'], slot['media_id'], slot['path'], slot['index'])
-                != (ident, ref['sourceHandle'], ref['value']['url'], index)):
+        certificate = linked.get(index)
+        key = 'reference_port' if certificate else 'media_id'
+        owner = ref['source']
+        if ((not certificate and owner != ident) or
+                (slot['source'], slot[key], slot['path'], slot['index'])
+                != (owner, ref['sourceHandle'], ref['value']['url'], index)):
             raise ValueError(f'{ident} 第 {index} 槽的下载证据与实际槽身份不一致')
-        if slot['status'] != 200 or not slot.get('sha256'):
-            raise ValueError(f'{ident} 第 {index} 槽附件读取失败 HTTP {slot["status"]}')
+        if slot['status'] != 200 or slot.get('error') or not slot.get('sha256'):
+            failure = slot.get('error') or 'missing byte digest'
+            raise ValueError(f'{ident} 第 {index} 槽附件未核：{failure} (HTTP {slot["status"]})')
         kind = ref['dataType']
         types[kind] += 1
         names[index] = f'@{aliases[kind]}{types[kind]}'
-        media.append({'node_id': ident, 'media_id': slot['media_id'], 'sha256': slot['sha256']})
-    token_pattern = r'\{\{ref (\d+)\}\}'
+        medium = {'node_id': owner, key: slot[key], 'sha256': slot['sha256']}
+        media.append(medium)
+        if certificate:
+            if slot['sha256'] != certificate['imageDigest']:
+                raise ValueError(f'{ident} 第 {index} 槽的角色原图下载字节与认证摘要不一致')
+            edges.append(dict(source_node_id=owner, source_port='image', target_node_id=ident,
+                              target_port='in', slot=index))
+            sources.append(dict(node_id=owner, port='image', sha256=slot['sha256']))
+            certificates.append(dict(slot=index, draft_node_id=ident, **medium, status='certified',
+                source_node_type='remote-characterNode', image_digest=certificate['imageDigest'],
+                locator=f'canvas.nodes[{owner}].data.faceCertifications.image'))
     mentions = []
-    for line in data['promptModel']:
-        for token in line:
-            if token['type'] != 'Custom':
-                continue
-            ((node_id, media_id), value), = NativeTag(token['html']).refs
-            index = int(re.fullmatch(token_pattern, value)[1])
-            if not 1 <= index <= len(media) or (node_id, media_id) != (ident, media[index-1]['media_id']):
-                raise ValueError(f'{ident} 的原生提示词引用和实际槽不符')
-            mentions.append({'node_id': node_id, 'media_id': media_id, 'entity_type': 'reference',
-                             'native_noneditable_entity': True})
-    prompt = re.sub(token_pattern, lambda m: names[int(m[1])], data['prompt']).replace('\ufeff', '')
+    chips = native_prompt_mentions(data)
+    if linked and [int(match[1]) for match in REF_TOKEN.finditer(data['prompt'])] != [slot for _, _, slot in chips]:
+        raise ValueError(f'{ident} 的正文槽标记与原生 @ 顺序不一致')
+    for owner, handle, index in chips:
+        key = 'reference_port' if index in linked else 'media_id'
+        if not 1 <= index <= len(media) or (owner, handle) != (media[index-1]['node_id'], media[index-1][key]):
+            raise ValueError(f'{ident} 的原生提示词引用和实际槽不符')
+        mentions.append(dict(node_id=owner, **{key: handle}, entity_type='reference', native_noneditable_entity=True,
+                             **({'download_sha256': media[index-1]['sha256']} if index in linked else {})))
+    prompt = REF_TOKEN.sub(lambda m: names[int(m[1])], data['prompt']).replace('\ufeff', '')
     return {'node_id': ident, 'prompt': prompt, 'ordered_media': media, 'native_mentions': mentions,
-            'edges': [], 'source_nodes': [],
+            'edges': edges, 'source_nodes': sources, **({'face_certification': certificates} if linked else {}),
             'parameters': {'model': model_name, 'aspect_ratio': data['ratio'],
                            'resolution': data['resolution'].lower(), 'duration': data['duration'],
                            'reference_mode': mode}}
@@ -183,8 +179,6 @@ def retest(project, frozen, baseline, trusted_graph, dimensions, *, resave=False
     sizes = {row['id']: (row['w'], row['h']) for row in dimensions}
     if set(sizes) != set(reference):
         raise ValueError('尺寸证据与最后可信画布的节点集合不一致')
-    if any(row.get('edges') != [] or row.get('source_nodes') != [] for row in targets.values()):
-        raise ValueError('此红帧采集入口只支持现行直传草稿')
     sys.path.insert(0, str(Path.home() / '.local/share/codex-headless-browser'))
     from headless_edge import task_browser
 
@@ -198,7 +192,12 @@ def retest(project, frozen, baseline, trusted_graph, dimensions, *, resave=False
                 raise ValueError('草稿已偏离最后可信节点；拒绝保存覆盖')
             # Only an identical resave is authorized here. Reuse verified slot bytes
             # for the write-side check only while its full native node is unchanged.
-            current_read = before_write_readback(before, baseline, targets, models)
+            if any(edge.get('target') in targets for edge in before['edges']):
+                slots = workspace.digest_slots([current[ident] for ident in targets], graph=before)
+                current_read = {**baseline, 'phase': 'before_write',
+                    'drafts': [native_draft(before, current[ident], slots[ident], models) for ident in targets]}
+            else:
+                current_read = before_write_readback(before, baseline, targets, models)
             preflight = validate_submission(frozen, project, formal_delivery=True, preflight=True,
                                             current=current_read, baseline=baseline)
             if not preflight['ok']:
@@ -227,7 +226,7 @@ def retest(project, frozen, baseline, trusted_graph, dimensions, *, resave=False
         boxes = measured_placements(snapshot, sizes, targets)
         timers['refresh_seconds'] = round(time.monotonic() - tick, 3)
         tick = time.monotonic()
-        slots = workspace.digest_slots([actual[ident] for ident in targets])
+        slots = workspace.digest_slots([actual[ident] for ident in targets], graph=snapshot)
         timers['attachments_seconds'] = round(time.monotonic() - tick, 3)
         observed = {key: frozen[key] for key in ('target_url', 'target_project_id', 'revision')}
         try:

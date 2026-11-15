@@ -420,11 +420,13 @@ def _validate(payload, storyboard, root, *, require_physical, delivery_platform,
     range_joins = {(before["segment_ids"][-1], after["segment_ids"][0])
                    for before, after in zip(selected_ranges, selected_ranges[1:])}
     selected_model = payload.get("selected_video_model")
-    check_cross_scene = require_physical and (
-        delivery_platform == "redframe"
-        or isinstance(selected_model, dict) and selected_model.get("platform") == "redframe")
+    selected_redframe = isinstance(selected_model, dict) and selected_model.get("platform") == "redframe"
+    check_cross_scene = require_physical and (delivery_platform == "redframe" or selected_redframe)
+    # New RedFrame adoption must check the capability even if its minimum is absent.
+    # Reading an older adopted source keeps the prior compatibility behavior.
     capability = (_model_capability(payload, root) if isinstance(selected_model, dict)
-                  and "min_duration_seconds" in selected_model else None)
+                  and ("min_duration_seconds" in selected_model
+                       or (require_physical and selected_redframe)) else None)
     for row in rows:
         ids = source_shot_ids(row)
         _need(ids and all(key in shots for key in ids), "每个生成段必须映射准确导演镜号，不能省略映射绕过分段检查")

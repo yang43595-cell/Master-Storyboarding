@@ -227,6 +227,32 @@ def test_redframe_duration_evidence_and_authored_edit_are_checked(tmp_path):
         validate_delivery_parameters([actual], payload, tmp_path, platform='redframe')
 
 
+def test_redframe_source_missing_duration_minimum_stays_candidate(tmp_path):
+    from scripts import stage_context_cli
+    from scripts.core import artifacts
+    from scripts.core.agent_acceptance import register_workflow_authorization
+    from scripts.core.project_state import load_project_state
+    from test_agent_artifact_adoption import report
+    from test_formal_package_submission import register, video_project
+
+    payload = video_project(tmp_path, current_prompt=False)
+    payload['generation_segments'] = payload['generation_segments'][:1]
+    payload['selected_video_model'] = dict(id='Synthetic model', platform='redframe',
+        entry_point='fixture editor', reference_mode='reference', confirmed_by_user=True,
+        max_duration_seconds=30)
+    entry = register(tmp_path, 'V', 'video.prompt', payload, ['storyboard.package'])
+    register_workflow_authorization(tmp_path, authorization_id='SYNTHETIC-FLOW',
+        authorization_ref='Synthetic test only', skills=['voiceover-to-video-script'])
+    evidence = report(tmp_path, entry)
+    before = load_project_state(tmp_path)
+    with pytest.raises(ValueError, match='缺少有效的本轮已核生成时长下限'):
+        stage_context_cli.main(['accept-artifact', '--project', str(tmp_path),
+            '--artifact-id', 'V', '--self-check-json', str(evidence)])
+    current = next(a for a in artifacts.load_manifest(tmp_path)['artifacts'] if a['artifact_id'] == 'V')
+    assert current == entry and current['status'] == 'candidate'
+    assert load_project_state(tmp_path) == before
+
+
 def test_redframe_duration_matches_exact_native_options_and_resolution(tmp_path):
     payload, board = fixture(tmp_path, maximum=30)
     bind_redframe_capability(tmp_path, payload, [4, 23, 30])
@@ -764,6 +790,7 @@ def test_redframe_ordinary_cross_scene_cut_needs_no_physical_carryover(tmp_path)
     historical = validate_generation_boundaries(payload, board, tmp_path, require_physical=False)
     assert historical['cross_scene_boundaries_checked'] == 0
 
+    bind_redframe_capability(tmp_path, payload, list(range(4, 19)))
     right['cross_scene_continuity'] = dict(from_segment_id='G1', decision='new_action_or_time_jump',
         basis='The delivery is over; the scene changes to the following morning.',
         previous_source=dict(shot_id='S1', field='cut.exit', quote=first['cut']['exit']),

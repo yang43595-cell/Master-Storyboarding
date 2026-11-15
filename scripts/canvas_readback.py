@@ -59,8 +59,14 @@ def rows_by_id(rows: list) -> dict:
     return result
 
 
+def character_edge_slot(row, slot):
+    media = row.get('ordered_media', [])
+    return (row.get('native_identity_mode', 'media_id') == 'media_id' and isinstance(media, list)
+            and slot <= len(media) and isinstance(media[slot - 1], dict) and 'reference_port' in media[slot - 1])
+
+
 def validate_source_material_order(row: dict, source: dict) -> dict[int, bool | None]:
-    """Bind each frozen slot to its adopted source and return direct-slot face requirements."""
+    """Bind each frozen slot to its adopted source and return face requirements."""
     planned = source.get('materials', source.get('candidate_upload_order', []))
     inputs = row.get('reference_checks')
     node_id = row['node_id']
@@ -85,18 +91,27 @@ def validate_source_material_order(row: dict, source: dict) -> dict[int, bool | 
                for key in ('asset_id', 'output_id', 'artifact_id', 'product_reference_id', 'kind', 'role')):
             raise ValueError(f'{node_id}: 冻结第 {slot} 槽的素材身份或用途与采用源段不符')
         binding = ref.get('canvas_binding')
-        if not isinstance(binding, dict) or binding.get('mode') != 'direct' or ref.get('kind') not in {'image', 'video'}:
+        linked = character_edge_slot(row, slot)
+        if not linked and (not isinstance(binding, dict) or binding.get('mode') != 'direct'
+                           or ref.get('kind') not in {'image', 'video'}):
             continue
         field = 'contains_realistic_face'
         declared = [record[field] for record in (material, ref) if field in record]
         if any(type(value) is not bool for value in declared) or len(set(declared)) > 1:
             raise ValueError(f'{node_id}: 第 {slot} 槽的写实人脸声明无效或与采用源段不符')
+        if linked:
+            identity = ('asset_id', 'output_id') if ref.get('asset_id') is not None else ('artifact_id',)
+            roles = material.get('roles', [material.get('role')])
+            if (material.get(field) is not True or material.get('kind') != 'image'
+                    or not isinstance(roles, list) or 'identity' not in roles
+                    or any(not ref.get(key) or ref[key] != material.get(key) for key in identity)):
+                raise ValueError(f'{node_id}: 第 {slot} 槽的角色连线须绑定采用稿的准确人物图片与身份用途')
         face_requirements[slot] = declared[0] if declared else None
     return face_requirements
 
 
-def check_direct_face_certification(row: dict, got: dict, requirements: dict[int, bool | None]) -> dict:
-    """Compare normalized certification observations for actual, bound direct slots."""
+def check_face_certification(row: dict, got: dict, requirements: dict[int, bool | None]) -> dict:
+    """Compare actual slot-specific or linked-output certification observations."""
     records = got.get('face_certification', [])
     if not isinstance(records, list):
         return {'status': 'failed', 'slots': [], 'reason': 'invalid_slot_evidence'}
@@ -117,14 +132,19 @@ def check_direct_face_certification(row: dict, got: dict, requirements: dict[int
                 outcome['reason'] = 'missing_slot_evidence'
         else:
             media = row['ordered_media'][slot - 1]
+            linked = character_edge_slot(row, slot)
+            key = 'reference_port' if linked else 'media_id'
             status = record.get('status')
             locator = record.get('locator')
             if (not isinstance(observed_media, list) or slot > len(observed_media)
-                    or observed_media[slot - 1] != media or not media.get('media_id')
+                    or observed_media[slot - 1] != media or not media.get(key)
                     or record.get('draft_node_id') != row['node_id']
-                    or any(record.get(key) != media[key] for key in ('node_id', 'media_id'))
+                    or any(record.get(field) != media[field] for field in ('node_id', key))
                     or record.get('sha256') != row['reference_checks'][slot - 1]['sha256']):
                 outcome.update(status='failed', reason='slot_identity_or_sha256_mismatch')
+            elif linked and (record.get('source_node_type') != 'remote-characterNode'
+                             or 'media_id' in record or record.get('image_digest') != media['sha256']):
+                outcome.update(status='failed', reason='linked_character_certification_mismatch')
             elif status not in ('certified', 'not_certified', 'pending') or not isinstance(locator, str) or not locator.strip():
                 outcome.update(status='failed', reason='invalid_certification_state_or_locator')
             elif required is False:
@@ -171,6 +191,8 @@ def validate_canvas_inputs(row: dict, *, redframe: bool = False, before_upload: 
                 raise ValueError('canvas product/action reference requires an independent source node and edge')
             if 'source_port' in binding or 'target_port' in binding:
                 raise ValueError('direct input cannot declare graph ports')
+            if character_edge_slot(row, slot):
+                raise ValueError('direct input cannot claim a character source port')
             continue
         if before_upload:
             raise ValueError('RedFrame before-upload preflight requires direct reference slots')
@@ -182,6 +204,15 @@ def validate_canvas_inputs(row: dict, *, redframe: bool = False, before_upload: 
             raise ValueError('canvas source port differs from native reference port')
         if native.get('node_id') == row['node_id']:
             raise ValueError('canvas edge requires an independent source node')
+        if character_edge_slot(row, slot):
+            roles = ref.get('roles', [ref.get('role')])
+            if (not redframe or ref.get('kind') != 'image'
+                    or not isinstance(roles, list) or 'identity' not in roles
+                    or any(role not in ('identity', 'appearance') for role in roles)
+                    or binding['source_port'] != 'image' or binding['target_port'] != 'in'
+                    or not binding['prompt_reference'] or 'product_reference_id' in ref or 'product_reference' in ref
+                    or native.get('sha256') != ref.get('sha256')):
+                raise ValueError('RedFrame edge requires an exact character image, port, source bytes and native prompt reference')
         edge = dict(source_node_id=native['node_id'], source_port=binding['source_port'],
                     target_node_id=row['node_id'], target_port=binding['target_port'], slot=slot)
         expected_edges.append(edge)
@@ -940,7 +971,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         if media and not (endpoint_mode or before_upload) and (not isinstance(row.get('native_entity_type'), str) or not row['native_entity_type'].strip()):
             raise ValueError('versioned delivery requires native entity readback for all references')
         identity_mode = row.get('native_identity_mode', 'media_id')
-        if not before_upload and not valid_native_media(media, identity_mode):
+        if not before_upload and not valid_native_media(media, identity_mode, character_edges=formal_redframe):
             raise ValueError('every uploaded media needs exact supported native identity')
         required = row.get('required_entities')
         if not isinstance(required, list) or any(not isinstance(e, str) or not e for e in required):
@@ -953,9 +984,21 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         for slot, (media_item, ref) in enumerate(zip(media, refs), 1):
             output = asset_outputs.get(f"{ref.get('asset_id', '')}@{ref.get('output_id', '')}")
             packed = formal_redframe and 'product_reference_id' in ref
+            linked = formal_redframe and character_edge_slot(row, slot)
             direct_slot = (formal_redframe and not before_upload and identity_mode == 'media_id'
                            and ref.get('canvas_binding', {}).get('mode') == 'direct'
                            and 'sha256' in media_item)
+            if linked and any(
+                    binding.get('sha256') != ref['sha256']
+                    and artifact_is_adopted(source, state, project)
+                    for source in manifest['artifacts'] for binding in source.get('upload_bindings', [])
+                    if binding.get('target_url') == frozen['target_url']
+                    and binding.get('target_project_id') == platform_project_id
+                    and binding.get('node_id') == media_item['node_id']
+                    and binding.get('reference_port') == media_item['reference_port']
+                    and binding.get('revision') == source.get('revision')
+                    and binding.get('sha256') == source.get('checksum')):
+                raise ValueError('conflicting current RedFrame character output mapping')
             if direct_slot and (media_item['node_id'] != row['node_id']
                                 or media_item['sha256'] != ref.get('sha256')):
                 raise ValueError('direct upload slot does not match the exact draft node and source bytes')
@@ -976,9 +1019,10 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                 path = Path(output['path'])
                 if (ref.get('sha256') != output['sha256'] or ref.get('kind') != 'image'
                         or (ref.get('path') is not None and project_path(project, ref['path']).resolve() != path.resolve())):
-                    raise ValueError('direct image differs from the confirmed asset output')
-                if ref.get('canvas_binding', {}).get('mode') != 'direct' or not (before_upload or direct_slot):
-                    raise ValueError('confirmed asset output requires a direct slot with downloaded bytes')
+                    raise ValueError('canvas image differs from the confirmed asset output')
+                if not (linked or (ref.get('canvas_binding', {}).get('mode') == 'direct'
+                                   and (before_upload or direct_slot))):
+                    raise ValueError('confirmed asset output requires an exact source slot with downloaded bytes')
                 item = {}
             else:
                 path = row_authority(ref)
@@ -1034,13 +1078,13 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                         and b.get('sha256') == source.get('checksum')}
                     if reverse_hashes != {ref['sha256']}:
                         raise ValueError('conflicting upload node/port source bytes')
-                elif not before_upload:
+                elif not before_upload and not linked:
                     bindings = [b for b in item.get('upload_bindings', [])
                                 if b.get('node_id') == media_item['node_id']
                                 and b.get('media_id') == media_item['media_id']
                                 and b.get('target_url') == frozen.get('target_url')
                                 and b.get('revision') == ref['revision'] and b.get('sha256') == ref['sha256']]
-                    if not bindings:
+                    if not bindings and not direct_slot:
                         raise ValueError('actual upload node/media has no exact current source mapping')
                     reverse_hashes = {binding['sha256']
                         for source in manifest['artifacts']
@@ -1052,7 +1096,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                         and binding.get('media_id') == media_item['media_id']
                         and binding.get('revision') == source.get('revision')
                         and binding.get('sha256') == source.get('checksum')}
-                    if reverse_hashes != {ref['sha256']}:
+                    if reverse_hashes - {ref['sha256']} or (not direct_slot and not reverse_hashes):
                         raise ValueError('conflicting upload mapping: one native identity names different source bytes')
 
             assigned = ref.get('roles', [ref.get('role')])
@@ -1220,6 +1264,7 @@ def compare(frozen: dict, observed: dict, project: Path | None = None, *, privat
     canvas_input_checks = {}
     endpoint_control_checks = {}
     face_requirements = (submission or {}).get('face_certification_requirements')
+    character_edges = face_requirements is not None
     face_checks = {}
     if set(actual) != set(expected):
         differences.append({'field': 'node_ids', 'missing': sorted(set(expected)-set(actual)),
@@ -1234,7 +1279,7 @@ def compare(frozen: dict, observed: dict, project: Path | None = None, *, privat
             value = row.get(field)
             valid = (isinstance(value, str) if field == 'prompt' else
                      isinstance(value, dict) if field == 'parameters' else
-                     valid_native_media(value, identity_mode))
+                     valid_native_media(value, identity_mode, character_edges=character_edges))
             if field not in row or not valid:
                 raise ValueError(f'incomplete frozen {node_id}: {field}')
             if field not in got or digest(got[field]) != digest(value):
@@ -1250,7 +1295,12 @@ def compare(frozen: dict, observed: dict, project: Path | None = None, *, privat
                                         'expected_sha256': digest(expected_graph),
                                         'observed_sha256': digest(observed_graph)})
         if face_requirements is not None:
-            face_checks[node_id] = check_direct_face_certification(row, got, face_requirements[node_id])
+            face_checks[node_id] = check_face_certification(row, got, face_requirements[node_id])
+            verified_links = {item['slot'] for item in face_checks[node_id]['slots'] if item['status'] == 'passed'}
+            for index, _ in enumerate(row['ordered_media'], 1):
+                if character_edge_slot(row, index) and index not in verified_links:
+                    differences.append({'node_id': node_id, 'field': 'face_certification', 'slot': index,
+                                        'status': 'linked_character_not_verified'})
         if project is not None and 'edges' in row:
             canvas_input_checks[node_id] = 'passed'
         # Native rich-text entities are distinct evidence from plain prompt text
@@ -1275,7 +1325,8 @@ def compare(frozen: dict, observed: dict, project: Path | None = None, *, privat
             if 'edges' in row:
                 mentioned_media = [media for media, ref in zip(row['ordered_media'], row['reference_checks'])
                                    if ref['canvas_binding']['prompt_reference']]
-            status = reference_readback_status(mentioned_media, mentions, entity_type, identity_mode)
+            status = reference_readback_status(mentioned_media, mentions, entity_type, identity_mode,
+                                               character_edges=character_edges)
             native_reference_checks[node_id] = status
             if status == 'failed':
                 differences.append({'node_id': node_id, 'field': 'native_mentions',

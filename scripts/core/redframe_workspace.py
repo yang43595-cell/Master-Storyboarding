@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+from html.parser import HTMLParser
+import json
 import re
 import time
+from urllib.parse import unquote
 
 
 REDFRAME_ORIGIN = "https://redframe-ai.xmpaohong.com:28888"
 _CANVAS_FILE = "画布1.json"
 _RETRY_STATUSES = {408, 502, 503, 504}
 _ID = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
+REF_TOKEN = re.compile(r'\{\{ref (\d+)\}\}')
+_CHARACTER_CERT_FIELDS = {'characterId', 'assetId', 'projectName', 'sourceUrl', 'mimeType', 'imageDigest'}
 
 _WORKSPACE_REQUESTS = """async ({origin, directory, operation, payload, timeout, budget}) => {
   if (location.origin !== origin) return {error: 'wrong_origin'};
@@ -154,6 +159,87 @@ def _is_canvas(graph):
             and isinstance(graph.get('nodes'), list) and isinstance(graph.get('edges'), list))
 
 
+class _NativeTag(HTMLParser):
+    def __init__(self, html):
+        super().__init__()
+        self.refs = []
+        self.feed(html)
+
+    def handle_starttag(self, tag, attrs):
+        values = dict(attrs)
+        if 'data-reference-id' not in values:
+            return
+        if tag != 'span' or 'imageReference' not in values.get('class', '').split():
+            raise ValueError('原生提示词引用格式已改变')
+        identity = json.loads(unquote(values['data-reference-id']))
+        slot = REF_TOKEN.fullmatch(values.get('data-value', ''))
+        if not isinstance(identity, list) or len(identity) != 2 or not all(
+                isinstance(part, str) and part for part in identity) or slot is None:
+            raise ValueError('原生提示词引用缺少准确节点、端口或槽位')
+        self.refs.append((*identity, int(slot[1])))
+
+
+def native_prompt_mentions(data):
+    """Read persisted chips, excluding plain text that only looks like a reference."""
+    result = []
+    for line in data['promptModel']:
+        for token in line:
+            if token['type'] == 'Custom':
+                (mention,) = _NativeTag(token['html']).refs
+                result.append(mention)
+    return result
+
+
+def native_reference_slots(graph, node):
+    """Place direct uploads around the exact slots of certified character edges."""
+    ident = node['id']
+    data = node.get('data')
+    references = data.get('localReferences', {}) if isinstance(data, dict) else None
+    refs = references.get('in', []) if isinstance(references, dict) else None
+    if not isinstance(refs, list):
+        raise ValueError(f'invalid persisted attachment list: {ident}')
+    incoming = [edge for edge in graph['edges'] if edge.get('target') == ident] if graph is not None else []
+    if not incoming:
+        return refs, {}
+    nodes = {row['id']: row for row in graph['nodes']}
+    if len(nodes) != len(graph['nodes']):
+        raise ValueError('画布返回重复节点 ID')
+    mentions = native_prompt_mentions(node['data'])
+    total = len(refs) + len(incoming)
+    linked = {}
+    for edge in incoming:
+        source_id = edge.get('source')
+        source = nodes.get(source_id)
+        if (source is None or source_id == ident or source.get('type') != 'remote-characterNode'
+                or (edge.get('type'), edge.get('sourceHandle'), edge.get('targetHandle'))
+                != ('simple-bezier', 'image', 'in')):
+            raise ValueError(f'{ident} 含未支持的红帧入边')
+        data = source.get('data') or {}
+        output = (data.get('outputs') or {}).get('image') or {}
+        value, certificate = output.get('value') or {}, data.get('faceCertification')
+        mime = value.get('mimeType')
+        url = value.get('url')
+        if output.get('dataType') != 'IMAGE' or not _slot_path(url, source_id):
+            raise ValueError(f'{ident} 的角色连线缺准确图片输出')
+        if (not isinstance(certificate, dict) or set(certificate) != _CHARACTER_CERT_FIELDS
+                or certificate != (data.get('faceCertifications') or {}).get('image')
+                or certificate.get('characterId') != (data.get('characterLibrary') or {}).get('id')
+                or certificate.get('assetId') != value.get('assetId')
+                or certificate.get('sourceUrl') != url or certificate.get('mimeType') != mime
+                or not isinstance(mime, str) or not mime.startswith('image/')
+                or not all(isinstance(certificate.get(key), str) and certificate[key].strip()
+                           for key in ('characterId', 'assetId', 'projectName'))
+                or not re.fullmatch(r'[a-f0-9]{64}', str(certificate.get('imageDigest', '')))):
+            raise ValueError(f'{ident} 的角色连线认证记录或身份无法核实')
+        matches = [slot for owner, port, slot in mentions if (owner, port) == (source_id, 'image')]
+        if len(matches) != 1 or not 1 <= matches[0] <= total or matches[0] in linked:
+            raise ValueError(f'{ident} 的角色连线缺少唯一对应的正文原生 @ 槽')
+        linked[matches[0]] = (dict(source=source_id, sourceHandle='image', dataType='IMAGE', value=value), certificate)
+    direct = iter(refs)
+    return [linked[i][0] if i in linked else next(direct) for i in range(1, total + 1)], {
+        index: certificate for index, (_, certificate) in linked.items()}
+
+
 class RedframeWorkspace:
     """Use the existing page session, with bounded reads and single-attempt saves."""
 
@@ -222,7 +308,7 @@ class RedframeWorkspace:
             attempts = [_attempt(item) for item in (result.get('before_write'), result) if item is not None]
             raise RedframeWorkspaceError('canvas save', attempts)
 
-    def digest_slots(self, nodes):
+    def digest_slots(self, nodes, *, graph=None):
         """Hash persisted attachment files directly, in the canvas's slot order."""
         out = {}
         records, slots = [], []
@@ -231,28 +317,28 @@ class RedframeWorkspace:
             if not isinstance(node_id, str) or not _ID.fullmatch(node_id) or node_id in out:
                 raise ValueError('expected unique native draft IDs')
             out[node_id] = []
-            data = node.get('data')
-            references = data.get('localReferences', {}) if isinstance(data, dict) else None
-            native_slots = references.get('in', []) if isinstance(references, dict) else None
-            if not isinstance(native_slots, list):
-                raise ValueError(f'invalid persisted attachment list: {node_id}')
+            native_slots, linked = native_reference_slots(graph, node)
             handles = set()
             for index, slot in enumerate(native_slots, 1):
                 value = slot.get('value') if isinstance(slot, dict) else None
                 if not isinstance(value, dict):
                     raise ValueError(f'invalid persisted attachment: {node_id} slot {index}')
                 path = value.get('url')
+                owner = slot.get('source')
                 handle = slot.get('sourceHandle')
                 family = {'IMAGE': 'image', 'VIDEO': 'video', 'AUDIO': 'audio'}.get(str(slot.get('dataType')))
-                if (slot.get('source') != node_id or not isinstance(handle, str) or not handle or handle in handles
-                        or not family or not _slot_path(path, node_id)):
+                if (not isinstance(owner, str) or not _ID.fullmatch(owner)
+                        or (index not in linked and owner != node_id)
+                        or not isinstance(handle, str) or not handle or (owner, handle) in handles
+                        or not family or not _slot_path(path, owner)):
                     raise ValueError(f'invalid native attachment identity: {node_id} slot {index}')
-                handles.add(handle)
-                records.append({'index': index, 'source': node_id, 'media_id': handle, 'path': path})
+                handles.add((owner, handle))
+                records.append((node_id, {'index': index, 'source': owner, 'path': path,
+                    ('reference_port' if index in linked else 'media_id'): handle}))
                 slots.append({'path': path, 'family': family})
         results = self._read('attachments', {'slots': slots}, slots=slots)
-        for record, result in zip(records, results):
-            out[record['source']].append({**record, **result})
+        for (draft_id, record), result in zip(records, results):
+            out[draft_id].append({**record, **result})
         return out
 
 
