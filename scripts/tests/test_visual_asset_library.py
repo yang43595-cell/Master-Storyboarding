@@ -313,6 +313,30 @@ class LibraryTests(unittest.TestCase):
                     json.dumps({'review_checks': m.asset_skill.checks('project', '物品')}))
             self.assertTrue(checked['passed'])
 
+    def test_codex_input_reuses_exact_template_and_transports_edit(self):
+        template = '镜头中只出现用户确认的大头照参照。'
+        package = json.dumps({'production_item': {'template': {'content': template}}}, ensure_ascii=False)
+        request = {'kind': '大头照', 'reference_paths': []}
+        for variant, prompt in (('exact', template), ('edited', template + ' 追加用户修改。')):
+            with self.subTest(variant=variant):
+                folder = self.root / ('template-' + variant)
+                def finish_review(command, **kwargs):
+                    task = kwargs['input']
+                    if variant == 'exact':
+                        self.assertEqual(task.count(template), 1)
+                        self.assertIn('直接使用任务包中 production_item.template.content 的准确正文。', task)
+                    else:
+                        self.assertIn(json.dumps(prompt, ensure_ascii=False), task)
+                    kwargs['completion_path'].write_text(json.dumps({
+                        'passed': True, 'observations': [], 'uncertainties': [],
+                        'checks': ['ASSET-SCOPE：已核对要求'], 'issues': [],
+                    }), encoding='utf-8')
+                    return subprocess.CompletedProcess(command, 0, '', '')
+                with patch.object(m.codex_bridge, '_run_prompt_cli', side_effect=finish_review):
+                    result = m.codex_bridge.run('codex', folder, 'review', request, prompt, package)
+                self.assertEqual(result['prompt'], prompt)
+                self.assertEqual(json.loads((folder / 'review-input.json').read_text(encoding='utf-8')), {'prompt': prompt})
+
     def test_missing_review_evidence_gets_one_real_recheck_and_no_fabricated_pass(self):
         job = self.lib.create_job({'source_id': self.asset['id'], 'subject': '衣服', 'kind': '服装'})
         job['steps'][0]['audit'] = {'status': 'drafting', 'run_id': 'repair'}

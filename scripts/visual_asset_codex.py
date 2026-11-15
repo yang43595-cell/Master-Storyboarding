@@ -193,17 +193,18 @@ def run(exe, folder, phase, request, draft, task_package):
             '与已确认身份、产品实物或故事事实冲突时具体报告，不擅自修改上游。'
             '分辨率是请求参数，不把2K等参数或流程说明写进prompt。'
             '模板与提示词语言规范冲突时以语言规范为准。未生图的尺寸检查和用户视觉确认是后续门禁。'
-            '逐项执行review_checks，checks使用“检查ID：具体证据”。只返回指定JSON。'
-            '\n本次完整制作输入：\n' + task_package +
-            '\n待处理草稿：\n' + json.dumps(draft['prompt'] if isinstance(draft, dict) else draft, ensure_ascii=False))
+            '逐项执行review_checks，checks使用“检查ID：具体证据”。只返回指定JSON。')
     if request.get('kind') == '物品':
         task = ('制作普通物品四视图。当前物品规则优先：提示词只写物品名称、用户明确外观及必要尺寸排版，少量润色即可。'
                 '默认一张16:9横图，2×2四格：左上正面、右上左侧、左下背面、右下俯视，同一物品同一状态，大小一致、浅色背景。不要增加手部、受力、灯光等细节。'
                 '保留指定品牌；无参考也可生成，不要求补图或实际厘米数。'
                 + ('写出简短提示词并自查。' if phase == 'draft' else '只审查用户原文并返回判断和证据。')
                 + '逐项执行review_checks：checks必须使用原检查ID，例如“ASSET-SCOPE：具体名称与需求证据”“ASSET-QC：具体排版证据”，不可用中文标题替换ID。只有明确冲突才passed=false并写issues，其他润色建议写observations，建议可为空。'
-                '不把方法中的完整身份卡、状态表、交付检查变成写词门槛。不调用工具、不生图。只返回指定JSON。'
-                '\n制作输入：\n' + task_package + '\n当前稿：\n' + json.dumps(original_prompt, ensure_ascii=False))
+                '不把方法中的完整身份卡、状态表、交付检查变成写词门槛。不调用工具、不生图。只返回指定JSON。')
+    template_content = specification.get('production_item', {}).get('template', {}).get('content')
+    current_prompt = ('直接使用任务包中 production_item.template.content 的准确正文。'
+                      if original_prompt == template_content else json.dumps(original_prompt, ensure_ascii=False))
+    task += '\n本次制作输入：\n' + task_package + '\n当前稿：\n' + current_prompt
     if isinstance(draft, dict) and draft.get('issues'):
         task += '\n上次发现的问题（本次解决后重新逐项自查）：\n' + json.dumps(draft['issues'], ensure_ascii=False)
     task += '\n检查编号必须原样保留：' + '、'.join(c['id'] for c in required_checks) + '。observations是可选建议，允许空数组。'

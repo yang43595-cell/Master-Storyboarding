@@ -641,6 +641,8 @@ class ProjectTests(unittest.TestCase):
                                 'events': request['narrative']['events'] + [{'event_id': 'EVT-OTHER', 'summary': '无关事件'}]}
         package = m.asset_skill.build_task_package(request, startup_text='动态规则：服装袖口不得出现未确认标识。')
         encoded = json.dumps(package, ensure_ascii=False)
+        self.assertEqual(package['request']['requirement'], request['requirement'])
+        self.assertNotIn('asset_requirements', package['request']['narrative'])
         self.assertIn('深蓝色 Polo 衫', encoded)
         self.assertIn('袖口不得有品牌文字', encoded)
         self.assertIn('未锁定', encoded)

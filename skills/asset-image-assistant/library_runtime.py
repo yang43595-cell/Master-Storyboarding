@@ -307,7 +307,6 @@ def build_task_package(request, refs=None, startup_text='', methods=()):
         selected = {value for r in requirements for value in r.get(source_key, [])}
         context['narrative'] = {k: narrative[k] for k in ('project_id', 'revision', '_asset_table', 'locked_facts') if k in narrative}
         context['narrative'][content_key] = [item for item in narrative.get(content_key, []) if item.get(id_key) in selected]
-        context['narrative']['asset_requirements'] = requirements
     package = {'package_version': 'asset-task-package-v3', 'mode': request.get('mode', 'asset-library'),
                'request': context, 'rules': rules, 'review_checks': checks(request.get('mode', 'asset-library'), request.get('kind') if not request.get('rows') else None),
                'professional_methods': [{'id': m.id, 'path': m.vault_path, 'version': m.version,
