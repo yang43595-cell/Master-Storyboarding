@@ -429,10 +429,10 @@ class AssetRuntimeRegressions(unittest.TestCase):
         restarted = library_module.Library(self.lib.root, vault=self.lib.vault)
         with self.assertRaisesRegex(ValueError, '缺少前置图片版本依据'):
             restarted.projects.export({'project_id': self.project['id'], 'confirm': True})
-        with patch.object(project_module.subprocess, 'run') as command:
+        with patch('stage_context_cli.handoff') as handoff:
             with self.assertRaisesRegex(ValueError, '缺少前置图片版本依据'):
                 restarted.projects.continue_project(self.project['id'])
-        command.assert_not_called()
+        handoff.assert_not_called()
         self.assertTrue(Path(out['manifest']).is_file())
 
     def test_upload_final_metadata_is_in_first_durable_record_and_survives_restart(self):

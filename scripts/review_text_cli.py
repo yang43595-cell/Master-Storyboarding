@@ -215,6 +215,8 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("--receipt", required=True, type=Path)
         command.add_argument("--base-url", default=DEFAULT_BASE_URL)
         command.add_argument("--timeout", default=20, type=float)
+    for command in (prepare, create, publish, status, asset, decision):
+        command.add_argument("--full", action="store_true", help="Print the full result, including the website response.")
     return parser
 
 
@@ -243,8 +245,7 @@ def run(args: argparse.Namespace) -> dict:
         website_approval = None
         receipt = {"kind": "agent-review-api-receipt", "created_at": utc_now(),
                    "base_url": client.base_url, "project_path": str(project),
-                   "command": args.command, "review_approval_inferred": False,
-                   "formal_adoption_performed": False}
+                   "command": args.command, "review_approval_inferred": False}
         if args.command == "create-case":
             parameters = {"name": args.name, "operationId": args.operation_id}
             call = lambda: client.create_case(name=args.name, operation_id=args.operation_id)
@@ -375,6 +376,54 @@ def run(args: argparse.Namespace) -> dict:
         return result
 
 
+def _cli_result(args, result):
+    summary = {"ok": True, "command": args.command}
+    if args.command == "prepare":
+        return {**summary, "source": result["source_json"]["path"],
+                "revision": result["source_json"]["revision"], "markdown": result["markdown"]}
+    response = result["response"]
+    summary["receipt"] = result["receipt"]
+    case = response.get("case")
+    if isinstance(case, dict):
+        summary.update(caseId=case.get("id"), projectId=case.get("projectId"))
+    for key in ("caseId", "projectId", "stage", "version", "headGeneration",
+                "assetId", "operationId", "url", "sourceScriptVersion"):
+        if key in response:
+            summary[key] = response[key]
+    if args.command == "status":
+        head = response["head"]
+        summary.update(version=head["version"] if head else None,
+                       headGeneration=head["generation"] if head else 0)
+    decision = response if args.command == "decision" else response.get("decision")
+    if args.command in {"status", "decision"} and isinstance(decision, dict):
+        if "decisionStatus" in decision:
+            summary["decisionStatus"] = decision["decisionStatus"]
+        validity = decision.get("validity")
+        if isinstance(validity, dict):
+            summary["validity"] = {key: validity[key] for key in
+                ("isCurrent", "sourceStale", "dependencyStale", "dependencyUnapproved", "reviewable", "stillEffective")
+                if type(validity.get(key)) is bool}
+    if readback := result.get("readback"):
+        summary["readback_status"] = readback["status"]
+        if error := readback.get("error"):
+            summary["readback_error"] = error["code"]
+    if args.command == "decision" and args.adopt_script_id:
+        adoption = result.get("adoption") or {}
+        summary["adoption"] = {"artifact_id": args.adopt_script_id, "status":
+            "already_current" if adoption.get("already_current") else "adopted" if adoption else "not_adopted"}
+        transaction = adoption.get("transaction", adoption)
+        if "transaction_id" in transaction:
+            summary["adoption"]["transaction_id"] = transaction["transaction_id"]
+    return summary
+
+
+def _exit_error(parser, args, code, message):
+    report = {"ok": False, "command": args.command, "code": code, "message": message}
+    if getattr(args, "receipt", None):
+        report["receipt"] = str(args.receipt)
+    parser.exit(2, json.dumps(report, ensure_ascii=False) + "\n")
+
+
 def main(argv=None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
@@ -383,11 +432,22 @@ def main(argv=None) -> int:
     except _ScriptAdoptionBlocked as exc:
         parser.exit(2, json.dumps(exc.report, ensure_ascii=False) + "\n")
     except AgentReviewError as exc:
-        parser.exit(2, "Agent Review failed (" + exc.code + "); check the receipt and remote status before retrying.\n")
+        message = {
+            "INVALID_INPUT": "送审参数或文件无效，请检查本次输入。",
+            "CREDENTIAL_ERROR": "无法读取有效凭据，请核对凭据文件。",
+        }.get(exc.code, "请先核对已保存回执及网站上的原操作状态，再决定是否重试。")
+        _exit_error(parser, args, exc.code, message)
+    except FileExistsError:
+        _exit_error(parser, args, "OUTPUT_EXISTS", "输出或回执已存在，请保留原记录并核对。")
+    except FileNotFoundError:
+        _exit_error(parser, args, "FILE_MISSING", "缺少本次所需的项目文件，请核对命令中的路径。")
+    except PermissionError:
+        _exit_error(parser, args, "FILE_ACCESS_DENIED", "无法访问项目文件，请核对本次路径的读写权限。")
     except (OSError, ValueError, TypeError, KeyError):
         # Never echo arbitrary source text, response bodies, or credentials.
-        parser.exit(2, "Review command failed local validation or file access; no approval was recorded.\n")
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+        _exit_error(parser, args, "LOCAL_VALIDATION_FAILED", "请核对本次输入、原版本和已保存回执。")
+    print(json.dumps(result if args.full else _cli_result(args, result),
+                     ensure_ascii=False, indent=2 if args.full else None))
     return 0
 
 

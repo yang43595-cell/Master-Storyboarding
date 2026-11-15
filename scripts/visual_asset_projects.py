@@ -1,12 +1,12 @@
 """Project AST workbench. Project files remain authoritative; the library stores work in progress."""
 from __future__ import annotations
 
+from argparse import Namespace
 import copy
 from concurrent.futures import ThreadPoolExecutor
 import json
 import re
 import shutil
-import subprocess
 import sys
 import threading
 import time
@@ -2089,29 +2089,33 @@ class Projects:
             return {**result, 'export': exported} if scoped else exported
 
     def continue_project(self, ident):
+        from stage_context_cli import handoff
+
         p = self.get(ident)
         self.fresh(p)
         if not p.get('export'):
             raise ValueError('请先完成整表确认和导出')
         self.validate_export_basis(p)
-        state = load_project_state(Path(p['path']))
-        target = state.get('next_stage')
-        handoff = p['export']['handoff']
-        warning = ''
+        target = load_project_state(Path(p['path'])).get('next_stage')
+        handoff_path = p['export']['handoff']
+        warning = '项目尚未指定下一阶段，请回到 Codex 核对项目状态后决定。'
         if target:
-            result = subprocess.run([sys.executable, str(ROOT / 'scripts/stage_context_cli.py'), 'handoff',
-                '--project', p['path'], '--to-skill', target], capture_output=True, encoding='utf-8', errors='replace',
-                timeout=90, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
-            if result.returncode:
-                warning = '项目其他交接条件尚未满足：' + (result.stderr or result.stdout)[-500:]
+            try:
+                result = handoff(Namespace(project=p['path'], to_skill=target))
+            except (OSError, ValueError) as exc:
+                problem = str(exc).partition('\n')[0][:400] or '请核对已登记项目和本轮输入。'
+                warning = '项目其他交接条件尚未满足：' + problem
             else:
-                handoff = str(Path(p['path']) / '00_项目管理/执行上下文/next_stage_handoff.md')
+                handoff_path = result['path']
+                warning = ''
+        instruction = f'请继续项目「{p["path"]}」，先读取交接文件「{handoff_path}」。'
+        if warning:
+            instruction += '请先核对交接条件与下一阶段。'
+        elif target == 'voiceover-to-video-script':
+            instruction += '按视频提示词 Skill 直接读取已采用源稿和本轮要求，核对输入后继续。'
         else:
-            warning = '项目尚未指定下一阶段，请回到 Codex 核对项目状态后决定。'
-        instruction = f'请继续项目「{p["path"]}」。先读取项目规则、项目状态和资产交接文件「{handoff}」。'
-        instruction += ('按项目状态准备并校验 ' + target + ' 的启动包，通过输入门禁后继续这一阶段。') if target and not warning else '请先核对交接条件与下一阶段，不自行跳步。'
-        instruction += '资产仅使用正式清单中的确认主图和用途匹配的 confirmed_outputs。'
-        return {'handoff': handoff, 'content': Path(handoff).read_text(encoding='utf-8'), 'instruction': instruction, 'warning': warning}
+            instruction += f'按 {target} Skill 的入口核对本轮输入后继续。'
+        return {'handoff': handoff_path, 'instruction': instruction, 'warning': warning}
 
     def upload_reference(self, payload):
         """Store a generation input in its project, preserving pixels and the source file."""

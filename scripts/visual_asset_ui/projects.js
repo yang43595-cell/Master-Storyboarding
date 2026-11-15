@@ -111,7 +111,16 @@ projectSection.addEventListener('click',e=>{
   if(action==='refresh'){await refresh();await projectLoad();return;}
   if(action==='backup'){await api('/api/backup-retry',{});await refresh();await projectLoad();return;}
   if(action==='export'){if(!confirm('确认整张资产需求表已完整且选图正确，并导出新版本到此项目文件夹？'))return;const result=await projectApi('export',{confirm:true});toast(`已导出 ${result.count} 张图片到项目 ${result.revision}`);await projectLoad();return;}
-  if(action==='continue'){const result=await projectApi('continue');modal('回到 Codex 继续项目',`<p class="project-warning">${esc(result.warning)}</p><p class="paths">${esc(result.handoff)}</p><details open><summary>打开交接内容</summary><pre>${esc(result.content)}</pre></details><label>复制到项目的 Codex 对话<textarea id="project-continue-text" rows="5" readonly>${esc(result.instruction)}</textarea></label><button id="project-copy-continue">复制继续指令</button>`);$('#project-copy-continue').onclick=e=>guarded(async()=>{await navigator.clipboard.writeText(result.instruction);toast('已复制，粘贴到项目的 Codex 对话即可');},e.target);return;}
+  if(action==='continue'){
+   const result=await projectApi('continue');
+   const warning=result.warning?`<p class="project-warning">${esc(result.warning)}</p>`:'';
+   modal('回到 Codex 继续项目',`${warning}<p class="paths">${esc(result.handoff)}</p><label>复制到项目的 Codex 对话<textarea id="project-continue-text" rows="4" readonly>${esc(result.instruction)}</textarea></label><button id="project-copy-continue">复制继续指令</button>`);
+   $('#project-copy-continue').onclick=e=>guarded(async()=>{
+    await navigator.clipboard.writeText(result.instruction);
+    toast('已复制，粘贴到项目的 Codex 对话即可');
+   },e.target);
+   return;
+  }
   const response=await projectApi(action);if(response.message)toast(response.message);await refresh();await projectLoad();
  },b);
 });

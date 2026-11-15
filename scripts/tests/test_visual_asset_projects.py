@@ -2,6 +2,7 @@
 import copy
 import json
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -661,7 +662,7 @@ class ProjectTests(unittest.TestCase):
         startup.parent.mkdir(parents=True, exist_ok=True)
         startup.write_text('动态知识正文', encoding='utf-8')
         before = {p: p.read_bytes() for p in Path(request['project_path']).rglob('*') if p.is_file()}
-        with patch.object(pmod.subprocess, 'run', side_effect=AssertionError('Web input must not execute stage CLI')):
+        with patch.object(subprocess, 'run', side_effect=AssertionError('Web input must not execute stage CLI')):
             body, evidence = m.asset_skill.prepare(self.base / 'ordinary', request)
         package = json.loads(body)
         self.assertIn('MSB-KB-PROMPT-002', package['rules']['startup_dynamic_knowledge'])
@@ -687,7 +688,7 @@ class ProjectTests(unittest.TestCase):
             self.assertNotIn('写作者私有观察', kwargs['input'])
             self.assertIn('已组装实际输入', kwargs['input'])
             Path(command[command.index('--output-last-message') + 1]).write_text(json.dumps(result, ensure_ascii=False), encoding='utf-8')
-            return pmod.subprocess.CompletedProcess(command, 0, '{"type":"completed"}', '')
+            return subprocess.CompletedProcess(command, 0, '{"type":"completed"}', '')
         with patch.object(m.codex_bridge, '_run_prompt_cli', side_effect=fake_run):
             reviewed = m.codex_bridge.run('codex.exe', folder, 'review', request,
                                           {'prompt': '最终服装提示词', 'observations': ['写作者私有观察']}, '已组装实际输入')
@@ -709,7 +710,7 @@ class ProjectTests(unittest.TestCase):
                         self.assertNotIn('单独的审查轮次', kwargs['input'])
                         Path(command[command.index('--output-last-message') + 1]).write_text(
                             json.dumps(result, ensure_ascii=False), encoding='utf-8')
-                        return pmod.subprocess.CompletedProcess(command, 0, '', '')
+                        return subprocess.CompletedProcess(command, 0, '', '')
                     with patch.object(m.codex_bridge, '_run_prompt_cli', side_effect=fake_run) as call:
                         checked = m.codex_bridge.run('codex.exe', self.base / 'self-check',
                                                      phase, request, '当前稿', '实际输入')
@@ -1439,6 +1440,21 @@ class ProjectTests(unittest.TestCase):
         again = service.apply_chat_confirmation(p['id'], authorization_id='FLOW-ASSET-TEST',
                                                 confirmation=confirmation)
         self.assertEqual(again['export'], result['export'])
+
+        state.update(current_stage='asset-image-assistant', next_stage='voiceover-to-video-script')
+        write_project_state(root, state)
+        before = load_project_state(root)
+        continuation = service.action({'action': 'continue', 'project_id': p['id']})
+        self.assertEqual(continuation['warning'], '')
+        self.assertIn('按视频提示词 Skill 直接读取已采用源稿', continuation['instruction'])
+        self.assertNotIn('启动包', continuation['instruction'])
+        self.assertNotIn('content', continuation)
+        card = Path(continuation['handoff'])
+        handoff = card.read_text(encoding='utf-8')
+        self.assertIn('目标 Skill：`voiceover-to-video-script`', handoff)
+        self.assertIn(result['export']['artifact_id'], handoff)
+        self.assertFalse(card.with_name('stage_startup.md').exists())
+        self.assertEqual(load_project_state(root), before)
 
     def test_chat_confirmation_waits_for_remaining_outputs(self):
         from core.agent_acceptance import register_asset_workflow_authorization, register_workflow_authorization

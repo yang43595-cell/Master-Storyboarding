@@ -161,6 +161,9 @@ def test_script_adoption_uses_current_website_decision(tmp_path, fake_client, mo
     assert not load_manifest(tmp_path)["artifacts"]
     status = "approved"
     run("approved.json")
+    saved = json.loads((tmp_path / "approved.json").read_text())
+    assert saved["response"]["decisionStatus"] == "approved"
+    assert "formal_adoption_performed" not in saved
     assert load_project_state(tmp_path)["current_artifacts"] == ["NARRATIVE-R01"]
     assert run("approved-reread.json")["adoption"]["already_current"] is True
 
@@ -205,7 +208,9 @@ def test_local_adoption_failure_keeps_verified_decision_and_resumes_same_publica
     manifest["artifacts"][0]["path_or_url"] = source.name
     write_json(tmp_path / "00_项目管理/artifact_manifest.json", manifest)
     assert cli.main(args + ["--receipt", "resumed.json"]) == 0
-    assert json.loads(capsys.readouterr().out)["adoption"]["artifact"]["artifact_id"] == "NARRATIVE-R01"
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["adoption"]["artifact_id"] == "NARRATIVE-R01"
+    assert summary["adoption"]["status"] == "adopted"
     sent = [parameters for kind, parameters in calls if kind == "decision"]
     assert len(sent) == 2 and sent[0] == sent[1]
     assert sum(kind == "publish" for kind, _ in calls) == 1
@@ -764,7 +769,7 @@ def test_publish_exact_projection_raw_response_and_same_operation_retry(tmp_path
     assert "text" not in receipt["request"]["parameters"]
     assert receipt["request"]["text_bytes"] == len(before[tmp_path / "R01.md"])
     assert receipt["review_approval_inferred"] is False
-    assert receipt["formal_adoption_performed"] is False
+    assert "formal_adoption_performed" not in receipt
     assert "token" not in json.dumps(receipt).lower()
     assert all(p.read_bytes() == value for p, value in before.items())
     with pytest.raises(FileExistsError):
@@ -934,4 +939,36 @@ def test_unknown_remote_outcome_keeps_safe_receipt_and_does_not_retry(tmp_path, 
     receipt = json.loads((tmp_path / "failed.json").read_text())
     assert receipt["response"] is None
     assert receipt["error"] == {"code": "TRANSPORT_ERROR", "http_status": None}
-    assert "SECRET" not in capsys.readouterr().err + json.dumps(receipt)
+    stderr = capsys.readouterr().err
+    assert json.loads(stderr)["code"] == "TRANSPORT_ERROR"
+    assert "SECRET" not in stderr + json.dumps(receipt)
+
+
+def test_decision_default_output_contains_only_status_and_locator(tmp_path, fake_client, monkeypatch, capsys):
+    narrative(tmp_path)
+    prepare(tmp_path)
+    calls, response = fake_client
+    response.update(stage="script", scope="live", operationId=OPERATION)
+    cli.run(publish_args(tmp_path))
+    decision = {"case": {"id": "012", "projectId": "fixture"}, "stage": "script",
+                "version": response["version"], "decisionStatus": "changes",
+                "validity": {"isCurrent": True, "reviewable": True, "stillEffective": False},
+                "comments": ["Synthetic reviewer markup."] * 100}
+    monkeypatch.setattr(cli.AgentReviewClient, "decision", lambda client, **target: decision, raising=False)
+    args = ["decision", "--project", str(tmp_path), "--publication", "publish.json", "--stage", "script",
+            "--token-file", "/not-read-by-mock"]
+    assert cli.main(args + ["--receipt", "decision.json"]) == 0
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["decisionStatus"] == "changes" and summary["validity"]["stillEffective"] is False
+    assert (summary["caseId"], summary["version"]) == ("012", response["version"])
+    assert "response" not in summary and "comments" not in summary
+    saved = Path(summary["receipt"]).read_bytes()
+    assert json.loads(saved)["response"] == decision
+    with pytest.raises(SystemExit) as stopped:
+        cli.main(args + ["--receipt", "decision.json"])
+    assert stopped.value.code == 2
+    assert json.loads(capsys.readouterr().err)["code"] == "OUTPUT_EXISTS"
+    assert Path(summary["receipt"]).read_bytes() == saved
+    assert cli.main(args + ["--receipt", "decision-full.json", "--full"]) == 0
+    assert json.loads(capsys.readouterr().out)["response"] == decision
+    assert sum(kind == "publish" for kind, _ in calls) == 1
