@@ -44,6 +44,10 @@
 
 先按导演动作和切点判断哪些状态实际继承。普通跨场硬切在正文或现有接续备注交代仍需保持的穿搭、随身物等，新场自行建立站位和空间。带调度设定（`space_rules`）的同场接续仍须在后段写 `physical_continuity`。跨场若继续同一动作、继承关键物理状态有风险或已有漂移，也在后段用同一字段登记。用 `from_segment_id`、`permitted_change` 定前驱和允许的变化，从 `positions`（人与锚点及彼此位置）、`props`（持物组合、持有人与落点）、`visibility`（关键物件或服装的可见状态）中只写实际继承的项，每项写 `previous_state`、`current_state`、`basis`。例如等待后湿擦只核必须接上的膜态、人物姿态和仍在场的相关物件，已重置或与动作无关的项省略。
 
+红帧稿逐个核对生成段间的跨场切点，在后段 `cross_scene_continuity` 记录 `from_segment_id`、`decision`、理由 `basis`，并在 `previous_source`、`current_source` 分别用 `shot_id`、`field`、`quote` 定位同版导演前段尾镜与后段首镜的准确依据。动作接着做用 `action_continues`，新动作或明确时间跳转用 `new_action_or_time_jump`。写前按本批段号检查涉及的切点，前段单独分批提交时仍查同版源稿的后段判断，后段单独提交也核对准确前段。
+
+动作继续时，后段 `physical_continuity.action` 写 `previous_state`、`current_state`、`basis` 和 `status`，核对动作进度、接触及手脚状态。仍继承的站位、持物和可见状态另按各项核对。用 `visual_reference` 时，两侧实际图、镜号与 `physical_scope: ["action"]` 一并绑定，状态参考或按侧对应的首尾帧继续走现有素材检查。导演依据和已有素材已足以说明该动作时可以写明原因并标 `no_visual_needed`。普通硬切保留上述跨场判断，有依据的新动作或时间跳转可沿原流程继续。程序核镜号、来源和材料绑定，执行者核动作是否真的成立。
+
 ## 正文与素材
 
 入口负责读取与执行顺序，现行模板负责正文组织，适用知识参考负责具体判断。历史案例专用脚本（例如旧 build_case2_prompts.py）不是通用转写入口；不得将 framing/movement 的选择性拼接当成完整继承。局部试写的成功也不自动确认模板能覆盖全片。

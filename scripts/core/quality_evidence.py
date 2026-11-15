@@ -776,6 +776,7 @@ def validate_scene_source_mapping(rows, sources, project, *, check_submitted_bod
     has_states = False
     has_packaging = False
     delivery_shots = {shot for row in rows for shot in source_shot_ids(row)}
+    delivery_segment_ids = {row.get('source_segment_id', row.get('node_id')) for row in rows}
     for ref, path, payload in sources:
         linked_director = False
         if not isinstance(payload, dict):
@@ -808,6 +809,8 @@ def validate_scene_source_mapping(rows, sources, project, *, check_submitted_bod
             if rows and segments:
                 from .generation_boundaries import validate_generation_boundaries
                 validate_generation_boundaries(payload, value, Path(ref.get('project_path', project)),
+                                               delivery_platform=delivery_platform,
+                                               delivery_segment_ids=delivery_segment_ids,
                                                action_shots=delivery_shots)
                 linked_director = True
         if segments:
@@ -816,6 +819,8 @@ def validate_scene_source_mapping(rows, sources, project, *, check_submitted_bod
                 # segment mapping in the same byte-checked artifact.
                 from .generation_boundaries import validate_generation_boundaries
                 validate_generation_boundaries(payload, payload, Path(ref.get('project_path', project)),
+                                               delivery_platform=delivery_platform,
+                                               delivery_segment_ids=delivery_segment_ids,
                                                action_shots=delivery_shots)
                 linked_director = True
             if rows and not linked_director:

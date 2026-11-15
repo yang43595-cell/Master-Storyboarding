@@ -26,7 +26,7 @@ def run_cli(module, *args):
                           capture_output=True, text=True, env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'})
 
 
-def redframe_fixture(root):
+def redframe_fixture(root, *, include_cross_scene_review=True):
     frozen, observed = delivery(root)
     frozen['target_project_id'] = observed['target_project_id'] = 'synthetic-project'
     for row in frozen['drafts']:
@@ -36,11 +36,11 @@ def redframe_fixture(root):
         'canvas': dict(platform='redframe', model='fixture', aspect_ratio='9:16', resolution='480p',
                        target_url=frozen['target_url'], target_project_id='synthetic-project')}})
     bind_synthetic_canvas(root, frozen, observed)
-    bind_redframe_production_sources(root, frozen, observed)
+    bind_redframe_production_sources(root, frozen, observed, include_cross_scene_review=include_cross_scene_review)
     return frozen, observed
 
 
-def bind_redframe_production_sources(root, frozen, observed):
+def bind_redframe_production_sources(root, frozen, observed, *, include_cross_scene_review=True):
     manifest = artifacts.load_manifest(root)
     state = load_project_state(root)
 
@@ -68,11 +68,27 @@ def bind_redframe_production_sources(root, frozen, observed):
         shot = ident + '-shot'
         row.update(source_segment_id=ident, source_shot_ids=[shot])
         row['parameters']['reference_mode'] = 'fixture-reference'
-        shots.append(dict(scene_id=ident, shots=[dict(shot_id=shot)]))
-        segments.append(dict(segment_id=ident, source_shot_ids=[shot], prompt=row['prompt'],
-                             parameters=copy.deepcopy(row['parameters']),
-                             target_edit_duration_seconds=sum(row['shot_durations']),
-                             materials=[dict(sha256=ref['sha256']) for ref in row['reference_checks']]))
+        entry = 'The same actor enters the next room with the box still in both hands.'
+        exit_note = 'The actor crosses the doorway holding the box with both hands.'
+        shots.append(dict(scene_id=ident, shots=[dict(shot_id=shot, cut=dict(entry=entry, exit=exit_note))]))
+        segment = dict(segment_id=ident, source_shot_ids=[shot], prompt=row['prompt'],
+                       parameters=copy.deepcopy(row['parameters']),
+                       target_edit_duration_seconds=sum(row['shot_durations']),
+                       materials=[dict(sha256=ref['sha256']) for ref in row['reference_checks']])
+        if segments and include_cross_scene_review:
+            previous = segments[-1]
+            segment['cross_scene_continuity'] = dict(
+                from_segment_id=previous['segment_id'], decision='action_continues',
+                basis='The actor carries the same box through the doorway.',
+                previous_source=dict(shot_id=previous['source_shot_ids'][-1], field='cut.exit', quote=exit_note),
+                current_source=dict(shot_id=shot, field='cut.entry', quote=entry),
+            )
+            segment['physical_continuity'] = dict(
+                from_segment_id=previous['segment_id'], permitted_change='Actor moves into the next room.',
+                action=dict(status='no_visual_needed', previous_state=exit_note, current_state=entry,
+                            basis='The fixture director explicitly preserves the hold throughout the movement.'),
+            )
+        segments.append(segment)
     director = register('DIRECTOR', 'storyboard.package', 'director.json', {
         'source_narrative': {**narrative, 'path': 'narrative.json'}, 'scenes': shots})
     video = register('VIDEO', 'video.prompt', 'video.json', {
@@ -124,6 +140,14 @@ def test_redframe_full_cli_and_saved_graph_readback(tmp_path):
     # Source validity is rechecked even with a matching saved graph and old PASS.
     (tmp_path / 'director.json').write_text('{"fixture":"changed"}')
     assert canvas_cli(tmp_path, frozen, observed).returncode != 0
+
+
+def test_formal_redframe_cross_scene_action_cannot_omit_review(tmp_path):
+    frozen, observed = redframe_fixture(tmp_path, include_cross_scene_review=False)
+    for readback in (None, observed):
+        result = canvas_cli(tmp_path, frozen, readback)
+        assert result.returncode != 0
+        assert 'one→two 缺跨场动作接续判断' in json.loads(result.stdout)['error']
 
 
 @pytest.mark.parametrize('mutation', ['missing_binding', 'missing_edge', 'wrong_port', 'wrong_source', 'extra_edge_on_direct',

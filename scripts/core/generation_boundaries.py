@@ -21,8 +21,9 @@ from .project_kickoff import load_kickoff
 
 _CREATOR_BOWL_BRUSH_OFFER = re.compile(r"送(?:给?你|给大家)?\s*高定\s*调膜\s*碗\s*(?:[、和与及]\s*)?刷")
 
-_PHYSICAL_DIMENSIONS = ("positions", "props", "visibility")
+_PHYSICAL_DIMENSIONS = ("action", "positions", "props", "visibility")
 _PHYSICAL_ROLES = {
+    "action": {"state_reference"},
     "positions": {"layout", "state_reference"},
     "props": {"appearance", "state_reference"},
     "visibility": {"appearance", "state_reference"},
@@ -61,18 +62,17 @@ def _rows(payload):
     return rows
 
 
-def _source_boundary(record, left, right, shots, reason):
+def _source_boundary(record, boundary_shots, shots, *, allow_dialogue=False):
     """Bind the rationale to an existing director field, never inferred prose."""
     _need(isinstance(record, dict), "拆段须引用准确导演边界")
     shot_id, field, quote = (record.get(k) for k in ("shot_id", "field", "quote"))
-    _need(shot_id in (left[-1], right[0]) and _text(field) and _text(quote),
+    _need(shot_id in boundary_shots and _text(field) and _text(quote),
           "拆段依据须定位两侧准确镜号、字段及原文")
     # Only existing action/rhythm/cut fields can substantiate a boundary.
     _need(field.split(".")[0] in {"take", "cut", "rhythm", "continuity", "audio"},
           "导演边界须引用动作、节奏、完整对白或剪辑字段")
     if field.startswith("audio."):
-        _need(reason in {"model_duration_exceeded", "execution_limit"}
-              and re.fullmatch(r"audio\.dialogue\.\d+\.text", field),
+        _need(allow_dialogue and re.fullmatch(r"audio\.dialogue\.\d+\.text", field),
               "完整句末只作承载限制下的连续切点，不自动证明新事件或时间省略")
     value = shots[shot_id][1]
     for key in field.split("."):
@@ -83,6 +83,23 @@ def _source_boundary(record, left, right, shots, reason):
         else:
             value = None
     _need(isinstance(value, str) and quote in value, "拆段依据不在准确导演字段原文中")
+
+
+def _cross_scene_review(left, right, previous_shot, current_shot, shots):
+    review = right.get("cross_scene_continuity")
+    boundary = f"{left['segment_id']}→{right['segment_id']}"
+    _need(isinstance(review, dict) and review.get("from_segment_id") == left["segment_id"]
+          and review.get("decision") in {"action_continues", "new_action_or_time_jump"}
+          and _text(review.get("basis")), f"{boundary} 缺跨场动作接续判断；须核对前段尾镜与后段首镜")
+    try:
+        _source_boundary(review.get("previous_source"), (previous_shot,), shots)
+        _source_boundary(review.get("current_source"), (current_shot,), shots)
+    except ValueError as exc:
+        raise ValueError(f"{boundary} 跨场判断依据无效：{exc}") from exc
+    if review["decision"] == "action_continues":
+        physical = right.get("physical_continuity")
+        _need(isinstance(physical, dict) and "action" in physical,
+              f"{boundary} 跨场动作继续，缺 physical_continuity.action 两侧动作状态")
 
 
 def _model_capability(payload, root, *, platform=None):
@@ -289,22 +306,25 @@ def _require_physical_refs(refs, row, shot, dimension, side, hashes, boundary, *
 
 
 def validate_generation_boundaries(payload, storyboard, project, *, require_physical=True,
-                                   action_shots=None):
+                                   delivery_platform=None, delivery_segment_ids=None, action_shots=None):
     """Validate a full or partial current draft without writing/approving it.
 
     Missing facts may remain in a candidate, but this strict check fails until
     supplied. It does not auto-merge/split, demand an image for every shot, or
     impose model settings on an unsplit platform-neutral manuscript.
-    Canvas preflight can narrow action coverage to the shots being delivered.
+    Canvas preflight narrows action coverage and examines both boundaries of
+    each delivered segment against the full adopted source.
     """
     try:
         return _validate(payload, storyboard, Path(project).resolve(), require_physical=require_physical,
+                         delivery_platform=delivery_platform, delivery_segment_ids=delivery_segment_ids,
                          action_shots=action_shots)
     except (KeyError, TypeError, AttributeError, IndexError) as exc:
         raise ValueError("generation_boundary: 分段依据或来源结构无效") from exc
 
 
-def _validate(payload, storyboard, root, *, require_physical, action_shots):
+def _validate(payload, storyboard, root, *, require_physical, delivery_platform, delivery_segment_ids,
+              action_shots):
     rows = _rows(payload)
     offer_rows = [row['segment_id'] for row in rows
                   if _CREATOR_BOWL_BRUSH_OFFER.search(submitted_prompt_body(row))]
@@ -326,6 +346,9 @@ def _validate(payload, storyboard, root, *, require_physical, action_shots):
     order = {key: index for index, key in enumerate(shots)}
     previous = -1
     selected_model = payload.get("selected_video_model")
+    check_cross_scene = require_physical and (
+        delivery_platform == "redframe"
+        or isinstance(selected_model, dict) and selected_model.get("platform") == "redframe")
     capability = (_model_capability(payload, root) if isinstance(selected_model, dict)
                   and "min_duration_seconds" in selected_model else None)
     for row in rows:
@@ -347,11 +370,16 @@ def _validate(payload, storyboard, root, *, require_physical, action_shots):
         _need({shot for ids in mapped for shot in ids} == set(shots), "全片稿生成段未完整覆盖准确导演镜号")
     validate_required_visuals(rows, required_visuals(storyboard), shot_order=tuple(shots), project=root,
                               action_shots=action_shots)
-    checked = 0
+    checked = cross_scene_checked = 0
     for index, (left, right) in enumerate(zip(rows, rows[1:])):
         before, after = mapped[index:index + 2]
         before_scene, after_scene = shots[before[-1]][0], shots[after[0]][0]
         same_scene = before_scene == after_scene
+        touches_delivery = (delivery_segment_ids is None or left["segment_id"] in delivery_segment_ids
+                            or right["segment_id"] in delivery_segment_ids)
+        if not same_scene and touches_delivery and (check_cross_scene or "cross_scene_continuity" in right):
+            _cross_scene_review(left, right, before[-1], after[0], shots)
+            cross_scene_checked += 1
         if "physical_continuity" in right or (require_physical and same_scene and before_scene in staged_scenes):
             by_side = {left["segment_id"]: left, right["segment_id"]: right}
             for ident, shot, dimension, side, hashes, boundary in _physical_requirements(left, right):
@@ -366,7 +394,8 @@ def _validate(payload, storyboard, root, *, require_physical, action_shots):
         reason = split.get("reason")
         _need(reason in {"model_duration_exceeded", "execution_limit", "event_complete", "time_ellipsis"},
               "缺少真实承载限制或导演已有事件/时间边界的拆段理由")
-        _source_boundary(split.get("source_boundary"), before, after, shots, reason)
+        _source_boundary(split.get("source_boundary"), (before[-1], after[0]), shots,
+                         allow_dialogue=reason in {"model_duration_exceeded", "execution_limit"})
         if reason == "model_duration_exceeded":
             limit = _model_limit(payload, left, right, root)
             estimate = split.get("estimated_scene_duration_seconds")
@@ -378,6 +407,7 @@ def _validate(payload, storyboard, root, *, require_physical, action_shots):
             _cutpoint(left, right)
         checked += 1
     return {"segment_count": len(rows), "same_scene_boundaries_checked": checked,
+            "cross_scene_boundaries_checked": cross_scene_checked,
             "scope": "source boundaries, capability evidence, and declared physical-state and action references; not semantic/visual approval"}
 
 

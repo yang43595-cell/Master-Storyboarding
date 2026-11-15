@@ -59,8 +59,8 @@ def rows_by_id(rows: list) -> dict:
     return result
 
 
-def validate_source_material_order(row: dict, source: dict) -> None:
-    """Bind the frozen slots to the adopted segment's ordered source bytes."""
+def validate_source_material_order(row: dict, source: dict) -> dict[int, bool | None]:
+    """Bind each frozen slot to its adopted source and return direct-slot face requirements."""
     planned = source.get('materials', source.get('candidate_upload_order', []))
     inputs = row.get('reference_checks')
     node_id = row['node_id']
@@ -71,6 +71,7 @@ def validate_source_material_order(row: dict, source: dict) -> None:
         raise ValueError(f'{node_id}: 正式红帧写入缺少采用源段指定的素材字节')
     if len(inputs) > len(planned):
         raise ValueError(f'{node_id}: 正式红帧写入含采用源段未列出的素材槽')
+    face_requirements = {}
     for slot, (material, ref) in enumerate(zip(planned, inputs), 1):
         sha = material.get('sha256')
         if not isinstance(sha, str) or not re.fullmatch(r'[0-9a-f]{64}', sha):
@@ -80,6 +81,66 @@ def validate_source_material_order(row: dict, source: dict) -> None:
             raise ValueError(f'{node_id}: 采用源段第 {slot} 槽与声明的素材顺序不符')
         if ref.get('sha256') != sha:
             raise ValueError(f'{node_id}: 冻结第 {slot} 槽的素材字节或顺序与采用源段不符')
+        binding = ref.get('canvas_binding')
+        if not isinstance(binding, dict) or binding.get('mode') != 'direct' or ref.get('kind') not in {'image', 'video'}:
+            continue
+        field = 'contains_realistic_face'
+        declared = [record[field] for record in (material, ref) if field in record]
+        if any(type(value) is not bool for value in declared) or len(set(declared)) > 1:
+            raise ValueError(f'{node_id}: 第 {slot} 槽的写实人脸声明无效或与采用源段不符')
+        face_requirements[slot] = declared[0] if declared else None
+    return face_requirements
+
+
+def check_direct_face_certification(row: dict, got: dict, requirements: dict[int, bool | None]) -> dict:
+    """Compare normalized certification observations for actual, bound direct slots."""
+    records = got.get('face_certification', [])
+    if not isinstance(records, list):
+        return {'status': 'failed', 'slots': [], 'reason': 'invalid_slot_evidence'}
+    by_slot = {}
+    for record in records:
+        slot = record.get('slot') if isinstance(record, dict) else None
+        if type(slot) is not int or slot not in requirements or slot in by_slot:
+            return {'status': 'failed', 'slots': [], 'reason': 'invalid_or_duplicate_slot'}
+        by_slot[slot] = record
+    results = []
+    observed_media = got.get('ordered_media')
+    for slot, required in requirements.items():
+        record = by_slot.get(slot)
+        outcome = {'slot': slot, 'contains_realistic_face': required}
+        if record is None:
+            outcome['status'] = 'not_applicable' if required is False else 'unknown'
+            if required is not False:
+                outcome['reason'] = 'missing_slot_evidence'
+        else:
+            media = row['ordered_media'][slot - 1]
+            status = record.get('status')
+            locator = record.get('locator')
+            if (not isinstance(observed_media, list) or slot > len(observed_media)
+                    or observed_media[slot - 1] != media or not media.get('media_id')
+                    or record.get('draft_node_id') != row['node_id']
+                    or any(record.get(key) != media[key] for key in ('node_id', 'media_id'))
+                    or record.get('sha256') != row['reference_checks'][slot - 1]['sha256']):
+                outcome.update(status='failed', reason='slot_identity_or_sha256_mismatch')
+            elif status not in ('certified', 'not_certified', 'pending') or not isinstance(locator, str) or not locator.strip():
+                outcome.update(status='failed', reason='invalid_certification_state_or_locator')
+            elif required is False:
+                outcome.update(status='failed', reason='conflicting_face_applicability')
+            elif status == 'not_certified':
+                outcome.update(status='failed', reason='not_certified')
+            elif status == 'pending':
+                outcome.update(status='unknown', reason='pending')
+            elif required is None:
+                outcome.update(status='unknown', reason='unknown_face_applicability')
+            else:
+                outcome['status'] = 'passed'
+        results.append(outcome)
+    return {'status': face_certification_status(results), 'slots': results}
+
+
+def face_certification_status(results) -> str:
+    statuses = {result['status'] for result in results}
+    return next((label for label in ('failed', 'unknown', 'passed') if label in statuses), 'not_applicable')
 
 
 def validate_canvas_inputs(row: dict, *, redframe: bool = False, before_upload: bool = False) -> None:
@@ -704,6 +765,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                 scene_requirements.extend(scene_state_requirements(source_payload))
                 package_requirements.extend(packaging_requirements(source_payload))
                 scene_sources.append((ref, source_path.resolve(), source_payload))
+    face_requirements = {}
     if formal_redframe:
         try:
             from .core.web_content import source_review_segments
@@ -724,7 +786,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             source = source_segments.get(row.get('source_segment_id'))
             if not source or not submitted_prompt_body(source):
                 raise ValueError(f"{row['node_id']}: 正式红帧写入须绑定已采用视频稿的准确段落及正文")
-            validate_source_material_order(row, source)
+            face_requirements[row['node_id']] = validate_source_material_order(row, source)
     external = validate_scene_source_mapping(
         frozen['drafts'], scene_sources, project, check_submitted_body=not private_preview,
         delivery_platform='redframe' if formal_redframe else None,
@@ -1059,6 +1121,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                 'before_write_sha256': digest(current),
                 'upload_mapping_pending_nodes': sorted(planned_ids)} if formal_redframe and preflight else {}),
             'dependency_checks': dependencies,
+            **({'face_certification_requirements': face_requirements} if formal_redframe else {}),
             'endpoint_control_checks': endpoint_control_checks,
             'predecessor_context_nodes': list(context_scopes),
             'canvas_input_checks': {row['node_id']: ('passed' if redframe or 'edges' in row else 'not_checked')
@@ -1106,6 +1169,8 @@ def compare(frozen: dict, observed: dict, project: Path | None = None, *, privat
     native_reference_checks = {}
     canvas_input_checks = {}
     endpoint_control_checks = {}
+    face_requirements = (submission or {}).get('face_certification_requirements')
+    face_checks = {}
     if set(actual) != set(expected):
         differences.append({'field': 'node_ids', 'missing': sorted(set(expected)-set(actual)),
                             'extra': sorted(set(actual)-set(expected))})
@@ -1134,6 +1199,8 @@ def compare(frozen: dict, observed: dict, project: Path | None = None, *, privat
                     differences.append({'node_id': node_id, 'field': field,
                                         'expected_sha256': digest(expected_graph),
                                         'observed_sha256': digest(observed_graph)})
+        if face_requirements is not None:
+            face_checks[node_id] = check_direct_face_certification(row, got, face_requirements[node_id])
         if project is not None and 'edges' in row:
             canvas_input_checks[node_id] = 'passed'
         # Native rich-text entities are distinct evidence from plain prompt text
@@ -1178,6 +1245,8 @@ def compare(frozen: dict, observed: dict, project: Path | None = None, *, privat
             'native_reference_checks': native_reference_checks,
             'canvas_input_checks': canvas_input_checks,
             'endpoint_control_checks': endpoint_control_checks,
+            **({'face_certification_status': face_certification_status(face_checks.values()),
+                'face_certification_checks': face_checks} if face_requirements is not None else {}),
             'limitations': 'Evidence collector must actually refresh and read native editor values. '
                            'Native entity checks only cover explicitly requested drafts. '
                            'This comparison cannot establish remote provenance, pixel quality, generation status or generation authorization.'}

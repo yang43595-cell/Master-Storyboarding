@@ -268,6 +268,10 @@ python scripts/canvas_readback.py --private-preview --project <准确候选项�
 
 保存刷新后，读回整个受影响节点的正文、参数、全部输入槽、正文原生实体、源节点 hash 和全部入边。回读 `source_nodes` / `edges` 不分列表顺序，其他原有有序媒体与正文比较保持严格。无正文引用槽只从预期 mentions 中排除，其来源、槽、用途及边继续检查。仅换两份素材也核完整节点。`canvas_input_checks` 给逐节点结论，技术通过仍不认证采集行为、媒体远端来源或视觉效果。
 
+红帧直传人脸认证沿同一冻结稿和同一份刷新回读核对。直传图像或视频在采用稿 `materials` 逐项注明 `contains_realistic_face`，冻结 `reference_checks` 可继承对应项。未知留空，已知适用性应与源稿一致。正式回读在对应 `drafts[]` 的 `face_certification` 列表中记录实际槽位证据，每项包含从 1 开始的 `slot`、`draft_node_id`、`node_id`、`media_id`、该槽的 `sha256`、平台实际状态 `status`（`certified`、`pending`、`not_certified`）和实际观察定位 `locator`。只记录能取得的真实槽位证据。素材区认证对象、源路径或同字节关系不足以证明直传槽的状态。
+
+`native_reference_checks` 继续报告引用结构。`face_certification_status` 和 `face_certification_checks` 分别报告本批及逐草稿逐槽认证。明确无写实人脸的槽记 `not_applicable`，未登记适用性、无证据或待完成记 `unknown`，明确未认证或证据错位记 `failed`。只有已知适用且实际槽位、字节和认证状态均核对一致才记 `passed`。结构通过而认证仍有缺口时，如实报告当前草稿状态，不能作为认证已完成的交付。
+
 ### 更新前核已有编辑
 
 红帧正式预检必须传 `--current`，采集同一目标全部受影响节点的 `before_write`。把实际找到的节点放入 `drafts`，把已查明不存在的节点 ID 列入 `missing_node_ids`。纯新建时 `drafts` 为空列表，仅传 `--current`。只要发现已有节点，就另传最后可信的 `after_refresh` 基线 `--baseline`，覆盖其中全部已有节点。两份读数中的已有节点都须包含完整正文、参数、有序输入及 native_mentions，每个节点还必须显式提供列表类型的 edges 和 source_nodes，并保存本轮采集到的其他节点字段。缺少图谱字段即拒绝，显式空列表表示实际回读的空图谱。

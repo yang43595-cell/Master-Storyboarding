@@ -551,6 +551,73 @@ def test_cross_scene_staging_only_checks_declared_carryover(tmp_path):
         validate_generation_boundaries(payload, board, tmp_path)
 
 
+def test_redframe_checks_both_sides_of_a_partial_cross_scene_delivery(tmp_path):
+    payload, board = fixture(tmp_path)
+    left, right, unrelated = payload['generation_segments']
+    shots = board['scenes'][0]['shots']
+    previous_action = 'Courier carries the same box in both hands approaching the door.'
+    current_action = 'Courier steps through the door, still carrying the box in both hands.'
+    shots[0]['take'] = {'end': previous_action}
+    shots[1]['take'] = {'start': current_action}
+    board['scenes'] = [dict(scene_id=ident, shots=[shot])
+                       for ident, shot in zip(('INSIDE', 'OUTSIDE', 'OFFICE'), shots)]
+    for row in (right, unrelated):
+        row.pop('same_scene_split')
+        row.pop('continuity')
+    for segment_id in ('G1', 'G2'):
+        with pytest.raises(ValueError, match='G1→G2 缺跨场动作接续判断'):
+            validate_generation_boundaries(payload, board, tmp_path, delivery_platform='redframe',
+                                           delivery_segment_ids={segment_id})
+
+    right['cross_scene_continuity'] = review = dict(
+        from_segment_id=left['segment_id'], decision='action_continues', basis='One passage through the door.',
+        previous_source=dict(shot_id='S1', field='take.end', quote=previous_action),
+        current_source=dict(shot_id='S2', field='take.start', quote=current_action),
+    )
+    with pytest.raises(ValueError, match='G1→G2 .*physical_continuity.action'):
+        validate_generation_boundaries(payload, board, tmp_path, delivery_platform='redframe',
+                                       delivery_segment_ids={'G1'})
+    right['physical_continuity'] = dict(from_segment_id='G1', permitted_change='Steps from room to street.',
+        action=dict(status='no_visual_needed', previous_state=previous_action, current_state=current_action,
+                    basis='The source follows the complete uninterrupted action.'))
+    # G2→G3 is outside a G1-only write; the established G1→G2 seam still counts.
+    result = validate_generation_boundaries(payload, board, tmp_path, delivery_platform='redframe',
+                                           delivery_segment_ids={'G1'})
+    assert result['cross_scene_boundaries_checked'] == 1
+    with pytest.raises(ValueError, match='G2→G3 缺跨场动作接续判断'):
+        validate_generation_boundaries(payload, board, tmp_path, delivery_platform='redframe',
+                                       delivery_segment_ids={'G2'})
+    review['previous_source']['shot_id'] = 'S2'
+    with pytest.raises(ValueError, match='G1→G2 跨场判断依据无效'):
+        validate_generation_boundaries(payload, board, tmp_path, delivery_platform='redframe',
+                                       delivery_segment_ids={'G1'})
+
+
+def test_redframe_ordinary_cross_scene_cut_needs_no_physical_carryover(tmp_path):
+    payload, board = fixture(tmp_path)
+    left, right = payload['generation_segments'][:2]
+    payload['generation_segments'] = [left, right]
+    right.pop('same_scene_split')
+    right.pop('continuity')
+    first, second = board['scenes'][0]['shots'][:2]
+    first['cut']['exit'] = 'Courier finishes the route and shuts the vehicle door.'
+    second['cut']['entry'] = 'Cut to the following morning: another team prepares breakfast.'
+    board['scenes'] = [dict(scene_id='STREET', shots=[first]), dict(scene_id='KITCHEN', shots=[second])]
+    payload['selected_video_model']['platform'] = 'redframe'
+    historical = validate_generation_boundaries(payload, board, tmp_path, require_physical=False)
+    assert historical['cross_scene_boundaries_checked'] == 0
+
+    right['cross_scene_continuity'] = dict(from_segment_id='G1', decision='new_action_or_time_jump',
+        basis='The delivery is over; the scene changes to the following morning.',
+        previous_source=dict(shot_id='S1', field='cut.exit', quote=first['cut']['exit']),
+        current_source=dict(shot_id='S2', field='cut.entry', quote=second['cut']['entry']))
+    report = validate_generation_boundaries(payload, board, tmp_path)
+    assert report['cross_scene_boundaries_checked'] == 1
+    right['cross_scene_continuity']['current_source']['quote'] = 'Unsupported reconstruction.'
+    with pytest.raises(ValueError, match='G1→G2 跨场判断依据无效'):
+        validate_generation_boundaries(payload, board, tmp_path)
+
+
 def test_new_topic_keeps_actor_positions_bound_to_real_inputs(tmp_path):
     payload, board = fixture(tmp_path)
     board["scenes"][0]["space_rules"] = {"subject_positions": "Two actors face across a table."}
