@@ -678,12 +678,12 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         from .core.artifacts import load_manifest, artifact_is_adopted, project_path, digest as file_digest, validate_current_dependencies
         from .core.project_state import load_project_state
         from .core.candidate_test import require_production
-        from .core.delivery_files import discover_dependencies
+        from .core.delivery_files import scan_dependencies
     except ImportError:
         from core.artifacts import load_manifest, artifact_is_adopted, project_path, digest as file_digest, validate_current_dependencies
         from core.project_state import load_project_state
         from core.candidate_test import require_production
-        from core.delivery_files import discover_dependencies
+        from core.delivery_files import scan_dependencies
     project = project.resolve()
     if not private_preview:
         require_production(project)
@@ -743,10 +743,12 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
     if private_preview:
         preview_authority, preview_usage, reports = preview_scope(frozen, project, json_projections=projections)
         dependencies = {'ok': True, 'candidate_reports': reports}
+        product_pack = None
     else:
         if 'preview_authorization' in frozen:
             raise ValueError('preview scope cannot be used by formal delivery')
-        dependencies = discover_dependencies(project, payload=frozen, json_projections=projections)
+        dependencies, product_pack = scan_dependencies(
+            project, payload=frozen, json_projections=projections, kickoff=kickoff)
     if not dependencies['ok']:
         raise ValueError('Dependency readiness failed: ' + '; '.join(dependencies['errors'] + dependencies['uncheckable']))
     if not isinstance(frozen.get('revision'), str) or not frozen['revision'].strip():
@@ -801,18 +803,17 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                 package_requirements.extend(packaging_requirements(source_payload))
                 scene_sources.append((ref, source_path.resolve(), source_payload))
     face_requirements = {}
-    product_pack = None
     pack_packaging_ids = set()
     product_requirements = []
     if formal_redframe:
         try:
             from .core.web_content import source_review_segments
             from .core.prompt_body import submitted_prompt_body
-            from .core.product_reference_pack import resolve_product_pack, resolve_pack_media
+            from .core.product_reference_pack import resolve_pack_media
         except ImportError:
             from core.web_content import source_review_segments
             from core.prompt_body import submitted_prompt_body
-            from core.product_reference_pack import resolve_product_pack, resolve_pack_media
+            from core.product_reference_pack import resolve_pack_media
         entries = {item['artifact_id']: item for item in manifest['artifacts']}
         videos = [payload for ref, _, payload in scene_sources
                   if entries[ref['artifact_id']].get('logical_id') == 'video.prompt']
@@ -852,7 +853,6 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
     pack_rows = validation_rows if readback else drafts.values()
     if formal_redframe and any('product_reference_id' in ref for row in pack_rows
                                for ref in row.get('reference_checks', []) if isinstance(ref, dict)):
-        product_pack = resolve_product_pack(kickoff['product'])
         narrative_id = boards[0]['source_narrative'].get('artifact_id')
         product_requirements = [asset for ref, _, payload in scene_sources if ref['artifact_id'] == narrative_id
                                 for asset in payload.get('asset_requirements', [])]

@@ -19,6 +19,7 @@ PATH_KEYS = {'path', 'paths', 'path_or_url', 'file', 'files', 'localPath',
              'source_image', 'source_video', 'source_audio', 'reference_images', 'reference_videos'}
 REFERENCE_KEYS = {'reference', 'references', 'image', 'images'}
 FILE_EXTENSION = re.compile('(?:' + '|'.join(re.escape(ext) for ext in sorted(LOCAL_REFERENCE_EXTENSIONS)) + ')$', re.I)
+_READ_KICKOFF = object()
 
 def _local_reference_path(project: Path, raw: str) -> Path:
     """Resolve a PDF page locator to its file, preserving literal existing names."""
@@ -59,12 +60,21 @@ def validate_required_files(project: Path, files: list[str], input_roots: list[P
 
 def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=None, verify_hashes=False,
                           json_projections=None):
+    """Return the local dependency report."""
+    report, _ = scan_dependencies(project, files, input_roots, payload=payload, verify_hashes=verify_hashes,
+                                  json_projections=json_projections)
+    return report
+
+
+def scan_dependencies(project: Path, files=(), input_roots=(), *, payload=None, verify_hashes=False,
+                      json_projections=None, kickoff=_READ_KICKOFF):
     """Follow selected JSON path fields and exact manifest IDs, never scan prose.
 
     Paths are project-relative, as in artifact manifests. External inputs need
     explicit roots or an exact reference from the selected product pack.
     Only selected reachable JSON is read (cycles deduped).
     Other document formats are checked as bytes, not parsed for more references.
+    Return the report and the verified product pack for use in the same check.
     """
     project = Path(project).resolve()
     report = {'ok': False, 'checked_files': [], 'errors': [], 'uncheckable': [],
@@ -387,7 +397,8 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
                 else:
                     walk(child, here)
     try:
-        kickoff = load_kickoff(project)
+        if kickoff is _READ_KICKOFF:
+            kickoff = load_kickoff(project)
         product_pack = resolve_product_pack(kickoff['product'], include_evidence=True) if kickoff else None
         if product_pack:
             pinned_files = {Path(item['path']): item['sha256'] for item in product_pack['references']}
@@ -404,7 +415,7 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
             'unhashed_files': sorted(set(report['checked_files']) - hash_checked),
             'scope': 'Existing unambiguous path/path_or_url/file + sha256/checksum only; unhashed bytes do not establish historical exact versions'}
     report['ok'] = not report['errors'] and not report['uncheckable']
-    return report
+    return report, product_pack
 
 
 def check_package_files(files, max_bytes=DEFAULT_MAX_PACKAGE_BYTES):
