@@ -37,7 +37,77 @@ def language_issues(prompt):
     return ['PROMPT-LANG：将含糊画质词改为可观察描述：' + '、'.join(dict.fromkeys(terms))] if terms else []
 
 
+_GUIDES = 'skills/asset-image-assistant/references/'
+_CONTINUITY = 'skills/storyboard-director/references/image-continuity-hard-rules.md'
+_PROFILE_FILES = ('skills/asset-image-assistant/knowledge-profile.json',
+                  'skills/asset-image-assistant/library-profile.json',
+                  'skills/asset-image-assistant/review-profile.json',
+                  'schemas/visual-asset-manifest.schema.json')
+
+
+def _asset_method_scopes(request):
+    rows = request.get('rows')
+    kinds = dict.fromkeys(production_kinds(row['requirement'])[0] for row in rows) if rows else [request['kind']]
+    recipes = profile()['recipes']
+    return {recipes[kind]['method_scope']: True for kind in kinds}
+
+
+def _planning_sections(request):
+    """Select source sections for the asset types actually sent to the planner."""
+    categories = {row['requirement']['category'] for row in request['rows']}
+    scopes = _asset_method_scopes(request)
+    sections = {
+        'skills/asset-image-assistant/SKILL.md': ('输入与启动', '硬禁区'),
+        'skills/asset-image-assistant/modules/project-web-mode.md': ('输入与盘点',),
+        'docs/rules/visual-production.md': ('资产图需求判断',),
+        'skills/_shared/knowledge-access.md': ('压缩后的主动恢复核对',),
+        _GUIDES + '00a-asset-complexity-routing-guide.md': ('', '原则', '路由', '强制考虑项', '路由记录'),
+    }
+    continuity = []
+    if 'scene' in scopes:
+        sections[_GUIDES + '03-scene-master-guide.md'] = (
+            '一、交付物', '四、空间坐标与拓扑', '方向体系', '功能分区',
+            '六、固定结构与剧情状态', '状态可变', '9.1 多机位高风险场景的四图锁定',
+        )
+        continuity.extend(('背景母版与单变量派生', '多角度场景参考组'))
+    if 'character' in scopes:
+        sections[_GUIDES + '02-character-master-guide.md'] = ('一、输入', '三、先选择本次人物输出职责')
+        continuity.append('唯一面部来源')
+    if continuity:
+        sections[_CONTINUITY] = tuple(continuity)
+    if 'body' in scopes:
+        sections[_GUIDES + '02a-body-character-master-guide.md'] = None
+    if 'style' in scopes:
+        sections[_GUIDES + '01-style-master-guide.md'] = ('用途边界', '一、交付物')
+    if 'object' in scopes:
+        object_sections = ['二、参考图红线', '四、状态表']
+        if 'PROP' in categories:
+            object_sections.append('6.1 物品四视图')
+        if 'REAL_PRODUCT' in categories:
+            object_sections.extend(('六、产品展示与使用合同', '七、文字与品牌'))
+            sections['skills/_shared/product-reference.md'] = ('',)
+        sections[_GUIDES + '04-prop-product-master-guide.md'] = tuple(object_sections)
+    return sections
+
+
+def _named_sections(ref, content, selected):
+    parts = {}
+    for part in re.split(r'(?m)(?=^#{2,3} )', content):
+        heading = re.match(r'^#{2,3} (.+)', part)
+        key = heading[1].strip() if heading else ''
+        if key in selected:
+            if key in parts:
+                raise ValueError('资产 Web 盘点合同章节重复：' + ref + '：' + key)
+            parts[key] = part
+    missing = set(selected) - parts.keys()
+    if missing:
+        raise ValueError('资产 Web 盘点合同章节缺失：' + ref + '：' + '、'.join(sorted(missing)))
+    return ''.join(parts.values())
+
+
 def local_references(kind, request=None):
+    if request and request.get('rows'):
+        return [*_planning_sections(request), *_PROFILE_FILES]
     common = ['docs/rules/execution.md', 'docs/rules/artifacts.md',
         'docs/rules/visual-production.md', 'PROJECT_RULES.md', 'skills/asset-image-assistant/SKILL.md',
         'skills/asset-image-assistant/modules/library-mode.md',
@@ -62,12 +132,6 @@ def local_references(kind, request=None):
         if any(record.get('layout_only') for record in request.get('reference_records', [])):
             common.append(CHARACTER_PROMPT_PATH.relative_to(ROOT).as_posix())
         common.append('skills/asset-image-assistant/modules/project-web-mode.md')
-        kinds = profile()['category_kinds']
-        for row in request.get('rows', []):
-            category = row['requirement']['category']
-            if category not in kinds:
-                raise ValueError('资产 Skill 未提供此 AST 类别：' + category)
-            common.append('skills/asset-image-assistant/references/' + recipe(production_kinds(row['requirement'])[0])['guide'])
     if request and not request.get('rows'):
         # Planning and export contracts do not govern writing one image prompt.
         excluded = {'00-asset-production-workflow.md', '00a-asset-complexity-routing-guide.md',
@@ -79,10 +143,7 @@ def local_references(kind, request=None):
 
 def method_request(request):
     """Derive applicability from actual output kinds/AST rows, never free-text keywords."""
-    kinds = [request['kind']] if not request.get('rows') else [
-        production_kinds(row['requirement'])[0] for row in request['rows']]
-    scopes = {recipe(kind)['method_scope']: True for kind in kinds}
-    return {**request, 'asset_method_scopes': scopes,
+    return {**request, 'asset_method_scopes': _asset_method_scopes(request),
             'knowledge_topics': ['image-prompt', 'prompt-pollution'],
             'language_review': '提示词污染 画质大词 8K 超高清'}
 
@@ -282,6 +343,7 @@ def build_task_package(request, refs=None, startup_text='', methods=()):
     refs = refs or local_references(request['kind'], request)
     # Schemas/profiles are consumed by code; the model receives actual rules and
     # only the applicable review checks, not all recipes and both review modes.
+    planning = _planning_sections(request) if request.get('rows') else None
     rules = {}
     for ref in refs:
         path = (ROOT / ref).resolve()
@@ -291,7 +353,13 @@ def build_task_package(request, refs=None, startup_text='', methods=()):
         if not content.strip():
             raise ValueError('资产 Web 本地合同为空：' + ref)
         if ref.endswith('.md'):
-            writing_rules = _writing_rules(ref, content, not request.get('rows'))
+            if planning is None:
+                writing_rules = _writing_rules(ref, content, True)
+            elif ref in planning:
+                selected = planning[ref]
+                writing_rules = _named_sections(ref, content, selected) if selected else content
+            else:
+                continue
             if writing_rules:
                 rules[ref] = writing_rules
     rules['startup_dynamic_knowledge'] = startup_text

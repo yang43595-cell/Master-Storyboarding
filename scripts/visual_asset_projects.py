@@ -22,7 +22,7 @@ from core.character_assets import uses_wardrobe, production_kinds, character_typ
 from core.asset_refs import character_output_contract
 from core.character_layout import character_layout_reference
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from PIL import Image
 import visual_asset_backup
@@ -36,6 +36,7 @@ from core.artifacts import (load_manifest, save_manifest, register_workspace_art
                             promote_candidate, mark_impacted_artifacts_stale, asset_export_snapshot,
                             asset_output_impact)
 from core.io import project_lock
+from core.product_reference_pack import resolve_product_pack
 from core.project_state import load_project_state, write_project_state
 from core.project_kickoff import grant_covers_asset, load_kickoff
 from core.agent_acceptance import require_asset_workflow_authorization
@@ -87,13 +88,48 @@ def reference_evidence(project, requirements, assets=()):
     root = Path(project)
     artifacts = load_manifest(root)['artifacts']
     state = load_project_state(root)
+    pinned_paths = None
+
+    def relocated_pack_text(raw):
+        nonlocal pinned_paths
+        filename, anchor, _ = str(raw).partition('#')
+        legacy = Path(filename)
+        if not legacy.is_absolute():
+            legacy = PureWindowsPath(filename)
+        if anchor or not legacy.is_absolute() or legacy.suffix.lower() not in TEXT_REFERENCE_SUFFIXES:
+            return None
+        _, marker, relative = legacy.as_posix().rpartition('/assets/product-references/')
+        if not marker or '..' in Path(relative).parts:
+            return None
+        if pinned_paths is None:
+            pinned_paths = {}
+            try:
+                kickoff = load_kickoff(root)
+                pack = resolve_product_pack(kickoff['product'], include_evidence=True) if kickoff else None
+            except (OSError, ValueError):
+                return None
+            if pack:
+                manifest = Path(pack['manifest_path'])
+                registered = {**pack['evidence_files'], manifest: pack['manifest_sha256'],
+                              **{Path(item['path']): item['sha256'] for item in pack['references']}}
+                pinned_paths = {path.relative_to(manifest.parents[2]).as_posix(): (path, sha256)
+                                for path, sha256 in registered.items()}
+        source = pinned_paths.get(relative)
+        if source:
+            path, checksum = source
+            if path.is_file() and digest(path) == checksum:
+                return path
+        return None
+
     for req in requirements:
         for raw in req.get('reference_paths', []):
             try:
                 path = Path(resolve_reference(root, raw, artifacts, state).partition('#')[0])
             except ValueError as exc:
-                unavailable.append(str(exc))
-                continue
+                path = relocated_pack_text(raw) if req.get('category') == 'REAL_PRODUCT' else None
+                if path is None:
+                    unavailable.append(str(exc))
+                    continue
             if path.suffix.lower() in TEXT_REFERENCE_SUFFIXES:
                 paths.append(path)
     for asset in assets:
@@ -610,12 +646,13 @@ class Projects:
                     raise ValueError('制作项缺少用途或启用理由')
                 if s['kind'] == '大头照':
                     s['ratio'] = '3:4'
-                if s['kind'] == '物品':
+                ordinary_prop = req['category'] == 'PROP' and s['kind'] == '物品'
+                if ordinary_prop:
                     s['view'] = '正面、左侧、背面、俯视四视图'
                 if s['kind'] == '角色外观':
                     s['view'] = '宠物三视图 · 正面、左侧、背面'
                     s['purpose'] += '；同一完整角色的正面、左侧、背面三视图，包含固定服饰与配件'
-                if s['kind'] in {'服装', '人物1x4', '物品', '角色外观'}:
+                if ordinary_prop or s['kind'] in {'服装', '人物1x4', '角色外观'}:
                     s['ratio'] = '16:9'
                 seen.add(s['key'])
             scenes = [s for s in slots if s['kind'] == '环境']
@@ -639,7 +676,7 @@ class Projects:
             steps = []
             for s in slots:
                 recipe = self.skill.recipe(s['kind'])
-                steps.append({**s, 'name': (s['kind'] + ('四视图' if s['kind'] == '物品' else '主图') + (' · ' + s['state'] if s.get('state') else '')) if s['kind'] in {'物品', '产品'} else s['view'], 'status': 'waiting', 'outputs': [],
+                steps.append({**s, 'name': (s['kind'] + ('四视图' if req['category'] == 'PROP' else '主图') + (' · ' + s['state'] if s.get('state') else '')) if s['kind'] in {'物品', '产品'} else s['view'], 'status': 'waiting', 'outputs': [],
                               'generation_enabled': row.get('production_route') != 'reuse',
                               'reference_ids': row['reference_ids'][:], 'project_confirmation': None,
                               'template_source': recipe.get('template') or '依据分类指南编写：' + recipe['guide']})

@@ -49,8 +49,8 @@ class WebReadingTests(unittest.TestCase):
                 request.update(narrative={'story_paragraphs': []},
                                requirement={'name': '测试', 'source_paragraph_ids': []})
             self.assertIn(section, asset.build_task_package(request)['rules'][ref])
-        for single in [True, False]:
-            self.assertIn(section, asset._writing_rules(ref, original, single))
+        request = self.planning_request({'category': 'LOCATION'})
+        self.assertEqual(section, asset.build_task_package(request)['rules'][ref].rstrip())
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -136,15 +136,72 @@ class WebReadingTests(unittest.TestCase):
                     self.assertFalse(list(folder.rglob('method_reading_evidence.json')))
         self.assertEqual(list((self.root/'project').iterdir()), [])
 
-    def test_mixed_project_rows_do_not_load_dummy_kind_method_or_guide(self):
+    def planning_request(self, *requirements):
         request = self.request('大头照', 'project')  # Existing planning API's placeholder kind.
-        request['rows'] = [{'requirement': {'category': c, 'source_event_ids': []}} for c in ['LOCATION', 'PROP']]
-        body, _ = asset.prepare(self.root/'mixed', request)
+        request.pop('requirement')
+        request['rows'] = [{'requirement': {'asset_id': f'AST-{i}', 'source_event_ids': [], **req}}
+                           for i, req in enumerate(requirements, 1)]
+        return request
+
+    def test_mixed_project_rows_only_load_rules_for_their_actual_planning_use(self):
+        request = self.planning_request(*({'category': category} for category in ('LOCATION', 'REAL_PRODUCT', 'OTHER')))
+        body, evidence = asset.prepare(self.root/'mixed', request)
         package = json.loads(body)
         self.assertNotIn('production_item', package)
         self.assertEqual({m['id'] for m in package['professional_methods']}, {
             'IMAGE-CONTINUITY-METHOD', 'ASSET-SCENE-METHOD', 'ASSET-OBJECT-METHOD'})
-        self.assertNotIn('skills/asset-image-assistant/references/02-character-master-guide.md', package['rules'])
+        rules = package['rules']
+        guides = 'skills/asset-image-assistant/references/'
+        scene = rules[guides + '03-scene-master-guide.md']
+        self.assertIn('## 四、空间坐标与拓扑', scene)
+        self.assertIn('### 9.1 多机位高风险场景的四图锁定', scene)
+        self.assertNotIn('## 十一、image2 提示词', scene)
+        objects = rules[guides + '04-prop-product-master-guide.md']
+        self.assertIn('## 六、产品展示与使用合同', objects)
+        self.assertNotIn('### 6.1 物品四视图', objects)
+        product = rules['skills/_shared/product-reference.md']
+        self.assertIn('缺少足够参考时阻塞相关项', product)
+        self.assertNotIn('## 正式红帧回读复用已确认产品包', product)
+        for excluded in (guides + '01-style-master-guide.md', guides + '02-character-master-guide.md',
+                         guides + '02a-body-character-master-guide.md',
+                         guides + '05-asset-manifest-handoff-guide.md',
+                         'skills/storyboard-planner/references/lighting-prompt-standard.md',
+                         'docs/rules/execution.md', 'docs/rules/artifacts.md'):
+            self.assertNotIn(excluded, rules)
+            self.assertNotIn(excluded, evidence['references'])
+
+    def test_planning_loads_body_style_and_prop_guides_only_when_selected(self):
+        request = self.planning_request({'category': 'CHARACTER', 'character_type': 'PET'},
+                                        {'category': 'STYLE_REFERENCE'}, {'category': 'PROP'})
+        body, _ = asset.prepare(self.root/'body-style-prop', request)
+        package = json.loads(body)
+        self.assertEqual({m['id'] for m in package['professional_methods']}, {
+            'IMAGE-CONTINUITY-METHOD', 'ASSET-STYLE-METHOD', 'ASSET-OBJECT-METHOD'})
+        rules = package['rules']
+        guides = 'skills/asset-image-assistant/references/'
+        self.assertIn('每个稳定造型制作一张16:9横图', rules[guides + '02a-body-character-master-guide.md'])
+        self.assertIn('### 用途边界', rules[guides + '01-style-master-guide.md'])
+        self.assertIn('### 6.1 物品四视图', rules[guides + '04-prop-product-master-guide.md'])
+        self.assertNotIn(guides + '02-character-master-guide.md', rules)
+        self.assertNotIn(guides + '03-scene-master-guide.md', rules)
+        self.assertNotIn('skills/_shared/product-reference.md', rules)
+
+    def test_missing_selected_planning_section_blocks_before_package_delivery(self):
+        request = self.planning_request({'category': 'LOCATION'})
+        guide = asset.SKILL/'references/03-scene-master-guide.md'
+        raw_read = Path.read_text
+
+        def altered_guide(path, *args, **kwargs):
+            content = raw_read(path, *args, **kwargs)
+            if path == guide:
+                return content.replace('## 四、空间坐标与拓扑', '## 缺少原章节')
+            return content
+
+        folder = self.root/'missing-section'
+        with patch.object(Path, 'read_text', altered_guide):
+            with self.assertRaisesRegex(ValueError, '盘点合同章节缺失.*四、空间坐标与拓扑'):
+                asset.prepare(folder, request)
+        self.assertFalse((folder/'task-package.json').exists())
 
     def test_paragraph_text_reaches_model_without_event_summary(self):
         request = self.request('物品', 'project')

@@ -112,6 +112,53 @@ def synthetic_vault(root):
 
 
 class ProjectTests(unittest.TestCase):
+    def test_reference_evidence_uses_only_the_pinned_product_pack_after_relocation(self):
+        from core import product_reference_pack
+
+        project = Path(self.p['path'])
+        pack_root = self.base / 'checkout' / 'assets' / 'product-references'
+        folder = pack_root / 'selected-product' / 'R04'
+        folder.mkdir(parents=True)
+        brief = folder / 'PRODUCT_BRIEF.md'
+        brief.write_text('Registered current reference.', encoding='utf-8')
+        evidence = folder / 'actions.json'
+        evidence.write_text('{"original": true}', encoding='utf-8')
+        manifest = folder / 'manifest.json'
+        pmod.write(manifest, {'product_id': 'selected-product', 'product_name': '产品', 'revision': 'R04',
+            'references': [{
+                'id': 'BRIEF', 'role': 'brief', 'path': brief.name, 'sha256': pmod.digest(brief),
+                'source': '测试', 'coverage': '真实外观', 'usages': ['real_use'],
+            }],
+            'evidence_files': [{'path': evidence.name, 'sha256': pmod.digest(evidence)}],
+        })
+        selection = {'mode': 'replace', 'product_id': 'selected-product', 'reference_pack_revision': 'R04',
+                     'reference_pack_sha256': pmod.digest(manifest), 'product_usage': 'real_use'}
+        legacy = self.base / 'old-checkout' / 'assets' / 'product-references' / 'selected-product' / 'R04'
+        legacy.mkdir(parents=True)
+        (legacy / brief.name).write_text('Untrusted external bytes.', encoding='utf-8')
+        unrelated = self.base / 'unrelated' / brief.name
+        product_paths = [str(legacy / p.name) for p in (manifest, brief, evidence)]
+        with (
+            patch.object(product_reference_pack, 'PACK_ROOT', pack_root),
+            patch.object(pmod, 'load_kickoff', return_value={'product': selection}),
+            patch.object(pmod, 'resolve_product_pack', wraps=product_reference_pack.resolve_product_pack) as resolve,
+        ):
+            result = pmod.reference_evidence(project, [
+                {'category': 'REAL_PRODUCT', 'reference_paths': [*product_paths, str(unrelated),
+                    str(legacy.with_name('R03') / brief.name), str(legacy / 'unregistered.md')]},
+                {'category': 'PROP', 'reference_paths': [str(legacy / brief.name)]},
+            ])
+            self.assertEqual([r['path'] for r in result['reference_documents']],
+                             [str(p.resolve()) for p in (manifest, brief, evidence)])
+            self.assertEqual(result['reference_documents'][1]['content'], brief.read_text(encoding='utf-8'))
+            self.assertEqual(len(result['unavailable_references']), 4)
+            resolve.assert_called_once_with(selection, include_evidence=True)
+            evidence.write_text('{"unverified": true}', encoding='utf-8')
+            result = pmod.reference_evidence(project, [{'category': 'REAL_PRODUCT', 'reference_paths': product_paths}])
+            self.assertEqual([Path(r['path']).name for r in result['reference_documents']],
+                             [manifest.name, brief.name])
+            self.assertEqual(len(result['unavailable_references']), 1)
+
     def test_project_upload_is_a_reference_not_a_deliverable_or_vault_asset(self):
         import visual_asset_upload
         source = self.base / 'portrait-input.png'
