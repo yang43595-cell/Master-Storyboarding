@@ -600,6 +600,20 @@ class ProductionPreflightTests(unittest.TestCase):
         report = validate_production_plan(make_plan(audio_policy=""), PROJECT)
         assert "AUDIO_POLICY_UNSPECIFIED" in report.warning_codes
 
+    def test_cli_skips_without_an_existing_retired_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            project = Path(folder)
+            result = subprocess.run(
+                [sys.executable, str(ROOT / "scripts" / "validate-production-plan.py"),
+                 "--project-path", str(project), "--mode", "shadow"],
+                capture_output=True, text=True, encoding="utf-8", check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("[SKIP]", result.stdout)
+            self.assertIn("voiceover-to-video-script", result.stdout)
+            self.assertNotIn("3.3", result.stdout)
+            self.assertFalse(list(project.iterdir()))
+
     def test_cli_reports_utf8_chinese_pass_message(self) -> None:
         """CLI 在无 BOM 环境强制 UTF-8 输出，中文 PASS 文案不得因 GBK 控制台乱码。"""
         plan_dir = PROJECT / "00_项目管理"

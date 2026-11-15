@@ -18,13 +18,11 @@ from typing import Any, Iterator
 if __package__:
     from .core.io import project_lock as shared_project_lock
     from .core.artifacts import dependency_closure, _confirmed_package_source, project_path, stamp_user_approval
-    from .core.project_state import (normalize_project_state, reconcile_current_artifacts,
-                                     render_project_state_markdown)
+    from .core.project_state import (normalize_project_state, reconcile_current_artifacts)
 else:
     from core.io import project_lock as shared_project_lock
     from core.artifacts import dependency_closure, _confirmed_package_source, project_path, stamp_user_approval
-    from core.project_state import (normalize_project_state, reconcile_current_artifacts,
-                                   render_project_state_markdown)
+    from core.project_state import (normalize_project_state, reconcile_current_artifacts)
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -311,18 +309,23 @@ def voice_scope_errors(assignment: dict[str, Any], segment: dict[str, Any] | Non
     return []
 
 
-def load_project_manifest(project: Path) -> dict[str, Any]:
+def load_project_manifest(project: Path, *, required: bool = False) -> dict[str, Any]:
     path = project_manifest_path(project)
     if not path.exists():
+        if required:
+            raise VoiceReferenceError(f"未找到项目声音清单：{path}")
         return {"schema_version": "2.0", "project_path": str(project), "updated_at": now(), "assignments": []}
-    value = read_json(path)
-    if value.get("schema_version") not in {"1.0", "2.0"} or not isinstance(value.get("assignments"), list):
+    try:
+        value = read_json(path)
+    except (OSError, ValueError) as exc:
+        raise VoiceReferenceError(f"项目声音清单不可读：{path}") from exc
+    if (not isinstance(value, dict) or value.get("schema_version") not in ("1.0", "2.0")
+            or not isinstance(value.get("assignments"), list)
+            or any(not isinstance(item, dict) for item in value["assignments"])):
         raise VoiceReferenceError(f"项目声音清单结构无效：{path}")
     if value.get("schema_version") == "1.0":
         value["schema_version"] = "2.0"
         for item in value["assignments"]:
-            if not isinstance(item, dict):
-                continue
             item.setdefault("source", {"kind": "legacy_unknown", "source_ref": "legacy://unknown", "speaker_identity_basis": "legacy record"})
             item.setdefault("authorization", {"status": "unknown", "authorization_ref": "legacy://unverified", "permitted_uses": []})
             item.setdefault("dialogue_scope", "all_confirmed_dialogue_for_character")
@@ -587,8 +590,6 @@ def _snapshot_core(args: argparse.Namespace, *, mode: str) -> dict[str, Any]:
             selected = reconcile_current_artifacts(normalize_project_state(state_dict), artifact_manifest)
             synchronized = {**state_dict, "current_artifacts": selected["current_artifacts"]}
             pairs = [(path, synchronized if path == state_path else value) for path, value in pairs]
-            pairs.append((state_path.with_suffix(".md"),
-                          render_project_state_markdown(normalize_project_state(synchronized))))
         commit_json_atomic(pairs)
 
         # 全部提交后才移动旧快照到历史，失败不回滚（新绑定已生效，旧文件成孤立备份）。
@@ -1029,12 +1030,12 @@ def command_sync_plan(args: argparse.Namespace) -> dict[str, Any]:
 
 def validate_project(project: Path, intended_uses: list[str] | None = None) -> dict[str, Any]:
     manifest_path = project_manifest_path(project)
-    manifest = read_json(manifest_path)
+    manifest = load_project_manifest(project, required=True)
     seen: set[str] = set()
     seen_snapshots: set[str] = set()
     assignments: list[dict[str, Any]] = []
     usage_checked = True
-    for item in manifest.get("assignments") or []:
+    for item in manifest["assignments"]:
         character_id = validate_id(str(item.get("character_id") or ""), "character_id")
         if character_id in seen:
             raise VoiceReferenceError(f"同一角色存在多个 current 声音绑定：{character_id}")

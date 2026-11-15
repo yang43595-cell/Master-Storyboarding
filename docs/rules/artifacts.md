@@ -4,6 +4,8 @@
 
 ## JSON 交付与按需导出
 
+项目状态需要可读摘要时，运行 `python scripts/stage_context_cli.py status --project <项目路径> --markdown`。摘要按当前 JSON 生成，历史 `project_state.md` 可随旧项目保留。
+
 业务候选、修订与交接只维护现有 JSON 合同；故事原文、对白、资产需求和导演决定完整保存在对应字段。沿用开工决定，集中澄清新增且确需用户决定的事实缺口，再完善 JSON 并自查。统一入口的编导稿及资产图走人工确认，导演、按需分镜和视频提示词走下游自主采用。未知事实不猜填，不以结构完整冒充用户确认。整稿与局部确认边界不变。
 
 统一入口的编导采用使用[网站通过](../development/review-to-canvas-entry.md#审核站-api-对接要求)或[整稿对话确认](../development/review-to-canvas-entry.md#编导对话确认)。首次和返修均核对准确范围、路径、修订和文件字节。兼容流程取得准确整稿确认后，仍可对编导、导演或平台无关视频稿运行 `python scripts/stage_context_cli.py adopt-package --project <项目> --artifact-id <新ID> --logical-id <逻辑产物> --path <项目内JSON路径> --revision <正文修订> --approval-ref <准确确认依据> [--depends-on <上游逻辑产物> ...]`。

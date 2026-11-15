@@ -311,7 +311,7 @@ def test_scope_revision_invalidates_adopted_dependencies_and_updates_state_selec
     assert result['invalidated_artifacts'] == ["prompt.S2", "video.S2"]
     assert MODULE.read_json(state_path)['current_artifacts'] == ["P-NOW", "V-NOW"]
     assert MODULE.read_json(state_path)['retained_fact'] == "keep"
-    assert '当前有效产物：2' in state_path.with_suffix('.md').read_text(encoding='utf-8')
+    assert state_path.with_suffix('.md').read_text(encoding='utf-8') == '旧投影有效产物：4'
 
 
 def test_replacing_same_voice_cannot_silently_accept_drifted_current_snapshot(tmp_path):
@@ -406,6 +406,20 @@ def test_legacy_snapshot_reports_unchecked_usage_and_explicit_check_is_read_only
     with pytest.raises(MODULE.VoiceReferenceError, match="超出"):
         MODULE.validate_project(project, ["commercial publication"])
     assert MODULE.project_manifest_path(project).read_bytes() == before
+
+
+@pytest.mark.parametrize("payload", [
+    {}, {"schema_version": "3.0", "assignments": []},
+    {"schema_version": "2.0", "assignments": [None]},
+])
+def test_validate_project_cli_rejects_malformed_voice_manifest(tmp_path, capsys, payload):
+    path = MODULE.project_manifest_path(tmp_path)
+    MODULE.write_json(path, payload)
+    before = path.read_bytes()
+    assert MODULE.main(["validate-project", "--project", str(tmp_path)]) == 1
+    output = capsys.readouterr()
+    assert "项目声音清单结构无效" in output.err
+    assert output.out == "" and path.read_bytes() == before
 
 
 def modern_prompt_fixture(project, *, dependency=True, voice_selected=True, nested=False,

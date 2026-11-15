@@ -15,7 +15,7 @@ if __package__ == 'scripts.blender_previs':
     from ..core.revision_control import guard_action
     from ..core.asset_refs import require_images, scope_assets
     from ..core.io import project_locked, read_json, sha256_file, utc_now, write_json, write_text
-    from ..core.project_state import load_project_state, render_project_state_markdown
+    from ..core.project_state import load_project_state
     from .output_contract import png_size
 else:
     from core import artifacts, revision_control
@@ -23,7 +23,7 @@ else:
     from core.revision_control import guard_action
     from core.asset_refs import require_images, scope_assets
     from core.io import project_locked, read_json, sha256_file, utc_now, write_json, write_text
-    from core.project_state import load_project_state, render_project_state_markdown
+    from core.project_state import load_project_state
     from blender_previs.output_contract import png_size
 
 
@@ -171,8 +171,6 @@ def save_state_additions(root: Path, artifact_id: str, receipt: dict | None = No
     if receipt is not None:
         data.setdefault('user_confirmations', []).append(receipt)
     write_json(path, data)
-    write_text(root / '00_项目管理/project_state.md',
-               render_project_state_markdown(load_project_state(root)))
 
 
 def appearance_inputs(root: Path, requests: list[str]) -> list[dict]:

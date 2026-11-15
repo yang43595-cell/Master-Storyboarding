@@ -31,7 +31,7 @@ from .io import (
     write_json,
 )
 from .project_state import (
-    load_project_state, reconcile_current_artifacts, render_project_state_markdown,
+    load_project_state, reconcile_current_artifacts,
     validate_project_state,
 )
 
@@ -296,7 +296,6 @@ def _commit_json_transaction_unlocked(
     if not updates:
         raise RevisionControlError("事务至少需要一个状态更新")
     updates = dict(updates)
-    state_view = None
     for target, value in updates.items():
         if target.resolve() == (project / MANAGE / "project_state.json").resolve():
             manifest = updates.get(project / MANAGE / "artifact_manifest.json")
@@ -314,13 +313,8 @@ def _commit_json_transaction_unlocked(
                 validate_project_state(value)
             value = reconcile_current_artifacts(value, manifest)
             validate_project_state(value)
-            state_view = value
             updates[target] = ({**raw_state, "current_artifacts": value["current_artifacts"]}
                                if preserve_state_extensions else value)
-    # Keep the human view inside the same recoverable transaction as its JSON.
-    state_value = updates.get(project / MANAGE / "project_state.json")
-    if state_value is not None:
-        updates[project / MANAGE / "project_state.md"] = render_project_state_markdown(state_view or state_value).encode("utf-8")
     transaction_id = transaction_id or f"REV-TX-{uuid.uuid4().hex[:16]}"
     tx_dir = _transaction_dir(project, transaction_id)
     if tx_dir.exists():

@@ -116,19 +116,6 @@ if ($hasStateJson) {
     if ($stateJson.schema_version -ne "stage-1.0") {
       $issues.Add((Add-Issue "ERROR" "project_state.json schema_version must be stage-1.0, got: $($stateJson.schema_version)"))
     }
-    if ($hasStateMd) {
-      # JSON 与投影的当前阶段、修订必须一致，防止投影与事实脱节。
-      $stateText = Get-Content -LiteralPath $statePath -Raw -Encoding UTF8
-      foreach ($requiredText in @("当前阶段：", "当前有效产物：", "用户确认：", "审核报告：", "已接受问题：", "下一阶段：")) {
-        if ($stateText -notmatch [regex]::Escape($requiredText)) {
-          $issues.Add((Add-Issue "WARN" "Optional state projection missing section: $requiredText"))
-        }
-      }
-      $stageText = [regex]::Match($stateText, '当前阶段[:：]\s*\S+').Value
-      if ($stageText -and $stateJson.current_stage -and ($stageText -notmatch [regex]::Escape([string]$stateJson.current_stage))) {
-        $issues.Add((Add-Issue "WARN" "project_state.md stage does not match project_state.json: $stageText"))
-      }
-    }
   } catch {
     $issues.Add((Add-Issue "ERROR" "project_state.json is not valid JSON: $($_.Exception.Message)"))
   }

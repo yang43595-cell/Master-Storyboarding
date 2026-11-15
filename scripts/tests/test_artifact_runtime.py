@@ -3,7 +3,7 @@ import json
 import pytest
 from scripts.core import artifacts, revision_control
 from scripts.core.io import write_json
-from scripts.core.project_state import load_project_state, new_project_state, write_project_state
+from scripts.core.project_state import load_project_state, new_project_state, render_project_state_markdown, write_project_state
 
 
 def entry(artifact_id, logical_id, status="current", dependencies=()):
@@ -103,7 +103,8 @@ def test_revision_inherits_its_baseline_and_replaces_only_selected_ids(tmp_path)
     current = load_project_state(tmp_path)
     assert current["current_artifacts"] == ["B-R03"]
     assert current["user_confirmations"][0] == state["user_confirmations"][0]
-    markdown = (tmp_path / "00_项目管理/project_state.md").read_text(encoding="utf-8")
+    assert not (tmp_path / "00_项目管理/project_state.md").exists()
+    markdown = render_project_state_markdown(current)
     assert "当前有效产物：1" in markdown
     assert f"用户确认：{len(current['user_confirmations'])}" in markdown
 
@@ -153,7 +154,8 @@ def test_manifest_validity_change_syncs_selection_without_creating_state(tmp_pat
     assert load_project_state(tmp_path)["current_artifacts"] == []
     assert load_project_state(tmp_path)["user_confirmations"] == state["user_confirmations"]
     assert json.loads(path.read_text(encoding="utf-8"))["legacy_note"] == "preserve unrelated legacy facts"
-    assert "当前有效产物：0" in (tmp_path / "00_项目管理/project_state.md").read_text(encoding="utf-8")
+    assert not (tmp_path / "00_项目管理/project_state.md").exists()
+    assert "当前有效产物：0" in render_project_state_markdown(load_project_state(tmp_path))
 
 
 def test_interrupted_manifest_and_state_transaction_recovers_the_same_valid_selection(tmp_path):
@@ -172,7 +174,8 @@ def test_interrupted_manifest_and_state_transaction_recovers_the_same_valid_sele
     assert load_project_state(tmp_path)["current_artifacts"] == ["OLD"]
     assert revision_control.recover_transactions(tmp_path)[0]["state"] == "committed"
     assert load_project_state(tmp_path)["current_artifacts"] == []
-    assert "当前有效产物：0" in (tmp_path / "00_项目管理/project_state.md").read_text(encoding="utf-8")
+    assert not (tmp_path / "00_项目管理/project_state.md").exists()
+    assert "当前有效产物：0" in render_project_state_markdown(load_project_state(tmp_path))
 
 
 def test_explicit_project_relocation_reuses_paths_without_editing_receipts(tmp_path, monkeypatch):

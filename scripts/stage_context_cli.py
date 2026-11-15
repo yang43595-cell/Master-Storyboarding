@@ -34,7 +34,7 @@ try:
     from .core.candidate_source_snapshot import CandidateSnapshotError, inspect_candidate_snapshot, load_candidate_snapshot_rules
     from .core.method_documents import MethodDocumentError, render_method_packet, resolve_method_documents
     from .core.product_reference_pack import resolve_product_pack
-    from .core.project_state import load_project_state, normalize_project_state, write_project_state
+    from .core.project_state import load_project_state, normalize_project_state, render_project_state_markdown, write_project_state
     from .core.project_kickoff import (REQUEST_PATH, bind_stage_request, load_kickoff,
                                        product_demo_timing_advisory, validate_kickoff)
     from .core.review_publication import ChatScriptApproval, require_script_approval
@@ -59,7 +59,7 @@ except ImportError:  # direct CLI execution
     from core.candidate_source_snapshot import CandidateSnapshotError, inspect_candidate_snapshot, load_candidate_snapshot_rules
     from core.method_documents import MethodDocumentError, render_method_packet, resolve_method_documents
     from core.product_reference_pack import resolve_product_pack
-    from core.project_state import load_project_state, normalize_project_state, write_project_state
+    from core.project_state import load_project_state, normalize_project_state, render_project_state_markdown, write_project_state
     from core.project_kickoff import (REQUEST_PATH, bind_stage_request, load_kickoff,
                                       product_demo_timing_advisory, validate_kickoff)
     from core.review_publication import ChatScriptApproval, require_script_approval
@@ -2533,7 +2533,9 @@ def parser() -> argparse.ArgumentParser:
     commands = root.add_subparsers(dest="command", required=True)
     state_cmd = commands.add_parser("status", help="只读查看项目状态与续跑阻塞；不执行事务恢复")
     state_cmd.add_argument("--project", required=True)
-    state_cmd.add_argument("--details", action="store_true", help="显示全部产物和历史事务")
+    status_view = state_cmd.add_mutually_exclusive_group()
+    status_view.add_argument("--details", action="store_true", help="显示全部产物和历史事务")
+    status_view.add_argument("--markdown", action="store_true", help="从当前项目状态 JSON 输出 Markdown 摘要")
     authorization = commands.add_parser("authorize-workflow", help="登记已有准确业务流程授权；不确认产物或生成")
     authorization.add_argument("--project", required=True)
     authorization.add_argument("--authorization-id", required=True)
@@ -2669,6 +2671,12 @@ def parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     if args.command == "status":
+        if args.markdown:
+            project = Path(args.project).expanduser().resolve()
+            if not (project / "00_项目管理/project_state.json").is_file():
+                raise StageContextError("project_state.json 缺失，无法导出状态摘要")
+            print(render_project_state_markdown(_state(project)), end="")
+            return 0
         result = status(args)
     elif args.command == "authorize-workflow":
         result = authorize_workflow(args)

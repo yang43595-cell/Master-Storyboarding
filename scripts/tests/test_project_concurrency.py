@@ -268,6 +268,7 @@ def test_stale_project_state_cannot_remove_another_tasks_confirmation(tmp_path, 
     writer.write_project_state(tmp_path, current)
     state_path = tmp_path / '00_项目管理/project_state.json'
     view_path = state_path.with_suffix('.md')
+    view_path.write_bytes(b'legacy snapshot')
     before = state_path.read_bytes(), view_path.read_bytes()
     stale['current_stage'] = 'storyboard-planner'
 

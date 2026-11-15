@@ -9,7 +9,7 @@
 
 `enforce-hard`：读取 `00_项目管理/production_plan.json`，预检后把报告写入
 `00_项目管理/production_preflight.json`；任何 ERROR 使退出码为 1（禁止提交）。
-`shadow`：只输出报告，不写入任何文件；项目没有 production_plan.json 时输出迁移建议。
+`shadow`：只输出报告，不写入任何文件；没有旧计划文件时跳过。
 
 预检规则见 `scripts/core/production_plan.py`。
 """
@@ -35,7 +35,7 @@ except ImportError:  # 直接执行时 scripts/ 在 sys.path 上，回退到核�
 
 PROJECT_MANAGEMENT_DIR = "00_项目管理"
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="production_plan.json 语义预检")
+    parser = argparse.ArgumentParser(description="旧项目 production_plan.json 语义预检")
     parser.add_argument("--project-path", required=True, help="桌面项目目录绝对路径")
     parser.add_argument(
         "--mode",
@@ -67,12 +67,8 @@ def main() -> int:
         if args.mode == "enforce-hard":
             print(f"ERROR: 未找到 {plan_path}，无法执行语义预检。")
             return 1
-        print(f"[shadow] 未找到 {plan_path}。")
-        print("        旧项目没有 production_plan.json —— 建议建立 3.3 计划：")
-        print("          1. 引用 confirmed 导演包与其 revision，同时引用 confirmed 叙事包。")
-        print("          2. 用 segment_assignment 按导演包顺序完整分配镜头，不复制镜头合同。")
-        print("          3. 登记最终对白、自然语速估时、音频策略与用户授权状态。")
-        print("        迁移后运行本脚本 --mode enforce-hard 验证，再进入即梦 CLI。")
+        print(f"[SKIP] 未找到 {plan_path}。此命令只核旧项目已有计划。")
+        print("现行视频任务按 voiceover-to-video-script Skill 执行。")
         return 0
 
     try:
@@ -82,7 +78,7 @@ def main() -> int:
         return 1
 
     if args.mode == "enforce-hard" and str(plan.get("schema_version") or "") in {"1.0", "3.1", "3.2"}:
-        print(f"ERROR: production_plan {plan.get('schema_version')} 仅供旧项目只读检查；新建、修订或提交必须迁移到 3.3。")
+        print(f"ERROR: production_plan {plan.get('schema_version')} 仅供旧项目只读检查，请用 --mode shadow。")
         return 1
 
     report = validate_production_plan(plan, project_root, mode=args.mode).to_dict()

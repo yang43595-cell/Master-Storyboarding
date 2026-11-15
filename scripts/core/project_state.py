@@ -7,7 +7,7 @@ from copy import copy
 from pathlib import Path
 from typing import Any
 
-from .io import project_locked, sha256_json, write_json, write_text
+from .io import project_locked, sha256_json, write_json
 
 
 SCHEMA_VERSION = "stage-1.0"
@@ -129,7 +129,7 @@ def render_project_state_markdown(state: dict[str, Any]) -> str:
     validate_project_state(state)
     lines = [
         "# 项目状态", "",
-        "> 本文件由 `project_state.json` 生成；JSON 是事实权威。", "",
+        "> 此摘要生成自当前 `project_state.json`。", "",
         f"- 当前阶段：{state['current_stage'] or '未设置'}",
         f"- 项目状态：{state['project_status'] or '未设置'}",
         f"- 定稿记录：{(state['finalization'] or {}).get('record_path', '无')}",
@@ -167,7 +167,6 @@ def write_project_state(project_root: Path, state: dict[str, Any]) -> None:
     if (project_root / MANIFEST_PATH).is_file():
         state = reconcile_current_artifacts(state, load_manifest(project_root))
     write_json(path, state)
-    write_text(manage / "project_state.md", render_project_state_markdown(state))
     if hasattr(original_state, "source_digest"):
         original_state.source_digest = sha256_json(state)
 
@@ -210,4 +209,3 @@ def sync_current_artifacts(project_root: Path, manifest: dict[str, Any]) -> None
     if synchronized != state:
         # Implicit validity synchronization is not a migration of legacy state.
         write_json(path, {**raw, "current_artifacts": synchronized["current_artifacts"]})
-        write_text(project_root / "00_项目管理/project_state.md", render_project_state_markdown(synchronized))
