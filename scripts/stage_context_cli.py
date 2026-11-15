@@ -1808,23 +1808,18 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         *([f"- 本轮开工决定：`{project / REQUEST_PATH}` 的 `kickoff` 已纳入任务依据；阶段沿用已登记的产品、画布及生图授权范围。"] if kickoff else []),
         *([f"- 产品参考包：`{product_pack['manifest_path']}`，用 `kickoff --project` 读取本轮用途的准确文件、职责与缺口；逐镜选用。"] if product_pack else []),
         *(["- execution_mode: candidate_test；review_status: unreviewed；production_blocked: true。仅候选文本/结构试跑，不生成、不发布、不正式采用。"] if testing else []),
-        f"- 本轮唯一任务依据：`{_task_basis_path(project)}`（机器完整记录；通过 ensure-prepared --show-task-basis 读取目标、输入与冻结验收项，不整份打印后台目录）",
-        f"- 交付意图：`{json.dumps(delivery_contract, ensure_ascii=False)}`；按本轮交付对象及适用检查项审核。",
+        f"- 本轮任务依据：`{_task_basis_path(project)}`；输入、范围及冻结验收项用 `ensure-prepared --show-task-basis` 查看。",
+        f"- 交付意图：`{delivery_contract['delivery_object']}`",
         f"- 根规则：`{ROOT / 'PROJECT_RULES.md'}`",
         f"- Skill 入口：`{skill_dir / 'SKILL.md'}`",
-        "- 上下文较长或压缩恢复后：重读根规则与当前 Skill；以下细则原文已不可用时重新读取。冻结与阅读记录不证明内容仍在上下文。",
         *(["- 本轮适用细则（准确版本已冻结在 task_basis.json）：",
            *[f"  - `{path}`" for path in rule_documents]] if rule_documents else []),
-        "- 执行分工：遵守根规则的干净上下文启动规则；新一轮编导等创作生产或实质重跑由全新专属生产 agent 执行，不继承长主会话；本轮执行者读取、准备、产出并自查。其他任务按根规则执行。",
-        "- 上下文边界：交接当前有效规则、原始素材、本轮约束与已确认决定及依据、现行版本、未决事项、范围和停止点；不得以摘要替代原片。已在本轮专属 agent 内的逐段推进和局部返修可继续；目标、来源或基线重大变化时新开，不按修订号机械重开。",
-        *([f"- 图片批次：`{_CONTEXT_ID.get()}`，本批冻结 {len(image_targets)} 个 image_targets；阶段负责人统筹整体方向、跨批连续性和正式交接，本批执行者读取真实参考、完成获准图片及实看自查，只回传准确路径与检查摘要。批次目录不构成已生成、已检查、人工确认或正式采用。"] if image_targets is not None else []),
+        f"- 执行分工：`{ROOT / 'docs/rules/execution.md'}#Skill 执行分工`",
+        *([f"- 图片批次：`{_CONTEXT_ID.get()}`，冻结 {len(image_targets)} 个 `image_targets`。"] if image_targets is not None else []),
         *(_asset_batch_delivery_lines(asset_batch) if asset_batch and not handoff_batch_bindings else []),
         *(["- 人物生图按输出类型读取 task_basis.json 的 character_prompt_templates 与 character_layout_references，使用对应模板正文，原参考在前、灰模在最后。按实际槽位绑定原生引用。"]
           if task_basis.get("character_layout_references") else []),
-        "- prepare 只生成文件，不清空宿主对话。读取规则见共享 knowledge-access.md；计量和停止条件见 docs/development/token-budget.md。",
         _recovery_link(), "",
-        "## 本轮范围", "",
-        "- 交付对象、非目标、输入版本、范围字段和适用标准仅维护在上列 `task_basis.json`；本启动包不复制第二份范围记录。", "",
         "## 当前项目事实", "", "```json",
         json.dumps(_state_reading_view(summary), ensure_ascii=False, indent=2), "```", "",
         *(["## 上一阶段交接事实", "", f"- 已核交接卡：`{_handoff_path(project)}`。从原卡读取准确输入及停止点。", ""]
@@ -2009,6 +2004,8 @@ def _write_handoff(args, project, target_skill, from_skill, authorization_id, *,
     current_stage = from_skill or str(state.get("current_stage") or "")
     if not current_stage:
         raise StageContextError("项目当前阶段为空，不能生成交接卡")
+    if not testing:
+        load_kickoff(project)
     lines = [
         "# 下一阶段交接卡", "",
         f"- 来源阶段：`{current_stage}`",
@@ -2036,29 +2033,24 @@ def _write_handoff(args, project, target_skill, from_skill, authorization_id, *,
             f"  - sha256：`{digest(source) if testing else item['checksum']}`",
         ])
     startup_requirement = (
-        "- `voiceover-to-video-script` 直接按其 Skill 的原始资料读取例外建立本段输入范围；不生成或校验 stage_startup.md。"
+        "- `voiceover-to-video-script` 按其 Skill 直接读取原始资料；不生成或校验 stage_startup.md。"
         if target_skill == "voiceover-to-video-script" else
-        "- 按根规则为已授权的下一 Skill 建立执行者。统一入口在网站通过、编导整稿对话确认正式采用或有效自主采用后，按本轮范围继续；兼容人工流程沿其继续规则。创作新轮由专属生产 agent 准备并校验 stage_startup.md。"
+        "- 下一 Skill 按根规则及其入口准备并校验 stage_startup.md。"
     )
     task_context = _CONTEXT_ID.get()
     lines.extend([
-        "", "## 本轮依据与停止点", "",
+        "", "## 本轮依据", "",
         f"- 项目路径：`{project}`。相对产物路径从这里解析。仓库入口：`{ROOT / 'AGENTS.md'}` 与目标 Skill。",
         "- 原始证据：从以上准确产物的 source_artifacts / 来源引用按需实读，不用交接摘要替代。",
         f"- 决定及授权：实读 `{project / REQUEST_PATH}` 的本轮需求、kickoff 和 `{project / '00_项目管理/project_state.json'}` 的确认及 workflow_authorizations；缺文件或范围保留未决。",
         "- 未决项：核以上当前产物的未决字段、现有 review_report 与 accepted_issues，已接受问题只覆盖原记录的准确范围。",
-        "- 停止点：完成本职目标和自查后交回准确版本、检查结果、未完成项与证据路径；画布仅保存刷新核验草稿，生成另核授权。",
         f"- 工具报错：沿 `{ROOT / 'docs/rules/execution.md'}#工具报错与原处续作`，在现有任务记录交回原操作、失败位置、最后可信结果和待恢复步骤。",
         "", "## 接收约束", "",
-        *([f"- 从 `{project / REQUEST_PATH}` 直接读取本轮 `kickoff`；已有决定随项目沿用，缺项只影响依赖它的动作。"] if not testing and load_kickoff(project) else []),
         ("- 仅按独立测试授权继续候选试写；保留所有未核对事实和素材阻塞。视频 Skill 仍直接读取，不重建准备包。" if testing else startup_requirement),
         *([f"- 准备、读取登记、产前检查和需要的审核包沿本任务 `--context-id {task_context}`；使用原执行者和任务 ID。"]
           if task_context and target_skill in TASK_HANDOFF_SKILLS else []),
-        "- 编导交接须实际读准确正文、核来源和本轮自查结论；关键发现及未核范围复用现有任务记录，程序 ok 不代表叙事充分。",
-        "- 创作新轮使用干净的专属执行者，同轮返修可续用。核对仓库、规则和执行环境。用户明确要求时才单独审核。",
-        "- 图片沿有效确认输出消费。同用途复用已有观察，版本或用途变化时定向实看。资产人审和下游补图自主采用各用原入口。",
         ("- 只消费以上未确认候选及准确稳定 ID；不得读取旧案例答案，不得写入确认记录。" if testing else "- 只消费以上有效采用产物及其稳定 ID；不得读取旧生产对话或未列入启动包的历史内容。"),
-        "- 本交接不等于下一阶段已启动，也不替代下一阶段的输入门禁。", "",
+        "",
     ])
     if asset_batch:
         lines.extend(_asset_batch_delivery_lines(asset_batch))
