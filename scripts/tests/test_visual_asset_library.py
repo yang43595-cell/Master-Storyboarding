@@ -1191,16 +1191,28 @@ class LibraryTests(unittest.TestCase):
         self.assertEqual(row['category'], '服装三视图')
         self.assertFalse(photo.exists())
 
-    def test_template_and_methods_share_expanded_vault_root(self):
+    def test_web_methods_and_templates_use_the_bundle_with_an_asset_vault_configured(self):
+        from core.knowledge_runtime import bundled_root, resolve_knowledge_root
+
         vault = self.root / 'cloud-vault'
-        template = vault / 'wiki/reference/提示词模板' / m.asset_skill.recipe('大头照')['template']
-        template.parent.mkdir(parents=True)
-        template.write_text('isolated path-resolution fixture', encoding='utf-8')
-        with patch.dict(m.os.environ, {'HOME': str(self.root), 'USERPROFILE': str(self.root),
-                                       'MSB_VAULT_ROOT': '~/cloud-vault'}):
-            from stage_context_cli import _vault_root
-            self.assertEqual(_vault_root(None), vault.resolve())
-            self.assertEqual(m.asset_skill.template_source('大头照'), template.resolve())
+        relative = Path('wiki/reference/提示词模板') / m.asset_skill.recipe('大头照')['template']
+        external = vault / relative
+        external.parent.mkdir(parents=True)
+        external.write_text('isolated path-resolution fixture', encoding='utf-8')
+        with patch.dict(os.environ, {'MSB_VAULT_ROOT': str(vault), 'MSB_ASSET_VAULT_ROOT': str(vault)}), \
+             patch.object(m.asset_skill, 'resolve_knowledge_root', resolve_knowledge_root):
+            library = m.Library(self.root / 'configured-library')
+            self.assertEqual(library.vault, vault.resolve())
+            self.assertEqual(m.asset_skill.template_source('大头照'), bundled_root() / relative)
+            with self.assertRaisesRegex(ValueError, '本次指定'):
+                m.asset_skill.template_source('大头照', str(external))
+            _, evidence = m.asset_skill.prepare(self.root / 'web-request',
+                {'kind': '物品', 'mode': 'asset-library', 'subject': '台灯'})
+            self.assertEqual(evidence['vault_root'], str(bundled_root()))
+            self.assertIn('ASSET-OBJECT-METHOD', {method['id'] for method in evidence['methods']})
+            job = self.lib.create_job({'source_id': self.asset['id'], 'kind': '大头照', 'subject': '人物甲'})
+            job['steps'][0]['template_source'] = str(external)
+            self.assertEqual(self.lib.step_request(job, 0)['template_source'], str(bundled_root() / relative))
 
     def test_local_upload_protects_the_actual_vault(self):
         source = self.lib.vault / 'not-yet-indexed.png'
@@ -1214,7 +1226,8 @@ class LibraryTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
         from test_visual_asset_projects import synthetic_vault
-        self._synthetic_env = patch.dict(os.environ, {'MSB_VAULT_ROOT': str(synthetic_vault(self.root / 'synthetic-vault'))})
+        self._synthetic_env = patch.object(m.asset_skill, 'resolve_knowledge_root',
+                                           return_value=synthetic_vault(self.root / 'synthetic-vault'))
         self._synthetic_env.start()
         self.addCleanup(self._synthetic_env.stop)
         self.lib = m.Library(self.root / 'library', vault=self.root / 'vault')

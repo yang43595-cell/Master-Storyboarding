@@ -63,6 +63,12 @@ async function batchProject(mode){
  if(mode==='generate'){
   const tasks=projectSlotList().filter(x=>projectSelection.has(x.key));
   if(tasks.some(x=>x.step.audit?.status!=='passed'||x.step.audit.prompt!==x.step.prompt))throw Error('本批有未审查通过或修改后的提示词，请先批量审查');
+  if(projectData.review_workflow==='website'){
+   const grant=projectData.kickoff_generation;
+   if(!grant||(!grant.scope&&tasks.some(x=>!grant.outputs?.[x.job.ast_id]?.includes(x.step.output_id??x.step.key))))throw Error('本批有制作项未被开工生图授权覆盖');
+   const data=await projectApi('batch',{mode,provider:grant.provider,model:grant.model,tasks:tasks.map(x=>({job_id:x.job.id,index:x.index,prompt:x.step.prompt}))});
+   toast(data.message);await projectLoad();if(typeof openBatchPanel==='function')openBatchPanel(false);return;
+  }
   modal('确认本批生成',`<p>本批 ${tasks.length} 张独立图片，最多 3 张同时生成。失败不自动重试。</p><label>生成工具<select id="project-provider"><option value="imagegen">ImageGen · Codex 内置模型</option><option value="dreamina">即梦 CLI</option></select></label><label id="project-model-label" class="hidden">即梦模型<select id="project-model">${options(['5.0','5.0Pro','4.7','4.6','4.5','4.1','4.0'],'5.0')}</select></label>${tasks.map(x=>`<details><summary>${esc(x.job.title)} · ${esc(x.step.name)} · ${esc(x.step.ratio)}</summary><pre>${esc(x.step.prompt)}</pre></details>`).join('')}<label class="check-label"><input id="project-authorize" type="checkbox">我已核对本批提示词与参考，确认所选工具、模型及参考上传和账号额度消耗。</label><div class="form-footer"><button id="project-generate-now" class="primary" disabled>授权生成 ${tasks.length} 张</button></div>`);
   $('#project-provider').onchange=()=>$('#project-model-label').classList.toggle('hidden',$('#project-provider').value!=='dreamina');
   $('#project-authorize').onchange=e=>$('#project-generate-now').disabled=!e.target.checked;

@@ -35,6 +35,8 @@ if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 from core.runtime_deps import ensure_runtime_deps  # noqa: E402
 from core.artifacts import digest, verify_image_confirmation
+from core.character_assets import step_output_id
+from core.project_kickoff import grant_covers_asset, load_kickoff
 
 RUNTIME_DEPS = ensure_runtime_deps(ROOT)
 _skill_spec = importlib.util.spec_from_file_location('asset_library_skill', ROOT / 'skills/asset-image-assistant/library_runtime.py')
@@ -194,7 +196,7 @@ class Library:
         # Asset backup is a writable destination, not the read-only knowledge input.
         # Preserve explicit destinations, including ones that do not exist yet.
         fallback = self.root.parent / 'vault'
-        self.vault = Path(vault or os.environ.get('MSB_VAULT_ROOT') or fallback).expanduser().resolve()
+        self.vault = Path(vault or os.environ.get('MSB_ASSET_VAULT_ROOT') or fallback).expanduser().resolve()
         from core.knowledge_runtime import bundled_root
         if self.vault.is_relative_to(bundled_root()) or self.root.is_relative_to(bundled_root()):
             raise ValueError('资产输出目录不能写入仓库内置知识包')
@@ -1090,7 +1092,7 @@ class Library:
                 'ratio': asset_skill.recipe(job['kind'])['ratio'], 'resolution': '2k', 'output_is_candidate': True,
                 'must_inherit': job.get('must_inherit', ''), 'must_not_inherit': job.get('must_not_inherit', ''),
                 'reference_records': records,
-                'template_source': step.get('template_source', template)}
+                'template_source': template}
 
     def save_prompt(self, p):
         with self.lock:
@@ -1301,7 +1303,7 @@ class Library:
                 if any(resolved.is_relative_to(Path(p['path']).resolve()) for p in self.projects.summaries()):
                     raise ValueError('任务目录中的图片不回流到网页资产库；请在任务内使用该图')
                 provenance = {'job_id': ident, 'view': step['name'], 'inferred_hidden_surfaces': True,
-                              'project_id': job.get('project_id'), 'ast_id': job.get('ast_id'), 'output_id': step.get('key'),
+                              'project_id': job.get('project_id'), 'ast_id': job.get('ast_id'), 'output_id': step_output_id(step) if job.get('project_id') else step.get('key'),
                               'source_narrative': job.get('source_narrative'), 'state': step.get('state'), 'prompt': step.get('prompt'),
                               'audit': step.get('audit'), 'authorization': step.get('authorization'),
                               'provider': job['provider'], 'model': job['model'] if job['provider'] == 'dreamina' else 'Codex 内置 ImageGen'}
@@ -1367,13 +1369,24 @@ class Library:
             self.backup_wakeup.set()
             return job
 
+    def _check_project_generation(self, job, index):
+        if not job.get('project_id'):
+            return
+        from core.candidate_test import require_production
+        root = Path(self.projects.get(job['project_id'])['path'])
+        require_production(root)
+        kickoff = load_kickoff(root)
+        if kickoff:
+            grant = kickoff.get('image_generation')
+            if (not grant_covers_asset(grant, job['ast_id'], step_output_id(job['steps'][index]))
+                    or grant['provider'] != job['provider'] or grant['model'] != job['model']):
+                raise ValueError('工具、模型或制作项不在当前开工生图授权范围')
+
     def submit(self, p):
         with self.lock:
             job = self.operation_job(p['id'], p.get('project_id', _UNSCOPED_PROJECT))
-            if job.get('project_id'):
-                from core.candidate_test import require_production
-                require_production(Path(self.projects.get(job['project_id'])['path']))
             index = int(p['index'])
+            self._check_project_generation(job, index)
             step = job['steps'][index]
             if job['provider'] != 'dreamina' or p.get('authorize') is not True:
                 raise ValueError('需要在界面确认此次即梦上传、模型和额度消耗')
@@ -1516,10 +1529,8 @@ class Library:
     def submit_imagegen(self, p):
         with self.lock:
             job = self.operation_job(p['id'], p.get('project_id', _UNSCOPED_PROJECT))
-            if job.get('project_id'):
-                from core.candidate_test import require_production
-                require_production(Path(self.projects.get(job['project_id'])['path']))
             index = int(p['index'])
+            self._check_project_generation(job, index)
             self.step_request(job, index)
             step = job['steps'][index]
             if job['provider'] != 'imagegen' or p.get('authorize') is not True:
@@ -1721,6 +1732,14 @@ class Handler(BaseHTTPRequestHandler):
                     self.server.library, unquote(parts[2]), unquote(parts[3]),
                     query.get('manifest_sha256', [None])[0])
                 return self.reply(data, content_type='model/gltf-binary')
+            if url.path.startswith('/product-reference-media/'):
+                from visual_asset_product_usage import preview_path
+                _, _, project_id, asset_id = url.path.split('/')
+                project = self.server.library.projects.get(unquote(project_id))
+                path = preview_path(project, unquote(asset_id))
+                if path.suffix.lower() in VIDEO_EXTS:
+                    return self.reply_video(path)
+                return self.reply(path.read_bytes(), content_type=mimetypes.guess_type(path.name)[0] or 'application/octet-stream')
             if url.path.startswith('/media/'):
                 _, _, ident, variant = url.path.split('/')
                 if variant not in {'thumbnail', 'original'}:
@@ -1857,6 +1876,7 @@ if __name__ == '__main__':
         sys.stdout.reconfigure(encoding='utf-8')
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--library', default=str(DEFAULT_LIBRARY))
+    parser.add_argument('--asset-vault', help='素材存储根目录，使用其资产库子目录')
     subs = parser.add_subparsers(dest='command', required=True)
     run = subs.add_parser('serve')
     run.add_argument('--port', type=int, default=8766)
@@ -1867,12 +1887,22 @@ if __name__ == '__main__':
     attach_parser.add_argument('--job', required=True)
     attach_parser.add_argument('--view', type=int, required=True)
     attach_parser.add_argument('--file', action='append', required=True)
+    review = subs.add_parser('apply-website-review')
+    review.add_argument('--project-id', required=True)
+    review.add_argument('--publication', required=True, type=Path)
+    review.add_argument('--token-file', required=True, type=Path)
+    review.add_argument('--base-url')
     subs.add_parser('list')
     args = parser.parse_args()
-    lib = Library(args.library)
+    lib = Library(args.library, vault=args.asset_vault)
     if args.command == 'serve':
         serve(lib, args.port, args.open)
     elif args.command == 'attach-result':
         print(json.dumps(lib.attach(args.job, args.view, args.file), ensure_ascii=False, indent=2))
+    elif args.command == 'apply-website-review':
+        from core.agent_review_api import AgentReviewClient, DEFAULT_BASE_URL
+        client = AgentReviewClient(base_url=args.base_url or DEFAULT_BASE_URL, token_file=args.token_file)
+        result = lib.projects.apply_website_review(args.project_id, args.publication, client)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         print(json.dumps(lib.import_tree(args.source) if args.command == 'import' else lib.items(), ensure_ascii=False, indent=2))

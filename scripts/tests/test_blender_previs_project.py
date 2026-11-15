@@ -368,8 +368,15 @@ def test_handoff_retains_complete_shot_scene_and_predecessor(project):
 
 @pytest.mark.parametrize('target', [None, '', '   '])
 def test_look_at_needs_target_without_requiring_every_actor_to_move(target):
-    recipe = read_json(Path(__file__).parents[2] / 'examples/blender-previs-princess.json')
-    recipe['actors'][0]['actions'] = []
+    recipe = {
+        'schema_version': '1.0',
+        'project': {'name': 'Synthetic look-at check', 'fps': 24,
+                    'duration_seconds': 1, 'resolution': [128, 128]},
+        'environment': {'preset': 'studio'},
+        'actors': [{'id': 'actor', 'role': 'generic', 'position': [0, 0, 0], 'actions': []}],
+        'camera': {'keyframes': [{'time': 0, 'position': [0, -4, 2], 'look_at': [0, 0, 1]}]},
+        'outputs': {'blend': True, 'preview_video': False},
+    }
     cli.validate_recipe(recipe)
     action = dict(preset='look_at', start=0, duration=1)
     if target is not None:

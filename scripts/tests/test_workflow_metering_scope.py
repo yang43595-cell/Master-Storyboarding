@@ -4,7 +4,10 @@ from pathlib import Path
 import pytest
 from scripts import stage_context_cli as cli
 from scripts.core.candidate_test import configure, context, require_production
-from test_stage_context_cli import _project, _method_vault, _synthetic_method_profile
+from test_stage_context_cli import _project, _method_vault, _synthetic_method_profile, isolated_stage_knowledge
+
+
+pytestmark = pytest.mark.usefixtures("isolated_stage_knowledge")
 
 
 def run(tmp_path, name, *, measured=False, source_exists=True):

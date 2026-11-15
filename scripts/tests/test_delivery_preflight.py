@@ -81,6 +81,32 @@ def bind_synthetic_quality(root, frozen):
     write_json(root / artifacts.MANIFEST_PATH, manifest)
 
 
+def bind_synthetic_canvas(root, frozen, observed):
+    """Add declared graph/timing fixture data, never a real platform receipt."""
+    for row in frozen['drafts']:
+        cursor = 0
+        lines = ['时间仅用于控制动作与切镜，不显示为文字。']
+        row['edges'], row['source_nodes'] = [], []
+        for duration in row['shot_durations']:
+            lines.append(f'{cursor:g}–{cursor + duration:g}秒 合成画面。')
+            cursor += duration
+        row['prompt'] = '\n'.join(lines)
+        for slot, (media, ref) in enumerate(zip(row['ordered_media'], row['reference_checks']), 1):
+            ref['canvas_binding'] = dict(mode='edge', purpose='synthetic boundary', prompt_reference=True,
+                                         source_port='image', target_port=f'input-{slot}')
+            row['edges'].append(dict(source_node_id=media['node_id'], source_port='image',
+                                     target_node_id=row['node_id'], target_port=f'input-{slot}', slot=slot))
+            source = dict(node_id=media['node_id'], port='image', sha256=ref['sha256'])
+            if source not in row['source_nodes']:
+                row['source_nodes'].append(source)
+    bind_synthetic_quality(root, frozen)
+    observed['drafts'] = copy.deepcopy(frozen['drafts'])
+    for row in observed['drafts']:
+        row['native_mentions'] = [{**media, 'entity_type': row.get('native_entity_type'),
+                                    'native_noneditable_entity': True} for media in row['ordered_media']]
+    observed['frozen_sha256'] = digest(frozen)
+
+
 def test_full_reference_and_native_readback_then_mutation_fails(tmp_path):
     frozen, observed = delivery(tmp_path)
     assert compare(frozen, observed, tmp_path)['ok']
@@ -123,9 +149,9 @@ def test_reference_duration_and_boundary_negatives(tmp_path, mutation):
 @pytest.mark.skipif(not shutil.which('ffmpeg') or not shutil.which('ffprobe'), reason='local video tools unavailable')
 def test_action_reference_checks_actual_video_duration(tmp_path):
     frozen, _ = delivery(tmp_path)
-    video = tmp_path / 'action.mp4'
+    video = tmp_path / 'action.mov'
     subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=16x16:r=10',
-                    '-t', '1', '-pix_fmt', 'yuv420p', str(video)], check=True, capture_output=True)
+                    '-t', '1', '-c:v', 'png', '-pix_fmt', 'rgb24', str(video)], check=True, capture_output=True)
     manifest = artifacts.load_manifest(tmp_path)
     item = {'artifact_id': 'ACTION', 'logical_id': 'ACTION', 'revision': 'R01',
             'status': 'current', 'user_approved': True, 'path_or_url': video.name, 'checksum': artifacts.digest(video),
@@ -177,6 +203,61 @@ def test_delivery_pass_must_match_snapshot_and_current_registered_inputs(tmp_pat
     (tmp_path / 'frame.png').write_bytes(b'changed-reference')
     with pytest.raises(rc.RevisionControlError, match='参考检查失败'):
         rc.confirm_candidate(tmp_path, change_id='DELIVERY', approval_ref='fixture:user')
+
+
+def test_delivery_revision_requires_report_with_observed_project_id(tmp_path):
+    frozen, observed = delivery(tmp_path)
+    frozen['target_project_id'] = observed['target_project_id'] = 'exact-platform-project'
+    observed['frozen_sha256'] = digest(frozen)
+    logical = 'canvas.delivery'
+    old = tmp_path / 'old-delivery.json'
+    old.write_text('{}')
+    manifest = artifacts.load_manifest(tmp_path)
+    manifest['artifacts'].append({'artifact_id': 'OLD', 'logical_id': logical, 'revision': 'R01',
+        'status': 'current', 'user_approved': True, 'path_or_url': old.name, 'checksum': artifacts.digest(old)})
+    write_json(tmp_path / artifacts.MANIFEST_PATH, manifest)
+    rc.open_change(tmp_path, change_id='DELIVERY', tier='T1', logical_ids=[logical], reason='fixture')
+    rc.confirm_impact(tmp_path, change_id='DELIVERY', approval_ref='fixture:impact')
+    candidate = tmp_path / 'delivery.json'
+    write_json(candidate, frozen)
+    rc.record_candidate(tmp_path, change_id='DELIVERY', artifact_id='NEW', logical_id=logical,
+                        artifact_type='json', candidate_path=candidate.name, revision=frozen['revision'])
+
+    report = compare(frozen, observed, tmp_path)
+    assert report['ok'] and report['observed_target_project_id'] == 'exact-platform-project'
+    report_path = tmp_path / 'report.json'
+    old_pass = {key: value for key, value in report.items() if key != 'observed_target_project_id'}
+    for invalid in [old_pass, {**report, 'observed_target_project_id': 'other-project'}]:
+        write_json(report_path, invalid)
+        with pytest.raises(rc.RevisionControlError, match='项目 ID'):
+            rc.record_review(tmp_path, change_id='DELIVERY', verdict='approved', report_ref=report_path.name)
+    write_json(report_path, report)
+    rc.record_review(tmp_path, change_id='DELIVERY', verdict='approved', report_ref=report_path.name)
+
+    def restore_pre_upgrade_receipt():
+        # Simulate the persisted receipt and exact bytes produced before this guard.
+        old_report_path = tmp_path / 'old-report.json'
+        write_json(old_report_path, old_pass)
+        control_path = tmp_path / rc.CONTROL_RELATIVE
+        control = read_json(control_path)
+        control['active_change']['review'].update(
+            report_ref=old_report_path.name, report_sha256=artifacts.digest(old_report_path))
+        write_json(control_path, control)
+
+    restore_pre_upgrade_receipt()
+    with pytest.raises(rc.RevisionControlError, match='项目 ID'):
+        rc.confirm_candidate(tmp_path, change_id='DELIVERY', approval_ref='fixture:user')
+    rc.record_review(tmp_path, change_id='DELIVERY', verdict='approved', report_ref=report_path.name)
+    rc.confirm_candidate(tmp_path, change_id='DELIVERY', approval_ref='fixture:user')
+    confirmation = read_json(tmp_path / rc.CONTROL_RELATIVE)['active_change']['candidate_confirmation']
+    restore_pre_upgrade_receipt()
+    with pytest.raises(rc.RevisionControlError, match='项目 ID'):
+        rc.commit_change(tmp_path, change_id='DELIVERY')
+    rc.record_review(tmp_path, change_id='DELIVERY', verdict='approved', report_ref=report_path.name)
+    change = read_json(tmp_path / rc.CONTROL_RELATIVE)['active_change']
+    assert change['status'] == 'commit_ready' and change['candidate_confirmation'] == confirmation
+    assert read_json(tmp_path / 'old-report.json') == old_pass
+    assert rc.commit_change(tmp_path, change_id='DELIVERY')['state'] == 'committed'
 
 
 def delivery_cli(root, *extra):

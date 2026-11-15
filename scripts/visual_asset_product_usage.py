@@ -3,9 +3,22 @@ import copy
 import hashlib
 import json
 import re
+import shutil
 import subprocess
+import tempfile
 import threading
 from pathlib import Path
+
+if __package__ == 'scripts':
+    from .core.io import sha256_file, write_json
+    from .core.media_types import MEDIA_EXTENSIONS
+    from .core.product_reference_pack import resolve_product_pack
+    from .core.project_kickoff import load_kickoff
+else:
+    from core.io import sha256_file, write_json
+    from core.media_types import MEDIA_EXTENSIONS
+    from core.product_reference_pack import resolve_product_pack
+    from core.project_kickoff import load_kickoff
 
 FILE = '04_资产/产品使用对接.json'
 MODEL = 'gpt-6-luna'
@@ -23,6 +36,12 @@ def load_usage(root, narrative):
     data = json.loads(path.read_text(encoding='utf-8'))
     if data.get('story_hash') != story_hash(narrative):
         return {'status': 'stale', 'message': '剧情已变化，产品动作参考待重新核对', 'references': [], 'effects': []}
+    kickoff = load_kickoff(root)
+    product = kickoff['product'] if kickoff else {}
+    selection = (product.get('reference_pack_sha256'), product.get('product_usage')
+                 if product.get('reference_pack_sha256') else None)
+    if selection != (data.get('reference_pack_sha256'), data.get('reference_pack_usage')):
+        return {'status': 'stale', 'message': '开工产品参考已变化，待重新核对', 'references': [], 'effects': []}
     return data
 
 
@@ -31,6 +50,32 @@ def catalogue(library):
              'media_type': a.get('media_type', 'image'), 'original': a['original']}
             for a in library.items() if a.get('product_reference') and not a.get('trashed_at')
             and Path(a['original']).is_file()]
+
+
+def project_catalogue(library, project):
+    kickoff = load_kickoff(Path(project['path']))
+    selection = kickoff['product'] if kickoff else {}
+    pack = resolve_product_pack(selection)
+    if pack is None:
+        return catalogue(library)
+    entries = []
+    for item in pack['references']:
+        path = Path(item['path'])
+        role = item['role']
+        if item.get('sequence_only') or role == 'brief' or (role not in {'action', 'technique'}
+                               and path.suffix.lower() not in MEDIA_EXTENSIONS['image']):
+            continue
+        entries.append({
+            'product_id': pack['product_id'], 'product_name': pack['product_name'],
+            'aliases': pack['aliases'], 'asset_id': item['id'],
+            'name': path.stem, 'original': str(path), 'sha256': item['sha256'],
+            'reference_pack_sha256': pack['manifest_sha256'], 'reference_pack_usage': pack['usage'],
+            'action_key': item.get('action_key', ''), 'description': item['coverage'],
+            'match_guidance': item.get('match_guidance', ''),
+            'media_type': 'video' if role in {'action', 'technique'} else 'image',
+            'reference_role': 'action' if role in {'action', 'technique'} else role,
+        })
+    return entries
 
 
 def import_references(library, payload):
@@ -115,7 +160,8 @@ def match(executable, folder, narrative, inventory):
         '动作参考只锁定产品、工具、动作与质地，不继承手模身份、背景、服装。'
         '魔法自动操作也可匹配相同产品动作，但不得强加真实手部或完整真实使用顺序。'
         '动作、产品种类、使用部位与顺序只取该产品当前需求和逐字剧情依据；没有写出的动作不得补齐。'
-        'references只列reference_role=action的视频动作，texture图片作为质地资料另行自动补入，不列动作。'
+        'references只列reference_role=action的视频动作，图片另行补入。按参考的match_guidance判断覆盖，'
+        '命中时返回原样action_key，同一产品和动作合并段落。'
         'effects只标识剧情中实际使用该产品的人物与产品组合，包括幻想使用。state引用剧情使用状态用于定位，'
         '绝不把state当作要生成的画面。usage_kind区分actual真实使用与fantasy幻想使用。'
         'needs_reference仅表示有原文依据的候选判断，不是用户批准。reference_need写当前产品实际需要锁定的作用部位与用途；'
@@ -128,7 +174,7 @@ def match(executable, folder, narrative, inventory):
             'products': products(narrative, inventory),
             'characters': [r for r in narrative['asset_requirements'] if r['category'] == 'CHARACTER'],
             'story': narrative.get('story_paragraphs', narrative.get('events', [])),
-            'available_references': [{k: a[k] for k in ('product_id', 'action_key', 'description', 'reference_role')}
+            'available_references': [{k: a[k] for k in ('product_id', 'action_key', 'description', 'reference_role', 'match_guidance') if k in a}
                                      for a in inventory]}, ensure_ascii=False))
     command = [executable, 'exec', '--model', MODEL, '--sandbox', 'read-only', '--ephemeral',
         '--skip-git-repo-check', '--cd', str(folder), '--output-schema', str(folder / 'schema.json'),
@@ -176,12 +222,19 @@ def validate_matches(narrative, inventory, result):
 
 
 def schedule(service, project, force=False):
-    inventory = catalogue(service.lib)
+    check = project.get('product_reference_check', {})
+    if check.get('status') == 'running':
+        return
+    try:
+        inventory = project_catalogue(service.lib, project)
+    except (OSError, ValueError) as exc:
+        project['product_reference_check'] = {'status': 'error', 'message': str(exc)[:600]}
+        service.save(project)
+        return
     if not products(project['narrative'], inventory):
         return
     sig = signature(project['narrative'], inventory)
-    check = project.get('product_reference_check', {})
-    if check.get('status') == 'running' or (not force and check.get('signature') == sig):
+    if not force and check.get('signature') == sig:
         return
     project['product_reference_check'] = {'status': 'running', 'signature': sig, 'model': MODEL}
     service.save(project)
@@ -191,21 +244,23 @@ def schedule(service, project, force=False):
 def _worker(service, project, inventory, sig):
     from visual_asset_choices import read_choices, save_choices
     try:
-        exe = service.bridge.executable()
-        if not exe:
-            raise ValueError('未找到已登录的 Codex CLI')
-        folder = service.lib.root / 'requests' / project['id'] / ('product-use-' + sig[:16])
-        matched = match(exe, folder, project['narrative'], inventory)
+        matched = {'references': [], 'effects': []}
+        if inventory[0].get('reference_pack_usage') != 'display':
+            exe = service.bridge.executable()
+            if not exe:
+                raise ValueError('未找到已登录的 Codex CLI')
+            folder = service.lib.root / 'requests' / project['id'] / ('product-use-' + sig[:16])
+            matched = match(exe, folder, project['narrative'], inventory)
         with service.lib.lock:
             current = service.get(project['id'])
             service.fresh(current)
-            if signature(current['narrative'], catalogue(service.lib)) != sig:
+            if signature(current['narrative'], project_catalogue(service.lib, current)) != sig:
                 raise ValueError('核对期间剧情或动作参考已变化，请重新同步')
             root = Path(current['path'])
             original = json.loads(Path(current['source']['path']).read_text(encoding='utf-8-sig'))
             usage = persist_matches(service, current, inventory, matched, sig)
             choices = read_choices(root)
-            (root / FILE).write_text(json.dumps(usage, ensure_ascii=False, indent=2), encoding='utf-8')
+            write_json(root / FILE, usage)
             save_choices(root, original, choices)
             current['product_reference_check'] = {'status': 'done', 'signature': sig, 'model': MODEL}
             service.save(current)
@@ -217,6 +272,42 @@ def _worker(service, project, inventory, sig):
             service.save(current)
 
 
+def project_reference(service, project, asset):
+    if not asset.get('reference_pack_sha256'):
+        return {'project_path': str(service.copy_to_project(project, service.lib.get(asset['asset_id'])))}
+    source = Path(asset['original'])
+    root = Path(project['path']).resolve()
+    checksum = asset['sha256']
+    destination = root / '04_资产' / '项目产品参考' / checksum / source.name
+    if not destination.resolve().is_relative_to(root):
+        raise ValueError('项目产品参考路径越界')
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if not destination.exists():
+        with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as file:
+            temporary = Path(file.name)
+        try:
+            shutil.copyfile(source, temporary)
+            if sha256_file(temporary) != checksum:
+                raise ValueError(f'产品参考复制时校验失败：{source}')
+            temporary.replace(destination)
+        finally:
+            temporary.unlink(missing_ok=True)
+    if sha256_file(destination) != checksum:
+        raise ValueError(f'项目产品参考副本校验失败：{destination}')
+    return {'project_path': str(destination), 'pack_reference': True, 'sha256': checksum}
+
+
+def preview_path(project, asset_id):
+    usage = load_usage(Path(project['path']), project['narrative'])
+    for row in usage.get('references', []) + usage.get('material_references', []):
+        if row.get('pack_reference') and row.get('asset_id') == asset_id:
+            path = Path(row['project_path']).resolve()
+            root = Path(project['path']).resolve() / '04_资产' / '项目产品参考'
+            if path.is_relative_to(root) and path.is_file() and sha256_file(path) == row['sha256']:
+                return path
+    raise ValueError('找不到有效的项目产品参考副本')
+
+
 def persist_matches(service, project, inventory, result, sig):
     validate_matches(project['narrative'], inventory, result)
     pids = {p['ast_id']: p['product_id'] for p in products(project['narrative'], inventory)}
@@ -226,11 +317,11 @@ def persist_matches(service, project, inventory, result, sig):
                       and a['action_key'] == row['action_key']]
         if candidates and all(a['reference_role'] != 'action' for a in candidates):
             continue
-        unique = {hashlib.sha256(Path(a['original']).read_bytes()).hexdigest(): a for a in candidates}
+        unique = {a.get('sha256') or sha256_file(Path(a['original'])): a for a in candidates}
         asset = next(iter(unique.values())) if len(unique) == 1 else None
         refs.append({**row, 'asset_id': asset['asset_id'] if asset else None, 'name': asset['name'] if asset else row['action_key'],
             'status': 'matched' if asset else 'missing', 'canonical_path': asset['original'] if asset else None,
-            'project_path': str(service.copy_to_project(project, service.lib.get(asset['asset_id']))) if asset else None})
+            **(project_reference(service, project, asset) if asset else {'project_path': None})})
     effects = [{**{k: e[k] for k in ('product_ast_id', 'character_ast_id', 'paragraph_ids', 'evidence')},
                 'story_usage_state': e['state'], 'product_id': pids[e['product_ast_id']],
                 'request_id': 'USE-' + e['character_ast_id'].removeprefix('AST-') + '-' + e['product_ast_id'].removeprefix('AST-') + '-USAGE-REFERENCE',
@@ -243,10 +334,13 @@ def persist_matches(service, project, inventory, result, sig):
     used_products = {pids[e['product_ast_id']] for e in result['effects']} | {pids[r['product_ast_id']] for r in result['references']}
     materials = []
     for a in inventory:
-        if a['product_id'] in used_products and a['media_type'] == 'image':
+        if a['media_type'] == 'image' and (a['product_id'] in used_products
+                or (a.get('reference_pack_sha256') and a['product_id'] in pids.values())):
             materials.append({'asset_id': a['asset_id'], 'name': a['name'], 'product_id': a['product_id'],
-                'canonical_path': a['original'], 'project_path': str(service.copy_to_project(project, service.lib.get(a['asset_id'])))})
+                'canonical_path': a['original'], **project_reference(service, project, a)})
+    pack = next((a for a in inventory if a.get('reference_pack_sha256')), {})
     return {'status': 'matched', 'story_hash': story_hash(project['narrative']), 'signature': sig,
+            **{key: pack[key] for key in ('reference_pack_sha256', 'reference_pack_usage') if key in pack},
             'source_revision': project['source']['revision'], 'model': MODEL, 'references': refs,
             'material_references': materials, 'effects': effects}
 
@@ -266,7 +360,7 @@ def append_table(root, usage):
     for r in usage.get('references', []):
         rows.append('| ' + ' | '.join(map(cell, [r['product_ast_id'], r['name'], '；'.join(r['paragraph_ids']),
             r['evidence'], r.get('project_path') or '', '已自动补入' if r.get('asset_id') else '缺少，留空由用户补充'])) + ' |')
-    rows += ['', '### 配套质地参考', '', '| 名称 | 项目副本 |', '|---|---|']
+    rows += ['', '### 配套产品参考', '', '| 名称 | 项目副本 |', '|---|---|']
     for r in usage.get('material_references', []):
         rows.append('| ' + cell(r['name']) + ' | ' + cell(r['project_path']) + ' |')
     rows += ['', '### 产品使用参考候选判断（不代表图片或生成授权）', '',

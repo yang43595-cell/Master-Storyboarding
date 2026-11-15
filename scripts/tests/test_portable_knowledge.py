@@ -26,7 +26,7 @@ class PortableKnowledgeTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.repo = Path(self.temp.name)
+        self.repo = Path(self.temp.name).resolve()
         self.root = self.repo / 'knowledge/runtime'
         self.root.mkdir(parents=True)
         self.relative = 'wiki/concepts/method.md'
@@ -43,13 +43,15 @@ class PortableKnowledgeTests(unittest.TestCase):
     def save(self):
         (self.root.parent / 'manifest.json').write_text(json.dumps(self.manifest))
 
-    def test_default_and_explicit_overrides(self):
+    def test_production_uses_only_the_bundle(self):
         self.assertEqual(resolve_knowledge_root(repo_root=self.repo), self.root)
         external = self.repo / 'external'
         external.mkdir()
         with patch.dict(os.environ, {'MSB_VAULT_ROOT': str(external)}):
-            self.assertEqual(resolve_knowledge_root(repo_root=self.repo), external)
+            self.assertEqual(resolve_knowledge_root(repo_root=self.repo), self.root)
             self.assertEqual(resolve_knowledge_root(self.root, repo_root=self.repo), self.root)
+            with self.assertRaisesRegex(KnowledgeRuntimeError, 'repository'):
+                resolve_knowledge_root(external, repo_root=self.repo)
         with self.assertRaises(KnowledgeRuntimeError):
             resolve_knowledge_root(self.repo / 'absent', repo_root=self.repo)
         with self.assertRaises(KnowledgeRuntimeError):
@@ -166,7 +168,7 @@ class PortableKnowledgeTests(unittest.TestCase):
         with self.assertRaises(MethodDocumentError):
             resolve_method_documents(self.root, profile, {'request': {'face': True}})
 
-    def test_real_asset_face_branch_blocks_but_ordinary_headshot_is_complete(self):
+    def test_real_asset_face_and_headshot_branches_are_available_from_bundle(self):
         sys.path.insert(0, str(REPO / 'scripts'))
         spec = importlib.util.spec_from_file_location('portable_asset_runtime', REPO / 'skills/asset-image-assistant/library_runtime.py')
         asset = importlib.util.module_from_spec(spec)
@@ -174,9 +176,8 @@ class PortableKnowledgeTests(unittest.TestCase):
         request = {'kind': '大头照', 'mode': 'asset-library'}
         _, evidence = asset.prepare(self.repo / 'ordinary-web', request)
         self.assertTrue(evidence['input_complete'])
-        with self.assertRaisesRegex(ValueError, '模板不可用'):
-            asset.prepare(self.repo / 'face-web', {**request, 'creator_mask_face_effect': True})
-        self.assertFalse((self.repo / 'face-web/task-package.json').exists())
+        _, face = asset.prepare(self.repo / 'face-web', {**request, 'creator_mask_face_effect': True})
+        self.assertTrue(face['input_complete'])
 
     def test_prepared_method_removed_from_manifest_is_rejected(self):
         shutil.rmtree(self.root.parent)
@@ -190,16 +191,17 @@ class PortableKnowledgeTests(unittest.TestCase):
         request.write_text(json.dumps({'use_story_method': True}))
         args = cli.parser().parse_args(['prepare', '--project', str(project), '--skill', 'creative-director',
             '--objective', 'portable regression', '--vault', str(self.root), '--request-json', str(request)])
-        cli.prepare(args)
-        basis = json.loads(cli._task_basis_path(project).read_text())
-        cli._validate_current_inputs(project, basis)
-        removed = basis['standards']['professional_methods'][0]['path']
-        manifest = json.loads((self.root.parent / 'manifest.json').read_text())
-        manifest['files'] = [item for item in manifest['files'] if item['path'] != removed]
-        (self.root.parent / 'manifest.json').write_text(json.dumps(manifest))
-        self.assertTrue((self.root / removed).is_file())
-        with self.assertRaisesRegex(ValueError, 'not selected'):
+        with patch.object(cli, 'resolve_knowledge_root', lambda explicit=None, **_: resolve_knowledge_root(explicit, repo_root=self.repo)):
+            cli.prepare(args)
+            basis = json.loads(cli._task_basis_path(project).read_text())
             cli._validate_current_inputs(project, basis)
+            removed = basis['standards']['professional_methods'][0]['path']
+            manifest = json.loads((self.root.parent / 'manifest.json').read_text())
+            manifest['files'] = [item for item in manifest['files'] if item['path'] != removed]
+            (self.root.parent / 'manifest.json').write_text(json.dumps(manifest))
+            self.assertTrue((self.root / removed).is_file())
+            with self.assertRaisesRegex(ValueError, 'not selected'):
+                cli._validate_current_inputs(project, basis)
 
     def test_applicable_template_is_frozen_in_actual_stage_preparation(self):
         shutil.rmtree(self.root.parent)
@@ -211,7 +213,8 @@ class PortableKnowledgeTests(unittest.TestCase):
         template.write_text('Synthetic face template, isolated regression only.')
         manifest = json.loads((self.root.parent / 'manifest.json').read_text())
         checksum = hashlib.sha256(template.read_bytes()).hexdigest()
-        manifest['files'].append({'path': relative, 'role': 'template', 'sha256': checksum})
+        entry = next(item for item in manifest['files'] if item['path'] == relative)
+        entry['sha256'] = checksum
         (self.root.parent / 'manifest.json').write_text(json.dumps(manifest))
         project = self.repo / 'template-project'
         project.mkdir()
@@ -219,17 +222,18 @@ class PortableKnowledgeTests(unittest.TestCase):
         request.write_text(json.dumps({'creator_mask_face_effect': True}))
         args = cli.parser().parse_args(['prepare', '--project', str(project), '--skill', 'asset-image-assistant',
             '--objective', 'template regression', '--vault', str(self.root), '--request-json', str(request)])
-        cli.prepare(args)
-        basis = json.loads(cli._task_basis_path(project).read_text())
-        frozen = next(item for item in basis['standards']['professional_methods'] if item.get('template_path'))
-        self.assertEqual(frozen['template_sha256'], checksum)
-        cli._validate_current_inputs(project, basis)
-        template.write_text('Changed template')
-        # Even updating the bundle manifest cannot update old preparation evidence.
-        manifest['files'][-1]['sha256'] = hashlib.sha256(template.read_bytes()).hexdigest()
-        (self.root.parent / 'manifest.json').write_text(json.dumps(manifest))
-        with self.assertRaisesRegex(ValueError, '已改变'):
+        with patch.object(cli, 'resolve_knowledge_root', lambda explicit=None, **_: resolve_knowledge_root(explicit, repo_root=self.repo)):
+            cli.prepare(args)
+            basis = json.loads(cli._task_basis_path(project).read_text())
+            frozen = next(item for item in basis['standards']['professional_methods'] if item.get('template_path'))
+            self.assertEqual(frozen['template_sha256'], checksum)
             cli._validate_current_inputs(project, basis)
+            template.write_text('Changed template')
+            # Updating the bundle manifest must not refresh old preparation evidence.
+            entry['sha256'] = hashlib.sha256(template.read_bytes()).hexdigest()
+            (self.root.parent / 'manifest.json').write_text(json.dumps(manifest))
+            with self.assertRaisesRegex(ValueError, '已改变'):
+                cli._validate_current_inputs(project, basis)
 
     def test_real_bundle_loads_confirmed_methods_and_only_allowlisted_rules(self):
         root = resolve_knowledge_root(repo_root=REPO)
@@ -248,10 +252,6 @@ class PortableKnowledgeTests(unittest.TestCase):
                     for key in keys[:-1]:
                         target = target.setdefault(key, {})
                     target[keys[-1]] = value[0] if isinstance(value, list) else value
-                if entry.get('template_path') and not (root / entry['template_path']).exists():
-                    with self.assertRaises(MethodDocumentError):
-                        resolve_method_documents(root, {**profile, 'professional_methods': [entry]}, context)
-                    continue
                 result = resolve_method_documents(root, {**profile, 'professional_methods': [entry]}, context)
                 loaded.update(method.id for method in result.required)
         self.assertEqual(len(loaded), 12)

@@ -32,6 +32,7 @@ def test_only_required_sources_are_copied_without_dependencies(source, tmp_path)
         "skills/new-uncommitted-method.md": "新增方法\r\n".encode(),
         "references/synthetic-fixture.json": b'{"synthetic": true}\r\n',
         "scripts/.env.example": b"EXAMPLE=placeholder\n",
+        "config/requirements.in": b"jsonschema>=4.26,<4.27\n",
     }
     for relative, data in required.items():
         write(source, relative, data)

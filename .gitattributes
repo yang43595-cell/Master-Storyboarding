@@ -1,2 +1,5 @@
 # Preserve source-byte hashes across Windows/macOS/Linux checkouts.
 knowledge/runtime/** -text
+
+# Preserve the exact bytes pinned by product reference pack manifests.
+assets/product-references/** -text

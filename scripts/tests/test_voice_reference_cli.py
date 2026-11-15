@@ -652,3 +652,30 @@ def test_sync_plan_lock_timeout_returns_cli_error(sync_plan_project, monkeypatch
         release.set()
         owner.join(timeout=3)
     assert not owner.is_alive()
+
+
+def _voice_anchor(project):
+    manifest = MODULE.load_artifact_manifest(project)
+    return next(item for item in manifest["artifacts"] if item["logical_id"] == "voice.character.C1")
+
+
+def test_anchor_carries_confirmation_ref_on_bind(tmp_path):
+    _library, project, common = voice_fixture(tmp_path)
+    MODULE.command_bind(args(**common, voice_id="V1"))
+    anchor = _voice_anchor(project)
+    assert anchor["user_approved"] is True
+    assert anchor["confirmation_ref"] == "trusted://user"
+    # 不变式（限本流程产物）：凡盖了批准旗的条目必须带非空凭据。
+    manifest = MODULE.load_artifact_manifest(project)
+    for entry in manifest["artifacts"]:
+        if entry.get("user_approved") is True:
+            assert str(entry.get("confirmation_ref") or "").strip()
+
+
+def test_anchor_confirmation_ref_refreshed_on_replace(tmp_path):
+    _library, project, common = voice_fixture(tmp_path)
+    MODULE.command_bind(args(**common, voice_id="V1"))
+    MODULE.command_replace(args(**{**common, "voice_id": "V2", "approval_ref": "trusted://user-2"}))
+    anchor = _voice_anchor(project)
+    assert anchor["user_approved"] is True
+    assert anchor["confirmation_ref"] == "trusted://user-2"

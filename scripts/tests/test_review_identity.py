@@ -8,6 +8,7 @@ import copy
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -22,6 +23,15 @@ from scripts.tests.source_fixture import copy_source_fixture
 def synthetic_adopted_method(tmp_path, monkeypatch):
     vault = _method_vault(tmp_path / 'vault')
     _synthetic_method_profile(tmp_path, vault, monkeypatch)
+    bundle = cli.ROOT / "knowledge"
+    manifest_path = bundle / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    relative = "projects/Master-Storyboarding/应用知识/编导/编导方法.md"
+    source = bundle / "runtime" / relative
+    shutil.copyfile(vault / relative, source)
+    entry = next(row for row in manifest["files"] if row["path"] == relative)
+    entry.update(sha256=cli.digest(source), size_bytes=source.stat().st_size)
+    write(manifest_path, manifest)
 
 
 def write(path, value):
@@ -30,7 +40,7 @@ def write(path, value):
 
 def fixture(tmp_path):
     project = _project(tmp_path)
-    vault = _method_vault(tmp_path / "vault")
+    vault = cli.ROOT / "knowledge" / "runtime"
     source = project / "source.md"
     source.write_text("已知原始证据。", encoding="utf-8")
     candidate = project / "candidate.md"

@@ -163,7 +163,7 @@ def _focal_measurements(body: str) -> list[re.Match]:
     return found
 
 
-def inspect_document(path: Path, *, require_focal_intent: bool = False, project: Path | None = None) -> tuple[int, list[str]]:
+def inspect_document(path: Path, *, require_focal_intent: bool = False, project: Path | None = None, check_scene_realism: bool = False) -> tuple[int, list[str]]:
     text = path.read_text(encoding="utf-8-sig").replace("\r\n", "\n")
     try:
         if path.suffix.lower() == ".txt":
@@ -205,6 +205,15 @@ def inspect_document(path: Path, *, require_focal_intent: bool = False, project:
         if CHECKLIST_RE.search(body):
             errors.append(f"第 {number} 段混入内部完成条件或自查清单；移到制作备注")
         errors.extend(f"第 {number} 段{issue}" for issue in generated_overlay_issues(body))
+    if check_scene_realism:
+        if __package__:
+            from .core.scene_realism import inspect_scene_realism
+        else:
+            from core.scene_realism import inspect_scene_realism
+        records = json.loads(text).get("scene_realism") if path.suffix.lower() == ".json" else None
+        result = inspect_scene_realism(segments, records)
+        errors.extend(f"场景真实感[{f['status']}/{f['code']}] 第 {f['segment_id']} 段：{f['message']}"
+                      for f in result["findings"])
     return len(segments), errors
 
 
@@ -214,15 +223,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--require-focal-intent", action="store_true",
                         help="仅当已核对上游确有关键光学要求时启用；脚本不替代适用性判断")
     parser.add_argument("--project", type=Path, help="native_binding回读证据的准确项目根；缺省为稿件所在目录，不搜索其他项目")
+    parser.add_argument("--check-scene-realism", action="store_true",
+                        help="可选：核同一 JSON 内 scene_realism 的计划声明矛盾，不评判真实画面/声音")
     args = parser.parse_args(argv)
-    count, errors = inspect_document(args.prompt_file, require_focal_intent=args.require_focal_intent, project=args.project)
+    count, errors = inspect_document(args.prompt_file, require_focal_intent=args.require_focal_intent, project=args.project, check_scene_realism=args.check_scene_realism)
     if not count:
         print(f"UNCHECKED {args.prompt_file}: " + "; ".join(errors))
         return 2
     if errors:
-        print(f"FAIL {args.prompt_file}: {count} 个生成片段，{len(errors)} 个文字检查缺口")
+        label = "UNCHECKED" if all("场景真实感[unverified/" in e for e in errors) else "FAIL"
+        print(f"{label} {args.prompt_file}: {count} 个生成片段，{len(errors)} 个文字检查缺口")
         print("\n".join(f"- {error}" for error in errors))
-        return 1
+        return 2 if all("场景真实感[unverified/" in e for e in errors) else 1
+    if args.check_scene_realism:
+        print("SCENE DECLARATIONS CONSISTENT: 仅已声明计划一致；旁人遗漏、自然语言含义及真实视频/声音仍未验证。")
     print(f"PASS {args.prompt_file}: {count} 个正文通过适用的焦段表达与已知内部说明检查；未指定上游的光学需求仍须人工核对，不代表空间、动作或成片效果通过")
     return 0
 

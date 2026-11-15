@@ -18,7 +18,7 @@ python scripts/stage_context_cli.py candidate-source-index --skill creative-dire
 
 ## 项目案例
 
-项目案例仅从 `knowledge-profile.json` 的 `optional_experience_scopes` 明确列出的知识根相对 Markdown 路径进入启动包，再由执行者依任务判断是否读取。禁止扫描全 Vault、凭其他 Skill 路径推断编导案例目录，或把“目录存在”说成“本轮已读取”。
+项目案例仅从 `knowledge-profile.json` 的 `optional_experience_scopes` 明确列出的仓库内置知识包的相对 Markdown 路径进入启动包，再由执行者依任务判断是否读取。按本 Skill 声明的准确路径查找，并核对本轮实际读取情况。
 
 本轮维护时该列表为空，尚无已核实的编导案例入口；不得声称检索过第三层案例。空列表不阻止已有资料充分的创作。
 

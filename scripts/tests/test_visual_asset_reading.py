@@ -1,7 +1,6 @@
 """Web method migration acceptance: real local loading, isolated Vault and no model calls."""
 import importlib.util
 import json
-import os
 from pathlib import Path
 import shutil
 import sys
@@ -20,7 +19,8 @@ from core.method_documents import resolve_method_documents, MethodDocumentError
 class WebReadingTests(unittest.TestCase):
     def test_writing_projection_only_omits_named_workflow_sections(self):
         for ref, headings in {
-            'PROJECT_RULES.md': {'项目目录按生产流程排列','双文件产物串行交付', 'JSON 交付与按需导出','导演稿之后的生产顺序'},
+            'docs/rules/artifacts.md': {'JSON 交付与按需导出', '确认范围'},
+            'docs/rules/visual-production.md': {'导演稿之后的生产顺序'},
             'skills/asset-image-assistant/SKILL.md': {'后续交接'},
             'skills/_shared/knowledge-access.md': {'局部维护边界','读取与执行开销'},
         }.items():
@@ -33,11 +33,40 @@ class WebReadingTests(unittest.TestCase):
                     self.assertIn(section, projected)
             self.assertLess(len(projected), len(original))
             self.assertEqual(asset._writing_rules(ref, original, False), original)
-        for ref in ['skills/storyboard-director/references/image-continuity-hard-rules.md',
+        for ref in ['PROJECT_RULES.md', 'docs/rules/execution.md',
+                    'skills/storyboard-director/references/image-continuity-hard-rules.md',
                     'skills/_shared/product-reference.md',
                     'skills/voiceover-to-video-script/references/prompt-language-hard-rules.md']:
             original = (ROOT / ref).read_text(encoding='utf-8')
             self.assertEqual(asset._writing_rules(ref, original, True), original)
+
+    def test_split_rules_reach_web_model_package_without_optional_branches(self):
+        for mode in ['asset-library', 'project']:
+            request = {'kind': '物品', 'mode': mode, 'subject': '隔离规则测试'}
+            if mode == 'project':
+                request.update(narrative={'story_paragraphs': []},
+                               requirement={'name': '测试', 'source_paragraph_ids': []})
+            rules = asset.build_task_package(request)['rules']
+            execution = 'docs/rules/execution.md'
+            self.assertEqual(rules[execution], (ROOT / execution).read_text())
+            self.assertIn('用户调整资产图需求', rules['docs/rules/visual-production.md'])
+            self.assertNotIn('## 导演稿之后的生产顺序', rules['docs/rules/visual-production.md'])
+            self.assertNotIn('docs/rules/experiments.md', rules)
+            self.assertNotIn('docs/rules/legacy-review.md', rules)
+
+    def test_active_recovery_section_survives_single_and_batch_web_projection(self):
+        import re
+        ref = 'skills/_shared/knowledge-access.md'
+        original = (ROOT / ref).read_text()
+        section = re.search(r'(?ms)^## 压缩后的主动恢复核对\n.*?(?=^## |\Z)', original).group(0).rstrip()
+        for mode in ['asset-library', 'project']:
+            request = {'kind': '物品', 'mode': mode, 'subject': '恢复输入测试'}
+            if mode == 'project':
+                request.update(narrative={'story_paragraphs': []},
+                               requirement={'name': '测试', 'source_paragraph_ids': []})
+            self.assertIn(section, asset.build_task_package(request)['rules'][ref])
+        for single in [True, False]:
+            self.assertIn(section, asset._writing_rules(ref, original, single))
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -57,9 +86,11 @@ class WebReadingTests(unittest.TestCase):
         templates.mkdir(parents=True)
         for name in {r['template'] for r in asset.profile()['recipes'].values() if 'template' in r}:
             (templates / name).write_text('\n\n'.join('```text\n隔离模板 '+str(i)+'\n```' for i in range(5)), encoding='utf-8')
-        env = patch.dict(os.environ, {'MSB_VAULT_ROOT': str(self.vault)})
-        env.start()
-        self.addCleanup(env.stop)
+        import visual_asset_library as library
+        for runtime in (asset, library.asset_skill):
+            resolver = patch.object(runtime, 'resolve_knowledge_root', return_value=self.vault)
+            resolver.start()
+            self.addCleanup(resolver.stop)
 
     def request(self, kind, mode):
         request = {'kind': kind, 'mode': mode, 'reference_paths': ['fixture-reference.png'], 'view': '正面'}

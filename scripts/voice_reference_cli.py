@@ -17,12 +17,12 @@ from typing import Any, Iterator
 
 if __package__:
     from .core.io import project_lock as shared_project_lock
-    from .core.artifacts import dependency_closure, _confirmed_package_source, project_path
+    from .core.artifacts import dependency_closure, _confirmed_package_source, project_path, stamp_user_approval
     from .core.project_state import (normalize_project_state, reconcile_current_artifacts,
                                      render_project_state_markdown)
 else:
     from core.io import project_lock as shared_project_lock
-    from core.artifacts import dependency_closure, _confirmed_package_source, project_path
+    from core.artifacts import dependency_closure, _confirmed_package_source, project_path, stamp_user_approval
     from core.project_state import (normalize_project_state, reconcile_current_artifacts,
                                    render_project_state_markdown)
 
@@ -577,6 +577,7 @@ def _snapshot_core(args: argparse.Namespace, *, mode: str) -> dict[str, Any]:
             old_voice=old_voice or "",
             new_voice=args.voice_id,
             revision=revision,
+            approval_ref=args.approval_ref,
         )
         if invalidated_artifacts or any(
             item.get("logical_id") == voice_anchor_id(character_id) for item in artifact_manifest["artifacts"]
@@ -682,6 +683,7 @@ def _prepare_voice_anchor(
     old_voice: str,
     new_voice: str,
     revision: str,
+    approval_ref: str,
 ) -> tuple[dict[str, Any], list[str]]:
     """在内存中准备 artifact_manifest：确保锚点登记，换声时按 depends_on 反图失效。
 
@@ -691,20 +693,20 @@ def _prepare_voice_anchor(
     anchor = voice_anchor_id(character_id)
     anchor_item = next((item for item in manifest["artifacts"] if item.get("logical_id") == anchor), None)
     if anchor_item is None:
-        manifest.setdefault("artifacts", []).append(
-            {
-                "artifact_id": f"ART-VOICE-{character_id}",
-                "logical_id": anchor,
-                "type": "voice_reference",
-                "path_or_url": snapshot_path,
-                "revision": revision,
-                "status": "current",
-                "depends_on": [],
-                "source_stage": "voice-reference-manager",
-                "user_approved": True,
-                "created_at": now(),
-            }
-        )
+        anchor_entry = {
+            "artifact_id": f"ART-VOICE-{character_id}",
+            "logical_id": anchor,
+            "type": "voice_reference",
+            "path_or_url": snapshot_path,
+            "revision": revision,
+            "status": "current",
+            "depends_on": [],
+            "source_stage": "voice-reference-manager",
+            "created_at": now(),
+        }
+        # 旗与凭据同写：confirmation_ref 指向声音清单绑定记录里的同一凭据。
+        stamp_user_approval(anchor_entry, approval_ref)
+        manifest.setdefault("artifacts", []).append(anchor_entry)
     else:
         # 换声：锚点必须跟踪最新快照，并刷新 revision / 确认态；绝不残留旧文件路径。
         anchor_item["path_or_url"] = snapshot_path
@@ -712,7 +714,7 @@ def _prepare_voice_anchor(
         anchor_item["status"] = "current"
         anchor_item["source_stage"] = "voice-reference-manager"
         anchor_item["depends_on"] = anchor_item.get("depends_on") or []
-        anchor_item["user_approved"] = True
+        stamp_user_approval(anchor_item, approval_ref)
         anchor_item.pop("stale_reasons", None)
     invalidated: list[str] = []
     if not replacing:

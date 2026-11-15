@@ -5,7 +5,7 @@ import json
 import pytest
 
 from scripts import stage_context_cli as cli
-from test_stage_context_cli import _method_vault, _project
+from test_stage_context_cli import _project
 
 
 def prepare_sources(tmp_path, alias="sources"):
@@ -21,9 +21,8 @@ def prepare_sources(tmp_path, alias="sources"):
         paths.append(str(path))
     request = project / "request.json"
     request.write_text(json.dumps({"task": "synthetic source snapshot", alias: paths}))
-    vault = _method_vault(tmp_path / "vault")
     args = argparse.Namespace(project=str(project), skill="creative-director",
-        objective="synthetic source snapshot", request_json=str(request), vault=str(vault),
+        objective="synthetic source snapshot", request_json=str(request), vault=None,
         actor_id="test-agent", task_id="test-sources")
     cli.prepare(args)
     basis = json.loads((project / cli.CONTEXT_DIR / "task_basis.json").read_text())
@@ -76,4 +75,57 @@ def test_old_persisted_preparation_missing_sources_snapshot_requires_reprepare(t
     basis["input_versions"] = {}
     basis["input_snapshot"]["sources"] = []
     with pytest.raises(cli.StageContextError, match="当前来源"):
+        cli._validate_current_inputs(project, basis)
+
+
+def test_old_external_knowledge_basis_requires_reprepare_before_reading_methods(tmp_path, monkeypatch):
+    project, _, basis = prepare_sources(tmp_path)
+    external = tmp_path / "old-vault"
+    external.mkdir()
+    basis["reading_manifest"]["vault_root"] = str(external)
+    (project / cli.CONTEXT_DIR / "task_basis.json").write_text(json.dumps(basis), encoding="utf-8")
+
+    def forbidden(*args):
+        raise AssertionError("knowledge bytes must not be read from an old external root")
+
+    monkeypatch.setattr(cli, "verify_selected_file", forbidden)
+    args = argparse.Namespace(project=str(project), skill="creative-director")
+    with pytest.raises(cli.StageContextError, match="仓库内置知识重新 prepare"):
+        cli.ensure_prepared(args)
+    with pytest.raises(cli.StageContextError, match="仓库内置知识重新 prepare"):
+        cli.record_method_reading(args)
+
+
+def test_explicit_external_knowledge_cannot_override_method_receipt(tmp_path):
+    project, _, _ = prepare_sources(tmp_path)
+    external = tmp_path / "external-vault"
+    external.mkdir()
+    args = argparse.Namespace(project=str(project), skill="creative-director",
+        actor_id="test-agent", task_id="test-sources", vault=str(external), method=[])
+    with pytest.raises(cli.StageContextError, match="knowledge/runtime"):
+        cli.record_method_reading(args)
+    assert not (project / cli.CONTEXT_DIR / "method_reading_evidence.json").exists()
+
+
+@pytest.mark.parametrize("field", ["knowledge_profile", "local_documents"])
+def test_saved_local_knowledge_paths_cannot_point_outside_repository(tmp_path, monkeypatch, field):
+    project, _, basis = prepare_sources(tmp_path)
+    external = tmp_path / "external-knowledge.json"
+    external.write_text("{}", encoding="utf-8")
+    record = basis[field] if field == "knowledge_profile" else basis["standards"][field][0]
+    record.update(path=str(external), sha256=cli.digest(external))
+    read_json = cli._read_json
+    digest = cli.digest
+
+    def guarded_read(path, *args, **kwargs):
+        assert path != external, "external knowledge file must not be opened"
+        return read_json(path, *args, **kwargs)
+
+    def guarded_digest(path):
+        assert path != external, "external knowledge file must not be hashed"
+        return digest(path)
+
+    monkeypatch.setattr(cli, "_read_json", guarded_read)
+    monkeypatch.setattr(cli, "digest", guarded_digest)
+    with pytest.raises(cli.StageContextError, match="规范路径越出仓库"):
         cli._validate_current_inputs(project, basis)

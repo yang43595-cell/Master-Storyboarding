@@ -9,14 +9,16 @@ import zipfile
 import pytest
 from scripts import stage_context_cli as cli
 from scripts.core import artifacts, candidate_test as mode
-from scripts.core.io import write_json
+from scripts.core.io import PROJECT_LOCK_RELATIVE, write_json
 from test_candidate_test_mode import setup, add
-from test_stage_context_cli import _project, _method_vault
+from test_stage_context_cli import _project
 
 
 def snapshot(project):
+    # A lock records its latest owner and is not part of the delivery snapshot.
     return {p.relative_to(project).as_posix(): p.read_bytes()
-            for p in project.rglob('*') if p.is_file()}
+            for p in project.rglob('*')
+            if p.is_file() and p.relative_to(project) != PROJECT_LOCK_RELATIVE}
 
 
 def chain(project):
@@ -27,7 +29,7 @@ def chain(project):
     return project
 
 
-def test_required_external_method_fails_before_startup(tmp_path):
+def test_external_knowledge_override_fails_before_startup(tmp_path):
     project = _project(tmp_path)
     (tmp_path / 'missing-vault').mkdir()
     request = tmp_path/'request.json'
@@ -36,17 +38,19 @@ def test_required_external_method_fails_before_startup(tmp_path):
     args = cli.parser().parse_args(['prepare', '--project', str(project), '--skill',
         'creative-director', '--objective', 'synthetic recovery', '--vault', str(tmp_path/'missing-vault'),
         '--request-json', str(request)])
-    with pytest.raises(ValueError, match='专业方法文件缺失'):
+    with pytest.raises(ValueError, match='knowledge/runtime'):
         cli.prepare(args)
     assert snapshot(project) == before
 
 
-def test_optional_external_method_is_not_made_mandatory(tmp_path):
-    (tmp_path / 'absent').mkdir()
+def test_ambient_external_knowledge_is_ignored(tmp_path, monkeypatch):
+    monkeypatch.setenv("MSB_VAULT_ROOT", str(tmp_path / 'absent'))
     project = _project(tmp_path)
     result = cli.prepare(cli.parser().parse_args(['prepare', '--project', str(project), '--skill',
-        'creative-director', '--objective', 'synthetic optional method', '--vault', str(tmp_path/'absent')]))
+        'creative-director', '--objective', 'synthetic optional method']))
     assert Path(result['path']).is_file()
+    basis = json.loads((project / cli.CONTEXT_DIR / "task_basis.json").read_text(encoding="utf-8"))
+    assert Path(basis["reading_manifest"]["vault_root"]) == (cli.ROOT / "knowledge/runtime").resolve()
 
 
 def test_move_and_zip_restore_preserve_relative_refs_and_bytes(tmp_path):

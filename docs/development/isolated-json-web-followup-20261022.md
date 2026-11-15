@@ -1,5 +1,7 @@
 # A 后续修正：仅导演阶段新增交付约束
 
+> 状态：历史记录（2026-10-22）。隔离试验的后续修正留痕，现行口径以 [web-content-adapter.md](web-content-adapter.md) 为准。
+
 本次在 0b71e9e0fb10b9ee8aa99034c0dafdf16380cb0e 之后追加提交，不改历史提交、既有测试记录或生产分支。
 
 从隔离基线 1a57efeb729a95a6df2aac69a04fe5f723d1bb6d 核实：“各阶段业务数据仅维护 JSON，Markdown 按需导出”及“JSON 交付与按需导出”整节原本已经存在。此次恢复这些全局规则原文，仅新增“导演 JSON 与网页审查（本次修正）”一节；脚本检查移除该新节后，PROJECT_RULES.md 与原始基线逐字节一致。

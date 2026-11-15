@@ -4,7 +4,7 @@ This helper provides machine ASR candidates, not human listening verification, s
 
 ## Setup boundary
 
-Use a separate Python environment. The optional `config/requirements-asr.txt` lists packages from the official Python Package Index; install it explicitly when needed, never implicitly during transcription. Keep that environment separate from the visual-library runtime. FFmpeg must already be installed from a reputable official/package-manager source. Record resolved dependency versions for the actual run.
+Use a separate Python environment. The optional `config/requirements-asr.txt` locks direct and transitive packages with SHA256 hashes from the official Python Package Index; `config/requirements-asr.in` is the maintenance input. Install explicitly when needed with `python -m pip install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: -r config/requirements-asr.txt`, never implicitly during transcription. Keep that environment separate from the visual-library runtime. FFmpeg must already be installed from a reputable official/package-manager source. Record resolved dependency versions for the actual run. Resolution or wheel availability does not establish real-model compatibility or transcription accuracy; this optional lock is not installed by the default CI job. See [dependency checks](dependency-checks.md) for lock maintenance and verification boundaries.
 
 The model must already exist as a local CTranslate2 model directory containing `model.bin` and `config.json`. Obtain models separately through an authorized official source; this command never accepts a remote model ID or downloads a model. It runs on CPU with int8 computation. Missing model files fail explicitly.
 

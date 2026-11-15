@@ -32,7 +32,7 @@ _EXCLUDED_NAMES = (
 # Unknown types fail rather than silently dropping a new runtime dependency.
 _SOURCE_SUFFIXES = {
     ".py", ".md", ".json", ".js", ".cjs", ".mjs", ".ts", ".ps1",
-    ".cmd", ".sh", ".txt", ".yaml", ".yml", ".ini", ".css", ".html",
+    ".cmd", ".sh", ".txt", ".in", ".yaml", ".yml", ".ini", ".css", ".html",
 }
 _SOURCE_FILENAMES = {"LICENSE", ".env.example"}
 
