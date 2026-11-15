@@ -50,15 +50,16 @@ def _source(project: Path, value: str | Path) -> tuple[dict, dict]:
     review_check = validate_story_sources(package, project_root=project, review_ready=True)
     return package, {**_binding(project, path, raw), "project_id": package["project_id"],
                      "revision": package["revision"], "status": package["status"],
-                     "awaiting_creative_approval_ids": review_check["awaiting_creative_approval_ids"]}
+                     "awaiting_creative_approval_ids": review_check["awaiting_creative_approval_ids"],
+                     "awaiting_subtitle_approval_ids": review_check["awaiting_subtitle_approval_ids"]}
 
 
-def _projection(project: Path, package: dict, value: str | Path) -> tuple[str, dict]:
+def _projection(project: Path, package: dict, value: str | Path, *, subtitle_review_ids=()) -> tuple[str, dict]:
     path = _path(project, value)
     raw = path.read_bytes()
     with tempfile.TemporaryDirectory(prefix=".review-export-", dir=project) as folder:
         expected = Path(folder) / "reading.md"
-        export_markdown(package, expected)
+        export_markdown(package, expected, subtitle_review_ids=subtitle_review_ids)
         if raw != expected.read_bytes():
             raise ValueError("Reading Markdown differs from this exact narrative JSON; export a new copy.")
     return raw.decode("utf-8"), _binding(project, path, raw)
@@ -140,7 +141,7 @@ def run(args: argparse.Namespace) -> dict:
         if args.command == "prepare":
             package, source = _source(project, args.narrative)
             output = _path(project, args.output)
-            export_markdown(package, output)
+            export_markdown(package, output, subtitle_review_ids=source["awaiting_subtitle_approval_ids"])
             return {"source_json": source, "markdown": _binding(project, output, output.read_bytes())}
         if args.command in {"publish", "publish-asset"}:
             require_production(project)
@@ -160,7 +161,8 @@ def run(args: argparse.Namespace) -> dict:
             route = "create-case"
         elif args.command == "publish":
             package, source = _source(project, args.narrative)
-            text, markdown = _projection(project, package, args.markdown)
+            text, markdown = _projection(project, package, args.markdown,
+                                         subtitle_review_ids=source["awaiting_subtitle_approval_ids"])
             parameters = {"caseId": args.case_id, "stage": "script",
                           "name": Path(args.markdown).name, "operationId": args.operation_id}
             if args.purpose is not None:

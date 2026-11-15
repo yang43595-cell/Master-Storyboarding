@@ -8,7 +8,35 @@ import pytest
 from scripts.core.generation_boundaries import (
     main, validate_delivery_cutpoints, validate_delivery_parameters, validate_generation_boundaries,
 )
+from scripts.core.project_kickoff import REQUEST_PATH
 from scripts.core.quality_evidence import required_visuals, validate_required_visuals, validate_scene_source_mapping
+
+
+@pytest.mark.parametrize(("product_id", "field", "prompt", "rejected"), [
+    ("造物者温泉酸面膜", "prompt", "旁白：「还送高定调膜碗刷」", True),
+    ("creator-polishing-mask-2", "prompt_text", "旁白：「还送高定调膜碗刷」", True),
+    ("creator-polishing-mask-2", "prompt", "旁白：「还送高定条膜碗刷」", False),
+    ("creator-polishing-mask-2", "prompt", "桌上摆着高定调膜碗刷。", False),
+    ("another-product", "prompt", "旁白：「还送高定调膜碗刷」", False),
+])
+def test_creator_gift_pronunciation_in_submitted_video_body(tmp_path, product_id, field, prompt, rejected):
+    request = tmp_path / REQUEST_PATH
+    request.parent.mkdir()
+    request.write_text(json.dumps({"kickoff": {
+        "decision_ref": "synthetic",
+        "product": {"mode": "replace", "product_id": product_id, "product_usage": "display"},
+        "canvas": {"platform": "redframe", "model": "Seedance 2.5", "aspect_ratio": "9:16",
+                   "resolution": "480p", "create_new": True},
+    }}, ensure_ascii=False), encoding="utf-8")
+    row = {"segment_id": "V01", "source_shot_ids": ["S1"], field: prompt,
+           "source_audio": [{"dialogue": "还送高定调膜碗刷"}]}
+    payload = {"generation_segments": [row]}
+    board = {"scenes": [{"scene_id": "ROOM", "shots": [{"shot_id": "S1"}]}]}
+    if rejected:
+        with pytest.raises(ValueError, match="V01.*还送高定条膜碗刷"):
+            validate_generation_boundaries(payload, board, tmp_path)
+    else:
+        validate_generation_boundaries(payload, board, tmp_path)
 
 
 @pytest.mark.parametrize(("case", "issue"), [
@@ -98,6 +126,55 @@ def test_merged_scene_has_no_fixed_minimum_maximum_or_model_guess(tmp_path):
     before = copy.deepcopy(payload)
     assert validate_generation_boundaries(payload, board, tmp_path)["same_scene_boundaries_checked"] == 0
     assert payload == before and "selected_video_model" not in payload
+
+
+def test_redframe_duration_evidence_and_authored_edit_are_checked(tmp_path):
+    payload, board = fixture(tmp_path, maximum=30)
+    model = payload['selected_video_model']
+    model.update(platform='redframe', min_duration_seconds=4)
+    source = dict(segment_id='MERGED', prompt='Synthetic continuous action.',
+                  source_shot_ids=['S1', 'S2'], target_edit_duration_seconds=5.8,
+                  edit_in_seconds=10, edit_out_seconds=15.8, shot_durations=[2.48, 3.52],
+                  parameters=dict(payload['platform'], duration=6))
+    payload['generation_segments'] = [source]
+    actual = dict(source_segment_id='MERGED', parameters=dict(source['parameters']), duration_bounds=[4, 30])
+    assert validate_generation_boundaries(payload, board, tmp_path)['segment_count'] == 1
+    validate_delivery_parameters([actual], payload, tmp_path, platform='redframe')
+
+    for bounds in ([2, 30], [4, 31]):
+        with pytest.raises(ValueError, match='duration_bounds 与.*已核源能力上下限不一致'):
+            validate_delivery_parameters([{**actual, 'duration_bounds': bounds}], payload, tmp_path, platform='redframe')
+    with pytest.raises(ValueError, match='所属平台'):
+        validate_delivery_parameters([actual], payload, tmp_path, platform='other-platform')
+
+    def replace_source(**kwargs):
+        return {**payload, 'generation_segments': [{**source, **kwargs}]}
+
+    padded = {**source['parameters'], 'duration': 4}
+    short = replace_source(target_edit_duration_seconds=2.48, edit_out_seconds=12.48,
+                           parameters=padded, shot_durations=[4], source_shot_ids=['S1'])
+    with pytest.raises(ValueError, match='目标剪辑时长 2.48 秒低于本轮已核下限 4 秒；默认并入下一段'):
+        validate_generation_boundaries(short, board, tmp_path)
+    with pytest.raises(ValueError, match='目标剪辑时长 2.48 秒低于本轮已核下限 4 秒；默认并入下一段'):
+        validate_delivery_parameters([{**actual, 'parameters': padded}], short, tmp_path, platform='redframe')
+    shorter = dict(source['parameters'], duration=2.48)
+    below_minimum = replace_source(parameters=shorter, shot_durations=[2.48])
+    with pytest.raises(ValueError, match='生成时长 2.48 秒低于本轮已核下限 4 秒'):
+        validate_delivery_parameters([{**actual, 'parameters': shorter}], below_minimum, tmp_path, platform='redframe')
+    with pytest.raises(ValueError, match='目标剪辑时长与源起止时间不一致'):
+        validate_delivery_parameters([actual], replace_source(edit_out_seconds=12.48), tmp_path, platform='redframe')
+
+    planned = {k: v for k, v in source.items() if k not in (
+        'target_edit_duration_seconds', 'edit_in_seconds', 'edit_out_seconds')}
+    with pytest.raises(ValueError, match='须在准确源稿登记目标剪辑时长'):
+        validate_delivery_parameters([actual], {**payload, 'generation_segments': [planned]}, tmp_path,
+                                     platform='redframe')
+    with pytest.raises(ValueError, match='缺少本轮实际模型'):
+        validate_delivery_parameters([actual], {k: v for k, v in payload.items() if k != 'selected_video_model'},
+                                     tmp_path, platform='redframe')
+    (tmp_path / model['capability_evidence']['path']).write_text('Evidence bytes changed.')
+    with pytest.raises(ValueError, match='限制证据 hash 已过期'):
+        validate_delivery_parameters([actual], payload, tmp_path, platform='redframe')
 
 
 def test_required_director_beat_cannot_be_cut_from_middle_of_source_scope(tmp_path):

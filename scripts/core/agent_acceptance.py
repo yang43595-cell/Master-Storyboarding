@@ -14,6 +14,8 @@ from .io import project_lock, utc_now
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = "review-to-canvas"
 SKILLS = {"storyboard-planner", "storyboard-director", "voiceover-to-video-script"}
+ASSET_ADOPTION_SKILL = "asset-image-assistant"
+AUTHORIZATION_SKILLS = SKILLS | {ASSET_ADOPTION_SKILL}
 CORE_CHECKS = {
     "storyboard-planner": {"PLAN-PACKAGE", "PLAN-TRACE", "PLAN-CONTINUITY"},
     "storyboard-director": {"VISUAL-TARGET", "VISUAL-QC"},
@@ -28,6 +30,12 @@ def _text(value):
 def _valid_skills(skills):
     return (isinstance(skills, list) and bool(skills)
             and all(isinstance(item, str) and item in SKILLS for item in skills)
+            and len(skills) == len(set(skills)))
+
+
+def _valid_asset_skills(skills):
+    return (isinstance(skills, list) and bool(skills)
+            and all(isinstance(item, str) and item in AUTHORIZATION_SKILLS for item in skills)
             and len(skills) == len(set(skills)))
 
 
@@ -83,6 +91,61 @@ def require_workflow_authorization(project, authorization_id, skill, *, state=No
             or not _valid_skills(skills) or skill not in skills):
         raise ValueError("流程授权已撤回、项目/阶段不符或依据不完整")
     return authorization
+
+
+def require_asset_workflow_authorization(project, authorization_id, *, state=None):
+    """Validate an active workflow authorization covering visual-asset adoption.
+
+    This only scopes the chat-confirmation asset path in visual_asset_projects;
+    it never turns an agent self-check into an asset confirmation.
+    """
+    from .candidate_test import require_production
+    from .project_state import load_project_state
+    project = Path(project).resolve()
+    require_production(project)
+    state = load_project_state(project) if state is None else state
+    if not _text(authorization_id):
+        raise ValueError("资产采用缺有效授权 ID")
+    matches = [item for item in state.get("workflow_authorizations", [])
+               if isinstance(item, dict) and item.get("id") == authorization_id]
+    if len(matches) != 1:
+        raise ValueError("流程授权不存在或不唯一")
+    authorization = matches[0]
+    skills = authorization.get("skills")
+    if (authorization.get("workflow") != WORKFLOW or authorization.get("status") != "active"
+            or authorization.get("project_path") != str(project)
+            or not _text(authorization.get("authorization_ref"))
+            or not _text(authorization.get("created_at"))
+            or not _valid_asset_skills(skills) or ASSET_ADOPTION_SKILL not in skills):
+        raise ValueError("流程授权已撤回、项目不符或未覆盖资产采用范围")
+    return authorization
+
+
+def register_asset_workflow_authorization(project, *, authorization_id, authorization_ref):
+    """Record an already-given user authorization scoped to visual-asset adoption.
+
+    Separate from register_workflow_authorization on purpose: that entry only
+    scopes manuscript self-check acceptance and must never name the asset
+    stage. This record only feeds require_asset_workflow_authorization.
+    """
+    from .candidate_test import require_production
+    from .project_state import load_project_state, write_project_state
+    project = Path(project).resolve()
+    if not project.is_dir():
+        raise ValueError("项目目录不存在")
+    if not _text(authorization_id) or not _text(authorization_ref):
+        raise ValueError("资产流程授权需要准确 ID 与用户依据")
+    with project_lock(project):
+        require_production(project)
+        state = load_project_state(project)
+        if any(item.get("id") == authorization_id for item in state.get("workflow_authorizations", [])):
+            raise ValueError("流程授权 ID 已存在；不得覆盖旧授权")
+        record = {"id": authorization_id, "workflow": WORKFLOW,
+                  "project_path": str(project), "authorization_ref": authorization_ref,
+                  "skills": [ASSET_ADOPTION_SKILL], "status": "active", "created_at": utc_now()}
+        state.setdefault("workflow_authorizations", []).append(record)
+        write_project_state(project, state)
+        return record
 
 
 def register_workflow_authorization(project, *, authorization_id, authorization_ref, skills):

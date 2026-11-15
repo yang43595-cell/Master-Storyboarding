@@ -10,7 +10,7 @@
 
 逐 draft 增补本轮确有需要的声明，仍存在同一 JSON：
 
-- `duration_bounds: [min, max]`：来自本轮已核实的平台能力，单位秒；不内置或猜测模型上限。
+- `duration_bounds: [min, max]`：来自本轮已核实的平台能力，单位秒。红帧正式交付须与已采用源稿 `selected_video_model` 的上下限一致。
 - `shot_durations: [seconds, ...]`：按提交顺序保存实际承载的时间，合计等于 `parameters.duration`。数组须非空且各项为有限正数。源稿同时声明逐镜安排和生成总时长时，分段检查、正式采用和画布预检共用同一合计校验，时长别名相互冲突时拒绝。源稿尚无生成总时长时仍可核逐镜安排，正式画布继续要求平台参数。
 - `required_entities: [entity_id, ...]` 与 `required_reference_roles: {entity_id: [role, ...]}`：实际需要参考覆盖的实体及职责。没有独立参考的剧情实体不虚造参考。
 - `reference_checks`：与 ordered_media 一一对应，按实际上传顺序保存每份参考的 artifact_id、revision、sha256、kind（image/video/audio）、roles 职责集合、entity_ids（兼容旧单值 role）；不省掉未在提示词中显式提及的上传素材。role 为 identity/appearance/start_frame/end_frame/action/scale/layout/voice。首尾帧同时保存明确 state_id；action 须为视频，duration 与本地 ffprobe 实际时长核对。此入口要求参考作为具体已确认产物登记，不能以旧快照的 confirmed 字样或文件名替代确认。AST 母图仍先走现有 asset_refs 的具体 output 检查，不伪造通用登记来绕过。
@@ -27,6 +27,8 @@ python scripts/canvas_readback.py --delivery --project <隔离项目> --frozen <
 ```
 
 `--delivery` 是每次新画布交付的明确调用模式，要求准确项目和非空修订，继续复用当前来源、引用及原生回读校验。它不是后台拦截器：绕过此入口的外部操作不会自动获得检查。历史只读比较可不带该开关，但缺项目/修订的历史结果不能替代正式交付。缺 manifest 或真实确认时如实报告，不自动补审批。
+
+红帧正式草稿写入执行者用第一条命令核本批实际目标、已采用视频稿及导演稿、来源编导的确认和本段各引用的采用依据，按返回的段号和快照哈希执行。首次直传尚未取得平台身份时，段内保留 `reference_checks` 的准确文件身份、顺序和直传用途，填写 `edges: []`、`source_nodes: []`，省略 `ordered_media`，`node_id` 暂用唯一的计划标识。`upload_mapping_pending_nodes` 标记仍待平台身份的节点。此时预检核本地来源和段落，取得平台回执后再在同一冻结交付中填实际节点、槽位及绑定证据，更新证据绑定，用第二条命令核重开实读。写前计划不能作为正式回读输入。合法无媒体段明确使用 `ordered_media: []`。
 
 中断时没有完整刷新回读就未完成交付核验，先只读核实已保存部分，不自动重试写入/生成。重复运行这两条命令只读且重新核验当前来源；源版本、字节、引用或正文改变后必须重跑，不能复用先前 PASS。动作语义仍执行视频方法的同次自查，不将技术通过写为人工已看图。
 
@@ -232,9 +234,11 @@ python scripts/canvas_readback.py --private-preview --project <准确候选项�
 
 ## 分段参数与已有前驱
 
-现行生成段的实际 `parameters.model`、参考模式（`reference_mode` / `mode`）与生成时长（`duration` / `duration_seconds`）绑定准确源稿；别名可适配，但不得互相冲突。选定能力上限取自源的已核证据，交付自填 `duration_bounds` 不是能力证明。需改参数时先另出源修订，不在交付时静默替换。
+正式分段、自查与交付共用生成段读取入口。历史稿如带 `independent_candidate_ranges`，须按可靠的绝对剪辑时窗或已有全片顺序展开，并核声明范围、重复段和缺段。无法确定完整顺序或范围时报错，保持原稿字节。
 
-同一已选模型使用多种实际参考模式时，可在既有 `selected_video_model` 增补 `reference_modes` 和逐模式 `reference_mode_evidence`；每种模式都须有准确能力证据且支持所声明的共同上限。各段仍逐项绑定自己的实际模式，不接受未知模式、跨模型套用或只给模式名而无证据。没有该集合的旧稿仍按原单模式精确匹配。
+现行生成段的实际 `parameters.model`、参考模式（`reference_mode` / `mode`）与生成时长（`duration` / `duration_seconds`）绑定准确源稿；别名可适配，但不得互相冲突。红帧正式写入和回读均从已采用源稿 `selected_video_model` 读取 `min_duration_seconds`、`max_duration_seconds`，并核目标平台、模型、参考模式及原始能力证据的文件哈希。冻结稿必须沿用这一对上下限。源段须声明 `target_edit_duration_seconds` 或准确的 `edit_in_seconds` 与 `edit_out_seconds`，两种同时声明时须一致。红帧独立段目标剪辑低于本轮已核下限时，按[短镜优先并入下一段](../../skills/voiceover-to-video-script/modules/video-method.md#红帧短镜优先并入下一段)在源稿中处理；单独增加生成或逐镜时长不会解除拒绝。高于下限的原剪辑可保留合理的原生时长余量。需改参数时先另出源修订，不在交付时静默替换。
+
+同一已选模型使用多种实际参考模式时，可在既有 `selected_video_model` 增补 `reference_modes` 和逐模式 `reference_mode_evidence`；每种模式都须有准确能力证据且支持所声明的共同上下限。各段仍逐项绑定自己的实际模式，不接受未知模式、跨模型套用或只给模式名而无证据。没有该集合的旧稿仍按原单模式精确匹配。
 
 只交付连续事件的后段时，保留真实 `continuity.previous_node_id` 和 `event_id`，并在同一 `continuity` 内添加 `previous_delivery`，仅含已有前次快照的 `artifact_id`、`revision`、`sha256`。该快照也须列于本次 `source_artifacts`，沿用正式已确认来源或当前私有候选范围，不创建新的批准。没有已有可核证据就报告缺口，不能删前驱、另起事件或补造快照通过。
 
@@ -249,16 +253,16 @@ python scripts/canvas_readback.py --private-preview --project <准确候选项�
 ```json
 {
   "canvas_binding": {
-    "mode": "edge",
+    "mode": "direct",
     "purpose": "S01-003 产品外观",
-    "prompt_reference": true,
-    "source_port": "image",
-    "target_port": "实际视频输入端口"
+    "prompt_reference": true
   }
 }
 ```
 
-`edge` 的源身份来自本槽 `ordered_media.node_id`，逐 draft 的 `edges` 保存全部实际入边，每项严格包含 `source_node_id/source_port/target_node_id/target_port/slot`，slot 从 1 开始。`source_nodes` 保存相应源输出的 `node_id/port/sha256`，同源输出只列一次。程序将源、端口、目标、槽和原片文件 hash 逐项核齐，缺边、多边、错端口、同源输出指向不同字节均拒绝。普通 `direct` 输入不填端口，产品参考及 action 职责须独立源节点连线。真实商品识别仍靠已有产品参考登记与实看，不从名称推断。原片裁切与完整画幅按准确文件版本区分。
+红帧新草稿统一用 `direct`，包括产品与动作参考。直传槽不填端口，整段均直传时 `edges` 和 `source_nodes` 均为空列表。素材区供认证和查看的卡片独立于槽位图谱。真实商品识别仍靠已有产品参考登记与实看，不从名称推断。原片裁切与完整画幅按准确文件版本区分。
+
+既有连线快照和其他平台按实际 `edge` 绑定核对。绑定填写 `source_port`、`target_port`，源身份来自本槽 `ordered_media.node_id`。逐 draft 的 `edges` 保存全部实际入边，每项严格包含 `source_node_id/source_port/target_node_id/target_port/slot`，slot 从 1 开始。`source_nodes` 保存相应源输出的 `node_id/port/sha256`，同源输出只列一次。程序将源、端口、目标、槽和原片文件 hash 逐项核齐，缺边、多边、错端口、同源输出指向不同字节均拒绝。其他平台采用本合同核产品与动作引用时仍用独立源节点连线。
 
 正文逐镜秒数范围直接从 `prompt` 读取，例如 `0.00–1.00秒` 和 `1.00–4.00秒`，支持 s/秒及横线、波浪线、至、到。各范围须从 0 连续递增，与 `shot_durations` 一一匹配，最后时间点等于 `parameters.duration`。未写可解析范围、只写总秒数或范围有歧义时拒绝该合同，执行者回准确来源修订并核实，不能在交付稿静默重写已采用正文。该有限格式检查不证明实拍动作足时，也不解析任意自然语言时间。正文仍保留时间不渲染为文字的既有约束。
 

@@ -59,13 +59,14 @@ def rows_by_id(rows: list) -> dict:
     return result
 
 
-def validate_canvas_inputs(row: dict) -> None:
+def validate_canvas_inputs(row: dict, *, redframe: bool = False, before_upload: bool = False) -> None:
     """Check declared graph/slot uses in the existing draft, without UI access."""
     media, refs = row.get('ordered_media'), row.get('reference_checks')
-    if not isinstance(media, list) or not isinstance(refs, list) or len(media) != len(refs):
+    if not isinstance(refs, list) or (not before_upload and (
+            not isinstance(media, list) or len(media) != len(refs))):
         raise ValueError('canvas inputs require one reference check per actual slot')
     expected_edges, expected_sources, uses = [], {}, set()
-    for slot, (native, ref) in enumerate(zip(media, refs), 1):
+    for slot, ref in enumerate(refs, 1):
         binding = ref.get('canvas_binding')
         if (not isinstance(binding, dict) or binding.get('mode') not in {'edge', 'direct'}
                 or not isinstance(binding.get('purpose'), str) or not binding['purpose'].strip()
@@ -79,11 +80,14 @@ def validate_canvas_inputs(row: dict) -> None:
                                                 or not binding['unmentioned_reason'].strip()):
             raise ValueError(f'canvas slot {slot}: unmentioned input needs its actual purpose/reason')
         if binding['mode'] == 'direct':
-            if ref.get('product_reference') or 'action' in ref.get('roles', [ref.get('role')]):
+            if not redframe and (ref.get('product_reference') or 'action' in ref.get('roles', [ref.get('role')])):
                 raise ValueError('canvas product/action reference requires an independent source node and edge')
             if 'source_port' in binding or 'target_port' in binding:
                 raise ValueError('direct input cannot declare graph ports')
             continue
+        if before_upload:
+            raise ValueError('RedFrame before-upload preflight requires direct reference slots')
+        native = media[slot - 1]
         if any(not isinstance(binding.get(key), str) or not binding[key].strip()
                for key in ('source_port', 'target_port')):
             raise ValueError(f'canvas slot {slot}: exact source and target ports required')
@@ -118,8 +122,7 @@ def validate_canvas_inputs(row: dict) -> None:
                 or not math.isclose(end - start, seconds, abs_tol=0.01)):
             raise ValueError('canvas prompt timeline conflicts with shot_durations')
         cursor = end
-    parameters = row.get('parameters', {})
-    duration = parameters.get('duration', parameters.get('duration_seconds'))
+    duration = row.get('parameters', {}).get('duration')
     if (type(duration) not in (int, float) or not math.isfinite(duration)
             or not math.isclose(cursor, duration, abs_tol=0.01)):
         raise ValueError('canvas prompt end conflicts with total duration')
@@ -509,7 +512,8 @@ def predecessor_contexts(frozen, project, manifest, private_preview):
     return contexts, projections
 
 
-def validate_submission(frozen: dict, project: Path, *, private_preview: bool = False) -> dict:
+def validate_submission(frozen: dict, project: Path, *, private_preview: bool = False,
+                        formal_delivery: bool = False, preflight: bool = False) -> dict:
     """Check the existing frozen delivery JSON, using current project authority.
 
     Roles/states are explicit production decisions, not inferred visual facts.
@@ -545,7 +549,14 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
     host = (urlsplit(target_url(frozen['target_url'])).hostname or '').lower()
     xiaoyunque = host in {'xiaoyunque.com', 'www.xiaoyunque.com', 'xyq.jianying.com'}
     redframe = host == 'redframe-ai.xmpaohong.com' or bool(canvas and canvas.get('platform') == 'redframe')
-    for row in rows_by_id(frozen['drafts']).values():
+    formal_redframe = formal_delivery and redframe
+    if formal_redframe and (not canvas or canvas['platform'] != 'redframe' or not platform_project_id):
+        raise ValueError('正式红帧写入须登记准确画布和项目 ID')
+    drafts = rows_by_id(frozen['drafts'])
+    planned_ids = {ident for ident, row in drafts.items() if 'ordered_media' not in row}
+    if planned_ids and formal_redframe and not preflight:
+        raise ValueError('红帧正式回读须提供实际 ordered_media；写前计划不能用于交付')
+    for row in drafts.values():
         if canvas:
             params = row.get("parameters", {})
             aspects = [params[key] for key in ("aspect_ratio", "aspect", "ratio") if key in params]
@@ -579,7 +590,6 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         dependencies = discover_dependencies(project, payload=frozen, json_projections=projections)
     if not dependencies['ok']:
         raise ValueError('Dependency readiness failed: ' + '; '.join(dependencies['errors'] + dependencies['uncheckable']))
-    rows_by_id(frozen['drafts'])
     if not isinstance(frozen.get('revision'), str) or not frozen['revision'].strip():
         raise ValueError('submission revision required')
     def authority(ref):
@@ -592,7 +602,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         if (item['artifact_id'] not in state['current_artifacts']
                 or not artifact_is_adopted(item, state, project)
                 or not item.get('revision') or item['revision'] != ref.get('revision')):
-            raise ValueError('reference artifact is unconfirmed, stale or another revision')
+            raise ValueError(f"reference artifact is unconfirmed, stale or another revision: {item['artifact_id']}")
         path = project_path(project, item['path_or_url'])
         if (not path.is_file() or path.stat().st_size == 0 or not item.get('checksum')
                 or item['checksum'] != ref.get('sha256') or file_digest(path) != ref['sha256']):
@@ -631,8 +641,38 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                 scene_requirements.extend(scene_state_requirements(source_payload))
                 package_requirements.extend(packaging_requirements(source_payload))
                 scene_sources.append((ref, source_path.resolve(), source_payload))
+    if formal_redframe:
+        try:
+            from .core.web_content import source_review_segments
+            from .core.prompt_body import submitted_prompt_body
+        except ImportError:
+            from core.web_content import source_review_segments
+            from core.prompt_body import submitted_prompt_body
+        entries = {item['artifact_id']: item for item in manifest['artifacts']}
+        videos = [payload for ref, _, payload in scene_sources
+                  if entries[ref['artifact_id']].get('logical_id') == 'video.prompt']
+        boards = [payload for ref, _, payload in scene_sources
+                  if entries[ref['artifact_id']].get('logical_id') == 'storyboard.package']
+        if (len(videos) != 1 or not videos[0].get('source_storyboard') or len(boards) != 1
+                or not boards[0].get('source_narrative')):
+            raise ValueError('正式红帧写入须绑定已采用的视频稿、导演稿和已确认的来源编导稿')
+        source_segments = {row['segment_id']: row for row in source_review_segments(videos[0])}
+        for row in drafts.values():
+            source = source_segments.get(row.get('source_segment_id'))
+            if not source or not submitted_prompt_body(source):
+                raise ValueError(f"{row['node_id']}: 正式红帧写入须绑定已采用视频稿的准确段落及正文")
+            planned_materials = source.get('materials', source.get('candidate_upload_order', []))
+            inputs = row.get('reference_checks')
+            if any(not isinstance(refs, list) or any(not isinstance(ref, dict) for ref in refs)
+                   for refs in (planned_materials, inputs)):
+                raise ValueError(f"{row['node_id']}: 正式红帧写入须提供明确的源素材和引用列表")
+            source_hashes = {ref['sha256'] for ref in planned_materials if ref.get('sha256')}
+            input_hashes = {ref.get('sha256') for ref in inputs}
+            if not source_hashes <= input_hashes:
+                raise ValueError(f"{row['node_id']}: 正式红帧写入缺少采用源段指定的素材字节")
     external = validate_scene_source_mapping(
         frozen['drafts'], scene_sources, project, check_submitted_body=not private_preview,
+        delivery_platform='redframe' if formal_redframe else None,
     ) or {}
     if set(contexts) != set(external):
         raise ValueError('partial delivery requires exact prior-node evidence for every source continuation')
@@ -653,7 +693,9 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             validation_rows.append(node)
         validation_rows.append(row)
     if contexts:
-        remaining = validate_scene_source_mapping(validation_rows, scene_sources, project) or {}
+        remaining = validate_scene_source_mapping(
+            validation_rows, scene_sources, project, delivery_platform='redframe' if formal_redframe else None,
+        ) or {}
         if set(remaining) - set(context_scopes):
             raise ValueError('partial predecessor evidence leaves a current continuation unresolved')
     def seconds(value):
@@ -723,11 +765,14 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
     endpoint_control_checks = {}
     for row in validation_rows:
         row_frozen = context_scopes.get(row['node_id'], frozen)
+        before_upload = formal_redframe and preflight and row['node_id'] in planned_ids
         row_authority, row_preview_usage = authority, preview_usage if private_preview else None
         if private_preview and row['node_id'] in context_scopes:
             prior_authority, row_preview_usage, _ = preview_scope(row_frozen, project, json_projections=projections, context_node_ids={row["node_id"]})
             row_authority = lambda ref: prior_authority(ref)[0]
         endpoint_mode = row.get('native_identity_mode') == 'first_last_frame_download'
+        if before_upload and (endpoint_mode or 'native_binding' in row):
+            raise ValueError('红帧写前直传计划不能声明已采集平台绑定或首尾帧回执')
         if not endpoint_mode:
             if 'state_control' in row:
                 raise ValueError('endpoint state_control requires its explicit verified identity mode')
@@ -749,14 +794,16 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             raise ValueError('only private preview may explicitly declare segment-total timing without a shot schedule')
         validate_shot_durations(row, row['parameters'])
         if redframe or 'edges' in row or 'source_nodes' in row:
-            validate_canvas_inputs(row)
+            validate_canvas_inputs(row, redframe=redframe, before_upload=before_upload)
         media, refs = row.get('ordered_media'), row.get('reference_checks')
+        if before_upload:
+            media = [None] * len(refs)
         if not isinstance(media, list) or not isinstance(refs, list) or len(refs) != len(media):
             raise ValueError('every uploaded media needs one explicit role/authority check in actual order')
-        if media and not endpoint_mode and (not isinstance(row.get('native_entity_type'), str) or not row['native_entity_type'].strip()):
+        if media and not (endpoint_mode or before_upload) and (not isinstance(row.get('native_entity_type'), str) or not row['native_entity_type'].strip()):
             raise ValueError('versioned delivery requires native entity readback for all references')
         identity_mode = row.get('native_identity_mode', 'media_id')
-        if not valid_native_media(media, identity_mode):
+        if not before_upload and not valid_native_media(media, identity_mode):
             raise ValueError('every uploaded media needs exact supported native identity')
         required = row.get('required_entities')
         if not isinstance(required, list) or any(not isinstance(e, str) or not e for e in required):
@@ -783,6 +830,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                 validate_registered_product_reference(project, ref, item)
                 # Bind actual native identities to source bytes in the existing source
                 # artifact registration, not a caller-provided parallel list of labels.
+                # Actual slot identity is collected after upload and required by formal readback.
                 if endpoint_mode:
                     expected_binding = _endpoint_upload_expected(row_frozen, row, ref, media_item, slot)
                     if sum(digest(b) == digest(expected_binding) for b in item.get('upload_bindings', [])) != 1:
@@ -799,7 +847,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                         and b.get('sha256') == source.get('checksum')}
                     if reverse_hashes != {ref['sha256']}:
                         raise ValueError('conflicting endpoint upload source bytes')
-                elif identity_mode == 'node_port_download':
+                elif not before_upload and identity_mode == 'node_port_download':
                     expected_binding = _port_expected(row_frozen, row, ref, media_item, slot)
                     bindings = [b for b in item.get('upload_bindings', [])
                                 if b.get('identity_mode') == 'node_port_download'
@@ -819,7 +867,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                         and b.get('sha256') == source.get('checksum')}
                     if reverse_hashes != {ref['sha256']}:
                         raise ValueError('conflicting upload node/port source bytes')
-                else:
+                elif not before_upload:
                     bindings = [b for b in item.get('upload_bindings', [])
                                 if b.get('node_id') == media_item['node_id']
                                 and b.get('media_id') == media_item['media_id']
@@ -950,6 +998,9 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
     return {'ok': True, 'mode': 'private_candidate_preview' if private_preview else 'formal_delivery',
             **({'status': 'candidate', 'review_status': 'unreviewed', 'production_blocked': True} if private_preview else {}),
             'revision': frozen['revision'], 'frozen_sha256': digest(frozen),
+            **({'target_url': frozen['target_url'], 'target_project_id': platform_project_id,
+                'source_segment_ids': [row['source_segment_id'] for row in frozen['drafts']],
+                'upload_mapping_pending_nodes': sorted(planned_ids)} if formal_redframe and preflight else {}),
             'dependency_checks': dependencies,
             'endpoint_control_checks': endpoint_control_checks,
             'predecessor_context_nodes': list(context_scopes),
@@ -964,7 +1015,8 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             'limitations': 'Declaration consistency only, not proof of user consent or a browser sandbox. Requires actual visual inspection of roles/states and current platform bounds; does not verify pixels, remote provenance or generation authorization; action-video and Xiaoyunque video durations are locally probed only.'}
 
 
-def compare(frozen: dict, observed: dict, project: Path | None = None, *, private_preview: bool = False) -> dict:
+def compare(frozen: dict, observed: dict, project: Path | None = None, *, private_preview: bool = False,
+            formal_delivery: bool = False) -> dict:
     """Report only selected full-field readback; metadata is not remote proof."""
     if 'preview_authorization' in frozen and not private_preview:
         raise ValueError('preview snapshot requires explicit --private-preview; not formal delivery')
@@ -973,7 +1025,8 @@ def compare(frozen: dict, observed: dict, project: Path | None = None, *, privat
     port_mode = any(row.get('native_identity_mode') in ('node_port_download', 'first_last_frame_download') for row in frozen['drafts'])
     if port_mode and project is None:
         raise ValueError('download identity modes require --project and original slot evidence')
-    submission = validate_submission(frozen, project, private_preview=private_preview) if project is not None else None
+    submission = validate_submission(frozen, project, private_preview=private_preview,
+                                     formal_delivery=formal_delivery) if project is not None else None
     platform_project_id = _declared_project_id(frozen)
     if ((platform_project_id is not None or port_mode or private_preview)
             and observed.get('target_project_id') != platform_project_id):
@@ -1125,11 +1178,13 @@ def main() -> int:
         if args.preflight:
             if args.project is None:
                 parser.error('--preflight requires --project')
-            result = validate_submission(frozen, args.project, private_preview=args.private_preview)
+            result = validate_submission(frozen, args.project, private_preview=args.private_preview,
+                                         formal_delivery=args.delivery, preflight=True)
         else:
             if args.readback is None:
                 parser.error('--readback required unless --preflight')
-            result = compare(frozen, json.loads(args.readback.read_text(encoding='utf-8')), args.project, private_preview=args.private_preview)
+            result = compare(frozen, json.loads(args.readback.read_text(encoding='utf-8')), args.project,
+                             private_preview=args.private_preview, formal_delivery=args.delivery)
         if args.package:
             try:
                 from .core.delivery_files import check_package_files

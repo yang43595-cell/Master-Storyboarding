@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import math
 import re
 import subprocess
 from pathlib import Path, PureWindowsPath
@@ -17,6 +18,7 @@ CONTRACT = ROOT / 'references/web-contract-v78'
 HASH = re.compile(r'^[a-f0-9]{64}$')
 # Existing website FeedbackRequest.id (pinned content-contract.ts), not a new ID format.
 FEEDBACK_ID = re.compile(r'[A-Za-z0-9_-]{8,100}')
+SOURCE_SEGMENT_FIELDS = ('generation_segments', 'creative_sections', 'independent_candidate_ranges')
 
 
 class WebContentError(ValueError):
@@ -41,29 +43,8 @@ def prompt_segment_views(business, *, source_sha256, transport_evidence):
         raise WebContentError('视频分段适配：' + reason)
     def nonempty(value):
         return isinstance(value, str) and bool(value.strip())
-    sections = business.get('creative_sections')
-    links = None
-    if 'generation_segments' in business:
-        segments = business['generation_segments']
-        if isinstance(sections, list):
-            if any(not isinstance(s, dict) or not isinstance(s.get('generation_segments'), list) for s in sections):
-                fail('创作段生成段引用列表不完整')
-            links = [ident for section in sections for ident in section.get('generation_segments', [])]
-    elif isinstance(sections, list) and sections:
-        if any(not isinstance(s, dict) or not isinstance(s.get('generation_segments'), list)
-               or not s['generation_segments'] for s in sections):
-            fail('创作段缺少完整 generation_segments')
-        segments = [segment for section in sections for segment in section['generation_segments']]
-    else:
-        fail('缺少现行完整 drafts / generation_segments；不恢复退役 production_plan')
-    if (not isinstance(segments, list) or not segments
-            or any(not isinstance(s, dict) or not nonempty(s.get('segment_id')) for s in segments)):
-        fail('生成段列表或 segment_id 不完整')
+    segments = source_review_segments(business)
     ids = [s['segment_id'] for s in segments]
-    if len(set(ids)) != len(ids):
-        fail('segment_id 重复')
-    if links is not None and (any(not isinstance(ident, str) for ident in links) or set(links) != set(ids)):
-        fail('顶层生成段与创作段引用不一致，不猜哪份为准')
     if not isinstance(transport_evidence, dict) or transport_evidence.get('source_sha256') != source_sha256:
         fail('缺少绑定准确源字节的 transport_evidence；不补造 native node_id/media_id')
     rows = transport_evidence.get('native_readback')
@@ -150,32 +131,101 @@ def prompt_segment_views(business, *, source_sha256, transport_evidence):
     return views
 
 
+def _valid_edit_window(start, end):
+    return (type(start) in (int, float) and type(end) in (int, float)
+            and math.isfinite(start) and math.isfinite(end) and 0 <= start < end)
+
+
+def _check_segment_scope(scope, segments):
+    """Cross-check the existing authored scope without treating it as segment prose."""
+    if not isinstance(scope, dict):
+        return
+    from .quality_evidence import source_shot_ids
+    full = scope.get('type') == 'full_local_authored'
+    scoped_ranges = scope.get('independent_ranges')
+    ids = [row['segment_id'] for row in segments]
+    if 'authored_segment_count' in scope and (type(scope['authored_segment_count']) is not int
+            or scope['authored_segment_count'] != len(ids)):
+        raise WebContentError('源稿审阅声明的生成段总数与实际生成段不一致')
+    if 'authored_shot_count' in scope:
+        actual = len({shot for row in segments for shot in source_shot_ids(row)})
+        if type(scope['authored_shot_count']) is not int or scope['authored_shot_count'] != actual:
+            raise WebContentError('源稿审阅声明的镜号总数与实际生成段不一致')
+    if full and scope.get('unwritten_shot_ids'):
+        raise WebContentError('源稿审阅声明全片，但仍有未写入的镜号')
+    if 'scope_seconds' in scope:
+        windows = [(row.get('edit_in_seconds'), row.get('edit_out_seconds')) for row in segments]
+        declared = scope['scope_seconds']
+        if (not _valid_edit_window(0, declared) or any(not _valid_edit_window(*window) for window in windows)
+                or not math.isclose(declared, sum(end - start for start, end in windows), abs_tol=1e-6)):
+            raise WebContentError('源稿审阅声明的剪辑总时长与实际生成段不一致')
+    if scoped_ranges is None:
+        return
+    if (not isinstance(scoped_ranges, list) or any(not isinstance(span, dict)
+            or not isinstance(span.get('segment_ids'), list) or not span['segment_ids']
+            for span in scoped_ranges)
+            or [ident for span in scoped_ranges for ident in span['segment_ids']] != ids):
+        raise WebContentError('源稿审阅声明的范围与生成段顺序或覆盖不一致')
+    by_id = {row['segment_id']: row for row in segments}
+    for span in scoped_ranges:
+        selected = [by_id[ident] for ident in span['segment_ids']]
+        if 'shot_ids' in span and span['shot_ids'] != list(dict.fromkeys(
+                shot for row in selected for shot in source_shot_ids(row))):
+            raise WebContentError('源稿审阅声明的范围镜号与生成段不一致')
+        if 'edit_range_seconds' in span and span['edit_range_seconds'] != [
+                selected[0].get('edit_in_seconds'), selected[-1].get('edit_out_seconds')]:
+            raise WebContentError('源稿审阅声明的范围时码与生成段不一致')
+
+
 def source_review_segments(business):
-    """Read existing source layouts only; do not infer execution or approval."""
+    """Read all source segments in edit order; do not infer execution or approval."""
+    if not isinstance(business, dict):
+        raise WebContentError('源稿审阅 JSON 顶层不是对象')
     if 'drafts' in business:
         raise WebContentError('源稿审阅须输入原业务生成段，不以 drafts 传输快照替代')
     sections = business.get('creative_sections')
     if 'generation_segments' in business:
         segments = business['generation_segments']
     elif isinstance(sections, list) and sections and all(
-            isinstance(s, dict) and isinstance(s.get('generation_segments'), list) for s in sections):
+            isinstance(s, dict) and isinstance(s.get('generation_segments'), list)
+            and s['generation_segments'] for s in sections):
         segments = [row for section in sections for row in section['generation_segments']]
     else:
         raise WebContentError('源稿审阅缺少完整 generation_segments')
-    if not isinstance(segments, list) or not segments or any(
+    if not isinstance(segments, list):
+        raise WebContentError('源稿审阅生成段或 segment_id 不完整')
+    ranges = business.get('independent_candidate_ranges', [])
+    if (not isinstance(ranges, list) or any(not isinstance(span, dict)
+            or not isinstance(span.get('generation_segments'), list) or not span['generation_segments']
+            for span in ranges)):
+        raise WebContentError('源稿审阅独立候选范围缺真实 generation_segments')
+    segments = [*segments, *(row for span in ranges for row in span['generation_segments'])]
+    if not segments or any(
             not isinstance(row, dict) or not isinstance(row.get('segment_id'), str)
             or not row['segment_id'].strip() for row in segments):
         raise WebContentError('源稿审阅生成段或 segment_id 不完整')
     ids = [row['segment_id'] for row in segments]
     if len(set(ids)) != len(ids):
         raise WebContentError('源稿审阅 segment_id 重复')
+    scope = business.get('scope')
+    if ranges:
+        if any(not _valid_edit_window(row.get('edit_in_seconds'), row.get('edit_out_seconds'))
+               for row in segments):
+            raise WebContentError('源稿审阅独立候选范围须提供所有生成段的绝对剪辑起止时码')
+        segments.sort(key=lambda row: row['edit_in_seconds'])
+        full = isinstance(scope, dict) and scope.get('type') == 'full_local_authored'
+        for left, right in zip(segments, segments[1:]):
+            gap = right['edit_in_seconds'] - left['edit_out_seconds']
+            if gap < -1e-6 or (full and gap > 1e-6):
+                raise WebContentError('源稿审阅独立候选范围存在时码重叠或全片空档')
     if 'generation_segments' in business and sections is not None:
         if (not isinstance(sections, list) or any(not isinstance(s, dict)
                 or not isinstance(s.get('generation_segments'), list) for s in sections)):
             raise WebContentError('源稿审阅创作段引用格式不完整')
         links = [ident for section in sections for ident in section['generation_segments']]
-        if any(not isinstance(ident, str) for ident in links) or set(links) != set(ids):
+        if any(not isinstance(ident, str) for ident in links) or len(links) != len(ids) or set(links) != set(ids):
             raise WebContentError('源稿审阅顶层生成段与创作段引用不一致')
+    _check_segment_scope(scope, segments)
     return segments
 
 
@@ -406,7 +456,7 @@ def compile_content(raw: bytes, *, stage: str, case_id: str, source_script_versi
                   + '\n\n原稿素材及完整职责：' + canonical(materials)
                   + '\n\n媒体状态：' + status + '\n' + notice, refs)
     elif stage == 'prompts':
-        if 'drafts' in business and ('generation_segments' in business or 'creative_sections' in business):
+        if 'drafts' in business and any(key in business for key in SOURCE_SEGMENT_FIELDS):
             raise WebContentError('视频 JSON 同时存在 drafts 与生成段，不猜权威正文')
         if 'drafts' not in business:
             views = prompt_segment_views(business, source_sha256=hashlib.sha256(raw).hexdigest(),

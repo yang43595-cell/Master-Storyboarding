@@ -15,6 +15,8 @@
 
 ## 视频画布
 
+正式写入红帧视频草稿前，在实际上传参考、创建或更新节点、写正文前，用本批冻结稿运行 `python scripts/canvas_readback.py --delivery --project <业务项目> --frozen <本批JSON> --preflight`。只写同次返回 `ok: true` 覆盖的目标、段号和 `frozen_sha256`；未通过的段暂停，独立段可缩小范围后重跑预检。写入完成后用实际引用和节点回读验收。
+
 从[我的画布](https://redframe-ai.xmpaohong.com:28888/#/projects)打开登记的项目，核对项目和子画布。新建按本轮授权执行，并登记实际地址和项目 ID。项目使用 Seedance 2.5，其余参数核对开工记录和当前原生控件。
 
 写入、绑定、认证和重开验收按[红帧交付要求](../voiceover-to-video-script/references/seedance-delivery-package.md#红帧与小云雀的交付边界)执行。右侧对话中的 `@` 用于对话引用，视频草稿使用对应视频节点「生成提示词」主编辑器中的原生 `@`。统一流程交付到草稿；获准提交的生成任务结果未知时，先只读查询原任务。
