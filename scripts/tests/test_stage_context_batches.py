@@ -179,7 +179,14 @@ def test_scoped_handoff_change_requires_preparation_and_drives_current_goal(tmp_
     ensure = parse(["ensure-prepared", *stage, "--show-task-basis"])
     assert cli.ensure_prepared(ensure)["ok"]
 
-    # Existing preparations stored the original card in startup before a separate scope field existed.
+    # Recreate the actual legacy pair: an embedded card and no separate scope field.
+    startup = folder / "stage_startup.md"
+    card = folder / "next_stage_handoff.md"
+    modern = startup.read_text(encoding="utf-8")
+    heading = "## 上一阶段交接事实\n\n"
+    before_card, after_card = modern.split(heading, 1)
+    startup.write_text(before_card + heading + card.read_text(encoding="utf-8").rstrip()
+                       + "\n" + after_card.split("\n", 1)[1], encoding="utf-8")
     del basis["handoff_scope"]
     basis_path.write_text(json.dumps(basis), encoding="utf-8")
     assert cli.ensure_prepared(ensure)["ok"]
@@ -395,7 +402,9 @@ def test_asset_worker_receipt_is_bound_and_received_without_changing_project_sta
         args.vault = None
         assert cli.prepare(args)["valid"]
         startup = (batch_folder(args) / "stage_startup.md").read_text(encoding="utf-8")
-        assert startup.count("- 图片批次依据 `") == 1
+        card = Path(result["path"])
+        assert str(card) in startup and "- 图片批次依据 `" not in startup
+        assert card.read_text(encoding="utf-8").count("- 图片批次依据 `") == 1
         args.batch_receipt = str(receipt.with_name("unbound-receipt.json"))
         with pytest.raises(cli.StageContextError, match="已有图片批次交接不一致"):
             cli.prepare(args)

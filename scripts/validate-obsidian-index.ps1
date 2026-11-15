@@ -52,7 +52,6 @@ if (Test-Path -LiteralPath $skillsRoot -PathType Container) {
 $guardFiles = @(
   "skill-config.md",
   "references\index.md",
-  "references\prompt-guides.md",
   "skills\storyboard-director\templates\storyboard-image-template.md"
 )
 if (Test-Path -LiteralPath $skillsRoot -PathType Container) {

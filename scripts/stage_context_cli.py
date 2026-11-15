@@ -597,22 +597,34 @@ def status(args: argparse.Namespace) -> dict[str, Any]:
         if not isinstance(manifest, dict) or not isinstance(manifest.get("artifacts"), list):
             blockers.append("artifact_manifest.json 结构无效；产物版本/失效状态未知")
             manifest = None
-    artifacts = []
+    details = getattr(args, "details", False)
+    current_ids = set(state["current_artifacts"]) if state is not None else set()
+    if candidate_context:
+        current_ids.update(candidate_context["input_artifact_ids"])
+    file_digest = _file_digests()
+    artifacts, stale_ids = [], []
+    hidden_artifacts = 0
     if manifest is not None:
         for item in manifest["artifacts"]:
             if not isinstance(item, dict):
                 blockers.append("manifest 含非对象产物记录")
                 continue
+            artifact_id = item.get("artifact_id")
+            if item.get("status") == "stale":
+                stale_ids.append(artifact_id)
+            include = details or item.get("status") == "current" or (
+                isinstance(artifact_id, str) and artifact_id in current_ids)
             try:
                 path = project_path(project, str(item.get("path_or_url") or ""))
-                exists = path.is_file()
+                exists = path.is_file() if include else None
             except (OSError, ValueError) as exc:
                 path = None
                 exists = None
                 blockers.append(f"产物路径无效，版本状态未知：{item.get('artifact_id', 'unknown')}: {exc}")
-            checksum_ok = None
-            if exists is True and item.get("checksum"):
-                checksum_ok = digest(path) == item["checksum"]
+            if not include and path is not None:
+                hidden_artifacts += 1
+                continue
+            checksum_ok = file_digest(path) == item["checksum"] if exists and item.get("checksum") else None
             if item.get("status") == "current" and (exists is not True or checksum_ok is False):
                 blockers.append(f"current 产物缺失或哈希漂移：{item.get('artifact_id', 'unknown')}")
             artifacts.append({"artifact_id": item.get("artifact_id"), "logical_id": item.get("logical_id"),
@@ -645,7 +657,7 @@ def status(args: argparse.Namespace) -> dict[str, Any]:
         next_stage = None
     elif manifest is not None and state is not None:
         try:
-            _confirmed_project_inputs(project, state)
+            _confirmed_project_inputs(project, state, file_digest=file_digest)
         except (StageContextError, ValueError) as exc:
             blockers.append(f"上游确认/版本/依赖未通过：{exc}")
             next_stage = None
@@ -655,13 +667,20 @@ def status(args: argparse.Namespace) -> dict[str, Any]:
         next_stage = None
     production_blockers = list(blockers)
     production_ok = not blockers and next_stage is not None
-    candidate_test_blockers: list[str] = []
+    view = {"artifacts": artifacts, "active_change": active_change}
+    if details:
+        view.update(stale_artifacts=stale_ids, transactions=transaction_rows)
+    else:
+        unsettled = [row for row in transaction_rows if row["state"] not in {"committed", "aborted"}]
+        view.update(transactions=unsettled, history_counts={
+            "other_artifacts": hidden_artifacts, "stale_artifacts": len(stale_ids),
+            "settled_transactions": len(transaction_rows) - len(unsettled)})
     if candidate_mode:
         # Candidate handoff deliberately accepts an explicit --to-skill when
         # next_stage is empty. Its isolated inputs, not production approvals or
         # revision-change records, are the authority for this mode.
-        candidate_test_blockers.extend(message for message in blockers
-                                       if not message.startswith("next_stage 为空；下一允许阶段未知"))
+        candidate_test_blockers = [message for message in blockers
+                                   if not message.startswith("next_stage 为空；下一允许阶段未知")]
         if not state or not isinstance(state.get("current_stage"), str) or not state["current_stage"].strip():
             candidate_test_blockers.append("候选测试 current_stage 缺失；不能生成隔离交接")
         try:
@@ -674,8 +693,7 @@ def status(args: argparse.Namespace) -> dict[str, Any]:
         return {"read_only": True, "mode": "candidate_test", "project": str(project), "repo": repo,
             "current_stage": state.get("current_stage") if isinstance(state, dict) else None,
             "current_artifacts": state.get("current_artifacts") if isinstance(state, dict) else None,
-            "artifacts": artifacts, "stale_artifacts": [a["artifact_id"] for a in artifacts if a["status"] == "stale"],
-            "active_change": active_change, "transactions": transaction_rows,
+            **view,
             "next_allowed_stage": next_stage,
             "next_stage_note": ("候选测试隔离有效；next_stage 为空时可显式选择 --to-skill，候选流程不放行正式生产。"
                                 if candidate_test_ok and next_stage is None else
@@ -689,8 +707,7 @@ def status(args: argparse.Namespace) -> dict[str, Any]:
     return {"read_only": True, "mode": "production", "project": str(project), "repo": repo,
         "current_stage": state.get("current_stage") if isinstance(state, dict) else None,
         "current_artifacts": state.get("current_artifacts") if isinstance(state, dict) else None,
-        "artifacts": artifacts, "stale_artifacts": [a["artifact_id"] for a in artifacts if a["status"] == "stale"],
-        "active_change": active_change, "transactions": transaction_rows,
+        **view,
         "next_allowed_stage": next_stage,
         "next_stage_note": "上游版本确认后仍需该 Skill 自身输入门禁；状态命令不会启动阶段。" if next_stage else "阻塞或状态未知，不猜下一阶段。",
         "production_allowed": production_ok, "production_ok": production_ok,
@@ -1142,22 +1159,17 @@ def _input_snapshot(project: Path, inputs: dict[str, Any], state: dict[str, Any]
     }
 
 
-def _recovery_check_text() -> str:
-    """Project one authoritative section; do not maintain a second checklist."""
+def _recovery_link() -> str:
     path = _local_knowledge_path(ROOT / "skills/_shared/knowledge-access.md")
-    text = path.read_text(encoding="utf-8")
-    match = re.search(r"(?ms)^## 压缩后的主动恢复核对\n.*?(?=^## |\Z)", text)
-    if not match:
+    title = "压缩后的主动恢复核对"
+    section = path.read_text(encoding="utf-8").partition(f"\n## {title}\n")[2]
+    if not section.partition("\n## ")[0].strip():
         raise StageContextError(f"主动恢复核对正文缺失：{path}")
-    return match.group(0).rstrip()
+    return f"- 压缩或恢复时按[{title}](<{path.as_posix()}#{title}>)核对。"
 
 
-# Cross-Skill reading registry (必读集边界规范 P5; approved by the user on
-# 2026-11-09 after the BUG-3 review). A document owned by another Skill may
-# enter a stage's standard set only through an entry here, and only as a
-# leaf: its own outbound links never expand the set. Unregistered cross-Skill
-# links are skipped silently (blocked is not missing, P7); a registered
-# target that does not exist fails closed like any required standard.
+# Cross-Skill requirements that are not implied by the owning Skill's own links.
+# Shared navigation never activates these leaves.
 _CROSS_SKILL_READS: dict[tuple[str, str], str] = {
     ("storyboard-planner", "skills/knowledge-maintainer/modules/maintenance-method.md"):
         "导演阶段沿用知识维护方法，既有测试断言其在导演必读集内；2026-11-09 用户审定保留并登记（规范 Q1）。",
@@ -1188,9 +1200,9 @@ def _local_standard_documents(skill_dir: Path, request: dict[str, Any] | None = 
 
     Unknown conditions retain the conservative local set. References for
     explicitly selected branches do not become mandatory through links alone.
-    Link traversal never crosses a Skill boundary (P2): a document owned by
-    another Skill enters only via _CROSS_SKILL_READS, _CROSS_SKILL_DEPENDENCIES
-    or an explicit local_references selection, and then only as a leaf.
+    A Skill may link directly to another Skill's applicable contract as a leaf.
+    Shared navigation cannot introduce a foreign contract into every stage.
+    Explicit requests and registered exceptions also enter as leaves.
     """
     request = request or {}
     excluded: set[Path] = set()
@@ -1199,10 +1211,6 @@ def _local_standard_documents(skill_dir: Path, request: dict[str, Any] | None = 
     excluded.update((ROOT / "skills/asset-image-assistant/modules" / name).resolve() for name in
                     ("library-mode.md", "project-web-mode.md", "web-input-contract.md"))
     if skill_dir.name == "asset-image-assistant":
-        # The Skill explicitly replaces prepare with bounded Web reading in
-        # both Web modes. Those route-only modules cannot govern this entry.
-        excluded.update((skill_dir / "modules" / name).resolve() for name in
-                        ("library-mode.md", "project-web-mode.md", "web-input-contract.md"))
         scopes = request.get("asset_method_scopes", {})
         if not isinstance(scopes, dict) or any(key not in {"style", "character", "body", "scene", "object"}
                                              or type(value) is not bool for key, value in scopes.items()):
@@ -1316,23 +1324,11 @@ def _local_standard_documents(skill_dir: Path, request: dict[str, Any] | None = 
                     owner = document.relative_to((ROOT / "skills").resolve()).parts[0]
                     choices.insert(1, (ROOT / "skills" / owner / reference).resolve())
                 target = next((path for path in choices if path.is_relative_to(ROOT.resolve()) and path.is_file()), None)
-                # A rule may point to an optional or downstream Skill. Freeze
-                # this stage's contracts, not that other Skill's entire tree.
-                rules_root = (ROOT / "docs/rules").resolve()
                 linked = target or choices[0]
-                if (document.is_relative_to(rules_root)
-                        and linked.is_relative_to((ROOT / "skills").resolve())
-                        and not linked.is_relative_to(skill_dir.resolve())
-                        and linked.parent != shared_root):
-                    continue
-                # Boundary gate (P2, spec §4.1 equivalent form): outbound
-                # links are followed only from first-party documents (this
-                # Skill's own documents and _shared). A first-party link into
-                # another Skill declares that dependency; the foreign document
-                # then enters as a leaf whose own links never expand the set.
-                if (target is not None and target.is_relative_to(skills_root)
-                        and target.relative_to(skills_root).parts[0] not in {skill_dir.name, "_shared"}
-                        and document_owner not in {skill_dir.name, "_shared"}):
+                # A navigation link in shared rules is not a dependency of every Skill.
+                if (linked.is_relative_to(skills_root)
+                        and linked.relative_to(skills_root).parts[0] not in {skill_dir.name, "_shared"}
+                        and document_owner != skill_dir.name):
                     continue
                 # The Seedance delivery package is voiceover's internal
                 # contract, governed by its direct-read list; it never enters
@@ -1826,12 +1822,13 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         *(["- 人物生图按输出类型读取 task_basis.json 的 character_prompt_templates 与 character_layout_references，使用对应模板正文，原参考在前、灰模在最后。按实际槽位绑定原生引用。"]
           if task_basis.get("character_layout_references") else []),
         "- prepare 只生成文件，不清空宿主对话。读取规则见共享 knowledge-access.md；计量和停止条件见 docs/development/token-budget.md。",
-        _recovery_check_text(), "",
+        _recovery_link(), "",
         "## 本轮范围", "",
         "- 交付对象、非目标、输入版本、范围字段和适用标准仅维护在上列 `task_basis.json`；本启动包不复制第二份范围记录。", "",
         "## 当前项目事实", "", "```json",
         json.dumps(_state_reading_view(summary), ensure_ascii=False, indent=2), "```", "",
-        *( ["## 上一阶段交接事实", "", handoff_text.rstrip(), ""] if handoff_text else [] ),
+        *(["## 上一阶段交接事实", "", f"- 已核交接卡：`{_handoff_path(project)}`。从原卡读取准确输入及停止点。", ""]
+          if handoff_text else []),
         *revision_lines,
         *method_lines,
         bundle.rstrip(), "",
@@ -2536,6 +2533,7 @@ def parser() -> argparse.ArgumentParser:
     commands = root.add_subparsers(dest="command", required=True)
     state_cmd = commands.add_parser("status", help="只读查看项目状态与续跑阻塞；不执行事务恢复")
     state_cmd.add_argument("--project", required=True)
+    state_cmd.add_argument("--details", action="store_true", help="显示全部产物和历史事务")
     authorization = commands.add_parser("authorize-workflow", help="登记已有准确业务流程授权；不确认产物或生成")
     authorization.add_argument("--project", required=True)
     authorization.add_argument("--authorization-id", required=True)

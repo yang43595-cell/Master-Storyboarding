@@ -281,6 +281,28 @@ def test_read_only_status_reports_unknown_and_does_not_recover_transactions(tmp_
     assert {p: p.read_bytes() for p in before} == before
 
 
+def test_status_lists_current_inputs_without_returning_historical_artifacts(tmp_path):
+    project = _project(tmp_path)
+    current = project / "active.json"
+    current.write_text("{}", encoding="utf-8")
+    entry = {"artifact_id": "ACTIVE", "logical_id": "story.package", "type": "json", "revision": "R02",
+             "status": "current", "user_approved": True, "path_or_url": current.name,
+             "checksum": cli.digest(current), "depends_on": []}
+    old = {**entry, "artifact_id": "OLD", "status": "stale", "revision": "R01", "path_or_url": "old.json"}
+    write_json(project / "00_项目管理/artifact_manifest.json", {"artifacts": [entry, old]})
+    state = load_project_state(project)
+    state.update(current_artifacts=["ACTIVE"], next_stage="storyboard-planner",
+                 user_confirmations=[{"artifact_ids": ["ACTIVE"]}])
+    write_project_state(project, state)
+    command = ["status", "--project", str(project)]
+    compact = cli.status(cli.parser().parse_args(command))
+    full = cli.status(cli.parser().parse_args([*command, "--details"]))
+    assert [row["artifact_id"] for row in compact["artifacts"]] == ["ACTIVE"]
+    assert [row["artifact_id"] for row in full["artifacts"]] == ["ACTIVE", "OLD"]
+    assert compact["history_counts"]["stale_artifacts"] == 1
+    assert compact["next_allowed_stage"] == full["next_allowed_stage"] == "storyboard-planner"
+
+
 def test_formal_handoff_records_authorized_next_stage_without_a_revision_file(tmp_path, monkeypatch):
     from scripts.init_desktop_project import initialize
 
@@ -751,8 +773,9 @@ def test_prepare_rejects_replaced_handoff_input_and_accepts_regenerated_card(tmp
     cli.handoff(argparse.Namespace(project=str(project), to_skill=args.skill))
     result = cli.prepare(args)
     text = Path(result["path"]).read_text(encoding="utf-8")
-    card = text.split("## 上一阶段交接事实", 1)[1].split("## 必读专业方法", 1)[0]
-    assert "NARR-R02" in card and "NARR-R01" not in card
+    card = Path(result["path"]).with_name("next_stage_handoff.md")
+    assert str(card) in text and "# 下一阶段交接卡" not in text
+    assert "NARR-R02" in card.read_text(encoding="utf-8") and "NARR-R01" not in text
 
 
 def test_prepare_does_not_consume_another_skills_handoff(tmp_path):
@@ -1538,14 +1561,12 @@ def test_default_creative_rules_not_hidden_in_legacy_branch():
     assert cli.ROOT / 'docs/rules/legacy-review.md' not in selected
 
 
-def test_active_recovery_checklist_is_embedded_from_frozen_authority(tmp_path):
+def test_startup_points_to_frozen_recovery_checklist_without_copying_it(tmp_path):
     project = _project(tmp_path)
     _prepared(project)
     startup = (project / cli.CONTEXT_DIR / 'stage_startup.md').read_text()
-    section = cli._recovery_check_text()
-    assert startup.count(section) == 1
-    for check in ('REC-STATE', 'REC-OPTION', 'REC-PARAM', 'REC-ADOPT', 'REC-FLOW', 'REC-RESULT'):
-        assert check in section
+    assert "knowledge-access.md#压缩后的主动恢复核对" in startup
+    assert "REC-STATE" not in startup
     basis = json.loads((project / cli.CONTEXT_DIR / 'task_basis.json').read_text())
     authority = cli.ROOT / 'skills/_shared/knowledge-access.md'
     assert {'path': str(authority), 'sha256': cli.digest(authority)} in basis['standards']['local_documents']
@@ -1556,8 +1577,7 @@ def test_missing_active_recovery_section_cannot_silently_prepare(tmp_path, monke
     monkeypatch.setattr(cli, 'ROOT', repo)
     path = repo / 'skills/_shared/knowledge-access.md'
     text = path.read_text()
-    section = cli._recovery_check_text()
-    path.write_text(text.replace(section, ''))
+    path.write_text(text.replace("## 压缩后的主动恢复核对", "## 已移除的测试标题"))
     with pytest.raises(cli.StageContextError, match='主动恢复核对正文缺失'):
         _prepared(_project(tmp_path))
 
@@ -1625,10 +1645,7 @@ def test_stage_sets_respect_skill_boundaries():
             assert creative_branches.isdisjoint(paths), f"{skill_name} 串入编导分支文档（定性排除）"
         for reference in multihop.get(skill_name, []):
             assert (cli.ROOT / reference).resolve() not in paths, f"{skill_name} 串入多跳文档：{reference}"
-    planner = cli._local_standard_documents(cli.ROOT / 'skills/storyboard-planner')
-    assert maintenance in planner, "导演必读集应含登记共读的 maintenance-method（Q1）"
-    creative = cli._local_standard_documents(cli.ROOT / 'skills/creative-director')
-    assert maintenance not in creative, "编导未选中候选分支时不应含 maintenance-method"
+        assert (maintenance in paths) is (skill_name == 'storyboard-planner'), skill_name
 
 
 def test_explicit_reference_cannot_admit_seedance_delivery_package():
