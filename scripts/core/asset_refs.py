@@ -259,6 +259,7 @@ def _confirmed_output(root: Path, asset_id: str, output: dict, *, confirmation_c
         **({"output_kind": output["output_kind"]} if "output_kind" in output else {}),
         "view": output.get("view"),
         "state": output.get("state"),
+        **({"covers_states": output["covers_states"]} if output.get("covers_states") else {}),
         "candidate_id": output.get("candidate_id"),
         "path": str(image_path),
         "confirmation_ref": reference,

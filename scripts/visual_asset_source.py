@@ -9,14 +9,14 @@ if __package__:
     from .core.project_state import load_project_state
     from .core.schema_contracts import require_schema
     from .core.story_sources import validate_story_sources
-    from .visual_asset_choices import apply_choices
+    from .visual_asset_choices import apply_choices, validate_same_image_states
     from .visual_asset_product_usage import load_usage
 else:
     from core.artifacts import artifact_is_confirmed, project_path, digest, load_manifest
     from core.project_state import load_project_state
     from core.schema_contracts import require_schema
     from core.story_sources import validate_story_sources
-    from visual_asset_choices import apply_choices
+    from visual_asset_choices import apply_choices, validate_same_image_states
     from visual_asset_product_usage import load_usage
 
 
@@ -112,6 +112,8 @@ def receive_table(root, artifacts, entry, state, narrative, package_path):
 def validate_asset_requirement_granularity(narrative):
     """Reject ambiguous location records before the workbench can invent a split."""
     for req in narrative['asset_requirements']:
+        if 'same_image_states' in req:
+            validate_same_image_states(req, req['same_image_states'])
         if req['category'] != 'LOCATION':
             continue
         if req.get('spatial_scope') != 'SINGLE_CONTIGUOUS_SPACE':

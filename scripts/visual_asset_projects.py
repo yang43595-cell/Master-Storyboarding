@@ -82,6 +82,11 @@ def production_basis(narrative, ast_ids):
 BUSY = {'generating', 'submitting', 'submitted', 'querying'}
 
 
+def primary_scene_states(requirement):
+    grouped = {state for group in requirement.get('same_image_states', []) for state in group[1:]}
+    return [state for state in requirement['required_states'] if state not in grouped]
+
+
 def reference_evidence(project, requirements, assets=()):
     """Read project or repository briefs named directly or beside a selected local source."""
     documents, unavailable, paths = [], [], []
@@ -227,7 +232,7 @@ class Projects:
             p.pop('partial_export', None)
             return True, previous_snapshot
 
-    def sync(self, ident):
+    def sync(self, ident, *, refresh_product_usage=True):
         with self.lib.lock:
             p = self.get(ident)
             if p.get('planning', {}).get('status') == 'running' or p.get('batch', {}).get('status') == 'running':
@@ -265,7 +270,8 @@ class Projects:
                 p.pop('export_pending', None)
             p.update(rows=rows, source=source, narrative=narrative, changes=changes, synced_at=now())
             self.save(p)
-            product_usage.schedule(self, p)
+            if refresh_product_usage:
+                product_usage.schedule(self, p)
             return self.detail(ident)
 
     @staticmethod
@@ -430,13 +436,15 @@ class Projects:
                 first = group[0]
                 if mode == 'four' and len(group) == 1:
                     if not first.get('selected'):
-                        first.update(name='45°', view='45°', purpose=first['state'] + ' · 45°')
+                        first.update(name='45°', view='45°')
+                        if not first.get('covers_states'):
+                            first['purpose'] = first['state'] + ' · 45°'
                     for n, view in enumerate(['正面', '反面', '俯视'], 1):
                         step = copy.deepcopy(first)
                         step.update(key=first['key'] + '_angle' + str(n), name=view, view=view,
                                     purpose=first['state'] + ' · ' + view, status='waiting', outputs=[],
                                     project_confirmation=None, reference_ids=[])
-                        for key in ('selected', 'audit', 'prompt', 'prompt_approval', 'history',
+                        for key in ('covers_states', 'selected', 'audit', 'prompt', 'prompt_approval', 'history',
                                     'generation_run_id', 'submit_id', 'authorization',
                                     'visual_self_check', 'generation_history', 'result_history', 'message',
                                     'query_failures', 'query_blocked', 'query_retry_after'):
@@ -486,7 +494,8 @@ class Projects:
             req = row['requirement']
             kind = self.row_kinds(row)[0]
             recipe = self.skill.recipe(kind)
-            states = ['外观母版'] if kind == '角色外观' else req['required_states'] or [req['name']]
+            states = primary_scene_states(req) if kind == '环境' else req['required_states']
+            states = ['外观母版'] if kind == '角色外观' else states or [req['name']]
             views = ['任意视角'] if kind == '环境' else ['主图']
             outputs = [{'key':f'state{n}_view{i}', 'kind':kind, 'state':s, 'view':v,
                         'ratio':recipe['ratio'], 'purpose':s + ' · ' + v,
@@ -533,7 +542,7 @@ class Projects:
                 if job:
                     row.setdefault('job_history', []).append(job['id'])
                 req = row['requirement']
-                states = req['required_states'] or [req['name']]
+                states = primary_scene_states(req) or [req['name']]
                 outputs = [{'key': f'state{n}_view{i}', 'kind': '环境', 'state': state,
                             'view': view, 'ratio': self.skill.recipe('环境')['ratio'],
                             'purpose': state + ' · ' + view, 'rationale': '按用户选择生成四张环境资产图',
@@ -630,26 +639,25 @@ class Projects:
             if self.row(p, planned['ast_id']).get('job_id') != row.get('job_id'):
                 raise ValueError('盘点期间已选择资产，保留现有选图；不覆盖制作项')
             req = row['requirement']
-            slots = planned['outputs']
+            slots = copy.deepcopy(planned['outputs'])
             if not slots or len(slots) > 16:
                 raise ValueError('每项需求须有 1 至 16 个必要输出；不能静默省略需求')
+            if any('covers_states' in slot for slot in slots):
+                raise ValueError('同图覆盖须来自本场景已登记的要求分组')
             required_states = set(req['required_states'])
             output_states = {s['state'] for s in slots}
-            coverage = planned.get('covered_states', [])
-            reuse = req['category'] == 'REAL_PRODUCT' and req.get('image_decision') == '复用现有素材'
-            source = ('复用现有素材' if reuse else req.get('image_reason', '')
-                      if req['category'] == 'OTHER' and req.get('image_decision') == '需要制作' else '')
-            covered = set()
-            for state in coverage:
-                label, quote, basis = state['state'], state['source_quote'], state['basis']
-                if (label not in required_states - output_states - covered or not quote.strip()
-                        or not source or (quote != source if reuse else quote not in source)
-                        or not basis.strip()):
+            decision = image_decision(req)
+            reuse = req['category'] == 'REAL_PRODUCT' and decision == '复用现有素材'
+            reason = req.get('image_reason', '') if req['category'] == 'OTHER' and decision == '需要制作' else ''
+            coverage, covered = [], set()
+            for item in planned.get('covered_states', []):
+                label, basis = item['state'], item['basis']
+                quote = decision if reuse else item.get('source_quote') or ''
+                if (label not in required_states - output_states - covered or not basis.strip()
+                        or (not reuse and (not quote.strip() or quote not in reason))):
                     raise ValueError('非独立成图状态须绑定本项已登记的复用或用途依据，且不重复制作项')
+                coverage.append({'state': label, 'source_quote': quote, 'basis': basis})
                 covered.add(label)
-            if (req['category'] != 'PROP' and production_kinds(req) != ['角色外观']
-                    and not required_states <= output_states | covered):
-                raise ValueError('制作项未完整覆盖 AST 所需状态，请重新盘点')
             seen = set()
             for s in slots:
                 if s['key'] in seen or not re.fullmatch('[a-zA-Z0-9_-]{1,40}', s['key']):
@@ -671,6 +679,19 @@ class Projects:
                 if ordinary_prop or s['kind'] in {'服装', '人物1x4', '角色外观'}:
                     s['ratio'] = '16:9'
                 seen.add(s['key'])
+            # The approved groups describe one scene image, independently of the
+            # primary state used for planning and source dependencies.
+            for group in req.get('same_image_states', []):
+                missing = [label for label in group if label not in output_states]
+                master = next((s for s in slots if s['kind'] == '环境' and s['state'] in group), None)
+                if master is not None and missing:
+                    master['covers_states'] = missing
+                    master['purpose'] += '；同一画面还须清晰覆盖：' + '、'.join(missing)
+                    covered.update(missing)
+            if (req['category'] != 'PROP' and production_kinds(req) != ['角色外观']
+                    and not required_states <= output_states | covered):
+                missing = '、'.join(label for label in req['required_states'] if label not in output_states | covered)
+                raise ValueError(f"{req['asset_id']} 制作项未完整覆盖 AST 所需状态：{missing}")
             scenes = [s for s in slots if s['kind'] == '环境']
             if len(scenes) > 1 or (scenes and row.get('scene_output_mode') == 'four'):
                 groups = {}
@@ -1977,7 +1998,7 @@ class Projects:
                     confirmation = step['project_confirmation']
                     if (original and original['confirmation_ref'].partition('#')[2] == confirmation['id']
                             and original['sha256'] == confirmation.get('image_sha256')
-                            and all(original.get(field) == step.get(field) for field in ('purpose', 'view', 'state'))
+                            and all(original.get(field) == step.get(field) for field in ('purpose', 'view', 'state', 'covers_states'))
                             and original.get('output_kind') == step['kind']):
                         target = Path(original['path'])
                     else:
@@ -2022,7 +2043,8 @@ class Projects:
                             'user_authorization_ref': str(receipt_path) + '#' + output_id} if step.get('authorization') and provenance.get('kind') != 'manual_result_import' else None)})
                     confirmed = {'candidate_id': candidate_id, 'path': str(target), 'user_confirmation_ref': confirm_ref}
                     record['confirmed_outputs'].append({**confirmed, 'output_id': output_id, 'purpose': step['purpose'],
-                                                        'view': step['view'], 'state': step['state'], 'output_kind': step['kind']})
+                                                        'view': step['view'], 'state': step['state'], 'output_kind': step['kind'],
+                                                        **({'covers_states': step['covers_states']} if step.get('covers_states') else {})})
                     prior_character_final = any(o['output_id'] in {step_output_id(s) for s in job['steps'] if s['kind'] == '人物1x4'} for o in record['confirmed_outputs'][:-1])
                     if record['confirmed_asset'] is None or (job.get('character_workflow') and step['kind'] == '人物1x4' and not prior_character_final):
                         record['confirmed_asset'] = confirmed

@@ -277,6 +277,19 @@
             "minLength": 1
           }
         },
+        "same_image_states": {
+          "type": "array",
+          "description": "同一画面可同时满足的场景要求。不同时间或外观相斥的状态必须分开。",
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
         "interactions": {
           "type": "array",
           "items": {

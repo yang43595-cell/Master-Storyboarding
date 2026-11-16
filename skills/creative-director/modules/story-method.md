@@ -28,6 +28,8 @@ python scripts/stage_context_cli.py ensure-prepared --project <项目> --skill c
 
 人物按 [人物命名与跨阶段身份](../../../PROJECT_RULES.md#人物命名与跨阶段身份)统一：有名字用名字，无名字用固定男女编号，服装只作外观描述。正文行动者、对白说话人与人物资产名称须一致，自查换装前后是否仍指向同一人物；原始对白中的称呼保留原文。
 
+场景的多项需求明确能在同一画面呈现时，可在现有 LOCATION 的 `same_image_states` 登记同图分组，引用该场景 `required_states` 的准确标签。需要不同时间或相斥外观的状态分别保留，不并进同一组。
+
 不再创建 events、EVT 或独立事件摘要表。创作候选直接在叙事包 2.0 的 `story_paragraphs` 中按正文顺序保存 `paragraph_id` 和该段完整原文 `text`，不得改写为摘要、增加 start_state/change/end_state 或再建一份事件层。每条对白通过 `source_paragraph_id` 指向含该句的原文段落；资产通过 `source_paragraph_ids` 指向需要它的段落。对白先行阶段正文尚未产出，来源段落列可留空，不能为填引用提前编写故事。完整稿完成后再补齐。
 
 历史 narrative 1.0 只按 `narrative-package-v1.schema.json` 读取。继续返工时从真实正文建立新修订并保留原编号的对应关系。

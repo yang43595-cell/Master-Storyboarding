@@ -37,6 +37,19 @@ def image_work_items(narrative):
             if image_decision(r) in {'需要制作', '复用现有素材'}]
 
 
+def validate_same_image_states(requirement, groups):
+    """Each approved group is a set of requirements visible in one frame."""
+    remaining = set(requirement['required_states'])
+    if requirement['category'] != 'LOCATION' or not isinstance(groups, list):
+        raise ValueError('同图覆盖仅适用于场景需求')
+    for group in groups:
+        if (not isinstance(group, list) or len(group) < 2
+                or not all(isinstance(state, str) for state in group)
+                or len(group) != len(set(group)) or not set(group) <= remaining):
+            raise ValueError('同图覆盖须登记本场景至少两项不重复的有效要求')
+        remaining.difference_update(group)
+
+
 def effective(narrative, choices):
     requirements = copy.deepcopy(narrative['asset_requirements'])
     ids = {r['asset_id'] for r in requirements}
@@ -68,6 +81,17 @@ def effective(narrative, choices):
                     or not str(decision.get('image_reason', '')).strip()):
                 raise ValueError('资产图判断缺少有效结论或依据：' + req['asset_id'])
             req.update({k: decision[k] for k in ('image_decision', 'image_reason')})
+    by_id = {r['asset_id']: r for r in requirements}
+    for ast, record in choices.get('same_image_states', {}).items():
+        req = by_id.get(ast)
+        if req is None or record.get('source_revision') != narrative['revision'] or not record.get('evidence', '').strip():
+            raise ValueError('场景同图依据已失效，请核对：' + ast)
+        groups = record.get('groups')
+        validate_same_image_states(req, groups)
+        if groups:
+            req['same_image_states'] = groups
+        else:
+            req.pop('same_image_states', None)
     disabled = set(choices['excluded']) | set(choices['replaced'])
     types = choices.get('character_types', {})
     for ast, item in types.items():
@@ -208,6 +232,14 @@ def change(service, payload):
                 raise ValueError('请选择角色类型并提供已确认依据')
             choices.setdefault('character_types', {})[req['asset_id']] = {
                 'character_type': value, 'evidence': evidence, 'source_revision': narrative['revision']}
+        elif action == 'same-image-states':
+            req = service.row(p, payload['ast_id'])['requirement']
+            groups, evidence = payload.get('groups'), payload.get('evidence')
+            if not isinstance(evidence, str) or not evidence.strip():
+                raise ValueError('请提供同图可见的依据；不同时间或相斥外观应分别登记')
+            validate_same_image_states(req, groups)
+            choices.setdefault('same_image_states', {})[req['asset_id']] = {
+                'groups': groups, 'evidence': evidence.strip(), 'source_revision': narrative['revision']}
         elif action == 'add':
             name = str(payload.get('name', '')).strip()
             category = payload.get('category')
@@ -261,7 +293,7 @@ def change(service, payload):
                 _load_asset_refs().scan_and_write(root, narrative, [changed_id], choices)
             except Exception:
                 pass  # 影响清单只作提示，失败不阻断用户的资产操作
-        service.sync(p['id'])
+        service.sync(p['id'], refresh_product_usage=action != 'same-image-states')
         if action == 'restore':
             current = service.get(p['id'])
             row = service.row(current, payload['ast_id'])

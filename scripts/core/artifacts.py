@@ -600,7 +600,7 @@ def asset_output_impact(project, manifest, baseline, replacement):
         return set(), {}
     from .revision_control import _generation_segments
 
-    fields = ('path', 'sha256', 'purpose', 'view', 'state', 'output_kind')
+    fields = ('path', 'sha256', 'purpose', 'view', 'state', 'output_kind', 'covers_states')
     unchanged = {key for key, original in baseline.items() if key in replacement
                  and all(original.get(field) == replacement[key].get(field) for field in fields)}
     videos = [item for item in current_artifacts(manifest) if item.get('logical_id') == 'video.prompt']
