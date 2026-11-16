@@ -4,7 +4,7 @@
 
 ## 这是什么
 
-2026-11-05 的历史复盘，分支 `codex/agent-stage-acceptance`：把本地流程授权下的整稿自查、自主采用与下游消费接线落地。业务规则以 [PROJECT_RULES.md](../../../PROJECT_RULES.md) 为准，操作见 [审核到画布入口](../../development/review-to-canvas-entry.md)。
+2026-11-05 的历史复盘，分支 `codex/agent-stage-acceptance`：把本地流程授权下的整稿自查、自主采用与下游消费接线落地。业务规则以 [PROJECT_RULES.md](../../../PROJECT_RULES.md) 为准，操作见 [首次自主采用](../../development/artifact-adoption.md#首次自主采用)。
 
 ## 当时改了什么
 
@@ -14,7 +14,7 @@
 
 ## 结论现在活在哪
 
-现行口径在 PROJECT_RULES.md「网站审核到画布的统一入口」一节与 docs/development/review-to-canvas-entry.md 的接线现状；实现为 scripts/core/agent_acceptance.py。本篇只是当时的接线记录；当时审核站只验了认证与空参数处理，未做真实发布。
+现行口径在 PROJECT_RULES.md「网站审核到画布的统一入口」一节与[下游自查证据](../../development/artifact-adoption.md#下游自查证据)；实现为 scripts/core/agent_acceptance.py。本篇只是当时的接线记录；当时审核站只验了认证与空参数处理，未做真实发布。
 
 ## 当时验证数字
 

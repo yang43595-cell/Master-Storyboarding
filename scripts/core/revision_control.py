@@ -63,12 +63,26 @@ def _control_default() -> dict[str, Any]:
 def _load_control(project: Path) -> dict[str, Any]:
     path = project / CONTROL_RELATIVE
     if not path.is_file():
+        if path.exists() or path.is_symlink():
+            raise RevisionControlError("change_control.json 不是可读取的普通文件")
+        # Projects without a revision have no control file, even after initial
+        # adoptions. An earlier committed intent targeting the file makes its
+        # absence a loss of authoritative state instead.
+        for intent_path in (project / TRANSACTION_ROOT).glob("*/commit_intent.json"):
+            intent = read_json(intent_path)
+            files = intent.get("files") if isinstance(intent, dict) else None
+            if not isinstance(files, list) or any(not isinstance(item, dict) for item in files):
+                raise RevisionControlError(f"提交意图结构无效：{intent_path.parent.name}")
+            if any(item.get("path") == CONTROL_RELATIVE.as_posix() for item in files):
+                raise RevisionControlError("既有提交意图绑定的 change_control.json 缺失")
         return _control_default()
     value = read_json(path)
     if not isinstance(value, dict) or value.get("schema_version") != CONTROL_SCHEMA_VERSION:
         raise RevisionControlError("change_control.json 结构无效")
     if "active_change" not in value or "history" not in value or not isinstance(value["history"], list):
         raise RevisionControlError("change_control.json 缺少活动变更案或历史字段")
+    if value["active_change"] is not None and not isinstance(value["active_change"], dict):
+        raise RevisionControlError("change_control.json 活动变更案结构无效")
     return value
 
 
@@ -100,25 +114,13 @@ def _destination_within_project(project: Path, value: str | Path) -> tuple[Path,
 
 def _generation_segments(payload: Any) -> list[dict[str, Any]] | None:
     """Return actual prompt segments, or None when this is not a segmented prompt."""
-    if not isinstance(payload, dict):
+    from .web_content import SOURCE_SEGMENT_FIELDS, source_review_segments
+    if not isinstance(payload, dict) or not any(key in payload for key in SOURCE_SEGMENT_FIELDS):
         return None
-    if "generation_segments" in payload:
-        rows = payload["generation_segments"]
-    elif isinstance(payload.get("creative_sections"), list) and payload["creative_sections"]:
-        sections = payload["creative_sections"]
-        if any(not isinstance(section, dict) or not isinstance(section.get("generation_segments"), list)
-               for section in sections):
-            raise RevisionControlError("视频提示词创作段缺 generation_segments；材料分组不能代替生成段")
-        rows = [row for section in sections for row in section["generation_segments"]]
-    else:
-        return None
-    if (not isinstance(rows, list) or not rows
-            or any(not isinstance(row, dict) or not isinstance(row.get("segment_id"), str)
-                   or not row["segment_id"].strip() for row in rows)):
-        raise RevisionControlError("视频提示词 generation_segments/segment_id 缺失或无效")
-    ids = [row["segment_id"] for row in rows]
-    if len(ids) != len(set(ids)):
-        raise RevisionControlError("视频提示词 generation_segments 含重复 segment_id")
+    try:
+        rows = source_review_segments(payload)
+    except ValueError as exc:
+        raise RevisionControlError("视频提示词生成段不完整：" + str(exc)) from exc
     # A materials/grouping object is not a video generation segment. Require its
     # submitted prompt body using the same body resolver as the existing adapter.
     try:
@@ -665,7 +667,7 @@ def _validate_delivery(project: Path, payload: dict) -> None:
     else:
         from canvas_readback import validate_submission
     try:
-        validate_submission(payload, project)
+        validate_submission(payload, project, formal_delivery=True)
     except (ValueError, KeyError, TypeError, OSError) as exc:
         raise RevisionControlError(f'交付快照当前参考检查失败：{exc}') from exc
 
@@ -954,7 +956,7 @@ def record_scoped_confirmation(
         return dict(receipt)
 
 
-def commit_change(project: Path, *, change_id: str, website_approval=None) -> dict[str, Any]:
+def commit_change(project: Path, *, change_id: str, website_approval=None, chat_approval=None) -> dict[str, Any]:
     from .candidate_test import require_production
     from .review_publication import require_script_approval
     project = project.resolve()
@@ -963,7 +965,7 @@ def commit_change(project: Path, *, change_id: str, website_approval=None) -> di
         control = _load_control(project)
         change = _assert_active(control, change_id)
         agent_acceptance = change.get("candidate_acceptance")
-        if website_approval is None:
+        if website_approval is None and chat_approval is None:
             if change.get("status") != "commit_ready":
                 raise RevisionControlError("当前变更案尚未具备提交条件")
             _assert_review_current(project, change)
@@ -973,7 +975,7 @@ def commit_change(project: Path, *, change_id: str, website_approval=None) -> di
                 raise RevisionControlError("只有整稿范围的用户确认才能提交采用")
         elif (change.get("status") not in {"awaiting_review", "awaiting_candidate_confirmation", "commit_ready"}
               or agent_acceptance is not None or change.get("workflow_authorization")):
-            raise RevisionControlError("网站通过须对应已登记候选、等待审核或采用的编导变更案")
+            raise RevisionControlError("整稿通过须对应已登记候选、等待审核或采用的编导变更案")
         manifest = load_manifest(project)
         _assert_manifest_head(change, manifest)
         candidate = change.get("candidate_receipt") or {}
@@ -985,32 +987,35 @@ def commit_change(project: Path, *, change_id: str, website_approval=None) -> di
         if candidate_item is None or candidate_item.get("status") != "candidate":
             raise RevisionControlError("候选产物登记状态无效")
         state = load_project_state(project)
-        approval_ref = getattr(website_approval, "approval_ref", None)
+        approval_ref = getattr(chat_approval or website_approval, "approval_ref", None)
         try:
-            require_script_approval(project, candidate_item, approval_ref, website_approval)
+            require_script_approval(project, candidate_item, approval_ref, website_approval, chat_approval=chat_approval)
         except ValueError as exc:
             raise RevisionControlError(str(exc)) from exc
-        if website_approval is not None:
+        if website_approval is not None or chat_approval is not None:
             if (project_path(project, candidate_item["path_or_url"]) != source
                     or any(candidate[key] != candidate_item[field] for key, field in (
                         ("logical_id", "logical_id"), ("revision", "revision"), ("sha256", "checksum")))):
-                raise RevisionControlError("已送审稿件与当前变更案登记的候选不一致")
-            report_path, relative = _within_project(project, approval_ref)
+                raise RevisionControlError("已确认稿件与当前变更案登记的候选不一致")
             now = utc_now()
-            change["review"] = {"kind": "revision-review", "change_id": change_id, "verdict": "approved",
-                                "report_ref": relative, "report_sha256": sha256_file(report_path), "at": now,
-                                **{key: candidate[key] for key in ("artifact_id", "revision", "sha256")}}
+            if website_approval is not None:
+                report_path, relative = _within_project(project, approval_ref)
+                change["review"] = {"kind": "revision-review", "change_id": change_id, "verdict": "approved",
+                                    "report_ref": relative, "report_sha256": sha256_file(report_path), "at": now,
+                                    **{key: candidate[key] for key in ("artifact_id", "revision", "sha256")}}
             receipt = confirmation_scope.new_receipt(
                 confirmation_scope.SCOPE_ARTIFACT,
-                description="审核站编导稿整版通过",
+                description="对话中编导稿整版通过" if chat_approval else "审核站编导稿整版通过",
                 extra={"kind": "revision-candidate", "change_id": change_id,
                        "artifact_id": candidate_id, "revision": candidate["revision"], "sha256": candidate["sha256"],
-                       "approval_ref": approval_ref, "at": now},
+                       "approval_ref": approval_ref, "at": now,
+                       **(chat_approval.receipt_fields() if chat_approval else {})},
             )
             change["candidate_confirmation"] = receipt
-            _assert_review_current(project, change)
+            if website_approval is not None:
+                _assert_review_current(project, change)
+                state["review_report"] = dict(change["review"])
             _append_confirmation(state, receipt)
-            state["review_report"] = dict(change["review"])
         if agent_acceptance is not None:
             from .agent_acceptance import validate_agent_acceptance
             _assert_workflow_authorization(project, change, candidate_item, state)
@@ -1059,8 +1064,8 @@ def commit_change(project: Path, *, change_id: str, website_approval=None) -> di
         completed["stale_downstream"] = stale_downstream
         control["history"].append(completed)
         control["active_change"] = None
-        if website_approval is not None and sha256_file(source) != website_approval.sha256:
-            raise RevisionControlError("已送审编导稿在提交校验期间发生变化")
+        if (chat_approval or website_approval) and sha256_file(source) != (chat_approval or website_approval).sha256:
+            raise RevisionControlError("已确认编导稿在提交校验期间发生变化")
         return _commit_json_transaction_unlocked(project, {
             project / CONTROL_RELATIVE: control,
             project / MANAGE / "artifact_manifest.json": manifest,

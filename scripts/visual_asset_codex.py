@@ -178,6 +178,7 @@ def run(exe, folder, phase, request, draft, task_package):
             '实际阅读模板正文、适用规范和动态知识；已附带的参考图必须查看，文件不可读时passed=false。'
             'reference_records中的project_confirmed与确认ID记录本项目已确认的前置图，role说明各图用途。'
             '人物1×4使用已确认大头照和服装三视图作为输入；不要求先提供另一张最终人物1×4。'
+            '项目大头照、服装三视图和人物1×4以production_item.template.content为底稿，只按本轮需要补充实际造型或参考编号，保留模板的参考职责与构图要求。'
             '有相应前置图时不得笼统声称面部或服装素材缺失；实际不可读或确有冲突时指明具体哪张图和原因。'
             'reference_paths为空不等于参考图不可读；允许无参考设计时，不得将空参考或未定款式作为阻断理由。'
             '无法完成写词时prompt留空，具体原因放issues，不把拒绝说明当作生图提示词。'
@@ -263,7 +264,7 @@ def plan_assets(exe, folder, request, rules):
     schema_path, output = folder / 'plan-schema.json', folder / 'plan-result.json'
     schema_path.write_text(json.dumps(schema, ensure_ascii=False), encoding='utf-8')
     task = ('执行 asset-image-assistant 项目模式的 AST 盘点与最小复杂度判断，不生图、不调用工具、不改项目。'
-            '普通PROP允许无参考生成设计候选，包括有品牌名的剧情道具；缺参考、款式或携带外观未定作为设计选择，不列blockers。普通物品输出必须为一张16:9横图，正面、左侧、背面、俯视四视图，不生成45度单图。REAL_PRODUCT仍按广告产品真实参考要求。'
+            '普通PROP允许无参考生成设计候选，包括有品牌名的剧情道具；缺参考、款式或携带外观未定作为设计选择，不列blockers。新制物品母版用一张16:9横图，正面、左侧、背面、俯视四视图，不生成45度单图。复用保留原图视角和比例。REAL_PRODUCT仍按广告产品真实参考要求。'
             '实际读取下面完整Skill和已确认叙事包，逐条输出rows内的AST，不能漏项或造表外AST。'
             '参考图按附带顺序查看；inventory只有元数据，不能假称看过库存图，复用图片由用户选择核对。'
             '每项按实际用途列充分覆盖的outputs，环境保留空间余量，不把所有模板当作必做。每个output对应一张独立图片，key为英文数字下划线，'

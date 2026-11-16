@@ -212,13 +212,24 @@ def test_supplement_agent_adoption_requires_real_current_director_shot(tmp_path,
     assert load_project_state(tmp_path)["user_confirmations"] == before
 
 
-def test_narrative_cannot_enter_agent_adoption(tmp_path):
-    narrative, _ = confirmed_narrative(tmp_path)
-    register(tmp_path, "N2", "narrative.package", {**narrative, "revision": "R02"})
+def test_narrative_adopts_only_under_creative_director_workflow_authorization(tmp_path):
+    from test_formal_package_submission import narrative as synthetic_narrative
+    package = synthetic_narrative(tmp_path)
+    entry = register(tmp_path, "N2", "narrative.package", package)
     before = copy.deepcopy(load_project_state(tmp_path))
-    with pytest.raises(ValueError, match="不允许 agent"):
+    with pytest.raises(ValueError):
         artifacts.adopt_initial_agent_artifact(tmp_path, "N2", "does-not-exist.json")
     assert load_project_state(tmp_path) == before
+    aa.register_workflow_authorization(tmp_path, authorization_id="SYNTHETIC-FLOW",
+        authorization_ref="SYNTHETIC USER FLOW AUTHORIZATION ONLY", skills=["creative-director"])
+    before_confirmations = copy.deepcopy(load_project_state(tmp_path)["user_confirmations"])
+    adopted = artifacts.adopt_initial_agent_artifact(tmp_path, "N2", str(report(tmp_path, entry)))["artifact"]
+    state = load_project_state(tmp_path)
+    assert adopted["status"] == "current" and adopted["user_approved"] is False
+    assert adopted["agent_acceptance"]["authorization_id"] == "SYNTHETIC-FLOW"
+    assert state["user_confirmations"] == before_confirmations
+    assert artifacts.artifact_is_adopted(adopted, state, tmp_path)
+    assert not artifacts.artifact_is_confirmed(adopted, state, tmp_path)
 
 
 def test_authorized_stale_image_revision_carries_evidence_in_atomic_candidate(tmp_path):

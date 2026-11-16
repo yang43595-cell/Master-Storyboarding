@@ -742,9 +742,11 @@ def _modern_character_segments(project: Path, manifest: dict[str, Any], characte
     if __package__:
         from .core.revision_control import _generation_segments
         from .core.quality_evidence import source_shot_ids, replay_source_audio
+        from .core.web_content import SOURCE_SEGMENT_FIELDS, source_review_segments
     else:
         from core.revision_control import _generation_segments
         from core.quality_evidence import source_shot_ids, replay_source_audio
+        from core.web_content import SOURCE_SEGMENT_FIELDS, source_review_segments
     affected: list[str] = []
     state_path = project / "00_项目管理" / "project_state.json"
     state = read_json(state_path) if state_path.is_file() else {}
@@ -761,19 +763,12 @@ def _modern_character_segments(project: Path, manifest: dict[str, Any], characte
             if (not entry.get("checksum") or file_sha256(path) != entry["checksum"]
                     or payload.get("revision") != entry.get("revision")):
                 raise ValueError("video.prompt 文件字节或 revision 与准确登记不一致")
-            raw_rows = payload.get("generation_segments", [])
-            if "generation_segments" not in payload:
-                sections = payload.get("creative_sections", [])
-                raw_rows = []
-                for section in sections if isinstance(sections, list) else []:
-                    if isinstance(section, dict) and isinstance(section.get("generation_segments"), list):
-                        raw_rows.extend(section["generation_segments"])
+            raw_rows = source_review_segments(payload) if any(key in payload for key in SOURCE_SEGMENT_FIELDS) else []
             selected = (payload.get("audio_policy") == "voice_reference"
                         or bool(payload.get("voice_reference_manifest_path"))
                         or any(isinstance(dep, str) and dep.startswith("voice.character.")
                                for dep in entry.get("depends_on", []))
-                        or any(isinstance(row, dict) and row.get("speaking_characters")
-                               for row in (raw_rows if isinstance(raw_rows, list) else [])))
+                        or any(row.get("speaking_characters") for row in raw_rows))
             if not selected:
                 continue
             payload = _confirmed_package_source(project, manifest, state,

@@ -45,7 +45,7 @@ python scripts/init_desktop_project.py --path "C:\Users\LIUYANG\Desktop\项目�
 python scripts/stage_context_cli.py prepare --project <项目路径> --skill <技能名> --objective <这步目标> --request-json <本轮请求JSON路径>
 ```
 
-`--objective` 是目标说明，实际选知使用 `--request-json` 和项目摘要。请求由 AI 按当前已明确需求准备，沿用已有请求文件即可，不需要用户手写 JSON。只保留本轮任务与适用条件；历史方案、否定和输入矛盾的处理见 `skills/_shared/knowledge-access.md`。没有任务特定选知需求时可省略请求文件，但不能据此认为目标中的关键词已参与匹配。
+`--objective` 是目标说明，实际选知使用 `--request-json` 和项目摘要。请求由 AI 按当前已明确需求准备，沿用已有请求文件即可，不需要用户手写 JSON。只保留本轮任务与适用条件；历史方案、否定和输入矛盾按[普通准备与选知](../../skills/_shared/knowledge-access.md#普通阶段准备与选知)处理。没有任务特定选知需求时可省略请求文件，但不能据此认为目标中的关键词已参与匹配。
 
 例如已明确需要评估连续事件超时拆段时，请求可以是：
 

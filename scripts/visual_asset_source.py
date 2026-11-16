@@ -33,6 +33,13 @@ def resolve_reference(root, raw, artifacts=(), state=None):
     """Resolve local provenance, using a unique confirmed registration after relocation."""
     filename, separator, anchor = str(raw).partition('#')
     path = project_path(root, filename)
+    if not path.is_file() and not Path(filename).is_absolute():
+        # Requirement references to the repository's own reference packages
+        # (e.g. assets/product-references/...) are authored repository-relative;
+        # local_reference_document already treats the repository as in scope.
+        repo_candidate = (REPOSITORY / filename).resolve()
+        if repo_candidate.is_file():
+            path = repo_candidate
     text_reference = bool(separator) or Path(filename).suffix.lower() in TEXT_REFERENCE_SUFFIXES
     scope_error = '文本参考超出项目和仓库范围，请在项目内登记所需原始资料：' + str(raw)
 

@@ -12,11 +12,13 @@ import sys
 from pathlib import Path
 
 if __package__:
-    from .core.prompt_body import submitted_prompt_body, generated_overlay_issues
+    from .core.prompt_body import submitted_prompt_body, submitted_body_issues
     from .core.quality_evidence import source_shot_ids
+    from .core.web_content import SOURCE_SEGMENT_FIELDS, source_review_segments
 else:
-    from core.prompt_body import submitted_prompt_body, generated_overlay_issues
+    from core.prompt_body import submitted_prompt_body, submitted_body_issues
     from core.quality_evidence import source_shot_ids
+    from core.web_content import SOURCE_SEGMENT_FIELDS, source_review_segments
 
 
 HEADING_RE = re.compile(r"^##[ \t]+[^\n]+", re.MULTILINE)
@@ -35,10 +37,6 @@ PURPOSE_LABEL_RE = re.compile(r"光学目的[：:][ \t]*\S[^\n]*")
 PURPOSE_RE = re.compile(r"保留|保持|看清|看见|看得到|清楚|可辨|可读|突出|分离|压缩|拉出|集中|呈现|显示|纵深|层次|比例|自然距离|焦点|柔化")
 MM_RE = re.compile(r"(?<!\d)\d{1,3}\s*(?:mm|毫米)(?![A-Za-z0-9])", re.IGNORECASE)
 MM_SOURCE_RE = re.compile(r"(?:焦距来源|焦段依据|导演依据|证据来源)[：:][^\n]+")
-META_RE = re.compile(r"与(?:上|前一)段不连续|(?:视频)?模型没有上下文|(?:接|承接|沿用)(?:上一|前一|上)段|见导演包|同上")
-INTERNAL_ID_RE = re.compile(r"(?<![A-Za-z0-9_-])(?:(?:DLG|AST|STP|ART)-[A-Z0-9-]+|S\d{2}-\d{3})(?![A-Za-z0-9_-])")
-PATH_RE = re.compile(r"[A-Za-z]:[\\/]|/(?:Users|home|tmp)/")
-CHECKLIST_RE = re.compile(r"(?:^|\n)[^\n]{0,20}(?:完成条件|自查结论|验收清单)[：:]")
 
 
 def _body_text(text: str) -> str:
@@ -96,36 +94,18 @@ def _json_segments(text: str) -> list[tuple[str, str, str]]:
     data = json.loads(text)
     if not isinstance(data, dict):
         raise ValueError("JSON 顶层不是对象")
-    if "drafts" in data and ("generation_segments" in data or "creative_sections" in data):
+    has_segments = any(key in data for key in SOURCE_SEGMENT_FIELDS)
+    if "drafts" in data and has_segments:
         raise ValueError("JSON 同时存在 drafts 与生成段，不猜权威正文")
     legacy_drafts = False
-    if "generation_segments" in data:
-        rows = data["generation_segments"]
-    elif "creative_sections" in data:
-        sections = data["creative_sections"]
-        if not isinstance(sections, list) or any(
-                not isinstance(s, dict) or not isinstance(s.get("generation_segments"), list)
-                for s in sections):
-            raise ValueError("创作段 generation_segments 格式无法识别")
-        rows = [row for section in sections for row in section["generation_segments"]]
+    if has_segments:
+        rows = source_review_segments(data)
     elif "drafts" in data:
         rows, legacy_drafts = data["drafts"], True
     else:
         return []
     if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
         raise ValueError("生成段列表格式无法识别")
-    if "generation_segments" in data and "creative_sections" in data:
-        sections = data["creative_sections"]
-        if not isinstance(sections, list) or any(
-                not isinstance(s, dict) or not isinstance(s.get("generation_segments"), list)
-                for s in sections):
-            raise ValueError("创作段生成段引用列表格式无法识别")
-        links = [ident for section in sections for ident in section["generation_segments"]]
-        ids = [row.get("segment_id") for row in rows]
-        if (any(not isinstance(ident, str) for ident in links + ids)
-                or set(links) != set(ids)):
-            raise ValueError("顶层生成段与创作段引用不一致，不猜权威正文")
-
     for row in rows:
         source_shot_ids(row)
 
@@ -183,8 +163,8 @@ def inspect_document(path: Path, *, require_focal_intent: bool = False, project:
     if not segments:
         return 0, ["无法检查：当前格式未识别提交正文；可检查实际提交 TXT。此结果不是内容不合格，也不按0段通过"]
     for number, body, section in segments:
+        errors.extend(f"第 {number} 段{issue}" for issue in submitted_body_issues(body))
         if not body:
-            errors.append(f"第 {number} 段缺少非空、完整的提交正文")
             continue
         focal_values = _focal_measurements(body)
         declared = any(FOCAL_RE.search(line) or _focal_measurements(line)
@@ -196,15 +176,6 @@ def inspect_document(path: Path, *, require_focal_intent: bool = False, project:
             errors.append(f"第 {number} 段缺少可观察光学目的")
         if focal_values and not MM_SOURCE_RE.search(section):
             errors.append(f"第 {number} 段出现未标注来源的精确毫米数；依据可写在正文外的制作备注中")
-        if META_RE.search(body):
-            errors.append(f"第 {number} 段出现生成提示词元话语；改为可直接生成的具体画面")
-        if INTERNAL_ID_RE.search(body):
-            errors.append(f"第 {number} 段混入内部对白、镜头或资产编号")
-        if PATH_RE.search(body):
-            errors.append(f"第 {number} 段混入本地文件路径；改用实际上传引用标记")
-        if CHECKLIST_RE.search(body):
-            errors.append(f"第 {number} 段混入内部完成条件或自查清单；移到制作备注")
-        errors.extend(f"第 {number} 段{issue}" for issue in generated_overlay_issues(body))
     if check_scene_realism:
         if __package__:
             from .core.scene_realism import inspect_scene_realism

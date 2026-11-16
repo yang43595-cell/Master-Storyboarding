@@ -524,6 +524,21 @@ def test_formal_video_adoption_rejects_rewritten_source_audio(tmp_path):
                 if a["artifact_id"] == entry["artifact_id"])["status"] == "candidate"
 
 
+@pytest.mark.parametrize("reason", ["内部对白", "视频段未就绪", "视频稿输入不可用"])
+def test_formal_video_adoption_catches_known_delivery_failures(tmp_path, reason):
+    payload = video_project(tmp_path, current_prompt=False)
+    row = payload["generation_segments"][0]
+    if reason == "内部对白":
+        row["prompt"] += " 继续拍 S05-008。"
+    elif reason == "视频段未就绪":
+        row["submit_ready"] = False
+    else:
+        row["materials"] = [{"path": "missing.png"}]
+    entry = register(tmp_path, "P-BAD", "video.prompt", payload, ["storyboard.package"])
+    with pytest.raises(ValueError, match=reason):
+        artifacts.promote_candidate(tmp_path, "video.prompt", entry["artifact_id"])
+
+
 @pytest.mark.parametrize("declared_total", [None, 3, 2], ids=["legacy", "matching", "impossible"])
 def test_adopt_package_checks_video_shot_schedule_against_declared_total(tmp_path, declared_total):
     payload = video_project(tmp_path, current_prompt=False)

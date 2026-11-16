@@ -30,7 +30,7 @@ python scripts/stage_context_cli.py --help
 业务项目和独立验收案例保存在源码仓库之外。Git 保留通用方法、源码、合成回归夹具和已批准随仓分发的可复用产品参考包。业务原片、项目专属素材、配方、候选稿、案例报告和回执留在对应项目目录。新建项目使用以下命令。
 
 ```sh
-python scripts/init_desktop_project.py --path ../my-film
+.venv/bin/python scripts/init_desktop_project.py --path ../my-film
 ```
 
 该命令只创建空项目，拒绝覆盖已有目录。之后读取 `PROJECT_RULES.md` 和对应 `skills/<skill>/SKILL.md`，提供真实需求与输入，按本阶段入口继续。正常阶段的 `prepare` 直接选取仓库内置知识。视频提示词仍走本 Skill 的直接读取入口。
@@ -85,6 +85,6 @@ python -m scripts.core.knowledge_runtime
 
 ## 随仓产品参考与外部输入
 
-造物者温泉酸抛光面膜 R04 随仓保存在 `assets/product-references/creator-polishing-mask-2/R04/`，包含产品 brief、参考图、动作视频和来源核对材料。新检出可直接按[开工入口](review-to-canvas-entry.md#使用已选产品参考包)锁定版本与文件哈希。原始长片和历史案例按项目输入登记，R04 的适用范围与未覆盖动作以包清单为准。缺少业务素材时须提供真实文件或停止受影响操作。若缺必需的知识方法或模板，先由维护流程把准确文件纳入仓库，再运行该分支。可选案例缺失时略过该案例。
+造物者温泉酸抛光面膜 R04 随仓保存在 `assets/product-references/creator-polishing-mask-2/R04/`，包含产品 brief、参考图、动作视频和来源核对材料。新检出可直接按[开工入口](../rules/project-layout.md#使用已选产品参考包)锁定版本与文件哈希。原始长片和历史案例按项目输入登记，R04 的适用范围与未覆盖动作以包清单为准。缺少业务素材时须提供真实文件或停止受影响操作。若缺必需的知识方法或模板，先由维护流程把准确文件纳入仓库，再运行该分支。可选案例缺失时略过该案例。
 
 浏览器登录、平台账户、付费生成、Blender/ASR 软件、真实媒体和用户批准都不是源码可打包的权限。方法加载、测试或离线网页编译通过，不表示已生成图片/视频、已验证效果、已发布审核站点或已得到用户确认。

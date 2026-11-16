@@ -89,6 +89,79 @@ class AssetReferenceConfirmationTests(unittest.TestCase):
         self.assertEqual({item["output_id"] for item in published["outputs"]},
                          {item["output_id"] for item in asset["confirmed_outputs"]})
 
+    def test_shared_confirmation_receipt_is_read_once_per_operation(self):
+        from unittest.mock import patch
+
+        entry = next(item for item in asset_refs.load_manifest(self.root)["artifacts"]
+                     if item["artifact_id"] == self.export["artifact_id"])
+        with (patch.object(asset_refs, "_read", wraps=asset_refs._read) as read,
+              patch.object(asset_refs, "verify_image_confirmation", wraps=asset_refs.verify_image_confirmation) as verify):
+            outputs = asset_refs.registered_output_snapshot(self.root, entry)
+            self.assertGreater(len(outputs), 1)
+            receipt_path = Path(next(iter(outputs.values()))["confirmation_ref"].partition("#")[0])
+            self.assertEqual([call.args[0] for call in read.call_args_list], [receipt_path])
+            self.assertEqual(verify.call_count, len(outputs))
+
+        with patch.object(asset_refs, "_read", wraps=asset_refs._read) as read:
+            self.assertTrue(asset_refs.confirmed_images(self.root))
+            self.assertEqual([call.args[0] for call in read.call_args_list].count(receipt_path), 1)
+
+        receipt = pmod.read(receipt_path)
+        receipt["items"].append(receipt["items"][0])
+        pmod.write(receipt_path, receipt)
+        self.assertIsNone(asset_refs.registered_output_snapshot(self.root, entry))
+
+    def test_legacy_prop_reuse_label_changes_display_without_replacing_the_export(self):
+        from unittest.mock import patch
+        import visual_asset_library as library
+
+        service = self.lib.projects
+        project_id = self.project["id"]
+        asset_id = "AST-CUP"
+        project = service.get(project_id)
+        row = service.row(project, asset_id)
+        service.reopen({"job_id": row["job_id"], "index": 0})
+        project = service.get(project_id)
+        service.row(project, asset_id)["job_id"] = None
+        service.save(project)
+        detail = service.prepare_reuse({"project_id": project_id, "ast_id": asset_id})
+        job_id = service.row(detail, asset_id)["job"]["id"]
+        target = {"job_id": job_id, "index": 0, "asset_id": self.asset["id"]}
+        service.select(target)
+        job = self.lib.get(job_id, "jobs")
+        job["steps"][0].update(view=asset_refs.PROP_BUILD_VIEW, name="物品四视图 · 常态")
+        self.lib.save(job, "jobs")
+        service.confirm({**target, "confirm": True})
+        with patch.object(library.management, "guard"):
+            library.visual_asset_backup.run(self.lib, library.management)
+        exported = service.export({"project_id": project_id, "confirm": True})
+        manifest_path = Path(exported["manifest"])
+        registry_path = self.root / "00_项目管理/artifact_manifest.json"
+        state_path = self.root / "00_项目管理/project_state.json"
+        entry = next(item for item in asset_refs.load_manifest(self.root)["artifacts"]
+                     if item["artifact_id"] == exported["artifact_id"])
+        saved = {p: p.read_bytes() for p in (manifest_path, registry_path, state_path)}
+        key = (asset_id, "state0_view0")
+        frozen = asset_refs.registered_output_snapshot(self.root, entry)[key]
+        receipt_path = Path(frozen["confirmation_ref"].partition("#")[0])
+        saved[receipt_path] = receipt_path.read_bytes()
+        self.assertEqual(frozen["view"], asset_refs.PROP_BUILD_VIEW)
+        self.assertEqual(asset_refs.resolve_final_images(self.root, ["@".join(key)])["@".join(key)]["view"],
+                         asset_refs.PROP_REUSE_VIEW)
+        tile = service.row(service.detail(project_id), asset_id)["job"]["steps"][0]
+        self.assertEqual((tile["view"], tile["name"]), (asset_refs.PROP_REUSE_VIEW, "物品原图 · 常态"))
+        self.assertEqual(frozen["confirmation_ref"].partition("#")[2], tile["project_confirmation"]["id"])
+        self.assertEqual(service.export({"project_id": project_id, "confirm": True}), exported)
+        self.assertEqual({p: p.read_bytes() for p in saved}, saved)
+
+        service.reopen(target)
+        self.assertFalse(asset_refs.require_final_images(self.root, ["@".join(key)])[0])
+
+    def test_generated_prop_view_remains_four_views(self):
+        outputs = asset_refs.confirmed_images(self.root)["AST-CUP"]["outputs"]
+        self.assertTrue(outputs)
+        self.assertTrue(all(output["view"] == asset_refs.PROP_BUILD_VIEW for output in outputs))
+
     def test_old_cached_list_is_not_reused_and_current_narrative_is_resolved_from_manifest(self):
         stale = {"items": [{"asset_id": "AST-ROOM", "state": "needs_image",
                             "image": {"status": "confirmed", "files": ["candidate.png"]}}]}

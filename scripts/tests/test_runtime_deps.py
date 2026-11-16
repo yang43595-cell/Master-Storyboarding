@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+from importlib.machinery import PathFinder
 from pathlib import Path
 
 import pytest
@@ -14,13 +15,12 @@ from scripts.core import runtime_deps
 
 
 @pytest.fixture(autouse=True)
-def _clear_resolution_cache():
+def _isolate_resolution_state():
+    original_path = sys.path.copy()
     runtime_deps.resolve_runtime_deps.cache_clear()
     yield
     runtime_deps.resolve_runtime_deps.cache_clear()
-    vendor = runtime_deps.vendor_directory(Path.cwd())
-    if str(vendor) in sys.path:
-        sys.path.remove(str(vendor))
+    sys.path[:] = original_path
 
 
 def _write_package(vendor: Path, name: str, body: str) -> Path:
@@ -52,19 +52,24 @@ def test_foreign_stamp_is_never_inserted_into_sys_path(tmp_path: Path):
     assert str(vendor) not in sys.path
 
 
-def test_stale_vendor_copy_cannot_shadow_the_host_package(tmp_path: Path):
+def test_stale_vendor_copy_cannot_shadow_the_host_package(tmp_path: Path, monkeypatch):
     """复现历史故障：3.12 装的隔离目录在 3.13 下抢走 import jsonschema。"""
     vendor = runtime_deps.vendor_directory(tmp_path)
     _write_package(vendor, "jsonschema", "from rpds import missing_extension\n")
+    host = tmp_path / "host"
+    host_package = _write_package(host, "jsonschema", "")
+    monkeypatch.syspath_prepend(str(host))
 
     resolved = runtime_deps.ensure_runtime_deps(tmp_path)
 
     assert resolved.path is None
+    assert resolved.source == "host"
     assert "jsonschema" in resolved.detail
     assert str(vendor) not in sys.path
-    spec = importlib.util.find_spec("jsonschema")
-    assert spec is not None, "宿主环境应提供可用的 jsonschema"
-    assert "visual-library-deps" not in str(spec.origin or "")
+    # 直接检查搜索路径，避免收集阶段已导入的 jsonschema 影响结果。
+    spec = PathFinder.find_spec("jsonschema")
+    assert spec is not None
+    assert spec.origin == str(host_package / "__init__.py")
 
 
 def test_unimportable_vendor_directory_is_refused(tmp_path: Path):
@@ -87,9 +92,10 @@ def test_matching_stamp_and_actual_import_are_verified(tmp_path: Path):
     assert resolved.source == "vendored"
     assert resolved.path == str(vendor)
     assert str(vendor) in sys.path
-    assert importlib.import_module("demo_package").VALUE == 1
-    sys.path.remove(str(vendor))
-    sys.modules.pop("demo_package", None)
+    try:
+        assert importlib.import_module("demo_package").VALUE == 1
+    finally:
+        sys.modules.pop("demo_package", None)
 
 
 def test_stamp_problem_reports_interpreter_and_requirements_drift(tmp_path: Path):

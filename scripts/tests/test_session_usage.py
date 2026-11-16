@@ -134,3 +134,25 @@ def test_prepare_stops_before_writing_on_exhausted_budget(tmp_path):
 def test_cli_gate_failure_is_nonzero(monkeypatch, tmp_path):
     monkeypatch.setattr(context, "ensure_prepared", lambda args: {"ok": False, "method_reading_evidence": "required"})
     assert context.main(["ensure-prepared", "--project", str(tmp_path), "--skill", "voiceover-to-video-script"]) == 2
+
+def test_usage_docs_keep_routine_waits_and_budget_routes_separate():
+    root = Path(__file__).resolve().parents[2]
+    budget = (root / "docs/development/token-budget.md").read_text(encoding="utf-8")
+    execution = (root / "docs/rules/execution.md").read_text(encoding="utf-8")
+    experiments = (root / "docs/rules/experiments.md").read_text(encoding="utf-8")
+
+    def section(body, heading):
+        return body.split(f"\n## {heading}\n", 1)[1].split("\n## ", 1)[0]
+
+    waits = section(execution, "等待与工具回传")
+    ordinary = section(budget, "普通准备的计量检查点")
+    direct = section(budget, "直接读取和画布的同一计量检查点")
+    candidate = section(experiments, "受控候选的计量合同")
+
+    assert "一次有界等待" in waits and "无变化不重复取进度" in waits
+    assert "usage-check" not in waits and "--usage-contract-json" not in waits
+    assert "prepare ... --usage-log" in ordinary and "#检查点与停止条件" in ordinary
+    assert "usage-check" in direct and "--usage-boundaries-json" in direct
+    assert "prepare ... --usage-log" not in direct
+    assert "--usage-contract-json" in candidate and "不能在同项目更换 run ID" in candidate
+    assert "--usage-contract-json" not in ordinary + direct

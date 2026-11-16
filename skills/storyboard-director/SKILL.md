@@ -9,7 +9,7 @@ description: 在有效导演稿和资产图就绪后、视频提示词之前，�
 
 图片生产按 [图片生产批次](../../docs/rules/execution.md#图片生产批次) 交给干净上下文的专属图片子 agent，每批最多 8 张目标图，同批返修续用、不递归。子 agent 完成读输入／方法／参考、写提示词、生成、实看、授权内修正、独占落盘和自查交接；阶段负责人掌缺口、跨批依赖、全片覆盖及正式采用，不只外包一次生图调用。
 
-读取 `PROJECT_RULES.md`、`../_shared/knowledge-access.md`、当前 `stage_startup.md`、`../_shared/draft-lifecycle.md` 等六项共享红线（含 `../_shared/prompt-language.md`）、`modules/storyboard-method.md`、`references/reference-asset-contract.md`、`references/storyboard-production-checklist.md`、`references/image-continuity-hard-rules.md`、`templates/storyboard-image-template.md` 与 `../../schemas/visual-supplement-request.schema.json`。涉及灯光风险时才读取 `../storyboard-planner/references/lighting-prompt-standard.md` 的对应小节；写本 Skill 提示词时必读 `../voiceover-to-video-script/references/prompt-language-hard-rules.md` 并以其为准。这些引用不授予修改导演镜头或视频提示词的权力。
+读取 `PROJECT_RULES.md`、[普通准备与选知](../_shared/knowledge-access.md#普通阶段准备与选知)、当前 `stage_startup.md`、`../_shared/draft-lifecycle.md` 等六项共享红线（含 `../_shared/prompt-language.md`）、`modules/storyboard-method.md`、`references/reference-asset-contract.md`、`references/storyboard-production-checklist.md`、[图片连续性的共用检查](references/image-continuity-hard-rules.md#共用检查)、`templates/storyboard-image-template.md` 与 `../../schemas/visual-supplement-request.schema.json`。涉及灯光风险时才读取 `../storyboard-planner/references/lighting-prompt-standard.md` 的对应小节；写本 Skill 提示词时必读 `../voiceover-to-video-script/references/prompt-language-hard-rules.md` 并以其为准。使用人物 1×4 时核[唯一面部来源](../asset-image-assistant/references/02-character-master-guide.md#唯一面部来源)。使用场景参考时核[背景母版](../asset-image-assistant/references/03-scene-master-guide.md#背景母版与单变量派生)及[多角度覆盖](../asset-image-assistant/references/03-scene-master-guide.md#多角度场景参考组)。这些引用不授予修改导演镜头或视频提示词的权力。
 
 缺口判断与产出前，完整读取 knowledge-profile 绑定的 `VISUAL-SUPPLEMENT-METHOD`（缺口证据、参考覆盖与状态继承）和 `IMAGE-CONTINUITY-METHOD`（共用图片连续性）方法快照，按原流程登记实际阅读并通过 ensure-prepared；方法缺失不得退回旧本地正文。经验层不自动加载，模板与请求合同继续从本地读取。
 
@@ -19,7 +19,7 @@ description: 在有效导演稿和资产图就绪后、视频提示词之前，�
 
 本轮采用[网站审核到画布统一入口](../../PROJECT_RULES.md#网站审核到画布的统一入口)时，补图不送网站、不逐图或逐项选图停等；执行者在已授权范围内判断复用／补图、实看、修正并自查验收准确文件及镜号用途，执行判断不冒写为用户决定。下文具体用户选图／逐图确认步骤只适用于兼容人工路径。补图前从项目开工记录读取生图工具、模型、额度和适用输出范围，沿用已覆盖的授权。白模默认关闭。
 
-正式消费仍须合法采用的准确上游和图片依据。整图实看与用途核验通过后，按[本地流程授权与自主采用](../../docs/development/review-to-canvas-entry.md#本地流程授权与自主采用)登记准确候选、自查及 `usage.source_shot_ids`；保留真实 `quality_evidence` 和适用的产品参考，使用完整 `acceptance_binding()` 结果绑定观察与参考内容，首次采用走 `accept-artifact`，已有版本返修走自主修订入口。补图请求引用自主采用导演时，`source_storyboard.status` 为 `agent_accepted`，校验必须提供项目并核当前采用依据。先核[自主验收接线现状](../../docs/development/review-to-canvas-entry.md#接线现状与开发交接)；当前入口不能保存或消费 agent 验收来源时，保留候选与自查结果并报告受影响缺口，不调用会制造逐图人审事实的旧确认入口，不改 confirmed／user_approved 或借 candidate_test 绕过。候选自查不等于正式可引用。
+正式消费仍须合法采用的准确上游和图片依据。整图实看与用途核验通过后，按[下游自查证据](../../docs/development/artifact-adoption.md#下游自查证据)登记准确候选、自查及 `usage.source_shot_ids`；保留真实 `quality_evidence` 和适用的产品参考，使用完整 `acceptance_binding()` 结果绑定观察与参考内容，按本轮读取[首次采用](../../docs/development/artifact-adoption.md#首次自主采用)或[自主修订](../../docs/development/artifact-adoption.md#自主修订)。补图请求引用自主采用导演时，`source_storyboard.status` 为 `agent_accepted`，校验必须提供项目并核当前采用依据。当前入口不能保存或消费 agent 验收来源时，保留候选与自查结果并报告受影响缺口，不调用会制造逐图人审事实的旧确认入口，不改 confirmed／user_approved 或借 candidate_test 绕过。候选自查不等于正式可引用。
 
 按顺序执行，使用现有请求、选择记录、图片登记与审核备注承载结果；方法/字段齐全不能证明下面动作已经完成。同一有效上下文、相同版本与用途的既有视觉结论按共享规则复用并引用原核对位置，新执行者或范围/用途变化须实看受影响图片。
 
@@ -42,7 +42,7 @@ description: 在有效导演稿和资产图就绪后、视频提示词之前，�
 
 - 用户为本镜选择白模时，读取 `blender-previs handoff-reference` 产出的 `reference-handoff.json`，核对确切镜号、目标状态、覆盖、局限与确认记录；失效则返回白模步骤，不自行重建。未选择白模不新增门禁。白模只约束空间构图、承托、站位及相机路径，身份/服装/场景外观仍使用其列明的确认母图，不继承代理颜色材质或精细姿态；静态起幅图不当作完整运镜或表演证据。本 Skill 不运行 Blender。
 
-剧情带来后续沿用的持续可见场景变化时，按[剧情后的场景状态参考](references/image-continuity-hard-rules.md#剧情后的场景状态参考)先查新态覆盖，再复用或补一个对应状态图；基础环境母图不是后续所有状态的替代。沿同一请求保留旧态、事件、新态、不变量及准确镜号范围，缺图待制作、未核待审，不把静帧当动态过程或每微动作补图。
+剧情带来后续沿用的持续可见场景变化时，按[剧情后的场景状态参考](references/reference-asset-contract.md#剧情后的场景状态参考)先查新态覆盖，再复用或补一个对应状态图；基础环境母图不是后续所有状态的替代。沿同一请求保留旧态、事件、新态、不变量及准确镜号范围，缺图待制作、未核待审，不把静帧当动态过程或每微动作补图。
 
 ## 对话选图
 
@@ -70,13 +70,13 @@ description: 在有效导演稿和资产图就绪后、视频提示词之前，�
 
 ## 返工入口
 
-图被退回后，先按[返工分流](references/reference-asset-contract.md#返工先定位原因再选择是否回白模)核对整体来源链，判断回导演、回资产、调整白模、复用有效白模再生图，或无需白模。空间错误不能只加排除词，外观问题也不强制重建空间。连续事件因时长拆段缺实际桥接图时，按[跨段参考](references/image-continuity-hard-rules.md#连续事件因时长拆段时的实际衔接参考)检查具体切点状态，不只承诺提示词连续。
+图被退回后，先按[返工分流](references/reference-asset-contract.md#返工先定位原因再选择是否回白模)核对整体来源链，判断回导演、回资产、调整白模、复用有效白模再生图，或无需白模。空间错误不能只加排除词，外观问题也不强制重建空间。连续事件因时长拆段缺实际桥接图时，按[跨段参考](references/reference-asset-contract.md#连续事件因时长拆段时的实际衔接参考)检查具体切点状态，不只承诺提示词连续。
 
 ## 执行与输出
 
 按“来源镜头与证据 → 复用盘点 → 唯一目标状态 → 最小参考集合 → 候选生成 → 技术与引用检查 → 本次要求与成图观察核对 → 本轮入口的验收与合法采用”执行。
 
-新边界分镜图的生图输入按[独立基础参考规则](references/image-continuity-hard-rules.md#新边界分镜图独立取基础参考)执行；不得把前一边界图递归作为下一边界图的生图输入。相邻视频复用同一切点图的规则保持不变。
+新边界分镜图的生图输入按[独立基础参考规则](references/reference-asset-contract.md#新边界分镜图独立取基础参考)执行；不得把前一边界图递归作为下一边界图的生图输入。相邻视频复用同一切点图的规则保持不变。
 
 - 每个请求只解决一个目标状态；生成数量不得超过 `max_images`，也不得顺带重做相邻镜头。动作前图必须停在本段首个新增动作发生前；关键瞬间或结果图不能冒充动作前图。目标图与相邻状态无法自然衔接且导演稿没有相应调度时，记录矛盾并返回上游，不靠增加排除词或补画中间动作掩盖。
 - 必须继承导演包的镜头契约和已确认资产状态，不重新决定景别、机位、构图目的、调度、运镜或切点（景别与基础连续性剪辑属模型通用能力或导演已定，不靠知识包供给）。具体镜头的静态构图只把其指定状态可视化；场景关系图的展示视角按模块约定处理，不成为新的导演拍法。

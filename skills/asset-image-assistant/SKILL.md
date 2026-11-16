@@ -17,27 +17,29 @@ description: 在叙事包确认后按已登记 AST 需求制作和核对角色�
 
 先选资料入口，二者不叠加：
 
-- **普通对话**：实际图片生产按 `../_shared/knowledge-access.md` 执行本批隔离的 prepare／阅读登记／ensure，使用同一 `--context-id` 与真实 `actor-id`／`task-id`；在现有请求 JSON 的 `image_targets` 列出本批 1–8 个不重复准确输出身份（如 `AST-ID@OUTPUT-ID`）。读取本批 `stage_startup.md` 与完整方法快照，实际阅读后登记，产出前通过 `ensure-prepared`。仅盘点／复用、不产新图的阶段工作仍按原普通准备入口，不虚构生图目标。
+- **普通对话**：盘点或复用按[普通准备与选知](../_shared/knowledge-access.md#普通阶段准备与选知)。制作图片按[批次隔离](../_shared/knowledge-access.md#图片批次的隔离准备)使用同一批次的 prepare／阅读登记／ensure。请求用 `image_targets` 列准确输出，用 `image_output_kinds` 为本批每项注明实际出图类型，准备包只带命中的人物模板和灰模。读取启动包、适用指南及方法快照，同批返修沿用有效原文与记录。
 - **两种 Web 入口**：按 [modules/web-input-contract.md](modules/web-input-contract.md) 读取本次 task-package；不执行 stage prepare / ensure-prepared，不额外登记普通对话的阅读声明。
 
 两种入口均须读到 `PROJECT_RULES.md`、`../_shared/draft-lifecycle.md` 等适用共享规范（含 `../_shared/prompt-language.md`）、`modules/asset-method.md`、`references/00-asset-production-workflow.md`、`references/00a-asset-complexity-routing-guide.md`、`references/05-asset-manifest-handoff-guide.md` 与 `../../schemas/visual-asset-manifest.schema.json`；Web 的单项写词裁剪以受限读取合同为准。
 
-分类指南只读本轮适用部分：`references/01-style-master-guide.md`（含整片色卡）、`references/02-character-master-guide.md`、`references/02a-body-character-master-guide.md`、`references/03-scene-master-guide.md`、`references/04-prop-product-master-guide.md`。产出前必读 `../storyboard-director/references/image-continuity-hard-rules.md`；写提示词必读并遵守 `../voiceover-to-video-script/references/prompt-language-hard-rules.md`；涉及灯光风险时核对 `../storyboard-planner/references/lighting-prompt-standard.md` 的对应条目。按 `modules/asset-method.md` 开头清单核对适用资料齐全，不因引用其他阶段文件扩大职责。
+分类指南只读本轮适用部分：`references/01-style-master-guide.md`（含整片色卡）、`references/02-character-master-guide.md`、`references/02a-body-character-master-guide.md`、`references/03-scene-master-guide.md`、`references/04-prop-product-master-guide.md`。产出前读取[图片连续性的共用检查](../storyboard-director/references/image-continuity-hard-rules.md#共用检查)及本类指南。制作或引用 1×4 时按实际用途读取[身份板构图](references/02-character-master-guide.md#五人物身份资产板)或[已有身份板的引用](references/02-character-master-guide.md#唯一面部来源)。场景读取[背景母版](references/03-scene-master-guide.md#背景母版与单变量派生)和[多机位覆盖](references/03-scene-master-guide.md#多角度场景参考组)的适用范围；写提示词必读并遵守 `../voiceover-to-video-script/references/prompt-language-hard-rules.md`；涉及灯光风险时核对 `../storyboard-planner/references/lighting-prompt-standard.md` 的对应条目。按 `modules/asset-method.md` 开头清单核对适用资料齐全，不因引用其他阶段文件扩大职责。
 
 ## 本轮执行 SOP
 
-项目采用[网站审核到画布统一入口](../../PROJECT_RULES.md#网站审核到画布的统一入口)时，资产图仍须网站人审：实看候选后送准确 AST、output、文件版本与用途，读取已提交意见和附图、返修新版本并重审；该范围的真实通过回执即确认及继续授权，不再回聊天重复确认。本地制作网页与离线编译不代表审核站已接通；缺合法通道时保留候选并报告具体缺口，不预填 confirmed。独立库及兼容项目沿原确认路径。
+项目资产图沿[项目已定审核通道](../../PROJECT_RULES.md#网站审核到画布的统一入口)人审。一次审阅列出准确成图和用途，可独立判断的图合在同批；能解锁下一项的前置图可先审。返修仅重新送受影响的成图，已有效确认且用途不变的参考沿用原依据。独立库及兼容项目沿原确认路径。
 
 按顺序完成适用步骤；核对对象和结论写回本模式现有制作项、候选/审核备注与清单，不另建执行表。只有本轮实际执行并有对应结果的步骤才可报完成。
 
 阶段负责人先按角色、场景、服装、状态及实际参考依赖分组；共同母图先确定，独立批次再并行，并为每批分配不重叠的目标和候选路径。Web 沿本次 task-package 受限读取，一图一独立会话的现有制作项可保持；8 张不是最低数量，也不改变网页并发 3 项或其他原有数量限制。图片执行者不写整份 manifest、当前清单或阶段状态；交回本批准确结果后由阶段负责人统一登记、送审和采用。跨批需合看时明确交给能读取相关图及来源的图片执行者，不由主协调方默认重新加载全部图片。
 
+普通对话图片批次派工时，约定同一个执行者跟到真实成图、实看和现有回执落盘。需要红帧界面操作的批次直接交实际配置为 Terra 的执行者。用现有 `--context-id` 和 `--request-json` 在 `prepare` 或首次阶段 `handoff` 附上 `--batch-receipt`，固定本批准确 `AST@输出` 和实看回执路径。在实看回执顶层沿用本卡的 `context_id` 和 `request_sha256`，只归入实际按该请求实看的结果。执行者完成后只发结论、未完项和该路径，中间日志和图留在原处。阶段负责人收到完成通知后，以项目和批次 ID 运行 `handoff --to-skill asset-image-assistant --receive-batch`，一次读取紧凑结果。需要确认资产已经正式可用时，仍按受影响目标使用 `asset_refs.py --require-final-image`。等待和回传按[对应小节](../../docs/rules/execution.md#等待与工具回传)，遇到报错按[原处续作](../../docs/rules/execution.md#工具报错与原处续作)。计量时只读实际适用的[检查点](../../docs/development/token-budget.md#普通准备的计量检查点)和[资产协调窗口](../../docs/development/token-budget.md#资产批次协调)。
+
 1. **锁定入口与范围。** 项目模式核对有效叙事包、AST 和已登记用户调整；独立库核对本次库需求，不创建项目 AST。按上节完成本入口的资料准备与实际阅读。缺真实输入或规范只停止受影响项，返回本入口补齐。
-2. **盘点并实看参考。** 定位准确 AST/output 或库内文件，核对确认依据、实际图与当前用途，记录覆盖及不足；足够时复用，转第 5 步，不为走流程生成。无需独立图、取消项与待定项不进入制作；需求矛盾返回上游。
+2. **盘点并实看参考。** 定位准确 AST/output 或库内文件，核对确认依据、实际图与当前用途。用户已选定且适合本次用途的旧服装图，沿用该原图和选择依据。头照确认只固定身份，已有服装方向可并行核对；需要新增服装图时按依赖制作。无需独立图、取消项与待定项不进入制作；修改已锁定的身份、服装要求或故事事实时，只把受影响的条目交回上游。
 3. **确定实现并自查提示词。** 按类别及明确要求选择单图、身份板、场景视角或必要状态，核对继承/禁止项、实际参考、提示词与输出计划。从项目开工记录读取生图工具、模型、额度方式和准确输出范围。已有授权覆盖时，完成当版提示词自查后执行；范围外只暂停相应制作项。独立库沿自身授权入口。
 4. **产出并做技术检查。** 图片执行者在授权范围内生成/编辑或接入真实导入文件，独占写入分配的候选路径，保留准确身份、路径、来源、实际参考、尺寸/格式及结果。技术失败或结果未知不自动重提；视觉问题回相应参考或制作步骤，在既定目标和已有授权内修正并另存版本，超范围返回阶段负责人，不覆盖确认图。人物四格图统一由 AI 生成，使用已确认的独立服装图与头照；来源确认不等于新成图已确认。
-5. **实看本轮准确交付图。** 按 `asset-method` 对照当前明确要求、类别指南与原参考，记录 output/文件版本、具体可见事实、结论及未满足处理；技术通过和提示词审核不能替代此步。失败或无法判断的项保留待修/未验证，回第 2 至 4 步修受影响内容，不报合格或整项完成。
-6. **交审、确认与收尾。** 图片执行者交文件夹绝对路径、准确文件名、AST/output、修订/字节依据、实际参考和用途、自查可见事实、修正结果及未满足项；沿现有制作项和审核备注交接，不新增平行 QA 账本。阶段负责人核完整范围与跨批关系，按本轮入口送审，取得准确文件及用途的真实确认后统一登记，核最终清单与实际导出选择并执行旧稿归档收尾。仅完成候选时说明待确认范围；库内确认不代替项目确认，最终人物四格图同样由执行者实看，统一入口以准确成图的网站通过回执为准。不自动进入下一 Skill。
+5. **实看本轮准确交付图。** 按 `asset-method` 对照明确要求、类别指南与原参考，记录准确版本、可见事实和结论。按人物指南只须备注的排版差异随图交审。影响身份、用途或连续性的问题按实际影响返修；用户已明确接受该版已列明的视觉偏差时，记录接受范围并沿用该版的实际观察与技术检查结果。
+6. **交审、确认与收尾。** 图片执行者在现有回执或 Web 制作项记录准确原件、AST/output、修订/字节、实际参考与用途、实看结论和未满足项。阶段负责人收到完成通知后核覆盖与跨批关系，按本轮通道办理[网站送审](../../docs/development/review-workbench-operations.md#资产图送审)及[决定与交接](../../docs/development/review-workbench-operations.md#资产网站决定与交接)，或用[资产对话确认](modules/project-web-mode.md#资产对话确认)。真实确认后备份并导出已确认输出，按输出身份交给实际依赖它的下游。候选和待补项在原回执保留。画布如需统一排版，安排在本批送审之后，可与人审并行。
 
 ## 专业方法适用条件
 

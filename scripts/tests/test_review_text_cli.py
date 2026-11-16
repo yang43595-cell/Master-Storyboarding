@@ -39,18 +39,36 @@ def prepare(project):
                                              "--output", "R01.md"]))
 
 
+def status_response(case_id="012", *, version=None, generation=0):
+    return {"case": {"id": case_id, "projectId": "fixture", "name": "合成案例",
+                     "status": "active", "revision": generation},
+            "stage": "script", "sourceScriptVersion": version,
+            "head": {"version": version, "generation": generation} if version else None,
+            "expectations": {"expectedHeadVersion": version, "expectedHeadGeneration": generation,
+                             "expectedReviewRevision": 0}}
+
+
+def save_preflight(project, response):
+    write_json(project / "preflight.json", {"kind": "agent-review-api-receipt", "command": "status",
+        "project_path": str(project), "base_url": cli.DEFAULT_BASE_URL,
+        "request": {"parameters": {"caseId": "012", "stage": "script"}}, "response": response})
+
+
 def publish_args(project, receipt="publish.json"):
+    if not (project / "preflight.json").exists():
+        save_preflight(project, status_response())
     return cli._parser().parse_args(["publish", "--project", str(project), "--narrative", "R01.json",
                                     "--markdown", "R01.md", "--case-id", "012", "--operation-id", OPERATION,
                                     "--token-file", "/not-read-by-mock", "--receipt", receipt,
-                                    "--purpose", "独立合成测试"])
+                                    "--preflight", "preflight.json", "--purpose", "独立合成测试"])
 
 
 @pytest.fixture
 def fake_client(monkeypatch):
     calls = []
     response = {"ok": True, "caseId": "012", "version": "synthetic-version", "headGeneration": 1,
-                "assetId": "synthetic-asset", "url": "/?caseId=012", "extension": {"preserve": True}}
+                "assetId": "synthetic-asset", "url": "/?caseId=012", "projectId": "fixture",
+                "extension": {"preserve": True}}
 
     class Client:
         def __init__(self, **kwargs):
@@ -66,7 +84,7 @@ def fake_client(monkeypatch):
 
         def status(self, **kwargs):
             calls.append(("status", kwargs))
-            return copy.deepcopy(response)
+            return status_response(kwargs["case_id"])
 
     monkeypatch.setattr(cli, "AgentReviewClient", Client)
     return calls, response
@@ -147,6 +165,54 @@ def test_script_adoption_uses_current_website_decision(tmp_path, fake_client, mo
     assert run("approved-reread.json")["adoption"]["already_current"] is True
 
 
+def test_local_adoption_failure_keeps_verified_decision_and_resumes_same_publication(tmp_path, fake_client, monkeypatch, capsys):
+    source, _ = narrative(tmp_path)
+    prepare(tmp_path)
+    calls, response = fake_client
+    response.update(stage="script", scope="live", operationId=OPERATION)
+    cli.run(publish_args(tmp_path))
+
+    def decision(_client, **target):
+        calls.append(("decision", target))
+        return {"case": {"projectId": "fixture"}, "decisionStatus": "approved",
+                "validity": {"isCurrent": True, "reviewable": True, "stillEffective": True,
+                             "sourceStale": False, "dependencyStale": False, "dependencyUnapproved": False}}
+
+    monkeypatch.setattr(cli.AgentReviewClient, "decision", decision, raising=False)
+    different = tmp_path / "different.json"
+    different.write_bytes(source.read_bytes())
+    artifacts.register_workspace_artifact(tmp_path, {"artifact_id": "NARRATIVE-R01", "logical_id": "narrative.package",
+        "type": "narrative.package", "path_or_url": different.name, "revision": "R01", "depends_on": [],
+        "checksum": artifacts.digest(source), "user_approved": False})
+    before = source.read_bytes()
+    args = ["decision", "--project", str(tmp_path), "--publication", "publish.json", "--stage", "script",
+            "--adopt-script-id", "NARRATIVE-R01", "--token-file", "/not-read-by-mock"]
+    with pytest.raises(SystemExit) as blocked:
+        cli.main(args + ["--receipt", "approved-but-blocked.json"])
+    assert blocked.value.code == 2
+    error = json.loads(capsys.readouterr().err)
+    assert error["step"] == "local_adoption" and error["website_decision"] == "verified_approved"
+    assert error["code"] == "CANDIDATE_ID_CONFLICT"
+    assert error["publication"] == "publish.json" and error["website_version"] == response["version"]
+    assert error["revision"] == "R01" and error["artifact_id"] == "NARRATIVE-R01"
+    receipt = json.loads(Path(error["receipt"]).read_text())
+    assert receipt["response"]["decisionStatus"] == "approved" and receipt["local_adoption"] == error
+    assert sum(kind == "decision" for kind, _ in calls) == 1
+
+    # Simulate a local registration repair without changing or republishing the source.
+    manifest = artifacts.load_manifest(tmp_path)
+    assert manifest["artifacts"][0]["status"] == "candidate"
+    manifest["artifacts"][0]["path_or_url"] = source.name
+    write_json(tmp_path / "00_项目管理/artifact_manifest.json", manifest)
+    assert cli.main(args + ["--receipt", "resumed.json"]) == 0
+    assert json.loads(capsys.readouterr().out)["adoption"]["artifact"]["artifact_id"] == "NARRATIVE-R01"
+    sent = [parameters for kind, parameters in calls if kind == "decision"]
+    assert len(sent) == 2 and sent[0] == sent[1]
+    assert sum(kind == "publish" for kind, _ in calls) == 1
+    assert source.read_bytes() == before
+    assert artifacts.load_manifest(tmp_path)["artifacts"][0]["status"] == "current"
+
+
 @pytest.fixture
 def kickoff_review_site(tmp_path, monkeypatch):
     """Use the real client validator with an in-process synthetic site transport."""
@@ -162,6 +228,8 @@ def kickoff_review_site(tmp_path, monkeypatch):
 
     def request(_client, method, route, payload=None, *, query=None):
         nonlocal head
+        if route == "status":
+            return status_response(query["caseId"], version=head, generation=len(versions))
         if method == "POST" and route == "publish":
             version = versions.setdefault(payload["operationId"], f"{len(versions) + 1:064x}")
             head = version
@@ -196,6 +264,136 @@ def website_decision(project, receipt, *, revision="R01", change_id=None):
     if change_id:
         args.extend(["--change-id", change_id])
     return cli.run(cli._parser().parse_args(args))
+
+
+def chat_args(project, source, revision="R01", *, change_id=None):
+    message = project / f"{revision}-message.json"
+    write_json(message, {"scope": "artifact", "quote": f"编导稿 {revision} 整稿通过",
+                         "at": "2026-11-15T16:00:00+08:00", "review_ref": f"synthetic message {revision}"})
+    args = ["confirm-script-in-chat", "--project", str(project), "--artifact-id", f"N-{revision}",
+            "--path", source.name, "--revision", revision, "--sha256", artifacts.digest(source),
+            "--confirmation-json", str(message)]
+    if change_id:
+        args.extend(["--change-id", change_id])
+    return stage_cli.parser().parse_args(args)
+
+
+@pytest.mark.parametrize("handoff_before_revision", [True, False])
+def test_chat_approval_adopts_initial_and_revised_script_for_downstream(
+    tmp_path, kickoff_review_site, capsys, monkeypatch, handoff_before_revision,
+):
+    from scripts.visual_asset_source import source_project
+
+    def unexpected_website_request(*args, **kwargs):
+        pytest.fail("Chat approval must finish without contacting the review website")
+
+    monkeypatch.setattr(cli.AgentReviewClient, "_request", unexpected_website_request)
+    stage_cli.register_workflow_authorization(tmp_path, authorization_id="FLOW-R01",
+        authorization_ref="synthetic prior user authorization", skills=["storyboard-planner"])
+    source, package = narrative(tmp_path)
+    args = chat_args(tmp_path, source)
+    assert stage_cli.main(["confirm-script-in-chat", "--project", str(tmp_path), "--artifact-id", args.artifact_id,
+                           "--path", args.path, "--revision", args.revision, "--sha256", args.sha256,
+                           "--confirmation-json", args.confirmation_json]) == 0
+    first = json.loads(capsys.readouterr().out)
+    assert first["confirmation"]["channel"] == "chat_confirmation"
+    assert first["confirmation"]["quote"] == "编导稿 R01 整稿通过"
+    assert first["confirmation"]["sha256"] == args.sha256
+    assert source_project(tmp_path)[1]["artifact_id"] == "N-R01"
+    assert stage_cli.confirm_script_in_chat(args)["already_current"]
+
+    before = artifacts.load_project_state(tmp_path)
+    assert before["current_stage"] == "" and before["next_stage"] is None
+    handoff = stage_cli.parser().parse_args(["handoff", "--project", str(tmp_path), "--to-skill", "storyboard-planner"])
+    if handoff_before_revision:
+        report = stage_cli.handoff(handoff)
+        assert report["artifact_ids"] == ["N-R01"] and report["from_stage"] == "creative-director"
+        assert stage_cli.handoff(handoff) == report
+        assert artifacts.load_project_state(tmp_path) == {
+            **before, "current_stage": "creative-director", "next_stage": "storyboard-planner"}
+
+    package["revision"] = "R02"
+    package["story_paragraphs"][0]["text"] += "第二版修订。"
+    revised = tmp_path / "R02.json"
+    write_json(revised, package)
+    dependent = {"artifact_id": "OLD-ASSETS", "logical_id": "visual.asset.manifest",
+                 "type": "visual.asset.manifest", "status": "current", "revision": "R01",
+                 "depends_on": ["narrative.package"], "path_or_url": "old-assets.json", "user_approved": True}
+    manifest_path = tmp_path / artifacts.MANIFEST_PATH
+    manifest = artifacts.load_manifest(tmp_path)
+    manifest["artifacts"].append(dependent)
+    write_json(manifest_path, manifest)
+    change_id = "CHAT-REVISION"
+    rc.open_change(tmp_path, change_id=change_id, tier="T1", logical_ids=["narrative.package"], reason="synthetic")
+    rc.confirm_impact(tmp_path, change_id=change_id, approval_ref="synthetic impact")
+    rc.record_candidate(tmp_path, change_id=change_id, artifact_id="N-R02", logical_id="narrative.package",
+                        artifact_type="narrative.package", candidate_path=revised.name, revision="R02")
+    args = chat_args(tmp_path, revised, "R02", change_id=change_id)
+    wrong_candidate = copy.copy(args)
+    wrong_candidate.revision = "R03"
+    with pytest.raises(ValueError, match="与对话确认范围不一致"):
+        stage_cli.confirm_script_in_chat(wrong_candidate)
+    assert source_project(tmp_path)[1]["artifact_id"] == "N-R01"
+    result = stage_cli.confirm_script_in_chat(args)
+    assert result["confirmation"]["channel"] == "chat_confirmation"
+    assert result["confirmation"]["change_id"] == change_id
+    assert stage_cli.confirm_script_in_chat(args)["already_current"]
+    assert source_project(tmp_path)[1]["artifact_id"] == "N-R02"
+    statuses = {row["artifact_id"]: row["status"] for row in artifacts.load_manifest(tmp_path)["artifacts"]}
+    assert statuses == {"N-R01": "superseded", "OLD-ASSETS": "stale", "N-R02": "current"}
+    receipts = artifacts.load_project_state(tmp_path)["user_confirmations"]
+    assert [row["revision"] for row in receipts if row.get("channel") == "chat_confirmation"] == ["R01", "R02"]
+    report = stage_cli.handoff(handoff)
+    assert report["artifact_ids"] == ["N-R02"]
+    assert artifacts.load_project_state(tmp_path)["next_stage"] == "storyboard-planner"
+
+
+@pytest.mark.parametrize("blocker", [
+    "no_grant", "wrong_scope", "revoked", "conflicting_stage", "changed_bytes", "active_revision",
+])
+def test_initial_chat_handoff_requires_existing_scope_and_current_script(tmp_path, kickoff_review_site, blocker):
+    from scripts.core.project_state import write_project_state
+
+    source, _ = narrative(tmp_path)
+    stage_cli.confirm_script_in_chat(chat_args(tmp_path, source))
+    if blocker != "no_grant":
+        stage_cli.register_workflow_authorization(tmp_path, authorization_id="FLOW-R01",
+            authorization_ref="synthetic prior user authorization",
+            skills=["voiceover-to-video-script" if blocker == "wrong_scope" else "storyboard-planner"])
+    state = artifacts.load_project_state(tmp_path)
+    if blocker == "revoked":
+        state["workflow_authorizations"][0]["status"] = "revoked"
+    if blocker == "conflicting_stage":
+        state["next_stage"] = "storyboard-director"
+    if blocker == "changed_bytes":
+        source.write_bytes(source.read_bytes() + b" ")
+    write_project_state(tmp_path, state)
+    if blocker == "active_revision":
+        rc.open_change(tmp_path, change_id="CHAT-REVISION", tier="T1", logical_ids=["narrative.package"], reason="synthetic")
+
+    handoff = stage_cli.parser().parse_args(["handoff", "--project", str(tmp_path), "--to-skill", "storyboard-planner"])
+    with pytest.raises(stage_cli.StageContextError, match="已有导演流程授权|下一阶段不一致|内容与确认版本不一致|被修订状态阻止"):
+        stage_cli.handoff(handoff)
+    assert artifacts.load_project_state(tmp_path) == state
+    assert not stage_cli._handoff_path(tmp_path).exists()
+
+
+def test_chat_approval_rejects_partial_scope_and_same_revision_byte_drift(tmp_path, kickoff_review_site):
+    source, package = narrative(tmp_path)
+    args = chat_args(tmp_path, source)
+    message_path = Path(args.confirmation_json)
+    original = message_path.read_bytes()
+    write_json(message_path, {**json.loads(original), "scope": "segment"})
+    with pytest.raises(ValueError, match="整稿"):
+        stage_cli.confirm_script_in_chat(args)
+
+    message_path.write_bytes(original)
+    package["story_paragraphs"][0]["text"] += "审阅后改写。"
+    write_json(source, package)
+    with pytest.raises(ValueError, match="文件字节"):
+        stage_cli.confirm_script_in_chat(args)
+    assert not artifacts.load_manifest(tmp_path)["artifacts"]
+    assert not artifacts.load_project_state(tmp_path)["user_confirmations"]
 
 
 @pytest.fixture
@@ -352,6 +550,7 @@ def test_asset_publication_requires_locally_adopted_exact_script(tmp_path, asset
     cli.run(cli._parser().parse_args(["prepare", "--project", str(tmp_path), "--narrative", duplicate.name,
                                       "--output", "duplicate.md"]))
     args = publish_args(tmp_path, "duplicate-publish.json")
+    save_preflight(tmp_path, status_response(version=f"{1:064x}", generation=1))
     args.narrative, args.markdown, args.operation_id = duplicate, Path("duplicate.md"), OPERATION[:-1] + "5"
     cli.run(args)
     with pytest.raises(ValueError, match="exact locally adopted"):
@@ -434,7 +633,7 @@ def test_kickoff_rejects_pending_receipt_in_manual_adoption_and_accepts_live_app
     pending = str(tmp_path / "pending.json")
     artifacts.register_workspace_artifact(tmp_path, {"artifact_id": "N-R01", "logical_id": "narrative.package",
         "type": "narrative.package", "path_or_url": source.name, "revision": "R01", "depends_on": [],
-        "checksum": artifacts.digest(source), "user_approved": False})
+        "user_approved": False})
     with pytest.raises(ValueError):
         stage_cli.main(["adopt-package", "--project", str(tmp_path), "--artifact-id", "N-R01",
                         "--logical-id", "narrative.package", "--path", source.name, "--revision", "R01",
@@ -442,12 +641,28 @@ def test_kickoff_rejects_pending_receipt_in_manual_adoption_and_accepts_live_app
     with pytest.raises(ValueError):
         artifacts.adopt_initial_package(tmp_path, "N-R01", pending)
     assert not artifacts.load_project_state(tmp_path)["user_confirmations"]
+    handoff = stage_cli.parser().parse_args(["handoff", "--project", str(tmp_path), "--to-skill", "storyboard-planner"])
+    with pytest.raises(stage_cli.StageContextError, match="没有编导整稿的正式采用记录"):
+        stage_cli.handoff(handoff)
 
     kickoff_review_site("approved")
     website_decision(tmp_path, "approved.json")
     [entry] = artifacts.load_manifest(tmp_path)["artifacts"]
     assert (entry["status"], entry["user_approved"], entry["checksum"]) == ("current", True, artifacts.digest(source))
     assert website_decision(tmp_path, "approved-reread.json")["adoption"]["already_current"] is True
+    before = artifacts.load_project_state(tmp_path)
+    assert before["next_stage"] is None and not before["workflow_authorizations"]
+    kickoff_review_site("approved", lambda: pytest.fail("handoff must reuse the saved decision"))
+    bad_decision = json.loads((tmp_path / "approved.json").read_text())
+    bad_decision["response"]["approval"]["scope"]["version"] = "other-version"
+    original_decision = (tmp_path / "approved.json").read_bytes()
+    write_json(tmp_path / "approved.json", bad_decision)
+    with pytest.raises(stage_cli.StageContextError, match="已有导演流程授权"):
+        stage_cli.handoff(handoff)
+    (tmp_path / "approved.json").write_bytes(original_decision)
+    assert stage_cli.handoff(handoff)["artifact_ids"] == ["N-R01"]
+    assert artifacts.load_project_state(tmp_path) == {
+        **before, "current_stage": "creative-director", "next_stage": "storyboard-planner"}
 
 
 def test_kickoff_rechecks_published_bytes_after_live_approval(tmp_path, kickoff_review_site):
@@ -482,6 +697,7 @@ def test_kickoff_revision_requires_its_own_effective_website_approval(tmp_path, 
     cli.run(cli._parser().parse_args(["prepare", "--project", str(tmp_path), "--narrative", source.name,
                                       "--output", "R02.md"]))
     args = publish_args(tmp_path, "R02-publish.json")
+    save_preflight(tmp_path, status_response(version=f"{1:064x}", generation=1))
     args.narrative, args.markdown = Path("R02.json"), Path("R02.md")
     args.operation_id = "e2fc997d-b5f4-4c4d-bb6b-c4eaf43e0455"
     cli.run(args)
@@ -593,8 +809,10 @@ def test_publish_exact_projection_raw_response_and_same_operation_retry(tmp_path
     before = {p: p.read_bytes() for p in (tmp_path / "R01.json", tmp_path / "R01.md")}
     first = cli.run(publish_args(tmp_path))
     cli.run(publish_args(tmp_path, "retry.json"))
-    assert len(calls) == 2 and calls[0] == calls[1]
-    assert calls[0][1] == {"case_id": "012", "stage": "script", "name": "R01.md",
+    posts = [call for call in calls if call[0] == "publish"]
+    assert [name for name, _ in calls] == ["status", "publish", "status", "publish"]
+    assert posts[0] == posts[1]
+    assert posts[0][1] == {"case_id": "012", "stage": "script", "name": "R01.md",
                             "text": (tmp_path / "R01.md").read_bytes().decode("utf-8"),
                             "operation_id": OPERATION, "purpose": "独立合成测试"}
     receipt = json.loads(Path(first["receipt"]).read_text(encoding="utf-8"))
@@ -608,7 +826,47 @@ def test_publish_exact_projection_raw_response_and_same_operation_retry(tmp_path
     assert all(p.read_bytes() == value for p, value in before.items())
     with pytest.raises(FileExistsError):
         cli.run(publish_args(tmp_path))
-    assert len(calls) == 2
+    assert len(calls) == 4
+
+
+@pytest.mark.parametrize("change", ["case", "project", "head", "review_revision"])
+def test_publish_refuses_stale_or_mismatched_preflight_before_post(tmp_path, fake_client, change):
+    calls, _ = fake_client
+    narrative(tmp_path)
+    prepare(tmp_path)
+    args = publish_args(tmp_path)
+    saved = json.loads((tmp_path / "preflight.json").read_text())
+    if change == "case":
+        args.case_id = "013"
+    elif change == "project":
+        saved["response"]["case"]["projectId"] = "another-project"
+    elif change == "head":
+        saved["response"] = status_response(version=f"{1:064x}", generation=1)
+    else:
+        saved["response"]["expectations"]["expectedReviewRevision"] += 1
+    write_json(tmp_path / "preflight.json", saved)
+    with pytest.raises(ValueError, match="不符|已变化"):
+        cli.run(args)
+    assert [name for name, _ in calls] == ([] if change == "case" else ["status"])
+    assert not (tmp_path / "publish.json").exists()
+
+
+def test_asset_publication_refuses_a_moved_head_before_post(tmp_path, asset_review_site):
+    publish_asset_script(tmp_path)
+    cli.run(publish_asset_args(tmp_path, "first.json"))
+    cli.run(cli._parser().parse_args(["status", "--project", str(tmp_path),
+        "--case-id", "012", "--stage", "assets", "--token-file", "/not-read-by-mock",
+        "--receipt", "asset-preflight.json"]))
+    args = publish_asset_args(tmp_path, "second.json", operation=OPERATION[:-1] + "7")
+    args.preflight = Path("asset-preflight.json")
+    assert cli.run(args)["response"]["assetId"] == "asset-2"
+
+    args = publish_asset_args(tmp_path, "stale.json", operation=OPERATION[:-1] + "8")
+    args.preflight = Path("asset-preflight.json")
+    with pytest.raises(ValueError, match="当前版本或审核状态已变化"):
+        cli.run(args)
+    assert len(asset_review_site.posts) == 2
+    assert not (tmp_path / "stale.json").exists()
 
 
 @pytest.mark.parametrize("change", ["markdown", "json", "unanswered", "rejected", "superseded"])
@@ -662,7 +920,7 @@ def test_create_and_status_are_explicit_calls_with_raw_receipts(tmp_path, fake_c
     cli.main(["status", *common, "--case-id", "012", "--receipt", "status.json"])
     assert calls == [("create-case", {"name": "独立合成测试", "operation_id": OPERATION}),
                      ("status", {"case_id": "012", "stage": "script"})]
-    assert json.loads((tmp_path / "status.json").read_text())["response"] == response
+    assert json.loads((tmp_path / "status.json").read_text())["response"] == status_response()
 
 
 def test_new_json_revision_gets_new_reading_without_rewriting_old_revision(tmp_path, fake_client):
@@ -681,8 +939,8 @@ def test_new_json_revision_gets_new_reading_without_rewriting_old_revision(tmp_p
     cli.run(args)
     receipt = json.loads((tmp_path / "R02-publish.json").read_text())
     assert receipt["source_json"]["revision"] == "R02"
-    assert calls[0][1]["operation_id"] == args.operation_id
-    assert "STP-01" in calls[0][1]["text"]
+    assert calls[1][1]["operation_id"] == args.operation_id
+    assert "STP-01" in calls[1][1]["text"]
     assert (tmp_path / "R01.md").read_bytes() == original
 
 
@@ -697,7 +955,7 @@ def test_multibyte_limit_is_rejected_without_reading_credential_or_network(tmp_p
     with pytest.raises(cli.AgentReviewError) as stopped:
         cli.run(publish_args(tmp_path))
     assert stopped.value.code == "INVALID_INPUT"
-    assert json.loads((tmp_path / "publish.json").read_text())["response"] is None
+    assert not (tmp_path / "publish.json").exists()
 
 
 def test_symlink_cannot_route_receipt_outside_project(tmp_path, fake_client):
@@ -723,12 +981,13 @@ def test_unknown_remote_outcome_keeps_safe_receipt_and_does_not_retry(tmp_path, 
         raise cli.AgentReviewError("SECRET_MUST_NOT_ECHO", code="TRANSPORT_ERROR")
 
     monkeypatch.setattr(cli.AgentReviewClient, "publish", fail)
+    save_preflight(tmp_path, status_response())
     args = ["publish", "--project", str(tmp_path), "--narrative", "R01.json", "--markdown", "R01.md",
             "--case-id", "012", "--operation-id", OPERATION, "--token-file", "/not-read-by-mock",
-            "--receipt", "failed.json"]
+            "--preflight", "preflight.json", "--receipt", "failed.json"]
     with pytest.raises(SystemExit) as stopped:
         cli.main(args)
-    assert stopped.value.code == 2 and len(calls) == 1
+    assert stopped.value.code == 2 and [name for name, _ in calls] == ["status", "publish"]
     receipt = json.loads((tmp_path / "failed.json").read_text())
     assert receipt["response"] is None
     assert receipt["error"] == {"code": "TRANSPORT_ERROR", "http_status": None}

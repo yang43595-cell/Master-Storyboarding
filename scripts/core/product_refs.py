@@ -160,6 +160,7 @@ def main() -> int:
     parser.add_argument('--input-root', type=Path, action='append', default=[], help='本轮显式选用的外部输入根目录；检查所选文件及已启用发现的可达依赖，不扫描根目录')
     parser.add_argument('--include-images', action='store_true', help='同时检查 JSON/MD/TXT 的通用图片路径')
     parser.add_argument('--discover-dependencies', action='store_true', help='递归检查所选 JSON 结构化文件引用及 manifest 依赖；不推断自然语言')
+    parser.add_argument('--summary', action='store_true', help='只返回检查数量与问题的单个 JSON')
     parser.add_argument('--package', type=Path, action='append', default=[], help='发送前检查实际成品文件字节，可重复')
     parser.add_argument('--max-package-bytes', type=int, default=DEFAULT_MAX_PACKAGE_BYTES, help='每包严格小于该字节数，默认19000000')
     args = parser.parse_args()
@@ -167,6 +168,9 @@ def main() -> int:
         parser.error('至少提供 --directory、--require-file 或 --package')
     if args.include_images and args.directory is None:
         parser.error('--include-images 需要 --directory')
+    if args.summary and (not args.discover_dependencies or args.directory or args.package):
+        parser.error('--summary 用于 --require-file 和 --discover-dependencies 的范围检查')
+    checked_files = 0
     try:
         errors = validate_required_files(args.project, args.require_file, args.input_root)
         if args.discover_dependencies:
@@ -176,7 +180,9 @@ def main() -> int:
             if not selected:
                 raise ValueError('--discover-dependencies requires selected files or JSON directory')
             report = discover_dependencies(args.project, selected, args.input_root)
-            print(json.dumps(report, ensure_ascii=False))
+            checked_files = len(report['checked_files'])
+            if not args.summary:
+                print(json.dumps(report, ensure_ascii=False))
             errors.extend(report['errors'] + report['uncheckable'])
         if args.package:
             print(json.dumps({'packages': check_package_files(args.package, args.max_package_bytes)}, ensure_ascii=False))
@@ -193,8 +199,12 @@ def main() -> int:
             errors.extend(validate_image_documents(args.project.resolve(), args.directory.resolve()))
     except (OSError, ValueError, RuntimeError) as exc:
         errors = [str(exc)]
-    for error in errors:
-        print(error)
+    if args.summary:
+        print(json.dumps({'ok': not errors, 'checked_file_count': checked_files,
+                          'issues': list(dict.fromkeys(errors))}, ensure_ascii=False))
+    else:
+        for error in errors:
+            print(error)
     return 1 if errors else 0
 
 

@@ -4,9 +4,9 @@
 
 ## JSON 交付与按需导出
 
-业务候选、修订与交接只维护现有 JSON 合同；故事原文、对白、资产需求和导演决定完整保存在对应字段。沿用开工决定，集中澄清新增且确需用户决定的事实缺口，再完善 JSON 并自查。统一入口的编导稿及资产图走网站人审，导演、按需分镜和视频提示词走下游自主采用。未知事实不猜填，不以结构完整冒充用户确认。整稿与局部确认边界不变。
+业务候选、修订与交接只维护现有 JSON 合同；故事原文、对白、资产需求和导演决定完整保存在对应字段。沿用开工决定，集中澄清新增且确需用户决定的事实缺口，再完善 JSON 并自查。统一入口的编导稿及资产图走人工确认，导演、按需分镜和视频提示词走下游自主采用。未知事实不猜填，不以结构完整冒充用户确认。整稿与局部确认边界不变。
 
-已登记开工的项目通过[审核站决定命令](../development/review-to-canvas-entry.md#审核站-api-对接要求)首次采用或返修编导稿。采用事务核对网站当前有效的整稿通过及本地送审路径、修订和准确字节。兼容流程取得准确整稿确认后，仍可对编导、导演或平台无关视频稿运行 `python scripts/stage_context_cli.py adopt-package --project <项目> --artifact-id <新ID> --logical-id <逻辑产物> --path <项目内JSON路径> --revision <正文修订> --approval-ref <准确确认依据> [--depends-on <上游逻辑产物> ...]`。
+统一入口的编导采用使用[网站通过](../development/review-workbench-operations.md#编导网站决定与采用)或[整稿对话确认](../development/artifact-adoption.md#编导对话确认)。首次和返修均核对准确范围、路径、修订和文件字节。兼容流程取得准确整稿确认后，仍可对编导、导演或平台无关视频稿运行 `python scripts/stage_context_cli.py adopt-package --project <项目> --artifact-id <新ID> --logical-id <逻辑产物> --path <项目内JSON路径> --revision <正文修订> --approval-ref <准确确认依据> [--depends-on <上游逻辑产物> ...]`。
 
 采用入口在登记 current 前重跑适用的原文/来源、上游确认与哈希、导演引用及生成段续跑检查，并写入整稿确认和当前产物选择。`next_stage` 仍由项目流转决定。已有 current/stale 正式版本的返修沿 `scripts.core.revision_control` 的既有变更事务另存版本。渠道冻结快照走自身检查入口。历史导入仍可登记并读取，不能通过普通 `promote_candidate`、`save_manifest` 或网页审查结果晋升为正式 current。历史 Markdown 与旧事件包须先整理成当前 JSON 合同，再经正式入口重新确认。外部直接改文件或 manifest 不在仓库 API 门禁范围内，交接消费会重新校验已确认产物。
 
@@ -22,4 +22,4 @@
 
 机器字段以 `scripts/core/confirmation_scope.py` 为唯一权威：`scope` 仅为 `artifact`（整稿）、`segment`（创作段落）、`dialogue`（对白核对）；中文说明放 `scope_description`，实际镜头、对白、段落编号写入对应 ID 字段。`revision_control.record_scoped_confirmation()` 记录局部确认，不把变更案推进到可提交；只有整稿确认才能提交人工采用。用 `python -m scripts.core.confirmation_scope --project <项目>` 检查记录。旧中文 `scope` 依据原始确认整理，不按文字猜测或自动升级范围。
 
-统一入口下游自主验收沿既有流程授权、自查与采用入口执行，不伪造上述人工确认。首次采用与返修仍分别沿本文件及 [统一入口](../../PROJECT_RULES.md#网站审核到画布的统一入口) 的既有合同处理。
+下游自主验收按本轮读取[流程授权](../development/artifact-adoption.md#登记下游流程授权)、[自查证据](../development/artifact-adoption.md#下游自查证据)及[首次采用](../development/artifact-adoption.md#首次自主采用)或[自主修订](../development/artifact-adoption.md#自主修订)。

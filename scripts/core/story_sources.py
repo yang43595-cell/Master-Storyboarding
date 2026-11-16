@@ -12,6 +12,7 @@ from .schema_contracts import require_schema
 from .artifacts import project_path
 from .character_assets import board_outfit_ids, uses_wardrobe
 from .director_reading import director_scene_reading, readable_fields
+from .io import sha256_file
 
 
 def _dialogue_comparison_text(text):
@@ -137,11 +138,12 @@ def _validate_source_projection(record, root):
 
 def validate_dialogue_review(record, project_root):
     """Check declared evidence and provenance, not pixels, sound or human approval."""
-    import hashlib
     import math
     if not isinstance(record, dict) or not isinstance(record.get('sources'), list):
         raise ValueError('对白审核记录须为对象且 sources 为数组')
     sources = {}
+    evidence_paths = {}
+    structured_paths = set()
     for source in record['sources']:
         if not isinstance(source, dict):
             raise ValueError('原始证据须为对象')
@@ -154,17 +156,37 @@ def validate_dialogue_review(record, project_root):
                for k in ('text', 'evidence_path', 'evidence_sha256', 'locator', 'producer')):
             raise ValueError('原始证据缺少文字、路径、hash、定位或记录者/模型')
         path = project_path(project_root, source['evidence_path'])
-        if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != source['evidence_sha256']:
-            raise ValueError('原始证据文件缺失或 hash 不符：' + ident)
-        # ASR must point into the retained machine output, not a manually copied paraphrase.
         pointer = source.get('text_pointer')
         if source['kind'] == 'asr_hypothesis' and not pointer:
             raise ValueError('ASR 原始证据须定位原输出 text_pointer')
         if pointer is not None:
             if not isinstance(pointer, str) or not pointer.startswith('/'):
                 raise ValueError('原始证据 text_pointer 无效')
+            structured_paths.add(path)
+        sources[ident] = source
+        evidence_paths[ident] = path
+
+    evidence_digests, evidence_payloads = {}, {}
+    for ident, source in sources.items():
+        path = evidence_paths[ident]
+        if path not in evidence_digests:
+            if not path.is_file():
+                raise ValueError('原始证据文件缺失或 hash 不符：' + ident)
+            if path in structured_paths:
+                raw = path.read_bytes()
+                evidence_digests[path] = hashlib.sha256(raw).hexdigest()
+                evidence_payloads[path] = raw
+            else:
+                evidence_digests[path] = sha256_file(path)
+        if evidence_digests[path] != source['evidence_sha256']:
+            raise ValueError('原始证据文件缺失或 hash 不符：' + ident)
+        # Resolve every pointer against the same bytes checked above.
+        pointer = source.get('text_pointer')
+        if pointer is not None:
             try:
-                value = json.loads(path.read_text(encoding='utf-8-sig'))
+                value = evidence_payloads[path]
+                if isinstance(value, bytes):
+                    value = evidence_payloads[path] = json.loads(value.decode('utf-8-sig'))
                 for part in pointer[1:].split('/'):
                     key = part.replace('~1', '/').replace('~0', '~')
                     value = value[int(key)] if isinstance(value, list) else value[key]
@@ -172,11 +194,10 @@ def validate_dialogue_review(record, project_root):
                 raise ValueError('原始证据字段不可解析：' + ident) from exc
             if value != source['text']:
                 raise ValueError('原始证据文字被改写：' + ident)
-        sources[ident] = source
     rows = record.get('dialogues')
     if not isinstance(rows, list) or not rows:
         raise ValueError('对白审核记录需要非空 dialogues')
-    conflicts, unresolved, awaiting_creative_approval, verified_times, ids = [], [], [], [], set()
+    conflicts, unresolved, awaiting_creative_approval, subtitle_review, verified_times, ids = [], [], [], [], [], set()
     for row in rows:
         if not isinstance(row, dict):
             raise ValueError('对白审核行须为对象')
@@ -247,6 +268,16 @@ def validate_dialogue_review(record, project_root):
             unresolved.append(ident)
             if known_speaker and resolution is None and kind in {'authored_addition', 'authorized_revision'}:
                 awaiting_creative_approval.append(ident)
+            if (kind == 'source_reproduction' and row.get('origin') is not None
+                    and resolution is None and row.get('verified_timing') is None
+                    and isinstance(speaker, str) and speaker.strip() and not unknown_speaker
+                    and speaker_status in {'verified', 'inferred_unverified'}
+                    and (assembly is None or refs == assembly['source_ids'])
+                    and (assembly is not None or len(refs) == 1)
+                    and all(sources[x]['kind'] == 'subtitle_verbatim' and sources[x].get('text_pointer') for x in refs)
+                    and ident not in conflicts
+                    and _dialogue_comparison_text(originals[0]) == _dialogue_comparison_text(row['text'])):
+                subtitle_review.append(ident)
         for field in ('source_locator', 'verified_timing'):
             timing = row.get(field)
             if timing is None:
@@ -270,6 +301,7 @@ def validate_dialogue_review(record, project_root):
     return {'verification': 'source_consistency_only', 'conflicts': conflicts,
             'source_fidelity_checked': fidelity_checked,
             'unresolved_ids': unresolved, 'awaiting_creative_approval_ids': awaiting_creative_approval,
+            'subtitle_review_eligible_ids': subtitle_review,
             'verified_timing_ids': verified_times,
             'limits': 'Hashes and declared provenance do not prove subtitle transcription, listening, identity, product claims or approval authenticity. Missing source_baseline cannot prove source completeness/order.'}
 
@@ -487,7 +519,7 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
     if review_ready and (narrative.get('status') not in {'candidate', 'confirmed'} or narrative.get('open_questions')):
         raise ValueError('整稿送审须使用候选或已确认版本，并先关闭稿件中的未决问题')
     if review_ready:
-        source_report = {'review_ready': True, 'awaiting_creative_approval_ids': [],
+        source_report = {'review_ready': True, 'awaiting_creative_approval_ids': [], 'awaiting_subtitle_approval_ids': [],
                          'source_fidelity_checked': False}
     if ((require_dialogue_evidence or review_ready) and not candidate_test and narrative['dialogues']
             and not narrative.get('dialogue_evidence_path')):
@@ -525,16 +557,24 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
         if test_report is not None:
             test_report['source_fidelity_checked'] = report['source_fidelity_checked']
         awaiting_approval = report['awaiting_creative_approval_ids']
+        from .project_kickoff import load_kickoff
+        kickoff = load_kickoff(project_root) if not candidate_test and report['subtitle_review_eligible_ids'] else None
+        creation = (kickoff or {}).get('creation') or {}
+        subtitle_approval = (report['subtitle_review_eligible_ids']
+                             if creation.get('dialogue_review_basis') == 'hard_subtitle_with_whole_script_review'
+                             else [])
+        eligible = set(awaiting_approval) | set(subtitle_approval)
         unresolved = report['unresolved_ids']
         if review_ready:
-            unresolved = [ident for ident in unresolved if ident not in awaiting_approval]
+            unresolved = [ident for ident in unresolved if ident not in eligible]
             source_report.update(awaiting_creative_approval_ids=awaiting_approval,
+                                 awaiting_subtitle_approval_ids=subtitle_approval,
                                  source_fidelity_checked=report['source_fidelity_checked'])
-        elif awaiting_approval and not candidate_test:
+        elif eligible and not candidate_test:
             from .artifacts import narrative_has_exact_approval
             if exact_human_approval or (narrative_path is not None
                                         and narrative_has_exact_approval(project_root, narrative_path, narrative)):
-                unresolved = [ident for ident in unresolved if ident not in awaiting_approval]
+                unresolved = [ident for ident in unresolved if ident not in eligible]
         if unresolved:
             if test_report is None:
                 raise ValueError('完整叙事包仍有未核对白证据：' + ', '.join(unresolved))
@@ -874,7 +914,7 @@ def reading_supplement(narrative: dict, project_root: Path, *, narrative_path: P
             'narrative': result}
 
 
-def export_markdown(package: dict, destination: Path) -> None:
+def export_markdown(package: dict, destination: Path, *, subtitle_review_ids=()) -> None:
     """Explicit reading export; exclusive create protects existing confirmed files."""
     schema = ('narrative-package.schema.json' if 'story_paragraphs' in package
               else 'storyboard-package.schema.json')
@@ -909,6 +949,9 @@ def export_markdown(package: dict, destination: Path) -> None:
     fence = '`' * max(3, max((len(m[0]) + 1 for m in re.finditer(r'`+', payload)), default=3))
     text = (f"# {package['project_id']} · {package['revision']}\n\n"
             "本文件是 JSON 的只读阅读导出；修改业务内容请另建 JSON 修订并重新审核确认。\n\n"
+            + (("**硬字幕对白待整稿审核。** 以下台词按原片硬字幕整理，说话人归属请随本版整稿核对；"
+                "没有人工听核或已核时码。\n\n" + "、".join(subtitle_review_ids) + "\n\n")
+               if subtitle_review_ids else "")
             + '\n\n'.join(reading) + '\n\n'
             + '## 完整结构化来源（只读技术附录）\n\n'
             + f"{fence}json\n{payload}\n{fence}\n")

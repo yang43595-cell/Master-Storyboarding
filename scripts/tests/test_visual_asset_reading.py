@@ -15,6 +15,9 @@ asset = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(asset)
 from core.method_documents import resolve_method_documents, MethodDocumentError
 
+CONTINUITY = 'skills/storyboard-director/references/image-continuity-hard-rules.md'
+GUIDES = 'skills/asset-image-assistant/references/'
+
 
 class WebReadingTests(unittest.TestCase):
     def test_writing_projection_only_omits_named_workflow_sections(self):
@@ -22,7 +25,8 @@ class WebReadingTests(unittest.TestCase):
             'docs/rules/artifacts.md': {'JSON 交付与按需导出', '确认范围'},
             'docs/rules/visual-production.md': {'导演稿之后的生产顺序'},
             'skills/asset-image-assistant/SKILL.md': {'后续交接'},
-            'skills/_shared/knowledge-access.md': {'局部维护边界','读取与执行开销'},
+            CONTINUITY: {'按任务读取'},
+            'docs/rules/execution.md': {'等待与工具回传'},
         }.items():
             import re
             original = (ROOT / ref).read_text(encoding='utf-8')
@@ -32,9 +36,9 @@ class WebReadingTests(unittest.TestCase):
                 if heading not in headings:
                     self.assertIn(section, projected)
             self.assertLess(len(projected), len(original))
-            self.assertEqual(asset._writing_rules(ref, original, False), original)
-        for ref in ['PROJECT_RULES.md', 'docs/rules/execution.md',
-                    'skills/storyboard-director/references/image-continuity-hard-rules.md',
+            self.assertEqual(asset._writing_rules(ref, original, False),
+                             projected if ref in {CONTINUITY, 'docs/rules/execution.md'} else original)
+        for ref in ['PROJECT_RULES.md',
                     'skills/_shared/product-reference.md',
                     'skills/voiceover-to-video-script/references/prompt-language-hard-rules.md']:
             original = (ROOT / ref).read_text(encoding='utf-8')
@@ -48,25 +52,41 @@ class WebReadingTests(unittest.TestCase):
                                requirement={'name': '测试', 'source_paragraph_ids': []})
             rules = asset.build_task_package(request)['rules']
             execution = 'docs/rules/execution.md'
-            self.assertEqual(rules[execution], (ROOT / execution).read_text())
+            self.assertEqual(rules[execution],
+                             asset._writing_rules(execution, (ROOT / execution).read_text(), True))
+            self.assertNotIn('## 等待与工具回传', rules[execution])
             self.assertIn('用户调整资产图需求', rules['docs/rules/visual-production.md'])
             self.assertNotIn('## 导演稿之后的生产顺序', rules['docs/rules/visual-production.md'])
             self.assertNotIn('docs/rules/experiments.md', rules)
             self.assertNotIn('docs/rules/legacy-review.md', rules)
 
-    def test_active_recovery_section_survives_single_and_batch_web_projection(self):
+    def test_web_projects_only_shared_knowledge_and_active_recovery(self):
         import re
+
         ref = 'skills/_shared/knowledge-access.md'
         original = (ROOT / ref).read_text()
-        section = re.search(r'(?ms)^## 压缩后的主动恢复核对\n.*?(?=^## |\Z)', original).group(0).rstrip()
-        for mode in ['asset-library', 'project']:
-            request = {'kind': '物品', 'mode': mode, 'subject': '恢复输入测试'}
-            if mode == 'project':
-                request.update(narrative={'story_paragraphs': []},
-                               requirement={'name': '测试', 'source_paragraph_ids': []})
-            self.assertIn(section, asset.build_task_package(request)['rules'][ref])
-        for single in [True, False]:
-            self.assertIn(section, asset._writing_rules(ref, original, single))
+        required = {'## 制作的仓库知识根', '## 读取与执行开销', '## 压缩后的主动恢复核对'}
+        sections = {
+            section.splitlines()[0]: section
+            for section in re.split(r'(?m)(?=^## )', original)
+        }
+        expected = ''.join(body for title, body in sections.items() if title in required)
+        self.assertEqual(required, required & sections.keys())
+        for mode, planning in [('asset-library', False), ('project', False), ('project', True)]:
+            with self.subTest(mode=mode, planning=planning):
+                request = self.request('物品', mode)
+                if planning:
+                    request['rows'] = [{'requirement': {'category': 'PROP', 'source_event_ids': []}}]
+                rules = asset.build_task_package(request)['rules']
+                self.assertEqual(expected, rules[ref])
+                self.assertNotIn('## 等待与工具回传', rules['docs/rules/execution.md'])
+
+        for title in required:
+            with self.subTest(missing_section=title):
+                incomplete = original.replace(sections[title], '')
+                for single in [True, False]:
+                    with self.assertRaisesRegex(ValueError, '资产 Web 知识读取合同缺少正文'):
+                        asset._writing_rules(ref, incomplete, single)
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -125,16 +145,34 @@ class WebReadingTests(unittest.TestCase):
                                          (self.vault / entry['path']).read_text(encoding='utf-8'))
 
     def test_every_kind_delivers_complete_applicable_methods_in_both_modes(self):
+        recipes = asset.profile()['recipes']
+        category_guides = {GUIDES + recipe['guide'] for recipe in recipes.values()}
         for mode in ['asset-library', 'project']:
-            for kind, recipe in asset.profile()['recipes'].items():
+            for kind, recipe in recipes.items():
                 with self.subTest(mode=mode, kind=kind):
                     folder = self.root / (mode + kind)
                     text, evidence = asset.prepare(folder, self.request(kind, mode))
                     package = json.loads(text)
                     methods = package['professional_methods']
-                    expected_methods = {'IMAGE-CONTINUITY-METHOD'}
-                    if recipe['method_scope'] != 'body':
-                        expected_methods.add('ASSET-'+recipe['method_scope'].upper()+'-METHOD')
+                    scope = recipe['method_scope']
+                    expected_methods = set() if scope == 'body' else {'ASSET-'+scope.upper()+'-METHOD'}
+                    if scope == 'scene':
+                        expected_methods.add('IMAGE-CONTINUITY-METHOD')
+                    rules = package['rules']
+                    guide = GUIDES + recipe['guide']
+                    self.assertEqual(category_guides & rules.keys(), {guide})
+                    self.assertIn('### 返修参考与固定基准', rules[CONTINUITY])
+                    self.assertNotIn('## 按任务读取', rules[CONTINUITY])
+                    self.assertEqual(rules[guide], (ROOT / guide).read_text(encoding='utf-8'))
+                    loaded_rules = '\n'.join(rules.values())
+                    for heading, applicable in [
+                            ('## 唯一面部来源', scope == 'character'),
+                            ('## 背景母版与单变量派生', scope == 'scene'),
+                            ('## 多角度场景参考组', scope == 'scene')]:
+                        self.assertEqual(heading in loaded_rules, applicable)
+                    for excluded in ('## 真实开场状态', '## 新边界分镜图独立取基础参考',
+                                     'first_last_frame_download', 'endpoint_strategies'):
+                        self.assertNotIn(excluded, loaded_rules)
                     self.assertEqual({m['id'] for m in methods}, expected_methods)
                     if recipe['method_scope'] == 'body':
                         self.assertNotIn('ASSET-CHARACTER-METHOD', {m['id'] for m in methods})
@@ -160,7 +198,11 @@ class WebReadingTests(unittest.TestCase):
         self.assertNotIn('production_item', package)
         self.assertEqual({m['id'] for m in package['professional_methods']}, {
             'IMAGE-CONTINUITY-METHOD', 'ASSET-SCENE-METHOD', 'ASSET-OBJECT-METHOD'})
-        self.assertNotIn('skills/asset-image-assistant/references/02-character-master-guide.md', package['rules'])
+        self.assertNotIn(GUIDES + '02-character-master-guide.md', package['rules'])
+        self.assertIn('## 背景母版与单变量派生', package['rules'][GUIDES + '03-scene-master-guide.md'])
+        self.assertIn(GUIDES + '04-prop-product-master-guide.md', package['rules'])
+        self.assertIn('### 返修参考与固定基准', package['rules'][CONTINUITY])
+        self.assertNotIn('## 按任务读取', package['rules'][CONTINUITY])
 
     def test_paragraph_text_reaches_model_without_event_summary(self):
         request = self.request('物品', 'project')
@@ -191,6 +233,16 @@ class WebReadingTests(unittest.TestCase):
                     asset.prepare(folder, self.request('物品', 'asset-library'))
                 self.assertFalse((folder/'task-package.json').exists())
                 path.write_text(text, encoding='utf-8')
+
+    def test_missing_fixed_background_method_only_blocks_scene(self):
+        method = next(m for m in self.profile['professional_methods'] if m['id'] == 'IMAGE-CONTINUITY-METHOD')
+        (self.vault / method['path']).unlink()
+        body, _ = asset.prepare(self.root/'object-without-scene-method', self.request('物品', 'asset-library'))
+        self.assertEqual({m['id'] for m in json.loads(body)['professional_methods']}, {'ASSET-OBJECT-METHOD'})
+        folder = self.root/'missing-scene-method'
+        with self.assertRaisesRegex(MethodDocumentError, 'IMAGE-CONTINUITY-METHOD'):
+            asset.prepare(folder, self.request('环境', 'asset-library'))
+        self.assertFalse((folder/'task-package.json').exists())
 
     def test_missing_binding_and_required_dynamic_rule_are_not_silently_ignored(self):
         raw_read = Path.read_text
@@ -248,7 +300,7 @@ class WebReadingTests(unittest.TestCase):
         request['asset_method_scopes'] = {'character': True, 'object': False}
         body, _ = asset.prepare(self.root/'scopes', request)
         self.assertEqual({m['id'] for m in json.loads(body)['professional_methods']},
-                         {'IMAGE-CONTINUITY-METHOD', 'ASSET-OBJECT-METHOD'})
+                         {'ASSET-OBJECT-METHOD'})
 
     def test_model_transport_receives_the_complete_package_without_extra_calls(self):
         import subprocess
@@ -317,6 +369,29 @@ class WebReadingTests(unittest.TestCase):
                 self.assertEqual(cli.call_count, 1)
         self.assertEqual(source.read_bytes(), before)
 
+    def test_project_character_package_loads_approved_bodies_at_standard_slots(self):
+        from core.character_layout import character_layout_reference, character_prompt_templates
+        import visual_asset_library as library
+
+        head = {"original": "head.png", "category": "大头照"}
+        wardrobe = {"original": "wardrobe.png", "category": "服装三视图"}
+        for kind, originals in (("大头照", [head]), ("服装", [wardrobe]),
+                                ("人物1x4", [wardrobe, head])):
+            with self.subTest(kind=kind):
+                records = [*originals, character_layout_reference(kind)]
+                seed, path = library.template_prompt(kind, "测试人物", "", reference_records=records)
+                request = self.request(kind, "project")
+                request.update(reference_records=records, reference_paths=[r["original"] for r in records],
+                               prompt=seed, template_source=path)
+                package = asset.build_task_package(request)
+                self.assertEqual(seed, character_prompt_templates()[kind])
+                self.assertEqual(package["production_item"]["template"]["content"], seed)
+
+        records = [head, wardrobe, character_layout_reference("服装")]
+        prompt, _ = library.template_prompt("服装", "测试人物", "", reference_records=records)
+        self.assertIn("用参考图 2 制作同一套服装", prompt)
+        self.assertIn("参考图 3 是服装灰模", prompt)
+
     def test_scene_seed_and_package_share_actual_view_order_in_both_web_modes(self):
         import visual_asset_library as library
         source = self.vault / 'wiki/reference/提示词模板/环境一致性模板提示词.md'
@@ -351,7 +426,9 @@ class WebReadingTests(unittest.TestCase):
         result = resolve_method_documents(self.vault, profile, {'skill': 'storyboard-director'})
         self.assertEqual({m.id for m in result.required}, {'VISUAL-SUPPLEMENT-METHOD', 'IMAGE-CONTINUITY-METHOD'})
         shared = next(m for m in result.required if m.id == 'IMAGE-CONTINUITY-METHOD')
-        asset_method = resolve_method_documents(self.vault, self.profile, {'skill': 'asset-image-assistant'}).required[0]
+        asset_scene = {'skill': 'asset-image-assistant', 'request': {'asset_method_scopes': {'scene': True}}}
+        asset_method = next(m for m in resolve_method_documents(self.vault, self.profile, asset_scene).required
+                            if m.id == 'IMAGE-CONTINUITY-METHOD')
         self.assertEqual(shared.content, asset_method.content)
         self.assertEqual(shared.vault_path, asset_method.vault_path)
         body, _ = asset.prepare(self.root/'asset-with-visual-method-present', self.request('物品', 'asset-library'))

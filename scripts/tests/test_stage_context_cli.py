@@ -281,6 +281,74 @@ def test_read_only_status_reports_unknown_and_does_not_recover_transactions(tmp_
     assert {p: p.read_bytes() for p in before} == before
 
 
+def test_formal_handoff_records_authorized_next_stage_without_a_revision_file(tmp_path, monkeypatch):
+    from scripts.init_desktop_project import initialize
+
+    project = initialize(tmp_path / "fresh-project")
+    path = project / "narrative.json"
+    write_json(path, _current_narrative_package(project))
+    cli.main(["adopt-package", "--project", str(project), "--artifact-id", "N-R01",
+              "--logical-id", "narrative.package", "--path", path.name,
+              "--revision", "R01", "--approval-ref", "test:user-approved-R01"])
+    cli.register_workflow_authorization(project, authorization_id="FLOW-R01",
+        authorization_ref="test:user-authorized-planning", skills=["storyboard-planner"])
+    args = argparse.Namespace(project=str(project), from_skill="creative-director",
+                                to_skill="storyboard-planner", authorization_id="FLOW-R01")
+    before = load_project_state(project)
+    assert before["current_stage"] == "" and before["next_stage"] is None
+    assert cli.status(args)["active_change"] is None
+
+    report = cli.handoff(args)
+    current = load_project_state(project)
+    assert current == {**before, "current_stage": "creative-director", "next_stage": "storyboard-planner"}
+    assert report["artifact_ids"] == ["N-R01"] and not (project / revision_control.CONTROL_RELATIVE).exists()
+    status = cli.status(args)
+    assert status["next_allowed_stage"] == "storyboard-planner" and status["production_allowed"]
+    card = cli._current_handoff_text(project, "storyboard-planner")
+    assert f"path：`{path.as_posix()}`" in card
+    assert cli.handoff(args) == report
+    monkeypatch.setitem(cli.LIMITS, "handoff", report["bytes"] - 1)
+    assert cli.handoff(args)["valid"]
+    assert "path：`narrative.json`" in cli._current_handoff_text(project, "storyboard-planner")
+
+
+@pytest.mark.parametrize("problem", ["corrupt_control", "active_change", "lost_control", "pending_intent"])
+def test_formal_handoff_blocks_unknown_or_active_revision_state(tmp_path, problem):
+    project = _project(tmp_path)
+    ctrl_path = project / revision_control.CONTROL_RELATIVE
+    state = load_project_state(project)
+    state.update(current_stage="creative-director", next_stage="storyboard-planner")
+    write_project_state(project, state)
+    cli.register_workflow_authorization(project, authorization_id="FLOW-R01",
+        authorization_ref="test:user-authorized-planning", skills=["storyboard-planner"])
+    explicit = argparse.Namespace(project=str(project), from_skill="creative-director",
+                                    to_skill="storyboard-planner", authorization_id="FLOW-R01")
+    if problem == "corrupt_control":
+        write_json(ctrl_path, {"schema_version": revision_control.CONTROL_SCHEMA_VERSION,
+                              "active_change": "unknown", "history": []})
+    elif problem == "active_change":
+        write_json(ctrl_path, {"schema_version": revision_control.CONTROL_SCHEMA_VERSION,
+                              "active_change": {"change_id": "REV-ACTIVE"}, "history": []})
+    else:
+        folder = project / revision_control.TRANSACTION_ROOT / "REV-TX-fixture"
+        files = [{"path": revision_control.CONTROL_RELATIVE.as_posix()}] if problem == "lost_control" else []
+        write_json(folder / "transaction.json", {"files": files})
+        write_json(folder / "commit_intent.json", {"files": files})
+        if problem == "lost_control":
+            write_json(folder / "result.json", {"state": "committed"})
+
+    status = cli.status(explicit)
+    assert not status["production_allowed"] and status["next_allowed_stage"] is None
+    with pytest.raises(cli.StageContextError, match="修订状态阻止"):
+        cli.handoff(explicit)
+    with pytest.raises(cli.StageContextError, match="修订状态阻止"):
+        cli.handoff(argparse.Namespace(project=str(project), to_skill="storyboard-planner"))
+    assert load_project_state(project)["next_stage"] == "storyboard-planner"
+    assert not (project / cli.CONTEXT_DIR / "next_stage_handoff.md").exists()
+    if problem == "pending_intent":
+        assert not (folder / "result.json").exists()
+
+
 def test_status_distinguishes_valid_candidate_test_from_production_blockers(tmp_path, monkeypatch):
     from scripts.core import candidate_test
     import subprocess
@@ -621,6 +689,7 @@ def test_handoff_keeps_video_skill_direct_read_exception(tmp_path: Path) -> None
 
     content = Path(report["path"]).read_text(encoding="utf-8")
     assert "不生成或校验 stage_startup.md" in content
+    assert "docs/rules/execution.md#工具报错与原处续作" in content
 
 
 def test_formal_handoff_rejects_unbound_dialogue_while_historical_read_stays_valid(tmp_path):
@@ -1271,6 +1340,46 @@ def test_project_kickoff_reaches_prepare_and_rejects_drift(tmp_path, monkeypatch
     write_json(answers, {"product_id": "different-product"})
     with pytest.raises(ValueError, match="冲突"):
         cli.prepare(args)
+
+
+@pytest.mark.parametrize("skill", ["creative-director", "storyboard-planner", "asset-image-assistant"])
+def test_image_generation_authorization_only_invalidates_dependent_preparations(tmp_path, skill):
+    project = _project(tmp_path)
+    request_path = project / cli.REQUEST_PATH
+    kickoff = {
+        "decision_ref": "synthetic creative decision",
+        "creation": {"target_duration_seconds": 30},
+        "product": {"mode": "none"},
+    }
+    request = {"kickoff": kickoff}
+    write_json(request_path, request)
+    args = cli.parser().parse_args([
+        "prepare", "--project", str(project), "--skill", skill, "--objective", "synthetic work",
+        "--request-json", str(request_path), "--actor-id", "test-agent", "--task-id", "test-method-binding",
+    ])
+    cli.prepare(args)
+    basis_path = project / cli.CONTEXT_DIR / "task_basis.json"
+    basis = json.loads(basis_path.read_text(encoding="utf-8"))
+    _record_methods(project, skill, Path(basis["reading_manifest"]["vault_root"]))
+    assert cli.ensure_prepared(args)["ok"]
+
+    kickoff["image_generation"] = {
+        "provider": "redframe", "model": "Doubao Seedream 5.5", "fee_scope": "existing_quota",
+        "reference_upload_authorized": True, "authorization_ref": "synthetic user message",
+        "scope": "required_asset_outputs",
+    }
+    write_json(request_path, request)
+    if skill == "asset-image-assistant":
+        with pytest.raises(cli.StageContextError, match="开工决定"):
+            cli.ensure_prepared(args)
+        return
+
+    assert cli.ensure_prepared(args)["ok"]
+    assert json.loads(basis_path.read_text(encoding="utf-8")) == basis
+    kickoff["creation"]["target_duration_seconds"] = 45
+    write_json(request_path, request)
+    with pytest.raises(cli.StageContextError, match="开工决定"):
+        cli.ensure_prepared(args)
 
 
 def test_kickoff_freezes_optional_product_pack_by_usage(tmp_path, monkeypatch, capsys):

@@ -11,7 +11,7 @@ description: 仅在用户明确要求声音参考时，登记和核对可复用�
 
 由当前执行者按 [Skill 执行分工](../../docs/rules/execution.md#skill-执行分工) 执行本阶段；默认由主 agent 直接执行和自检，已明确委派时由受派执行者完成。
 
-读取 `PROJECT_RULES.md`、`../_shared/knowledge-access.md`、当前 `stage_startup.md`、`../_shared/draft-lifecycle.md` 等共享红线、`modules/voice-method.md`、`../../schemas/voice-reference-library.schema.json` 与 `../../schemas/voice-reference-manifest.schema.json`。需要执行确定性导入、绑定、换声或校验时才使用 `../../scripts/voice_reference_cli.py`；普通审查不运行写入命令。
+读取 `PROJECT_RULES.md`、[普通准备与选知](../_shared/knowledge-access.md#普通阶段准备与选知)、当前 `stage_startup.md`、`../_shared/draft-lifecycle.md` 等共享红线、`modules/voice-method.md`、`../../schemas/voice-reference-library.schema.json` 与 `../../schemas/voice-reference-manifest.schema.json`。需要执行确定性导入、绑定、换声或校验时才使用 `../../scripts/voice_reference_cli.py`；普通审查不运行写入命令。
 
 ## 输入与职责
 

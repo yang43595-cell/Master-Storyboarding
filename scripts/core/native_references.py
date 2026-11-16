@@ -54,7 +54,9 @@ def reference_readback_status(expected_media, mentions, entity_type=None, identi
         return 'failed'
     identities = [{'node_id': ref['node_id'], 'media_id': ref['media_id']}
                   for ref in mentions]
-    return 'passed' if identities == expected_media else 'failed'
+    expected_identities = [{'node_id': ref['node_id'], 'media_id': ref['media_id']}
+                           for ref in expected_media]
+    return 'passed' if identities == expected_identities else 'failed'
 
 
 def endpoint_readback_status(expected_media, frame_slots, mentions=None):

@@ -16,9 +16,14 @@ from pathlib import Path
 from .quality_evidence import (generation_duration_values, required_visuals, reference_shot_ids, scene_state_requirements,
                                source_shot_ids, validate_required_visuals,
                                validate_scene_state_coverage, validate_shot_durations)
+from .prompt_body import submitted_prompt_body
+from .project_kickoff import load_kickoff
 
-_PHYSICAL_DIMENSIONS = ("positions", "props", "visibility")
+_CREATOR_BOWL_BRUSH_OFFER = re.compile(r"送(?:给?你|给大家)?\s*高定\s*调膜\s*碗\s*(?:[、和与及]\s*)?刷")
+
+_PHYSICAL_DIMENSIONS = ("action", "positions", "props", "visibility")
 _PHYSICAL_ROLES = {
+    "action": {"state_reference"},
     "positions": {"layout", "state_reference"},
     "props": {"appearance", "state_reference"},
     "visibility": {"appearance", "state_reference"},
@@ -44,7 +49,46 @@ def _evidence_file(proof, root):
     path = (root / proof["path"]).resolve()
     _need(path.is_relative_to(root) and path.is_file() and path.stat().st_size > 0,
           "限制证据必须是项目内可读的真实文件")
-    _need(hashlib.sha256(path.read_bytes()).hexdigest() == proof["sha256"], "限制证据 hash 已过期")
+    evidence = path.read_bytes()
+    _need(hashlib.sha256(evidence).hexdigest() == proof["sha256"], "限制证据 hash 已过期")
+    return evidence
+
+
+def _redframe_duration_options(evidence, model_id, mode):
+    try:
+        record = json.loads(evidence)
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError("generation_boundary: 红帧须提供原生模型与时长选项 JSON 证据") from exc
+    native = record.get("model") if isinstance(record, dict) else None
+    _need(isinstance(native, dict) and native.get("type") == "video"
+          and all(_text(native.get(key)) for key in ("modelId", "providerId", "label")),
+          "红帧能力证据缺可识别的原生视频模型")
+    native_id, provider, label = (native[key] for key in ("modelId", "providerId", "label"))
+    identities = {native_id, label, json.dumps([provider, native_id], ensure_ascii=False, separators=(",", ":"))}
+    if provider == "volcengineArkVideo" and native_id.startswith("doubao-") and label.startswith("Doubao "):
+        identities.add(label.removeprefix("Doubao "))
+    _need(model_id in identities, "红帧能力证据的原生模型与已选模型不一致")
+
+    descriptors = native.get("mode")
+    _need(isinstance(descriptors, list) and descriptors, "红帧能力证据缺原生参考模式")
+    reference_tokens = (token for entry in descriptors for token in (entry if isinstance(entry, list) else [entry]))
+    supports_reference = any(isinstance(token, str) and re.fullmatch(r"(?:image|video|audio)Reference:[1-9]\d*", token)
+                             for token in reference_tokens)
+    _need(mode in descriptors or (mode == "reference" and supports_reference),
+          "红帧能力证据不支持已选参考模式")
+
+    options = {}
+    constraints = native.get("durationResolutionMap")
+    _need(isinstance(constraints, list) and constraints, "红帧能力证据缺原生时长与分辨率选项")
+    for row in constraints:
+        _need(isinstance(row, dict), "红帧原生时长选项结构无效")
+        resolutions, durations = row.get("resolution"), row.get("duration")
+        _need(isinstance(resolutions, list) and resolutions and all(_text(item) for item in resolutions)
+              and isinstance(durations, list) and durations and all(_seconds(item) for item in durations),
+              "红帧原生时长与分辨率选项无效")
+        for resolution in resolutions:
+            options.setdefault(resolution, set()).update(durations)
+    return options
 
 
 def _rows(payload):
@@ -57,17 +101,17 @@ def _rows(payload):
     return rows
 
 
-def _source_boundary(record, left, right, shots, reason):
+def _source_boundary(record, boundary_shots, shots, *, allow_dialogue=False):
     """Bind the rationale to an existing director field, never inferred prose."""
     _need(isinstance(record, dict), "拆段须引用准确导演边界")
     shot_id, field, quote = (record.get(k) for k in ("shot_id", "field", "quote"))
-    _need(shot_id in (left[-1], right[0]) and _text(field) and _text(quote),
+    _need(shot_id in boundary_shots and _text(field) and _text(quote),
           "拆段依据须定位两侧准确镜号、字段及原文")
     # Only existing action/rhythm/cut fields can substantiate a boundary.
     _need(field.split(".")[0] in {"take", "cut", "rhythm", "continuity", "audio"},
           "导演边界须引用动作、节奏、完整对白或剪辑字段")
     if field.startswith("audio."):
-        _need(reason in {"model_duration_exceeded", "execution_limit"}
+        _need(allow_dialogue
               and re.fullmatch(r"audio\.dialogue\.\d+\.text", field),
               "完整句末只作承载限制下的连续切点，不自动证明新事件或时间省略")
     value = shots[shot_id][1]
@@ -81,50 +125,127 @@ def _source_boundary(record, left, right, shots, reason):
     _need(isinstance(value, str) and quote in value, "拆段依据不在准确导演字段原文中")
 
 
-def _model_limit(payload, left, right, root):
+def _cross_scene_review(left, right, before_shot, after_shot, shots):
+    review = right.get("cross_scene_continuity")
+    boundary = f"{left['segment_id']}→{right['segment_id']}"
+    _need(isinstance(review, dict) and review.get("from_segment_id") == left["segment_id"]
+          and review.get("decision") in {"action_continues", "new_action_or_time_jump"}
+          and _text(review.get("basis")),
+          f"{boundary} 缺跨场动作接续判断；须核对前段尾镜与后段首镜")
+    _source_boundary(review.get("previous_source"), (before_shot,), shots)
+    _source_boundary(review.get("current_source"), (after_shot,), shots)
+    if review["decision"] == "action_continues":
+        state = right.get("physical_continuity")
+        _need(isinstance(state, dict) and "action" in state,
+              f"{boundary} 跨场仍继续同一动作；须核对并记录前段尾态与后段开场动作")
+
+
+def _model_capability(payload, root, *, platform=None):
     model = payload.get("selected_video_model")
-    _need(isinstance(model, dict), "时长拆段缺少本轮已核模型能力")
-    # A delegated draft choice is a capability/parameter binding only. Its
-    # explicit blocked state cannot stand in for user model confirmation or
-    # permission to generate, including when the permission field is absent.
+    _need(isinstance(model, dict), "缺少本轮实际模型、参考方式和已核生成时长能力")
+    # A delegated draft choice binds technical parameters. A formal draft may
+    # inherit its model from kickoff while retaining the no-generation scope.
+    kickoff = load_kickoff(root) if model.get("confirmed_by_user") is False else None
+    canvas = kickoff.get("canvas", {}) if kickoff else {}
+    kickoff_draft = (payload.get("production_blocked") is False
+        and model.get("id") == canvas.get("model")
+        and model.get("platform") == canvas.get("platform"))
     draft_selection = (model.get("confirmed_by_user") is False
         and model.get("selection_basis") == "agent_selected_for_authorized_draft"
         and _text(model.get("authorization_ref"))
         and payload.get("status") == "candidate"
         and payload.get("review_status") == "unreviewed"
-        and payload.get("production_blocked") is True
+        and (payload.get("production_blocked") is True or kickoff_draft)
         and payload.get("generation_authorized") is False
         and payload.get("user_approved") is not True)
     _need(all(_text(model.get(k)) for k in ("id", "platform", "entry_point", "reference_mode"))
           and (model.get("confirmed_by_user") is True or draft_selection)
           and _seconds(model.get("max_duration_seconds")),
           "模型、入口、参考模式、确认选择与真实时长上限不完整")
-    _evidence_file(model.get("capability_evidence"), root)
+    minimum, maximum = model.get("min_duration_seconds"), model["max_duration_seconds"]
+    if "min_duration_seconds" in model or platform is not None or model["platform"] == "redframe":
+        _need(_seconds(minimum) and minimum <= maximum, "缺少有效的本轮已核生成时长下限")
+    if platform is not None:
+        _need(model["platform"] == platform, "源能力证据所属平台与实际交付平台不一致")
+    common_proof = model.get("capability_evidence")
+    evidence = _evidence_file(common_proof, root)
     modes = model.get("reference_modes")
     if modes is None:
         modes = [model["reference_mode"]]
+        proofs = {modes[0]: common_proof}
     else:
         _need(isinstance(modes, list) and modes and all(_text(mode) for mode in modes)
               and len(set(modes)) == len(modes), "已核参考模式列表无效")
         proofs = model.get("reference_mode_evidence")
         _need(isinstance(proofs, dict) and set(proofs) == set(modes),
               "每种参考模式须有本轮实际能力证据")
-        for mode in modes:
-            _evidence_file(proofs[mode], root)
+    per_mode = {mode: evidence if proofs[mode] == common_proof else _evidence_file(proofs[mode], root)
+                for mode in modes}
+    options = None
+    if model["platform"] == "redframe":
+        options = {mode: _redframe_duration_options(proof, model["id"], mode)
+                   for mode, proof in per_mode.items()}
+    return model["id"], modes, minimum, maximum, options
+
+
+def _check_generation_duration(row, parameters, capability):
+    model, modes, minimum, maximum, options = capability
+    reference_modes = [parameters[key] for key in ("reference_mode", "mode") if key in parameters]
+    _need(parameters.get("model") == model and reference_modes and reference_modes[0] in modes
+          and all(mode == reference_modes[0] for mode in reference_modes),
+          "拆段能力与实际段落模型/参考方式不一致")
+    values = generation_duration_values(row, parameters)
+    _need(values and all(_seconds(value) and value == values[0] for value in values),
+          "生成时长缺失或冲突")
+    _need(values[0] <= maximum, "生成时长超过本轮已核上限")
+    if minimum is not None:
+        _need(values[0] >= minimum, f"生成时长 {values[0]:g} 秒低于本轮已核下限 {minimum:g} 秒")
+    if options is not None:
+        resolution = parameters.get("resolution")
+        _need(_text(resolution), "红帧生成参数缺准确分辨率")
+        durations = options[reference_modes[0]].get(resolution)
+        _need(durations, f"红帧能力证据不支持分辨率 {resolution}")
+        _need(min(durations) == minimum and max(durations) == maximum,
+              "已声明时长上下限与红帧原生选项不一致")
+        _need(values[0] in durations, f"生成时长 {values[0]:g} 秒不在本轮红帧模型、参考模式和分辨率的原生选项中")
+
+
+def _check_target_edit_duration(row, minimum, *, platform, required=False):
+    if minimum is None:
+        return
+    ident = row["segment_id"]
+    target = row.get("target_edit_duration_seconds")
+    if "target_edit_duration_seconds" in row:
+        _need(_seconds(target), f"{ident} 的目标剪辑时长必须为有效正数")
+    if "edit_in_seconds" in row or "edit_out_seconds" in row:
+        start, end = row.get("edit_in_seconds"), row.get("edit_out_seconds")
+        _need(type(start) in (int, float) and math.isfinite(start) and start >= 0
+              and _seconds(end) and end > start, f"{ident} 的目标剪辑起止时间无效")
+        _need(target is None or math.isclose(target, end - start, abs_tol=1e-6),
+              f"{ident} 的目标剪辑时长与源起止时间不一致")
+        target = end - start
+    if required:
+        _need(target is not None, f"{ident} 须在准确源稿登记目标剪辑时长或源剪辑起止时间")
+    if target is not None and target < minimum and not math.isclose(target, minimum, abs_tol=1e-6):
+        guidance = ("默认并入下一段并保留原切点；无可用下一段时核对能否并入前一段或重划相邻段"
+                    if platform == "redframe" else "须与允许接续的相邻镜合并")
+        raise ValueError(f"generation_boundary: {ident} 的目标剪辑时长 {target:g} 秒低于本轮已核下限 "
+                         f"{minimum:g} 秒；{guidance}")
+
+
+def _model_limit(payload, left, right, capability):
+    maximum = capability[3]
     for row in (left, right):
         parameters = row.get("parameters", payload.get("platform", {}))
-        _need(isinstance(parameters, dict) and parameters.get("model") == model["id"]
-              and parameters.get("reference_mode", parameters.get("mode")) in modes,
-              "拆段能力与实际段落模型/参考方式不一致")
-        values = generation_duration_values(row, parameters)
-        _need(values and all(_seconds(v) and v <= model["max_duration_seconds"] for v in values)
-              and all(v == values[0] for v in values), "生成时长缺失、冲突或超过本轮已核上限")
-    return model["max_duration_seconds"]
+        _need(isinstance(parameters, dict), "交付/源参数结构无效")
+        _check_generation_duration(row, parameters, capability)
+    return maximum
 
 
-def validate_delivery_parameters(rows, payload, project):
+def validate_delivery_parameters(rows, payload, project, *, platform=None):
     """Bind submission values to the exact source; caller bounds are not proof."""
     sources = {row["segment_id"]: row for row in _rows(payload)}
+    capability = None
     for actual in rows:
         source = sources.get(actual.get("source_segment_id", actual.get("node_id")))
         if source is None:
@@ -144,10 +265,22 @@ def validate_delivery_parameters(rows, payload, project):
             _need(all(_seconds(v) and v == duration[0] for v in duration) and observed
                   and all(_seconds(v) and v == duration[0] for v in observed),
                   "实际交付生成时长与准确源稿不一致，不能用自填 bounds 改时长")
-        if "selected_video_model" in payload:
-            limit = _model_limit(payload, source, source, Path(project).resolve())
-            _need(_seconds(parameters.get("duration")) and parameters["duration"] <= limit,
-                  "实际交付生成时长超过源已核能力上限")
+        if "selected_video_model" in payload or platform is not None:
+            if capability is None:
+                capability = _model_capability(payload, Path(project).resolve(), platform=platform)
+            minimum, maximum = capability[2:4]
+            if capability[4] is not None:
+                _need(expected.get("resolution") == parameters.get("resolution"),
+                      "实际交付分辨率与准确源稿不一致")
+            _check_target_edit_duration(source, minimum, platform=payload["selected_video_model"]["platform"],
+                                        required=platform is not None)
+            bounds = actual.get("duration_bounds")
+            if minimum is not None and (bounds is not None or platform is not None):
+                _need(isinstance(bounds, list) and len(bounds) == 2 and all(_seconds(v) for v in bounds)
+                      and bounds[0] == minimum and bounds[1] == maximum,
+                      "冻结交付 duration_bounds 与同模型/参考方式的已核源能力上下限不一致")
+            _check_generation_duration(source, expected, capability)
+            _check_generation_duration(actual, parameters, capability)
 
 
 def _cutpoint(left, right):
@@ -230,23 +363,41 @@ def _require_physical_refs(refs, row, shot, dimension, side, hashes, boundary, *
     _need(hashes <= covered, f"{boundary} 的 {dimension} 缺 {segment_id} 侧实际匹配的画面参考")
 
 
-def validate_generation_boundaries(payload, storyboard, project, *, require_physical=True, action_shots=None):
+def validate_generation_boundaries(payload, storyboard, project, *, require_physical=True,
+                                   delivery_platform=None, delivery_segment_ids=None, action_shots=None,
+                                   review_segment_ids=None):
     """Validate a full or partial current draft without writing/approving it.
 
     Missing facts may remain in a candidate, but this strict check fails until
     supplied. It does not auto-merge/split, demand an image for every shot, or
     impose model settings on an unsplit platform-neutral manuscript.
     Canvas preflight can narrow action coverage to the shots being delivered.
+    A local review checks named segments and their joins in the actual draft.
     """
     try:
         return _validate(payload, storyboard, Path(project).resolve(), require_physical=require_physical,
-                         action_shots=action_shots)
+                         delivery_platform=delivery_platform, delivery_segment_ids=delivery_segment_ids,
+                         action_shots=action_shots, review_segment_ids=review_segment_ids)
     except (KeyError, TypeError, AttributeError, IndexError) as exc:
         raise ValueError("generation_boundary: 分段依据或来源结构无效") from exc
 
 
-def _validate(payload, storyboard, root, *, require_physical, action_shots):
+def _validate(payload, storyboard, root, *, require_physical, delivery_platform, delivery_segment_ids, action_shots,
+              review_segment_ids):
     rows = _rows(payload)
+    local_review = review_segment_ids is not None
+    if local_review:
+        review_segment_ids = set(review_segment_ids)
+        unknown = review_segment_ids - {row['segment_id'] for row in rows}
+        _need(review_segment_ids and not unknown, "局部检查须指定稿内准确段号，未找到：" + "、".join(sorted(unknown)))
+    reviewed_rows = [row for row in rows if not local_review or row['segment_id'] in review_segment_ids]
+    offer_rows = [row['segment_id'] for row in reviewed_rows
+                  if _CREATOR_BOWL_BRUSH_OFFER.search(submitted_prompt_body(row))]
+    if offer_rows:
+        kickoff = load_kickoff(root)
+        product = kickoff["product"] if kickoff else payload.get("product_reference_pack")
+        if isinstance(product, dict) and product.get("product_id") == "creator-polishing-mask-2":
+            raise ValueError("、".join(offer_rows) + " 的赠品口播请在视频生成正文使用「还送高定条膜碗刷」")
     shots = {}
     staged_scenes = set()
     for scene in storyboard.get("scenes", []):
@@ -259,24 +410,79 @@ def _validate(payload, storyboard, root, *, require_physical, action_shots):
     mapped = []
     order = {key: index for index, key in enumerate(shots)}
     previous = -1
+    scope = payload.get("scope")
+    scope_type = scope.get("type") if isinstance(scope, dict) else None
+    check_scope = scope_type in ("full_local_authored", "selected_ranges")
+    selected_ranges = (scope.get("independent_ranges") or []) if scope_type == "selected_ranges" else []
+    range_joins = {(before["segment_ids"][-1], after["segment_ids"][0])
+                   for before, after in zip(selected_ranges, selected_ranges[1:])}
+    selected_model = payload.get("selected_video_model")
+    check_cross_scene = require_physical and (
+        delivery_platform == "redframe"
+        or isinstance(selected_model, dict) and selected_model.get("platform") == "redframe")
+    capability = (_model_capability(payload, root) if isinstance(selected_model, dict)
+                  and ("min_duration_seconds" in selected_model or selected_model.get("platform") == "redframe") else None)
     for row in rows:
         ids = source_shot_ids(row)
         _need(ids and all(key in shots for key in ids), "每个生成段必须映射准确导演镜号，不能省略映射绕过分段检查")
+        row_reviewed = not local_review or row['segment_id'] in review_segment_ids
+        if check_scope and row_reviewed:
+            _need(all(order[after] == order[before] + 1 for before, after in zip(ids, ids[1:])),
+                  f"{row['segment_id']} 的生成段内存在未覆盖的导演镜号")
         for key in ids:
             _need(order[key] >= previous, "生成段来源顺序与导演顺序冲突")
             previous = order[key]
-        if "shot_durations" in row:
-            validate_shot_durations(row, row.get("parameters", payload.get("platform", {})))
         mapped.append(ids)
-    validate_required_visuals(rows, required_visuals(storyboard), shot_order=tuple(shots), project=root,
+        if not row_reviewed:
+            continue
+        parameters = row.get("parameters", payload.get("platform", {}))
+        if capability is not None:
+            _need(isinstance(parameters, dict), "交付/源参数结构无效")
+            _check_target_edit_duration(row, capability[2], platform=selected_model["platform"])
+            _check_generation_duration(row, parameters, capability)
+        if "shot_durations" in row:
+            validate_shot_durations(row, parameters)
+    covered = {shot for ids in mapped for shot in ids}
+    if scope_type == "full_local_authored" and not local_review:
+        _need(covered == set(shots), "全片稿生成段未完整覆盖准确导演镜号")
+    reviewed_shots = {shot for row in reviewed_rows for shot in source_shot_ids(row)} if local_review else None
+    selected_shots = () if local_review else tuple(shot for shot in shots if not range_joins or shot in covered)
+    validate_required_visuals(reviewed_rows, required_visuals(storyboard, shot_ids=reviewed_shots),
+                              shot_order=selected_shots, project=root,
                               action_shots=action_shots)
     checked = 0
+    cross_scene_checked = 0
+    gaps_skipped = 0
+    reviewed_boundaries = []
     for index, (left, right) in enumerate(zip(rows, rows[1:])):
+        join = left["segment_id"], right["segment_id"]
+        if local_review and review_segment_ids.isdisjoint(join):
+            continue
         before, after = mapped[index:index + 2]
+        if check_scope:
+            end, start = left.get("edit_out_seconds"), right.get("edit_in_seconds")
+            gap = (start - end if all(type(t) in (int, float) and math.isfinite(t) for t in (end, start))
+                   else None)
+            omitted_shots = order[after[0]] > order[before[-1]] + 1
+            _need(gap is None or gap >= -1e-6, f"{join[0]}→{join[1]} 剪辑时码重叠")
+            if omitted_shots or (gap is not None and gap > 1e-6):
+                _need(join in range_joins and omitted_shots and gap is not None and gap > 1e-6,
+                      f"{join[0]}→{join[1]} 存在未覆盖镜号或时码空档；须如实列为不同的已选范围")
+                _need(not any(right.get(key) for key in
+                              ("same_scene_split", "physical_continuity", "cross_scene_continuity"))
+                      and not (right.get("continuity") or {}).get("previous_segment_id"),
+                      f"{join[0]}→{join[1]} 的未制作范围不能声明为两段直接接续")
+                gaps_skipped += 1
+                continue
+        if local_review:
+            reviewed_boundaries.append(join)
         before_scene, after_scene = shots[before[-1]][0], shots[after[0]][0]
         same_scene = before_scene == after_scene
-        # A new scene can establish its own staging. Declared carryover still
-        # binds the selected states across either kind of cut.
+        touches_delivery = (delivery_segment_ids is None or left["segment_id"] in delivery_segment_ids
+                            or right["segment_id"] in delivery_segment_ids)
+        if not same_scene and touches_delivery and (check_cross_scene or "cross_scene_continuity" in right):
+            _cross_scene_review(left, right, before[-1], after[0], shots)
+            cross_scene_checked += 1
         if "physical_continuity" in right or (require_physical and same_scene and before_scene in staged_scenes):
             by_side = {left["segment_id"]: left, right["segment_id"]: right}
             for ident, shot, dimension, side, hashes, boundary in _physical_requirements(left, right):
@@ -291,9 +497,12 @@ def _validate(payload, storyboard, root, *, require_physical, action_shots):
         reason = split.get("reason")
         _need(reason in {"model_duration_exceeded", "execution_limit", "event_complete", "time_ellipsis"},
               "缺少真实承载限制或导演已有事件/时间边界的拆段理由")
-        _source_boundary(split.get("source_boundary"), before, after, shots, reason)
+        _source_boundary(split.get("source_boundary"), (before[-1], after[0]), shots,
+                         allow_dialogue=reason in {"model_duration_exceeded", "execution_limit"})
         if reason == "model_duration_exceeded":
-            limit = _model_limit(payload, left, right, root)
+            if capability is None:
+                capability = _model_capability(payload, root)
+            limit = _model_limit(payload, left, right, capability)
             estimate = split.get("estimated_scene_duration_seconds")
             _need(_seconds(estimate) and estimate > limit and _text(split.get("timing_basis")),
                   "待承载连续内容未证明超出模型上限，不能机械拆段")
@@ -302,8 +511,13 @@ def _validate(payload, storyboard, root, *, require_physical, action_shots):
         if reason in {"model_duration_exceeded", "execution_limit"}:
             _cutpoint(left, right)
         checked += 1
-    return {"segment_count": len(rows), "same_scene_boundaries_checked": checked,
-            "scope": "source boundaries, capability evidence, and declared physical-state and action references; not semantic/visual approval"}
+    scope_report = {"validation_scope": "local_review", "checked_segment_ids": [row['segment_id'] for row in reviewed_rows],
+                    "adjacent_boundaries_reviewed": reviewed_boundaries} if local_review else {}
+    return {"segment_count": len(reviewed_rows), "same_scene_boundaries_checked": checked,
+            "cross_scene_boundaries_checked": cross_scene_checked,
+            "selected_range_gaps_skipped": gaps_skipped,
+            "scope": "source boundaries, capability evidence, and declared physical-state and action references; not semantic/visual approval",
+            **scope_report}
 
 
 def validate_delivery_cutpoints(rows, segments):
@@ -361,11 +575,17 @@ def validate_delivery_cutpoints(rows, segments):
     return external_predecessors
 
 
-def diagnose_scene_state_plan(payload, storyboard):
+def diagnose_scene_state_plan(payload, storyboard, *, segment_ids=None):
     """Report state coverage in the proposed references, before any native binding."""
+    rows = _rows(payload)
+    if segment_ids is not None:
+        rows = [row for row in rows if row['segment_id'] in segment_ids]
+        shots = {shot for row in rows for shot in source_shot_ids(row)}
+        storyboard = {'scenes': [scene for scene in storyboard.get('scenes', [])
+                                 if any(shot.get('shot_id') in shots for shot in scene.get('shots', []))]}
     requirements = scene_state_requirements(storyboard)
     report = []
-    for segment in _rows(payload):
+    for segment in rows:
         shots = source_shot_ids(segment)
         needed = [state for state in requirements if set(shots) & set(state["source_shot_ids"])]
         if not needed:
@@ -394,14 +614,15 @@ def diagnose_scene_state_plan(payload, storyboard):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", type=Path, required=True)
-    parser.add_argument("--prompt", type=Path, required=True)
-    parser.add_argument("--storyboard", type=Path, required=True)
+    parser.add_argument("--prompt", type=Path, required=True, help="视频稿，支持项目相对路径")
+    parser.add_argument("--storyboard", type=Path, required=True, help="准确导演稿，支持项目相对路径")
+    parser.add_argument("--segment-id", action="append", help="仅自查所列生成段及稿内相邻接缝，可重复；省略时检查整稿")
     args = parser.parse_args(argv)
     try:
-        payload = json.loads(args.prompt.read_text(encoding="utf-8-sig"))
-        storyboard = json.loads(args.storyboard.read_text(encoding="utf-8-sig"))
-        result = validate_generation_boundaries(payload, storyboard, args.project)
-        result["scene_state_plan"] = diagnose_scene_state_plan(payload, storyboard)
+        payload = json.loads((args.project / args.prompt).read_text(encoding="utf-8-sig"))
+        storyboard = json.loads((args.project / args.storyboard).read_text(encoding="utf-8-sig"))
+        result = validate_generation_boundaries(payload, storyboard, args.project, review_segment_ids=args.segment_id)
+        result["scene_state_plan"] = diagnose_scene_state_plan(payload, storyboard, segment_ids=args.segment_id)
     except (ValueError, OSError) as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
         return 1

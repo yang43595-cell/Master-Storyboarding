@@ -3,9 +3,6 @@
   "required_rules": [
     "MSB-KB-PROMPT-002"
   ],
-  "required_methods": [
-    "IMAGE-CONTINUITY-METHOD"
-  ],
   "category_kinds": {
     "LOCATION": "环境",
     "OTHER": "物品",

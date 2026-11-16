@@ -105,14 +105,14 @@ def test_permission_denial_is_read_error_not_missing_file(tmp_path, monkeypatch)
     write_state(tmp_path, [])
     request = tmp_path / '00_项目管理/project_request.json'
     request.write_text('{}')
-    original_read = Path.read_text
+    original_open = Path.open
 
-    def denied_read(path, *args, **kwargs):
+    def denied_open(path, *args, **kwargs):
         if path == request:
             raise PermissionError(13, 'synthetic permission denied', str(path))
-        return original_read(path, *args, **kwargs)
+        return original_open(path, *args, **kwargs)
 
-    monkeypatch.setattr(Path, 'read_text', denied_read)
+    monkeypatch.setattr(Path, 'open', denied_open)
     args = cli.parser().parse_args(['prepare', '--project', str(tmp_path),
         '--skill', 'storyboard-planner', '--objective', 'synthetic read error',
         '--request-json', str(request)])

@@ -22,6 +22,6 @@
 
 导演把本轮确实要靠动作参考支撑的画面写到既有 `shots[].required_visuals`，在对应条目填 `action_reference`（`product_ast_id` 与 `action_key`）。导演用具体动作名登记本轮需求，例如刷涂、湿擦；资产和视频沿用同名。分镜素材检查按当前镜号逐项核对原片覆盖；资产匹配结果只提供候选，`matched` 不代表导演所需动作已覆盖。
 
-视频在实际拟用的项目内动作视频条目保留产品 `asset_id` 和 `source_shot_ids`，用 `action_references` 中的 `shot_id` 与 `action_key` 指明片段具体承担的动作。同一视频可承担多镜，按实际可见范围分别登记。核对动作来源与实物外观分别进行，借用手法的原片只登记其确实覆盖的动作。程序按 [交付快照检查](../../docs/development/delivery-snapshot-checks.md) 对照本轮镜号和素材。
+视频在实际拟用的项目内动作视频条目保留产品 `asset_id` 和 `source_shot_ids`，用 `action_references` 中的 `shot_id` 与 `action_key` 指明片段具体承担的动作。同一视频可承担多镜，按实际可见范围分别登记。核对动作来源与实物外观分别进行，借用手法的原片只登记其确实覆盖的动作。程序按 [交付快照检查](../../docs/development/delivery-snapshot-checks.md#必保画面与产品动作参考) 对照本轮镜号和素材。
 
 本合同接到原有独立资产表、项目确认和图片生产门禁；不另建生产阶段，不修改已确认叙事原文。

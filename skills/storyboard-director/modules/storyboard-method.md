@@ -4,11 +4,11 @@
 
 ## 本 Skill 产出须命中的规范（缺即停）
 
-缺口判断与产出前，按 `skills/_shared/knowledge-access.md` 准备本轮资料，实际阅读两份完整方法并登记，再用 `ensure-prepared --project <项目> --skill storyboard-director` 校验准备状态；实际图片生产批次的 prepare／阅读登记／ensure 均加同一 `--context-id <本批ID>`、`--actor-id <本批实际执行者>` 与 `--task-id <本批任务>`，仅盘点／复用不虚构生图目标。完整命令见[批次隔离入口](../../_shared/knowledge-access.md#图片批次的隔离准备)。同时核对下列适用规范。包缺失时自行准备或报告真实阻塞；动态规则与直接读取的本地规范分别核对，本地规范无需重复嵌入知识包：
+缺口判断与产出前，按 [普通准备与选知](../../_shared/knowledge-access.md#普通阶段准备与选知) 准备本轮资料，实际阅读两份完整方法并登记，再用 `ensure-prepared --project <项目> --skill storyboard-director` 校验准备状态；实际图片生产批次的 prepare／阅读登记／ensure 均加同一 `--context-id <本批ID>`、`--actor-id <本批实际执行者>` 与 `--task-id <本批任务>`，仅盘点／复用不虚构生图目标。完整命令见[批次隔离入口](../../_shared/knowledge-access.md#图片批次的隔离准备)。同时核对下列适用规范。包缺失时自行准备或报告真实阻塞；动态规则与直接读取的本地规范分别核对，本地规范无需重复嵌入知识包：
 
 - **视觉补充方法**：`VISUAL-SUPPLEMENT-METHOD` 负责缺口证据、参考覆盖与状态继承判断；本模块 + `references/storyboard-production-checklist.md` 负责请求执行与检查。
 - **景别/机位/调度/运镜/切点继承**：补图必须继承导演包的镜头契约与已确认资产状态，不重写景别/机位/调度/运镜/切点；景别与基础连续性剪辑属模型通用能力或导演已定，不靠知识包供给，不重新决定。
-- **图片连续性**：必读 `references/image-continuity-hard-rules.md`（背景母版 + 多角度参考组 + 唯一面部来源），不再视为"涉风险才读"。
+- **图片连续性**：核[共用检查](../references/image-continuity-hard-rules.md#共用检查)及[参考资产契约](../references/reference-asset-contract.md#连续性)内本次适用的小节。处理跨段时读取[开场状态](../references/reference-asset-contract.md#真实开场状态)和[切点衔接](../references/reference-asset-contract.md#连续事件因时长拆段时的实际衔接参考)。
 - **提示词语言合规**：写提示词必读 `../voiceover-to-video-script/references/prompt-language-hard-rules.md` 并以其为准；禁用 影视级/8K/唯美/高级 等炫技含糊词。
 
 视觉补充只解决已确认导演镜头中一个无法由现有材料可靠承担的静态状态；该状态也可以是多个镜头共用的座位或站位关系。
@@ -26,7 +26,7 @@
 - 交接带上已确认关系图、适用镜头、需要保留的位置及明确变化；画外人物的位置仍保留。临时表情、持物、姿态和参考展示视角不作为全场固定项。
 - 换座、离场、坐转站等发生后，更新受影响范围的关系说明；原图仍能承担固定关系时复用，不足时才讨论新的关系图。静态关系图不替代动作先后或运动过程。
 
-凡本 Skill 写出视觉补充提示词，必先读 `../voiceover-to-video-script/references/prompt-language-hard-rules.md` 与 `references/image-continuity-hard-rules.md` 并以其为准，不再视为"涉风险才读"；提示词禁用 影视级/8K/唯美/高级 等炫技含糊词。
+凡本 Skill 写出视觉补充提示词，必先读 `../voiceover-to-video-script/references/prompt-language-hard-rules.md` 与本轮适用的图片连续性小节；提示词禁用 影视级/8K/唯美/高级 等炫技含糊词。
 
 若问题需要改剧情、镜头设计、资产需求或连续性合同，终止补图并返回对应上游。
 

@@ -158,3 +158,11 @@ def test_formal_readback_checks_declared_project_id(tmp_path, kickoff_bound, tex
         compare(frozen, observed, tmp_path)
     observed["target_project_id"] = "confirmed-project"
     assert compare(frozen, observed, tmp_path)["ok"]
+
+
+def test_formal_delivery_requires_a_deferred_canvas_to_be_bound(tmp_path):
+    frozen, _ = sample()
+    write_json(tmp_path / REQUEST_PATH, {"kickoff": {
+        "decision_ref": "synthetic creative scope", "product": {"mode": "none"}}})
+    with pytest.raises(ValueError, match="正式画布交付须先登记目标画布"):
+        validate_submission(frozen, tmp_path, formal_delivery=True, preflight=True)

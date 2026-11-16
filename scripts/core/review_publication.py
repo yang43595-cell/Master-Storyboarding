@@ -1,10 +1,11 @@
-"""Bind a current website decision to its locally recorded publication."""
+"""Bind a script approval to the exact local candidate."""
 from __future__ import annotations
 
 import hashlib
 import json
 import tempfile
 from dataclasses import InitVar, dataclass
+from datetime import datetime
 from pathlib import Path
 
 from .agent_review_api import DEFAULT_BASE_URL, effective_approval
@@ -30,6 +31,8 @@ def read_publication(project, path, client, stage):
             or response.get("scope") != "live" or response.get("caseId") != request.get("caseId")
             or response.get("operationId") != request.get("operationId")):
         raise ValueError("Publication receipt lacks the exact successful remote binding.")
+    if "preflight" in saved and response.get("projectId") != saved["preflight"]["response"]["case"]["projectId"]:
+        raise ValueError("Publication receipt belongs to a different website project than the preflight check.")
     source = saved["source_json"] if stage == "script" else saved["image"]
     original = project_file(project, source["path"])
     if hashlib.sha256(original.read_bytes()).hexdigest() != source["sha256"]:
@@ -49,6 +52,26 @@ def read_decision(client, publication):
     if decision["case"]["projectId"] != response["projectId"]:
         raise ValueError("Website decision belongs to a different remote project.")
     return decision
+
+
+def is_recorded_website_script_approval(project, entry, approval_ref):
+    """Match an adopted script to its saved, exact website decision without another request."""
+    try:
+        receipt = json.loads(project_file(project, approval_ref).read_text(encoding="utf-8"))
+        if (receipt["kind"] != "agent-review-api-receipt" or receipt["command"] != "decision"
+                or receipt["base_url"] != DEFAULT_BASE_URL or receipt["project_path"] != str(project)):
+            return False
+        source = receipt["source_json"]
+        if (source["revision"] != entry["revision"] or source["sha256"] != entry["checksum"]
+                or project_file(project, source["path"]) != project_file(project, entry["path_or_url"])):
+            return False
+        decision = receipt["response"]
+        target = {"caseId": decision["case"]["id"], "stage": "script", "version": decision["version"]}
+        return (decision["stage"] == "script" and receipt["request"]["parameters"] == target
+                and effective_approval(decision) and decision["approval"]["scope"] == {
+                    **target, "scope": "live", "projectId": decision["case"]["projectId"]})
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
 
 
 _VERIFIED = object()
@@ -71,7 +94,7 @@ class _VerifiedScriptApproval:
 
 def read_script_approval(project, publication, client, *, artifact_id, receipt_path):
     """Read through the production API, using the original publication as the local byte binding."""
-    from .story_sources import export_markdown
+    from .story_sources import export_markdown, validate_story_sources
 
     if (client.base_url != DEFAULT_BASE_URL or publication.get("base_url") != DEFAULT_BASE_URL
             or publication.get("project_path") != str(project) or publication.get("command") != "publish"
@@ -89,7 +112,12 @@ def read_script_approval(project, publication, client, *, artifact_id, receipt_p
     # publication's source and text bindings without replaying its write.
     with tempfile.TemporaryDirectory(prefix=".review-adopt-", dir=project) as folder:
         projection = Path(folder) / "reading.md"
-        export_markdown(package, projection)
+        subtitle_ids = source.get("awaiting_subtitle_approval_ids", [])
+        if subtitle_ids:
+            current = validate_story_sources(package, project_root=project, review_ready=True)
+            if subtitle_ids != current["awaiting_subtitle_approval_ids"]:
+                raise ValueError("硬字幕待审范围与发布回执不一致")
+        export_markdown(package, projection, subtitle_review_ids=subtitle_ids)
         text = projection.read_bytes()
     markdown, request = publication["markdown"], publication["request"]
     sha256 = hashlib.sha256(text).hexdigest()
@@ -104,11 +132,49 @@ def read_script_approval(project, publication, client, *, artifact_id, receipt_p
         project, artifact_id, str(source_path), source["revision"], source["sha256"], str(receipt_path), _VERIFIED)
 
 
-def require_script_approval(project, entry, approval_ref, website_approval):
+@dataclass(frozen=True)
+class ChatScriptApproval:
+    project: Path
+    artifact_id: str
+    path: str
+    revision: str
+    sha256: str
+    quote: str
+    user_confirmed_at: str
+    approval_ref: str
+
+    @classmethod
+    def from_message(cls, project, *, artifact_id, path, revision, sha256, message):
+        if not isinstance(message, dict) or message.get("scope") != "artifact":
+            raise ValueError("对话确认必须覆盖编导整稿")
+        quote, at, reference = (message.get(key) for key in ("quote", "at", "review_ref"))
+        if not all(isinstance(value, str) and value.strip() for value in (quote, at, reference)):
+            raise ValueError("对话确认须提供用户原话、时间和对话消息位置")
+        if datetime.fromisoformat(at).utcoffset() is None:
+            raise ValueError("对话确认时间须含时区")
+        return cls(project, artifact_id, str(project_file(project, path)), revision, sha256, quote, at, reference)
+
+    def receipt_fields(self):
+        return {"channel": "chat_confirmation", "quote": self.quote,
+                "user_confirmed_at": self.user_confirmed_at, "review_ref": self.approval_ref,
+                "path": Path(self.path).relative_to(self.project).as_posix()}
+
+
+def require_script_approval(project, entry, approval_ref, website_approval, *, chat_approval=None):
     """Enforce the same policy at every formal narrative write boundary."""
+    if chat_approval is not None:
+        if (website_approval is not None or not isinstance(chat_approval, ChatScriptApproval)
+                or entry.get("logical_id") != "narrative.package"
+                or chat_approval.project != project
+                or chat_approval.approval_ref != approval_ref
+                or (entry.get("artifact_id"), str(project_file(project, entry.get("path_or_url", ""))),
+                    entry.get("revision"), entry.get("checksum"))
+                != (chat_approval.artifact_id, chat_approval.path, chat_approval.revision, chat_approval.sha256)):
+            raise ValueError("编导稿的项目、产物、路径、修订或文件字节与对话确认范围不一致")
+        return
     if website_approval is None:
         if entry.get("logical_id") == "narrative.package" and load_kickoff(project):
-            raise ValueError("统一入口的编导稿须经 review_text_cli.py decision 读取当前有效网站通过")
+            raise ValueError("统一入口的编导稿须使用当前有效的网站通过或准确的整稿对话确认")
         return
     if (not isinstance(website_approval, _VerifiedScriptApproval)
             or entry.get("logical_id") != "narrative.package"

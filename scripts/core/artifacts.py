@@ -142,7 +142,7 @@ def save_manifest(project_root: Path, manifest: dict[str, Any]) -> None:
 _FORMAL_PACKAGE_LOGICAL_IDS = {"narrative.package", "storyboard.package", "video.prompt"}
 
 
-def _exact_narrative_approval(receipt: Any, entry: dict[str, Any], sha256: str) -> bool:
+def exact_narrative_approval(receipt: Any, entry: dict[str, Any], sha256: str) -> bool:
     if not isinstance(receipt, dict) or receipt.get("scope") != confirmation_scope.SCOPE_ARTIFACT:
         return False
     if not confirmation_scope.is_whole_artifact(receipt) or receipt.get("sha256") != sha256:
@@ -171,7 +171,7 @@ def narrative_has_exact_approval(project_root: Path, source_path: Path, narrativ
                 or not artifact_is_confirmed(entry, state, root)):
             continue
         sha256 = entry.get("checksum")
-        if not sha256 or not any(_exact_narrative_approval(receipt, entry, sha256)
+        if not sha256 or not any(exact_narrative_approval(receipt, entry, sha256)
                                 for receipt in state.get("user_confirmations", [])):
             continue
         path = project_path(root, entry.get("path_or_url", ""))
@@ -184,7 +184,8 @@ def narrative_has_exact_approval(project_root: Path, source_path: Path, narrativ
 
 def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
                                  manifest: dict[str, Any] | None = None, *, reading_existing: bool = False,
-                                 approval_receipt: dict[str, Any] | None = None) -> str | None:
+                                 approval_receipt: dict[str, Any] | None = None,
+                                 state=None, checked=None, file_digest=None) -> str | None:
     """Recheck platform-neutral source contracts at a formal adoption boundary.
 
     Candidate drafting/registration stays permissive. The supported adoption
@@ -195,13 +196,14 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
 
     Reading an already adopted baseline for upstream repair does not require
     newly introduced fields. Adoption and delivery keep the strict default.
+    A caller reusing dependency checks must pass that operation's state.
     """
     logical_id = entry.get("logical_id")
     if logical_id not in _FORMAL_PACKAGE_LOGICAL_IDS:
         return
     root = Path(project_root).resolve()
     manifest = manifest if manifest is not None else load_manifest(root)
-    state = load_project_state(root)
+    state = load_project_state(root) if state is None else state
     path = project_path(root, entry.get("path_or_url", ""))
     if not path.is_file() or not path.is_relative_to(root):
         raise ValueError("正式稿件必须是项目内可读文件")
@@ -209,12 +211,16 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
     # qualify for current formal status through a supported write API.
     if path.suffix.lower() != ".json":
         raise ValueError("旧 Markdown/事件包仅保留历史读取；正式稿采用须使用结构化 JSON 契约")
-    candidate_sha256 = digest(path)
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise ValueError("正式稿件 JSON 不可读：" + str(path)) from exc
+    candidate_sha256 = hashlib.sha256(raw).hexdigest()
     if entry.get("checksum") and candidate_sha256 != entry["checksum"]:
         raise ValueError("候选稿件字节已偏离登记 hash")
     try:
-        payload = read_json(path)
-    except (OSError, ValueError) as exc:
+        payload = json.loads(raw.decode("utf-8"))
+    except ValueError as exc:
         raise ValueError("正式稿件 JSON 不可读：" + str(path)) from exc
     if not isinstance(payload, dict):
         raise ValueError("正式稿件必须是 JSON 对象")
@@ -223,7 +229,7 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
 
     # Preserve each package's real dependencies: narrative lineage/evidence,
     # storyboard's exact confirmed narrative, and video prompt's exact board.
-    validate_current_dependencies(entry, manifest, state, root)
+    validate_current_dependencies(entry, manifest, state, root, checked=checked, file_digest=file_digest)
     if logical_id == "narrative.package":
         if "story_paragraphs" not in payload:
             raise ValueError("正式 narrative.package 必须包含 story_paragraphs 来源对账")
@@ -231,7 +237,7 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
         validate_story_sources(payload, project_root=root, narrative_path=path, require_dialogue_evidence=True,
                                require_character_output=not reading_existing,
                                require_promotion_dialogue=not reading_existing,
-                               exact_human_approval=_exact_narrative_approval(approval_receipt, entry, candidate_sha256))
+                               exact_human_approval=exact_narrative_approval(approval_receipt, entry, candidate_sha256))
     elif logical_id == "storyboard.package":
         if payload.get("schema_version") != "4.0":
             raise ValueError("旧导演事件包仅保留历史读取；正式 storyboard.package 须使用 4.0 JSON 契约")
@@ -263,14 +269,35 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
         segments = revision_control._generation_segments(payload)
         if segments is None:
             raise ValueError("正式视频提示词必须包含真实 generation_segments，材料分组不能代替生成段")
-        try:
-            from ..check_video_prompt_focal_intent import _json_segments
-        except ImportError:
-            from check_video_prompt_focal_intent import _json_segments
-        try:
-            _json_segments(json.dumps(payload, ensure_ascii=False))
-        except ValueError as exc:
-            raise ValueError("正式视频提示词生成段/创作段引用不一致：" + str(exc)) from exc
+        if not reading_existing:
+            from .asset_refs import resolve_final_images
+            from .delivery_files import discover_dependencies
+            from .prompt_body import submitted_body_issues, submitted_prompt_body
+            scope = payload.get("scope")
+            if (payload.get("production_blocked") is True
+                    or isinstance(scope, dict) and scope.get("unwritten_shot_ids")):
+                raise ValueError("视频稿本轮范围仍有阻塞或未写镜号")
+            asset_references = []
+            for row in segments:
+                if (row.get("production_blocked") is True or row.get("submit_ready") is False
+                        or row.get("blockers")):
+                    raise ValueError(f"{row['segment_id']}: 视频段未就绪")
+                if issues := submitted_body_issues(submitted_prompt_body(row)):
+                    raise ValueError(f"{row['segment_id']}: " + "；".join(issues))
+                refs = row.get("materials", row.get("candidate_upload_order", []))
+                if isinstance(refs, list):
+                    asset_references.extend(
+                        (f"{ref['asset_id']}@{ref['output_id']}", ref)
+                        for ref in refs if isinstance(ref, dict) and ref.get("asset_id") and ref.get("output_id"))
+            accepted = resolve_final_images(root, list(dict.fromkeys(key for key, _ in asset_references)))
+            for key, ref in asset_references:
+                output = accepted[key]
+                if (not ref.get("path") or project_path(root, ref["path"]) != Path(output["path"]).resolve()
+                        or ref.get("sha256") != output["sha256"]):
+                    raise ValueError(f"{key}: 视频素材与已确认输出的路径或字节不一致")
+            dependencies = discover_dependencies(root, payload=payload, verify_hashes=True)
+            if not dependencies["ok"]:
+                raise ValueError("视频稿输入不可用：" + "；".join(dependencies["errors"] + dependencies["uncheckable"]))
         from .quality_evidence import director_shot_audio, replay_source_audio, source_shot_ids
         known_shots = {shot["shot_id"] for scene in storyboard.get("scenes", [])
                        for shot in scene.get("shots", [])}
@@ -333,7 +360,7 @@ def _read_confirmed_package_source(root: Path, manifest: dict[str, Any], state: 
 
 
 def adopt_initial_package(project_root: Path, artifact_id: str, approval_ref: str,
-                          *, scope_description: str = "", website_approval=None) -> dict[str, Any]:
+                          *, scope_description: str = "", website_approval=None, chat_approval=None) -> dict[str, Any]:
     """Atomically confirm and select a first formal package in an empty lineage."""
     from .candidate_test import require_production
     from .review_publication import require_script_approval
@@ -359,14 +386,15 @@ def adopt_initial_package(project_root: Path, artifact_id: str, approval_ref: st
             raise ValueError("正式稿件必须是项目内可读文件")
         current_sha256 = digest(path)
         require_script_approval(root, {**entry, "path_or_url": path.relative_to(root).as_posix(),
-                                       "checksum": current_sha256}, approval_ref, website_approval)
+                                       "checksum": current_sha256}, approval_ref, website_approval,
+                                chat_approval=chat_approval)
         receipt = confirmation_scope.new_receipt(
             confirmation_scope.SCOPE_ARTIFACT,
             description=scope_description,
             extra={"kind": "package-adoption", "artifact_ids": [artifact_id],
                    "logical_id": logical_id, "revision": entry.get("revision"),
                    "sha256": current_sha256, "approval_ref": approval_ref,
-                   "at": utc_now()},
+                   "at": utc_now(), **(chat_approval.receipt_fields() if chat_approval else {})},
         )
         submission_sha256 = validate_candidate_submission(root, entry, manifest, approval_receipt=receipt)
         if not submission_sha256:
@@ -396,7 +424,7 @@ def validate_agent_submission(project_root: Path, entry: dict[str, Any], manifes
     from .agent_acceptance import skill_for_artifact
     skill_for_artifact(entry)
     root = Path(project_root).resolve()
-    if entry.get("logical_id") in {"storyboard.package", "video.prompt"}:
+    if entry.get("logical_id") in {"narrative.package", "storyboard.package", "video.prompt"}:
         return validate_candidate_submission(root, entry, manifest)
     path = project_path(root, entry.get("path_or_url", ""))
     if (entry.get("type") != "visual-supplement-image" or not path.is_relative_to(root)
@@ -554,6 +582,70 @@ def unchanged_director_edges(project, manifest, state, baseline, replacement) ->
     return kept
 
 
+def asset_export_snapshot(project, entry, previous=None):
+    """Read a registered export once per locked operation, bound to its exact entry."""
+    from .asset_refs import registered_output_snapshot
+
+    identity = (project.resolve(), *(entry.get(key) for key in ('artifact_id', 'path_or_url', 'checksum')))
+    if previous is not None and previous[0] == identity:
+        return previous
+    return identity, registered_output_snapshot(project, entry)
+
+
+def asset_output_impact(project, manifest, baseline, replacement):
+    """Find exact video segment impact against two verified asset output sets."""
+    if baseline is None or replacement is None:
+        return set(), {}
+    from .revision_control import _generation_segments
+
+    fields = ('path', 'sha256', 'purpose', 'view', 'state', 'output_kind')
+    unchanged = {key for key, original in baseline.items() if key in replacement
+                 and all(original.get(field) == replacement[key].get(field) for field in fields)}
+    videos = [item for item in current_artifacts(manifest) if item.get('logical_id') == 'video.prompt']
+    if not videos:
+        videos = [item for item in manifest.get('artifacts', [])
+                  if item.get('logical_id') == 'video.prompt' and item.get('status') == 'stale']
+    if (len(videos) != 1 or videos[0].get('type') != 'video.prompt'
+            or 'visual.asset.manifest' not in (videos[0].get('depends_on') or [])):
+        return set(), {}
+    item = videos[0]
+    try:
+        path = project_path(project, item['path_or_url'])
+        if not path.is_relative_to(project.resolve()) or digest(path) != item.get('checksum'):
+            return set(), {}
+        segments = _generation_segments(read_json(path)) or []
+        master_paths = {Path(selected['path']) for selected in baseline.values()}
+        bound, affected = set(), []
+        for row in segments:
+            refs = row.get('materials', row.get('candidate_upload_order', []))
+            if not isinstance(refs, list):
+                return set(), {}
+            row_keys = set()
+            for ref in refs:
+                if not isinstance(ref, dict):
+                    return set(), {}
+                if not (ref.get('asset_id') or ref.get('output_id')):
+                    if ref.get('path') and project_path(project, ref['path']) in master_paths:
+                        return set(), {}
+                    continue
+                key = (ref.get('asset_id'), ref.get('output_id'))
+                selected = baseline.get(key)
+                if (not selected or not ref.get('path') or project_path(project, ref['path']) != Path(selected['path'])
+                        or ref.get('sha256') != selected['sha256']):
+                    return set(), {}
+                row_keys.add(key)
+            bound.update(row_keys)
+            if row_keys - unchanged:
+                affected.append(row['segment_id'])
+        if affected:
+            return set(), {item['artifact_id']: affected}
+        if bound:
+            return {('visual.asset.manifest', item['logical_id'])}, {}
+    except (AttributeError, KeyError, OSError, TypeError, ValueError):
+        pass
+    return set(), {}
+
+
 def dependency_closure(manifest: dict[str, Any], roots: set[str], *, unchanged_edges=()) -> set[str]:
     """Follow the adopted branch, preferring current over stale for each ID.
 
@@ -632,6 +724,7 @@ def mark_impacted_artifacts_stale(
     revision: str,
     *,
     unchanged_edges=(),
+    asset_output_segments=None,
 ) -> InvalidationReport:
     """把直接或间接依赖变化项的 current 产物标为 stale。
 
@@ -646,15 +739,27 @@ def mark_impacted_artifacts_stale(
     now = utc_now()
     for item in manifest.get("artifacts", []):
         logical_id = item.get("logical_id")
+        exact_asset_event = asset_output_segments is not None and logical_id == 'video.prompt'
+        scope = (asset_output_segments or {}).get(item.get('artifact_id'))
+        if scope and any(dep in impacted for dep in (item.get('depends_on') or []) if dep != 'visual.asset.manifest'):
+            scope = None
+        scope_fields = ({'asset_output_segment_ids': scope} if scope else {'asset_output_scope': 'unknown'}) if exact_asset_event else {}
+        stale_reason = {"reason": reason, "revision": revision, "at": now, **scope_fields}
         if item.get("status") == "current" and logical_id in impacted:
             stale_ids.add(str(logical_id))
             item["status"] = "stale"
-            item.setdefault("stale_reasons", []).append({"reason": reason, "revision": revision, "at": now})
+            item.setdefault("stale_reasons", []).append(stale_reason)
+        elif exact_asset_event and item.get('status') == 'stale' and logical_id in impacted:
+            reasons = item.setdefault('stale_reasons', [])
+            prior = next((entry for entry in reversed(reasons)
+                          if 'asset_output_segment_ids' in entry or 'asset_output_scope' in entry), {})
+            if any(prior.get(key) != value for key, value in scope_fields.items()):
+                reasons.append(stale_reason)
     return InvalidationReport(stale_ids, reason, revision)
 
 
 @project_locked
-def promote_candidate(project_root: Path, logical_id: str, artifact_id: str) -> PromotionReport:
+def promote_candidate(project_root: Path, logical_id: str, artifact_id: str, *, previous_asset_snapshot=None) -> PromotionReport:
     """确认新候选产物：新版本设 current，同一 logical_id 的旧版本变 superseded。"""
     from .candidate_test import require_production
     require_production(project_root)
@@ -684,7 +789,14 @@ def promote_candidate(project_root: Path, logical_id: str, artifact_id: str) -> 
         raise ValueError("同一 logical_id 对应多个有效/待返工产物，先明确独立替换对象，不能整组覆盖")
     # Compute on the adopted graph before replacement; existing manual callers
     # may already have invalidated it, so stale rows must remain idempotent.
-    if active:
+    if logical_id == 'visual.asset.manifest':
+        baseline = asset_export_snapshot(project_root, active[0], previous_asset_snapshot)[1] if active else None
+        replacement = asset_export_snapshot(project_root, new_item)[1]
+        unchanged_edges, segments = asset_output_impact(project_root, manifest, baseline, replacement)
+        mark_impacted_artifacts_stale(manifest, {logical_id}, '用户确认了新的资产表',
+                                     new_item.get('revision', ''), unchanged_edges=unchanged_edges,
+                                     asset_output_segments=segments)
+    elif active:
         mark_impacted_artifacts_stale(manifest, {logical_id},
                                      "上游产物已采用新版本，需复核准确下游依赖", new_item.get("revision", ""))
     superseded: list[str] = []
@@ -817,13 +929,16 @@ def artifact_is_adopted(entry, state, root=None):
     return True
 
 
-def validate_current_dependencies(entry, manifest, state, root):
+def validate_current_dependencies(entry, manifest, state, root, *, checked=None, file_digest=None):
     """Read-only consumption check; never resurrect historical files as current.
 
     Logical edges establish availability, not version equality. Existing explicit
     source_narrative/source_storyboard refs establish exact revision/path identity.
+    Reuse checks only within one operation against the same manifest and state.
     """
-    visiting, checked = set(), set()
+    visiting = set()
+    checked = set() if checked is None else checked
+    file_digest = digest if file_digest is None else file_digest
     def visit(item):
         ident = item.get('artifact_id')
         if ident in visiting:
@@ -855,7 +970,7 @@ def validate_current_dependencies(entry, manifest, state, root):
             if not artifact_is_adopted(source, state, root):
                 raise ValueError('上游 current 缺少有效确认：' + logical_id)
             source_path = project_path(root, source.get('path_or_url', ''))
-            if not source_path.is_file() or (source.get('checksum') and digest(source_path) != source['checksum']):
+            if not source_path.is_file() or (source.get('checksum') and file_digest(source_path) != source['checksum']):
                 raise ValueError('上游文件缺失或已偏离登记字节：' + logical_id)
             ref = payload.get(named.get(logical_id, ''))
             if ref is not None:

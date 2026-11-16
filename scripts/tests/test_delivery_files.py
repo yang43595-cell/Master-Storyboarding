@@ -46,6 +46,80 @@ def test_historical_prompt_observation_does_not_select_old_media(tmp_path):
     assert not discover_dependencies(tmp_path, payload=evidence)['ok']
 
 
+def test_legacy_transcript_sibling_and_agent_review_route(tmp_path):
+    transcript = tmp_path / 'originals' / 'asr.json'
+    media = transcript.with_name('original.mp4')
+    receipt = tmp_path / 'decision.json'
+    write_json(transcript, {'producer': 'mlx-whisper 0.4.3', 'segments': [],
+                            'source_file': media.name})
+    media.write_bytes(b'actual original')
+    write_json(receipt, {'kind': 'agent-review-api-receipt',
+                         'request': {'method': 'GET', 'path': '/api/agent/review/decision'}})
+    result = discover_dependencies(tmp_path, files=[transcript, receipt])
+    assert result['ok'] and str(media) in result['checked_files']
+    media.unlink()
+    (tmp_path / media.name).write_bytes(b'other file with same name')
+    assert not discover_dependencies(tmp_path, files=[transcript, receipt])['ok']
+    assert not discover_dependencies(tmp_path, payload={'path': '/api/agent/review/decision'})['ok']
+
+
+def test_selected_product_pack_checks_only_registered_bytes_at_its_own_root(tmp_path, monkeypatch):
+    from scripts.core import product_reference_pack
+    from scripts.core.project_kickoff import REQUEST_PATH
+
+    project = tmp_path / 'film'
+    root = tmp_path / 'packs' / 'synthetic' / 'R01'
+    monkeypatch.setattr(product_reference_pack, 'PACK_ROOT', root.parents[1])
+    root.mkdir(parents=True)
+    brief = root / 'brief.md'
+    brief.write_text('Synthetic reference')
+    evidence = root / 'prior-observation.json'
+    write_json(evidence, {'path': 'unavailable-historical-file.png'})
+    manifest = root / 'manifest.json'
+    write_json(manifest, {'product_id': 'synthetic', 'revision': 'R01', 'product_name': 'Synthetic',
+        'references': [{'id': 'guide', 'role': 'brief', 'usages': ['display'],
+                        'path': brief.name, 'sha256': artifacts.digest(brief), 'source': 'fixture', 'coverage': 'fixture'}],
+        'evidence_files': [{'path': evidence.name, 'sha256': artifacts.digest(evidence)}]})
+    write_json(project / REQUEST_PATH, {'kickoff': {
+        'decision_ref': 'synthetic fixture', 'canvas': {'platform': 'redframe', 'model': 'fixture',
+            'aspect_ratio': '9:16', 'resolution': '480p', 'create_new': True},
+        'product': {'mode': 'replace', 'product_id': 'synthetic', 'product_usage': 'display',
+                    'reference_pack_revision': 'R01', 'reference_pack_sha256': artifacts.digest(manifest)}}})
+    payload = {'reference_paths': [str(manifest), str(evidence)]}
+    assert discover_dependencies(project, payload=payload)['ok']
+    evidence.write_text('{}')
+    assert not discover_dependencies(project, payload=payload)['ok']
+
+
+def test_product_pack_media_requires_approved_product_and_exact_source_bytes(tmp_path):
+    from scripts.core.product_reference_pack import resolve_pack_media
+
+    project = tmp_path / 'film'
+    project.mkdir()
+    canonical = tmp_path / 'brush.mp4'
+    canonical.write_bytes(b'verified action video')
+    copy = project / 'brush.mp4'
+    copy.write_bytes(canonical.read_bytes())
+    manifest = tmp_path / 'manifest.json'
+    digest = artifacts.digest(canonical)
+    pack = {'manifest_path': str(manifest), 'references': [
+        {'id': 'brush', 'path': str(canonical), 'role': 'technique', 'sha256': digest, 'action_key': 'left cheek'}]}
+    assets = [{'asset_id': 'product', 'category': 'REAL_PRODUCT', 'reference_paths': [str(manifest)]}]
+    ref = {'asset_id': 'product', 'product_reference_id': 'brush', 'path': copy.name, 'source_pack_path': str(canonical),
+           'sha256': digest, 'kind': 'video', 'role': 'action', 'action_references': [{'action_key': 'left cheek'}]}
+    assert resolve_pack_media(project, pack, ref, assets) == copy
+    assert resolve_pack_media(project, pack, ref, [{**assets[0], 'reference_paths': [str(canonical)]}]) == copy
+    with pytest.raises(ValueError, match='真实商品'):
+        resolve_pack_media(project, pack, ref, [{**assets[0], 'reference_paths': [str(copy)]}])
+    with pytest.raises(ValueError, match='真实商品'):
+        resolve_pack_media(project, pack, ref, [])
+    with pytest.raises(ValueError, match='准确动作'):
+        resolve_pack_media(project, pack, {**ref, 'action_references': [{'action_key': 'right cheek'}]}, assets)
+    copy.write_bytes(b'wrong video')
+    with pytest.raises(ValueError, match='字节相同'):
+        resolve_pack_media(project, pack, ref, assets)
+
+
 def test_method_versions_resolve_only_within_recorded_and_explicit_roots(tmp_path):
     project = tmp_path/'project'; project.mkdir()
     methods = tmp_path/'methods'; methods.mkdir()
@@ -287,7 +361,14 @@ def test_cli_dependency_and_package_checkpoint(tmp_path):
     write_json(tmp_path/'source.json', {'file': 'absent.mp4'})
     package = tmp_path/'bundle.zip'; package.write_bytes(b'1234')
     command = [sys.executable, '-m', 'scripts.core.product_refs', '--project', str(tmp_path)]
-    assert subprocess.run(command+['--discover-dependencies', '--require-file', 'source.json'], capture_output=True).returncode == 1
+    discovery = command+['--discover-dependencies', '--require-file', 'source.json']
+    assert subprocess.run(discovery, capture_output=True).returncode == 1
+    blocked = subprocess.run(discovery+['--summary'], capture_output=True, text=True)
+    report = json.loads(blocked.stdout)
+    assert blocked.returncode == 1 and not report['ok'] and 'absent.mp4' in str(report['issues'])
+    (tmp_path/'absent.mp4').write_bytes(b'fixture')
+    clean = subprocess.run(discovery+['--summary'], capture_output=True, text=True, check=True)
+    assert json.loads(clean.stdout) == {'ok': True, 'checked_file_count': 2, 'issues': []}
     assert subprocess.run(command+['--package', str(package), '--max-package-bytes', '5'], capture_output=True).returncode == 0
     assert subprocess.run(command+['--package', str(package), '--max-package-bytes', '4'], capture_output=True).returncode == 1
 

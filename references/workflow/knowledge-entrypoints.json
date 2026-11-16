@@ -214,15 +214,15 @@
       "rule_id": "MSB-KB-IMGCONT-001",
       "carriers": [
         {
-          "path": "skills/storyboard-director/references/image-continuity-hard-rules.md",
+          "path": "skills/storyboard-director/references/reference-asset-contract.md",
           "skills": [
             "storyboard-director",
             "voiceover-to-video-script"
           ],
           "required_terms": [
             "动作发生前状态",
-            "双职责静止帧",
-            "停止视频提交"
+            "同时符合两侧切点状态",
+            "停止相关视频提交"
           ]
         }
       ]
@@ -231,7 +231,7 @@
       "rule_id": "MSB-KB-IMGCONT-002",
       "carriers": [
         {
-          "path": "skills/storyboard-director/references/image-continuity-hard-rules.md",
+          "path": "skills/asset-image-assistant/references/03-scene-master-guide.md",
           "skills": [
             "asset-image-assistant",
             "storyboard-director"
@@ -248,7 +248,7 @@
       "rule_id": "MSB-KB-IMGCONT-003",
       "carriers": [
         {
-          "path": "skills/storyboard-director/references/image-continuity-hard-rules.md",
+          "path": "skills/asset-image-assistant/references/03-scene-master-guide.md",
           "skills": [
             "asset-image-assistant",
             "storyboard-director"
@@ -265,7 +265,7 @@
       "rule_id": "MSB-KB-IMGCONT-004",
       "carriers": [
         {
-          "path": "skills/storyboard-director/references/image-continuity-hard-rules.md",
+          "path": "skills/asset-image-assistant/references/02-character-master-guide.md",
           "skills": [
             "asset-image-assistant",
             "storyboard-director"
@@ -273,10 +273,10 @@
           "required_terms": [
             "唯一可信的面部来源",
             "16:9",
-            "1×4 只表示画布内单行等宽四格排布",
+            "1×4 只表示画布内单行大致四区排布",
             "不得出现胸口、上半身、手臂或半身构图",
-            "颈部以上留空",
-            "不得用遮挡、模糊或低清小脸"
+            "领口自然，无可见颈部截面",
+            "不从其中的小脸另取身份"
           ]
         }
       ]
