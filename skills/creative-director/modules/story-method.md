@@ -2,10 +2,12 @@
 
 ## 准备当前输入
 
-先确定本轮实际使用的来源和允许改动的范围，沿[知识读取合同](../../_shared/knowledge-access.md)复用仍有效的输入和阅读证据。在现有请求 JSON 的 `source_files` 写入尚未通过项目状态选入的本地原片、基准稿和真实产品依据。由准备包锁定这些文件的版本，`--objective` 只描述任务目标。命令从仓库根执行，执行者和任务 ID 由当前执行者确定。
+先确定本轮实际使用的来源和允许改动的范围，沿[普通准备与选知](../../_shared/knowledge-access.md#普通阶段准备与选知)核验输入，按[普通准备的阅读记录](../../_shared/knowledge-access.md#普通准备的阅读记录复用)复用仍有效的证据。已确认的改编范围和商品沿用 `project_request.json` 的 `kickoff`。同一份项目需求的顶层 `source_files` 登记尚未通过项目状态选入的本地原片和基准稿，`--request-json` 直接指向它。已有独立阶段请求可继续使用，产品和用法由开工决定带入。准备包锁定实际输入版本，`--objective` 只描述任务目标。
+
+有对标视频链接时，先按准确视频 ID 复用同一原片。缺少可用原片且需取材时，Mac 上的公开抖音视频优先走宿主的 resource-reuse／哼哼猫 CLI，核文件及取材区间的音轨后，用同一原片核画面、对白和切点。只有下载路线不可用且网页证据可用时，再取需要的网页画面或硬字幕。交接同一份来源及尚未核实的位置，已有核对直接沿用。
 
 ```powershell
-python scripts/stage_context_cli.py prepare --project <项目> --skill creative-director --objective "本轮目标" --request-json <本轮请求> --actor-id <执行者ID> --task-id <任务ID>
+python scripts/stage_context_cli.py prepare --project <项目> --skill creative-director --objective "本轮目标" --request-json <项目需求路径> --actor-id <执行者ID> --task-id <任务ID>
 ```
 
 按 Skill 的执行顺序实读 `stage_startup.md`、实际输入和适用合同。有匹配的必读方法时，读完本轮方法包再用 `record-method-reading` 登记。同一执行者和任务运行以下命令，核验通过后进入场次判断或正文。

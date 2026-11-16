@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 try:
@@ -57,6 +58,8 @@ def main() -> int:
     target.add_argument("--path", help="新桌面项目目录的绝对路径")
     target.add_argument("--name", help="在当前用户桌面创建的项目名称")
     args = parser.parse_args()
+    if sys.version_info < (3, 10):
+        parser.error("请用仓库虚拟环境运行此命令（macOS/Linux: .venv/bin/python）")
     path = Path(args.path) if args.path else Path.home() / "Desktop" / args.name
     print(initialize(path))
     return 0

@@ -47,7 +47,76 @@ def redframe_fixture(root):
         'canvas': dict(platform='redframe', model='fixture', aspect_ratio='9:16', resolution='480p',
                        target_url=frozen['target_url'], target_project_id='synthetic-project')}})
     bind_synthetic_canvas(root, frozen, observed)
+    bind_redframe_production_sources(root, frozen, observed)
     return frozen, observed
+
+
+def bind_redframe_production_sources(root, frozen, observed):
+    manifest = artifacts.load_manifest(root)
+    state = load_project_state(root)
+
+    def register(ident, logical_id, filename, payload):
+        write_json(root / filename, payload)
+        sha = artifacts.digest(root / filename)
+        manifest['artifacts'] = [row for row in manifest['artifacts'] if row['artifact_id'] != ident]
+        manifest['artifacts'].append(dict(artifact_id=ident, logical_id=logical_id, type=logical_id,
+            revision='R01', checksum=sha, path_or_url=filename, status='current', user_approved=True))
+        if ident not in state['current_artifacts']:
+            state['current_artifacts'].append(ident)
+        state['user_confirmations'] = [row for row in state['user_confirmations']
+                                       if row.get('artifact_ids') != [ident]]
+        state['user_confirmations'].append(dict(artifact_ids=[ident], scope='artifact',
+                                               approval_ref='synthetic only'))
+        return dict(artifact_id=ident, revision='R01', sha256=sha)
+
+    narrative = register('NARRATIVE', 'narrative.package', 'narrative.json', {'fixture': 'narrative'})
+    capability = root / 'synthetic-duration-capability.json'
+    model_name = frozen['drafts'][0]['parameters']['model']
+    write_json(capability, {'model': {'type': 'video', 'providerId': 'fixture',
+        'modelId': 'fixture', 'label': model_name, 'mode': ['fixture-reference'],
+        'durationResolutionMap': [{'resolution': ['480p'], 'duration': list(range(2, 9))}]}})
+    shots = []
+    segments = []
+    for row in frozen['drafts']:
+        ident = row['node_id']
+        shot = ident + '-shot'
+        row.update(source_segment_id=ident, source_shot_ids=[shot])
+        row['parameters']['reference_mode'] = 'fixture-reference'
+        shots.append(dict(scene_id=ident, shots=[dict(shot_id=shot, take={'start': f'{shot} starts a new action'})]))
+        segments.append(dict(segment_id=ident, source_shot_ids=[shot], prompt=row['prompt'],
+                             parameters=copy.deepcopy(row['parameters']),
+                             target_edit_duration_seconds=sum(row['shot_durations']),
+                             materials=[dict(sha256=ref['sha256']) for ref in row['reference_checks']]))
+    for previous, current in zip(segments, segments[1:]):
+        previous_shot = previous['source_shot_ids'][-1]
+        current_shot = current['source_shot_ids'][0]
+        current['cross_scene_continuity'] = dict(
+            from_segment_id=previous['segment_id'], decision='new_action_or_time_jump',
+            basis='The next synthetic scene explicitly begins a new action.',
+            previous_source=dict(shot_id=previous_shot, field='take.start', quote=f'{previous_shot} starts a new action'),
+            current_source=dict(shot_id=current_shot, field='take.start', quote=f'{current_shot} starts a new action'),
+        )
+    director = register('DIRECTOR', 'storyboard.package', 'director.json', {
+        'source_narrative': {**narrative, 'path': 'narrative.json'}, 'scenes': shots})
+    video = register('VIDEO', 'video.prompt', 'video.json', {
+        'source_storyboard': {**director, 'path': 'director.json'}, 'generation_segments': segments,
+        'selected_video_model': {
+            'id': segments[0]['parameters']['model'], 'platform': 'redframe', 'entry_point': 'fixture-editor',
+            'reference_mode': 'fixture-reference', 'confirmed_by_user': True,
+            'min_duration_seconds': 2, 'max_duration_seconds': 8,
+            'capability_evidence': dict(path=capability.name, sha256=artifacts.digest(capability),
+                                        locator='synthetic observation', checked_at='2026-11-15T00:00:00Z'),
+        }})
+    write_json(root / artifacts.MANIFEST_PATH, manifest)
+    write_project_state(root, state)
+    frozen['source_artifacts'] = [video, director]
+    bind_synthetic_quality(root, frozen)
+    observed['source_artifacts'] = copy.deepcopy(frozen['source_artifacts'])
+    observed['drafts'] = copy.deepcopy(frozen['drafts'])
+    for row in observed['drafts']:
+        row['native_mentions'] = [dict(**media, entity_type='fixture-chip', native_noneditable_entity=True)
+                                  for media in row['ordered_media']]
+    observed['frozen_sha256'] = digest(frozen)
 
 
 def canvas_cli(root, frozen, observed=None, *extra):
@@ -75,7 +144,7 @@ def test_redframe_full_cli_and_saved_graph_readback(tmp_path):
     assert canvas_cli(tmp_path, frozen, observed).returncode != 0
 
 
-@pytest.mark.parametrize('mutation', ['missing_binding', 'missing_edge', 'wrong_port', 'wrong_source', 'direct_action',
+@pytest.mark.parametrize('mutation', ['missing_binding', 'missing_edge', 'wrong_port', 'wrong_source', 'extra_edge_on_direct',
                                      'duplicate_slot', 'unmentioned', 'timeline_end', 'timeline_gap'])
 def test_redframe_preflight_rejects_declared_conflicts(tmp_path, mutation):
     frozen, observed = redframe_fixture(tmp_path)
@@ -88,7 +157,7 @@ def test_redframe_preflight_rejects_declared_conflicts(tmp_path, mutation):
         row['edges'][0]['source_port'] = 'wrong'
     elif mutation == 'wrong_source':
         row['source_nodes'][0]['sha256'] = '0' * 64
-    elif mutation == 'direct_action':
+    elif mutation == 'extra_edge_on_direct':
         row['reference_checks'][0]['role'] = 'action'
         row['reference_checks'][0]['canvas_binding'] = dict(mode='direct', purpose='synthetic action',
                                                            prompt_reference=True)
@@ -101,10 +170,104 @@ def test_redframe_preflight_rejects_declared_conflicts(tmp_path, mutation):
         row['prompt'] = row['prompt'].replace('1–4秒', '1–3秒')
     else:
         row['prompt'] = row['prompt'].replace('1–4秒', '2–5秒')
-    bind_synthetic_quality(tmp_path, frozen)
+    if mutation.startswith('timeline_') or mutation == 'duplicate_slot':
+        bind_redframe_production_sources(tmp_path, frozen, observed)
+    else:
+        bind_synthetic_quality(tmp_path, frozen)
     result = canvas_cli(tmp_path, frozen)
     assert result.returncode != 0
     assert 'canvas' in json.loads(result.stdout)['error']
+
+
+def test_money_tree_rush_uses_formal_redframe_write_preflight(tmp_path):
+    from PIL import Image
+
+    frozen, observed = redframe_fixture(tmp_path)
+    kickoff = json.loads((tmp_path / REQUEST_PATH).read_text())['kickoff']
+    kickoff.update(decision_ref='跑这个，产品换成造物者温泉酸面膜，其他不变，速推。',
+                   creation={'mode': '原片保真改编', 'reference_scope': '原片用于核对剧情、字幕和镜头'},
+                   product={'mode': 'replace', 'product_id': '造物者温泉酸面膜', 'product_usage': 'real_use'})
+    answers = tmp_path / 'answers.json'
+    write_json(answers, kickoff)
+    result = run_cli('scripts.stage_context_cli', 'kickoff', '--project', tmp_path, '--answers-json', answers)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout)['kickoff']['product']['product_id'] == 'creator-polishing-mask-2'
+    assert load_project_state(tmp_path).get('workflow_authorizations', []) == []
+
+    manifest = artifacts.load_manifest(tmp_path)
+    state = load_project_state(tmp_path)
+    frame = next(a for a in manifest['artifacts'] if a['artifact_id'] == 'FRAME')
+    Image.new('RGB', (8, 8), 'green').save(tmp_path / 'second.png')
+    second = dict(frame, artifact_id='FRAME-TWO', logical_id='FRAME-TWO', path_or_url='second.png',
+                  checksum=artifacts.digest(tmp_path / 'second.png'), upload_bindings=[])
+    manifest['artifacts'].append(second)
+    state['current_artifacts'].append('FRAME-TWO')
+    write_json(tmp_path / artifacts.MANIFEST_PATH, manifest)
+    write_project_state(tmp_path, state)
+    for row in frozen['drafts']:
+        row['parameters']['model'] = 'Seedance 2.5'
+        row['edges'], row['source_nodes'] = [], []
+        row['required_reference_roles'] = {'ACTOR': ['identity']}
+        row['continuity'] = dict(event_id=row['node_id'])
+        ref = row['reference_checks'][0]
+        ref.update(role='identity', canvas_binding=dict(mode='direct', purpose='synthetic identity',
+                                                        prompt_reference=True))
+        ref.pop('state_id')
+    frozen['drafts'][1]['reference_checks'][0].update(artifact_id='FRAME-TWO', sha256=second['checksum'])
+    bind_redframe_production_sources(tmp_path, frozen, observed)
+    for row in frozen['drafts']:
+        row.pop('ordered_media')
+    bind_synthetic_quality(tmp_path, frozen)
+
+    state = load_project_state(tmp_path)
+    narrative_receipt = next(r for r in state['user_confirmations'] if r.get('artifact_ids') == ['NARRATIVE'])
+    state['user_confirmations'].remove(narrative_receipt)
+    write_project_state(tmp_path, state)
+    result = canvas_cli(tmp_path, frozen)
+    assert result.returncode == 2 and 'narrative.package' in result.stdout
+
+    state['user_confirmations'].append(narrative_receipt)
+    write_project_state(tmp_path, state)
+    result = canvas_cli(tmp_path, frozen)
+    assert result.returncode == 2 and 'unconfirmed' in result.stdout and 'FRAME-TWO' in result.stdout
+
+    missing_reference = copy.deepcopy(frozen)
+    missing_reference['drafts'][1]['reference_checks'].clear()
+    result = canvas_cli(tmp_path, missing_reference)
+    assert result.returncode == 2 and '逐槽匹配采用源段' in result.stdout
+
+    first = dict(frozen, drafts=frozen['drafts'][:1])
+    director_only = dict(first, source_artifacts=first['source_artifacts'][1:])
+    result = canvas_cli(tmp_path, director_only)
+    assert result.returncode == 2 and '已采用的视频稿' in result.stdout
+    result = canvas_cli(tmp_path, first)
+    assert result.returncode == 0, result.stdout
+    report = json.loads(result.stdout)
+    assert report['source_segment_ids'] == ['one']
+    assert report['target_project_id'] == frozen['target_project_id']
+    assert report['frozen_sha256'] == digest(first)
+    assert report['upload_mapping_pending_nodes'] == ['one']
+    assert report['native_refresh_binding'] == 'not_checked'
+    result = canvas_cli(tmp_path, first, observed)
+    assert result.returncode == 2 and '实际 ordered_media' in result.stdout
+
+    # Simulate the handoff after platform slot collection without making a network request.
+    stored = copy.deepcopy(first)
+    stored_row = stored['drafts'][0]
+    stored_row['ordered_media'] = [dict(node_id='one', media_id='synthetic-upload')]
+    manifest = artifacts.load_manifest(tmp_path)
+    current_frame = next(a for a in manifest['artifacts'] if a['artifact_id'] == 'FRAME')
+    current_frame['upload_bindings'].append(dict(**stored_row['ordered_media'][0],
+        target_url=stored['target_url'], revision='R01', sha256=current_frame['checksum']))
+    write_json(tmp_path / artifacts.MANIFEST_PATH, manifest)
+    bind_synthetic_quality(tmp_path, stored)
+    reopened = copy.deepcopy(stored)
+    reopened.update(phase='after_refresh', frozen_sha256=digest(stored))
+    reopened['drafts'][0]['native_mentions'] = [dict(**stored_row['ordered_media'][0],
+        entity_type='fixture-chip', native_noneditable_entity=True)]
+    result = canvas_cli(tmp_path, stored, reopened)
+    assert result.returncode == 0, result.stdout
+    assert json.loads(result.stdout)['native_reference_checks']['one'] == 'passed'
 
 
 @pytest.mark.parametrize('field', ['edges', 'source_nodes', 'native_mentions', 'prompt', 'parameters', 'ordered_media'])
@@ -131,8 +294,7 @@ def test_same_file_distinct_purposes_and_unmentioned_input_are_explicit(tmp_path
     second['canvas_binding'] = dict(mode='direct', purpose='synthetic scale comparison',
                                    prompt_reference=False, unmentioned_reason='Visible input for scale comparison')
     row['reference_checks'].append(second)
-    bind_synthetic_quality(tmp_path, frozen)
-    observed['drafts'][0] = copy.deepcopy(row)
+    bind_redframe_production_sources(tmp_path, frozen, observed)
     observed['drafts'][0]['native_mentions'] = [{**row['ordered_media'][0],
         'entity_type': 'fixture-chip', 'native_noneditable_entity': True}]
     observed['frozen_sha256'] = digest(frozen)
@@ -252,7 +414,8 @@ def test_canvas_checkpoint_reports_the_same_usage_without_bypassing_source_gate(
 
 
 @pytest.mark.skipif(not shutil.which('ffmpeg') or not shutil.which('ffprobe'), reason='local video tools unavailable')
-def test_redframe_action_file_graph_native_reference_and_actual_duration(tmp_path):
+@pytest.mark.parametrize('mode', ['direct', 'edge'])
+def test_redframe_action_file_native_reference_and_actual_duration(tmp_path, mode):
     frozen, observed = redframe_fixture(tmp_path)
     video = tmp_path / 'synthetic-action.mov'
     subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=16x16:r=10',
@@ -272,19 +435,29 @@ def test_redframe_action_file_graph_native_reference_and_actual_duration(tmp_pat
     row = frozen['drafts'][0]
     row['ordered_media'].append(dict(node_id='action-node', media_id='action-media'))
     ref = dict(artifact_id='ACTION', revision='R01', sha256=sha, role='action', kind='video',
-               duration=1, entity_ids=['ACTOR'], canvas_binding=dict(mode='edge', purpose='synthetic action',
-                   prompt_reference=True, source_port='main', target_port='input-2'))
+               duration=1, entity_ids=['ACTOR'], canvas_binding=dict(
+                   mode=mode, purpose='synthetic action', prompt_reference=True))
     row['reference_checks'].append(ref)
-    row['edges'].append(dict(source_node_id='action-node', source_port='main', target_node_id=row['node_id'],
-                             target_port='input-2', slot=2))
-    row['source_nodes'].append(dict(node_id='action-node', port='main', sha256=sha))
-    bind_synthetic_quality(tmp_path, frozen)
-    observed['drafts'][0] = copy.deepcopy(row)
+    if mode == 'edge':
+        ref['canvas_binding'].update(source_port='main', target_port='input-2')
+        row['edges'].append(dict(source_node_id='action-node', source_port='main', target_node_id=row['node_id'],
+                                 target_port='input-2', slot=2))
+        row['source_nodes'].append(dict(node_id='action-node', port='main', sha256=sha))
+    else:
+        row['edges'].clear()
+        row['source_nodes'].clear()
+        row['reference_checks'][0]['canvas_binding'] = dict(
+            mode='direct', purpose='synthetic boundary', prompt_reference=True)
+    bind_redframe_production_sources(tmp_path, frozen, observed)
     observed['drafts'][0]['native_mentions'] = [dict(**media, entity_type='fixture-chip',
         native_noneditable_entity=True) for media in row['ordered_media']]
     observed['frozen_sha256'] = digest(frozen)
     result = canvas_cli(tmp_path, frozen, observed)
     assert result.returncode == 0, result.stdout
+    swapped = copy.deepcopy(frozen)
+    swapped['drafts'][0]['reference_checks'].reverse()
+    swapped['drafts'][0]['ordered_media'].reverse()
+    assert '逐槽匹配采用源段' in canvas_cli(tmp_path, swapped).stdout
     ref['duration'] = 2
     bind_synthetic_quality(tmp_path, frozen)
     assert 'actual video' in canvas_cli(tmp_path, frozen).stdout

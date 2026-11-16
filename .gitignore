@@ -32,6 +32,7 @@ __pycache__/
 *.glb
 *.gltf
 *.png
+!assets/character-layout-templates/*.png
 *.jpg
 *.jpeg
 *.webp

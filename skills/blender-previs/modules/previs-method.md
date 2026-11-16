@@ -1,6 +1,6 @@
 # 三维预演方法
 
-产出前先 `python scripts/stage_context_cli.py ensure-prepared --project <项目> --skill blender-previs` 校验准备状态；包缺失按 `skills/_shared/knowledge-access.md` 自行准备或报告真实阻塞。本地规范（`references/CLI与配方契约.md`、`../_shared/prompt-language.md`）直接读取，不重复嵌入知识包。
+产出前先 `python scripts/stage_context_cli.py ensure-prepared --project <项目> --skill blender-previs` 校验准备状态；包缺失按 [普通准备与选知](../../_shared/knowledge-access.md#普通阶段准备与选知) 自行准备或报告真实阻塞。本地规范（`references/CLI与配方契约.md`、`../_shared/prompt-language.md`）直接读取，不重复嵌入知识包。
 
 ## 覆盖范围三项检查
 

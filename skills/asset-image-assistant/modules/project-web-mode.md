@@ -28,9 +28,13 @@
 
 ## 输出与交接
 
-逐项视觉确认后才允许整表导出；图片、清单和确认凭据保存到项目资产母版的新版本目录。1.1 清单的 confirmed_asset 保留主图，confirmed_outputs 列出全部必要独立图片的用途、状态、视角及确认引用。下游按职责选择，不能只取主图替代整组。
+网站或获准的对话确认入口把当前已确认且已备份的输出发布到现有项目资产母版清单。清单按修订累积，后续批次保留先前输出自己的确认记录。下游以准确 AST 和输出 ID 读取所需图片。其他制作项仍可继续；工作台的整表交接在所有必需输出确认且完成备份后开放。清单以 confirmed_asset 标明主图，以 confirmed_outputs 列出实际可用输出的用途、状态、视角及确认引用。
 
 复用项目产物登记、确认和交接机制；资产可与导演规划并行，不改写其他阶段的 current_stage 或 next_stage。“继续项目”只提供交接文件和 Codex 继续指令；不执行其他 Skill。
+
+### 资产对话确认
+
+沿项目既有对话审图授权，经 `register_asset_workflow_authorization` 登记后，使用 `visual_asset_library.py apply-chat-confirmation`。本批确认文件记录 `quote`、`at`、`review_ref` 和 `outputs`，每项含 `ast_id`、`output_id`、`asset_id`（选图 ID）、`image_sha256` 和 `purpose`。已有确认随原依据保留，只对本次准确确认的新选图写回执。备份完成后可沿同一入口传 `{"outputs":[]}`，导出已有有效确认的输出。
 
 ## 人物需求的选择优先流程
 

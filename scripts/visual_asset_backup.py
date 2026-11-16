@@ -22,9 +22,10 @@ def same_file(first, second):
     return digest(first) == digest(second)
 
 
-def run(library, management):
+def run(library, management, *, asset_ids=None):
     with library.lock:
-        items = [a for a in library.items() if not a.get('reference_only') and a.get('backup', {}).get('status') == 'pending']
+        assets = library.items() if asset_ids is None else (library.get(ident) for ident in dict.fromkeys(asset_ids))
+        items = [a for a in assets if not a.get('reference_only') and a.get('backup', {}).get('status') == 'pending']
         if not items:
             return {'status': 'saved', 'count': 0, 'message': '没有待备份图片'}
         missing = [a for a in items if not Path(a['original']).is_file()]

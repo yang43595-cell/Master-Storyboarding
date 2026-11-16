@@ -1,8 +1,10 @@
 """Negative replays: identity boards, stale PASS and matching graph edges are insufficient."""
 import copy
 import json
+import re
 import subprocess
 import shutil
+from pathlib import Path
 
 import pytest
 from PIL import Image
@@ -11,6 +13,7 @@ from scripts.canvas_readback import compare, digest, validate_submission
 from scripts.core import artifacts, revision_control as rc
 from scripts.core.io import write_json, read_json
 from scripts.core.project_state import new_project_state, write_project_state
+from scripts.tests.test_doc_reference_integrity import _slug
 from scripts.tests.test_review_receipt_binding import pending
 
 
@@ -308,17 +311,100 @@ def test_legacy_comparison_stays_read_only_and_unchecked(tmp_path):
     assert json.loads(result.stdout)['submission_checks'] == 'not_checked'
 
 
-def test_workflow_links_action_selfcheck_and_explicit_delivery():
-    from pathlib import Path
+def test_workflow_links_action_selfcheck():
     root = Path(__file__).resolve().parents[2]
     skill = (root / 'skills/voiceover-to-video-script/SKILL.md').read_text()
-    method = (root / 'skills/voiceover-to-video-script/modules/video-method.md').read_text()
-    contract = (root / 'skills/voiceover-to-video-script/references/seedance-delivery-package.md').read_text()
-    docs = (root / 'docs/development/delivery-snapshot-checks.md').read_text()
+    method = root / 'skills/voiceover-to-video-script/modules/video-method.md'
     # Configuration reachability only, never an automated semantic judgment.
-    assert '动作链自查' in skill and '动作链自查' in method
-    assert all(s in method for s in ['未检查', '发现问题', '已人工看图', '放回', '相邻两段'])
-    assert '--delivery' in contract and docs.count('--delivery') >= 2
+    assert 'video-method.md#自查与修改' in skill
+    assert '### 动作链自查' in _doc_section(method, '自查与修改')
+    action = _doc_section(method, '动作链自查')
+    assert all(s in action for s in ['未检查', '发现问题', '已人工看图', '放回', '相邻两段'])
+
+
+def _doc_section(path, anchor):
+    body = path.read_text(encoding='utf-8')
+    headings = list(re.finditer(r'^(#{1,6}) ([^\n]+)$', body, re.MULTILINE))
+    heading = next((item for item in headings if _slug(item[2]) == anchor), None)
+    assert heading is not None, f'{path.name}#{anchor}'
+    boundary = next((item.start() for item in headings
+                     if item.start() > heading.start() and len(item[1]) <= len(heading[1])), len(body))
+    return body[heading.start():boundary]
+
+
+def test_video_authoring_routes_read_only_their_scope():
+    video = Path(__file__).resolve().parents[2] / 'skills/voiceover-to-video-script'
+    skill = (video / 'SKILL.md').read_text(encoding='utf-8')
+    method = video / 'modules/video-method.md'
+    full_row = next(line for line in skill.splitlines() if line.startswith('| 全片写稿 |'))
+    repair_row = next(line for line in skill.splitlines() if line.startswith('| 局部返修 |'))
+    assert 'modules/video-method.md)' not in skill
+    assert 'modules/video-method.md#全片写稿' in full_row and '#局部返修' not in full_row
+    assert 'modules/video-method.md#局部返修' in repair_row and '#全片写稿' not in repair_row
+
+    full = _doc_section(method, '全片写稿')
+    repair = _doc_section(method, '局部返修')
+    assert 'generation_boundaries' in full and '--discover-dependencies' in full
+    assert '--segment-id' not in full
+    assert all(term in repair for term in ('generation_boundaries', '--segment-id', '--require-file'))
+    assert all('省略' in line for line in repair.splitlines() if '--discover-dependencies' in line)
+    assert all(f'#{anchor}' in repair for anchor in ('跨镜对白及通话', '产品连续动作', '动作链自查'))
+    assert '平台草稿的目标与持久化证据' not in method.read_text(encoding='utf-8')
+
+
+def test_normal_draft_reading_links_exact_checks_and_keeps_optional_modes_separate():
+    root = Path(__file__).resolve().parents[2]
+    video = root / 'skills/voiceover-to-video-script'
+    contract = video / 'references/seedance-delivery-package.md'
+    snapshot = root / 'docs/development/delivery-snapshot-checks.md'
+    redframe = root / 'skills/_shared/redframe-operations.md'
+    experiments = root / 'docs/rules/experiments.md'
+    # Ordinary saved-draft work starts with precise links, not a full-file read.
+    skill = (video / 'SKILL.md').read_text(encoding='utf-8')
+    save_row = next(line for line in skill.splitlines() if line.startswith('| 保存／更新画布草稿 |'))
+    save_step = next(line for line in skill.splitlines() if line.startswith('4. 仅本轮获准平台操作时'))
+    assert 'seedance-delivery-package.md#草稿参考与交付' in save_row
+    assert 'seedance-delivery-package.md#正式草稿写前检查' in save_row
+    assert 'redframe-operations.md#成批写入和整节点回读' in save_row
+    assert 'seedance-delivery-package.md#画布紧凑排版' in save_row
+    assert 'video-method.md' not in save_row
+    assert 'seedance-delivery-package.md)' not in save_step
+
+    persistence = _doc_section(contract, '草稿身份与回读')
+    assert all(term in persistence for term in ('真实刷新', 'ordered_media', 'native_mentions'))
+    assert 'RHTV' not in persistence
+
+    checklist = _doc_section(contract, '正式草稿写前检查')
+    required = ('同一份-json', '操作与采用', '来源映射', '正式交付的文件依赖',
+                '本轮观察证据与输入版本', '分段参数')
+    assert all(f'delivery-snapshot-checks.md#{anchor}' in checklist for anchor in required)
+    assert 'delivery-snapshot-checks.md)' not in checklist
+    schema = _doc_section(snapshot, '同一份-json')
+    assert all(term in schema for term in ('node_id', 'media_id', 'native_noneditable_entity'))
+    operation = _doc_section(snapshot, '操作与采用')
+    assert '--delivery' in operation and '--preflight' in operation and '--readback' in operation
+    assert all(term in operation for term in ('after_refresh', 'frozen_sha256', 'canvas_readback.digest'))
+    batch = _doc_section(redframe, '成批写入和整节点回读')
+    assert '--delivery' in batch and '--preflight' in batch
+    assert '#草稿身份与回读' in '\n'.join((save_row, save_step, checklist, batch))
+    assert '#新建直传计划和回读' in batch
+    assert '#更新前核已有编辑' in batch
+    direct = _doc_section(redframe, '新建直传计划和回读')
+    assert 'finalize-new' in direct and 'after_refresh' in direct
+    node_anchor = '红帧整节点的源连线用途与时间'
+    assert f'#{node_anchor}' in batch
+    node = _doc_section(redframe, node_anchor)
+    assert all(term in node for term in ('unmentioned_reason', 'shot_durations', 'source_nodes'))
+    update = _doc_section(redframe, '更新前核已有编辑')
+    assert '--baseline' in update and '--current' in update
+
+    normal = '\n'.join((save_row, save_step, checklist, persistence, batch, direct, node, update,
+                        *(_doc_section(snapshot, anchor) for anchor in required)))
+    assert all(term not in normal for term in ('--private-preview', 'read-rich-editor', 'node_port_download', 'rhtv_cdp.js'))
+    assert '--private-preview' in _doc_section(experiments, '明确授权的私有候选画布预览')
+    capture = _doc_section(redframe, '平台采集与离线合同的接缝')
+    assert 'read-rich-editor' in capture and 'node_port_download' in capture
+    assert 'RHTV_CANVAS_URL' in capture and 'RHTV_TARGET_ID' in capture
 
 
 def test_delivery_source_revision_changes_after_preflight(tmp_path):

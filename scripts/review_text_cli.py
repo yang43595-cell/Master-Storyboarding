@@ -15,7 +15,7 @@ from io import BytesIO
 from pathlib import Path
 
 try:
-    from .core.agent_review_api import AgentReviewClient, AgentReviewError, DEFAULT_BASE_URL, MAX_IMAGE_BYTES, effective_approval
+    from .core.agent_review_api import AgentReviewClient, AgentReviewError, DEFAULT_BASE_URL, MAX_IMAGE_BYTES, MAX_TEXT_BYTES, effective_approval
     from .core.asset_refs import character_output_contract
     from .core.candidate_test import require_production
     from .core.image_technical import character_board_image_problem
@@ -26,7 +26,7 @@ try:
     from .visual_asset_choices import image_work_items
     from .visual_asset_source import source_project
 except ImportError:  # direct execution
-    from core.agent_review_api import AgentReviewClient, AgentReviewError, DEFAULT_BASE_URL, MAX_IMAGE_BYTES, effective_approval
+    from core.agent_review_api import AgentReviewClient, AgentReviewError, DEFAULT_BASE_URL, MAX_IMAGE_BYTES, MAX_TEXT_BYTES, effective_approval
     from core.asset_refs import character_output_contract
     from core.candidate_test import require_production
     from core.image_technical import character_board_image_problem
@@ -36,6 +36,31 @@ except ImportError:  # direct execution
     from core.story_sources import export_markdown, validate_story_sources
     from visual_asset_choices import image_work_items
     from visual_asset_source import source_project
+
+
+_ADOPTION_FAILURES = {
+    "CANDIDATE_ID_CONFLICT": "核对清单中该产物 ID 的修订、路径与依赖，保持原有登记。",
+    "CANDIDATE_HASH_MISMATCH": "核对已登记候选和送审原件的字节；稿件内容变更需走现有返修确认。",
+    "SCRIPT_CHANGE_REQUIRED": "当前已有正式稿，沿原修订控制定位本次变更案和已送审候选。",
+    "LOCAL_ADOPTION_IO_ERROR": "核对本地项目文件和回执的可读性及写入状态。",
+    "LOCAL_ADOPTION_BLOCKED": "核对本地采用状态和对应项目门禁。",
+}
+
+
+class _ScriptAdoptionBlocked(ValueError):
+    def __init__(self, cause, *, args, receipt_path, receipt):
+        super().__init__(str(cause))
+        code = getattr(cause, "code", None)
+        if code not in _ADOPTION_FAILURES:
+            code = "LOCAL_ADOPTION_IO_ERROR" if isinstance(cause, OSError) else "LOCAL_ADOPTION_BLOCKED"
+        self.report = {"ok": False, "step": "local_adoption", "code": code,
+                       "website_decision": "verified_approved", "receipt": str(receipt_path),
+                       "publication": receipt["publication"], "website_version": receipt["request"]["parameters"]["version"],
+                       "artifact_id": args.adopt_script_id, "revision": receipt["source_json"]["revision"],
+                       "message": _ADOPTION_FAILURES[code],
+                       "resume": "先只读核对本地当前状态。阻塞条件修复后，沿原发布版本执行 decision，并使用新决定回执路径。"}
+        if args.change_id:
+            self.report["change_id"] = args.change_id
 
 
 def _binding(project: Path, path: Path, raw: bytes) -> dict:
@@ -50,18 +75,44 @@ def _source(project: Path, value: str | Path) -> tuple[dict, dict]:
     review_check = validate_story_sources(package, project_root=project, review_ready=True)
     return package, {**_binding(project, path, raw), "project_id": package["project_id"],
                      "revision": package["revision"], "status": package["status"],
-                     "awaiting_creative_approval_ids": review_check["awaiting_creative_approval_ids"]}
+                     "awaiting_creative_approval_ids": review_check["awaiting_creative_approval_ids"],
+                     "awaiting_subtitle_approval_ids": review_check["awaiting_subtitle_approval_ids"]}
 
 
-def _projection(project: Path, package: dict, value: str | Path) -> tuple[str, dict]:
+def _projection(project: Path, package: dict, value: str | Path, *, subtitle_review_ids=()) -> tuple[str, dict]:
     path = _path(project, value)
     raw = path.read_bytes()
     with tempfile.TemporaryDirectory(prefix=".review-export-", dir=project) as folder:
         expected = Path(folder) / "reading.md"
-        export_markdown(package, expected)
+        export_markdown(package, expected, subtitle_review_ids=subtitle_review_ids)
         if raw != expected.read_bytes():
             raise ValueError("Reading Markdown differs from this exact narrative JSON; export a new copy.")
     return raw.decode("utf-8"), _binding(project, path, raw)
+
+
+def _check_preflight(project, client, path, *, case_id, stage, project_id=None):
+    path = _path(project, path)
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    expected_request = {"caseId": case_id, "stage": stage}
+    if (saved.get("kind") != "agent-review-api-receipt" or saved.get("command") != "status"
+            or saved.get("project_path") != str(project) or saved.get("base_url") != client.base_url
+            or (saved.get("request") or {}).get("parameters") != expected_request):
+        raise ValueError("送审预读回执与本地项目、站点、案例或阶段不符")
+    previous = saved.get("response") or {}
+    expected_case = previous.get("case") or {}
+    if (expected_case.get("id") != case_id or not expected_case.get("projectId")
+            or (project_id is not None and expected_case["projectId"] != project_id)
+            or previous.get("stage") != stage or not isinstance(previous.get("expectations"), dict)):
+        raise ValueError("送审预读回执没有有效的项目与阶段状态")
+    current = client.status(case_id=case_id, stage=stage)
+    if current["case"]["projectId"] != expected_case["projectId"]:
+        raise ValueError("网站项目已变化，请核对准确案例")
+    version_fields = ("expectedHeadVersion", "expectedHeadGeneration", "expectedReviewRevision")
+    if (any(key not in previous["expectations"]
+            or current["expectations"][key] != previous["expectations"][key] for key in version_fields)
+            or current["sourceScriptVersion"] != previous.get("sourceScriptVersion")):
+        raise ValueError("网站当前版本或审核状态已变化，请先核对差异再决定是否送审")
+    return {"path": path.relative_to(project).as_posix(), "response": current}
 
 
 def _asset_readback(client, receipt):
@@ -89,6 +140,43 @@ def _asset_readback(client, receipt):
     return {"status": status, "response": current}
 
 
+def _adopt_script(project, publication, receipt_path, args, website_approval):
+    try:
+        from .stage_context_cli import StageContextError, adopt_package
+        from .core.artifacts import artifact_is_adopted, digest, load_manifest
+        from .core.project_state import load_project_state
+        from .core.revision_control import commit_change, show_change
+    except ImportError:
+        from stage_context_cli import StageContextError, adopt_package
+        from core.artifacts import artifact_is_adopted, digest, load_manifest
+        from core.project_state import load_project_state
+        from core.revision_control import commit_change, show_change
+
+    source = publication["source_json"]
+    artifacts = load_manifest(project)["artifacts"]
+    entry = next((row for row in artifacts if row["artifact_id"] == args.adopt_script_id), None)
+    if entry and entry.get("status") == "current":
+        require_script_approval(project, entry, str(receipt_path), website_approval)
+        if (digest(_path(project, source["path"])) != source["sha256"]
+                or not artifact_is_adopted(entry, load_project_state(project), project)):
+            raise ValueError("已采用的编导稿与本次网站通过不一致")
+        if args.change_id and not any(
+                change.get("change_id") == args.change_id and change.get("status") == "completed"
+                and (change.get("candidate_receipt") or {}).get("artifact_id") == args.adopt_script_id
+                for change in show_change(project)["history"]):
+            raise ValueError("已采用的编导稿不属于指定变更案")
+        return {"artifact_id": args.adopt_script_id, "already_current": True}
+    if args.change_id:
+        return commit_change(project, change_id=args.change_id, website_approval=website_approval)
+    if any(row.get("logical_id") == "narrative.package" and row.get("status") in {"current", "stale"}
+           for row in artifacts):
+        raise StageContextError("编导稿已有正式版本，请登记返修候选并传入 --change-id", code="SCRIPT_CHANGE_REQUIRED")
+    return adopt_package(argparse.Namespace(
+        project=str(project), logical_id="narrative.package", artifact_id=args.adopt_script_id,
+        path=source["path"], revision=source["revision"], approval_ref=str(receipt_path),
+        depends_on=[], scope_description="审核站编导稿整版通过"), website_approval=website_approval)
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -105,14 +193,17 @@ def _parser() -> argparse.ArgumentParser:
     publish.add_argument("--case-id", required=True)
     publish.add_argument("--operation-id", required=True)
     publish.add_argument("--purpose")
-    status = commands.add_parser("status", help="Read the script head; this is not an approval receipt.")
+    publish.add_argument("--preflight", required=True, type=Path, help="Project status receipt checked before publication.")
+    status = commands.add_parser("status", help="Read a stage head; this is not an approval receipt.")
     status.add_argument("--case-id", required=True)
+    status.add_argument("--stage", choices=("script", "assets"), default="script")
     asset = commands.add_parser("publish-asset", help="Submit a project image against the approved script.")
     asset.add_argument("--script-publication", required=True, type=Path)
     asset.add_argument("--image", required=True, type=Path)
     for name in ("artifact-id", "ast-id", "output-id", "purpose", "operation-id"):
         asset.add_argument("--" + name, required=True)
     asset.add_argument("--reference-publication", action="append", default=[], type=Path)
+    asset.add_argument("--preflight", type=Path, help="Asset status receipt checked before publication.")
     decision = commands.add_parser("decision", help="Read a submitted decision for the exact published version.")
     decision.add_argument("--publication", required=True, type=Path)
     decision.add_argument("--stage", choices=("script", "assets"), required=True)
@@ -140,7 +231,7 @@ def run(args: argparse.Namespace) -> dict:
         if args.command == "prepare":
             package, source = _source(project, args.narrative)
             output = _path(project, args.output)
-            export_markdown(package, output)
+            export_markdown(package, output, subtitle_review_ids=source["awaiting_subtitle_approval_ids"])
             return {"source_json": source, "markdown": _binding(project, output, output.read_bytes())}
         if args.command in {"publish", "publish-asset"}:
             require_production(project)
@@ -160,12 +251,17 @@ def run(args: argparse.Namespace) -> dict:
             route = "create-case"
         elif args.command == "publish":
             package, source = _source(project, args.narrative)
-            text, markdown = _projection(project, package, args.markdown)
+            text, markdown = _projection(project, package, args.markdown,
+                                         subtitle_review_ids=source["awaiting_subtitle_approval_ids"])
+            if markdown["bytes"] > MAX_TEXT_BYTES:
+                raise AgentReviewError("送审阅读稿超过 100 KiB，请先与审核站确认交付方式。", code="INVALID_INPUT")
             parameters = {"caseId": args.case_id, "stage": "script",
                           "name": Path(args.markdown).name, "operationId": args.operation_id}
             if args.purpose is not None:
                 parameters["purpose"] = args.purpose
             receipt.update(source_json=source, markdown=markdown)
+            receipt["preflight"] = _check_preflight(
+                project, client, args.preflight, case_id=args.case_id, stage="script")
             call = lambda: client.publish(case_id=args.case_id, stage="script", name=parameters["name"],
                                           text=text, operation_id=args.operation_id, purpose=args.purpose)
             route = "publish"
@@ -207,6 +303,10 @@ def run(args: argparse.Namespace) -> dict:
                            script_publication=_path(project, args.script_publication).relative_to(project).as_posix(),
                            reference_publications=[_path(project, path).relative_to(project).as_posix()
                                                    for path in args.reference_publication])
+            if args.preflight:
+                receipt["preflight"] = _check_preflight(
+                    project, client, args.preflight, case_id=case_id, stage="assets",
+                    project_id=script["response"]["projectId"])
             route = "publish-assets"
             call = lambda: client.publish_asset(case_id=case_id, name=image.name, image=raw,
                                                 purpose=args.purpose, operation_id=args.operation_id,
@@ -228,8 +328,8 @@ def run(args: argparse.Namespace) -> dict:
                 return read_decision(client, publication)
             route = "decision"
         else:
-            parameters = {"caseId": args.case_id, "stage": "script"}
-            call = lambda: client.status(case_id=args.case_id, stage="script")
+            parameters = {"caseId": args.case_id, "stage": args.stage}
+            call = lambda: client.status(case_id=args.case_id, stage=args.stage)
             route = "status"
         receipt["request"] = {"method": "GET" if route in {"status", "decision"} else "POST",
                               "path": "/api/agent/review/" + route, "parameters": parameters}
@@ -253,6 +353,9 @@ def run(args: argparse.Namespace) -> dict:
                 raise
             json.dump(receipt, output, ensure_ascii=False, indent=2)
             output.write("\n")
+        if "preflight" in receipt and (
+                receipt["response"].get("projectId") != receipt["preflight"]["response"]["case"]["projectId"]):
+            raise ValueError("发布回执的网站项目与预读不符，已保留回执供核查")
         result = {"receipt": str(receipt_path), "response": receipt["response"]}
         if route == "publish-assets":
             # The durable POST receipt remains usable even if this GET is interrupted.
@@ -261,39 +364,14 @@ def run(args: argparse.Namespace) -> dict:
             result["readback"] = readback
         if website_approval is not None:
             try:
-                from .stage_context_cli import adopt_package
-                from .core.artifacts import artifact_is_adopted, digest, load_manifest
-                from .core.project_state import load_project_state
-                from .core.revision_control import commit_change, show_change
-            except ImportError:
-                from stage_context_cli import adopt_package
-                from core.artifacts import artifact_is_adopted, digest, load_manifest
-                from core.project_state import load_project_state
-                from core.revision_control import commit_change, show_change
-            source = publication["source_json"]
-            artifacts = load_manifest(project)["artifacts"]
-            entry = next((row for row in artifacts if row["artifact_id"] == args.adopt_script_id), None)
-            if entry and entry.get("status") == "current":
-                require_script_approval(project, entry, str(receipt_path), website_approval)
-                if (digest(_path(project, source["path"])) != source["sha256"]
-                        or not artifact_is_adopted(entry, load_project_state(project), project)):
-                    raise ValueError("已采用的编导稿与本次网站通过不一致")
-                if args.change_id and not any(
-                        change.get("change_id") == args.change_id and change.get("status") == "completed"
-                        and (change.get("candidate_receipt") or {}).get("artifact_id") == args.adopt_script_id
-                        for change in show_change(project)["history"]):
-                    raise ValueError("已采用的编导稿不属于指定变更案")
-                result["adoption"] = {"artifact_id": args.adopt_script_id, "already_current": True}
-            elif args.change_id:
-                result["adoption"] = commit_change(project, change_id=args.change_id, website_approval=website_approval)
-            else:
-                if any(row.get("logical_id") == "narrative.package" and row.get("status") in {"current", "stale"}
-                       for row in artifacts):
-                    raise ValueError("编导稿已有正式版本，请登记返修候选并传入 --change-id")
-                result["adoption"] = adopt_package(argparse.Namespace(
-                    project=str(project), logical_id="narrative.package", artifact_id=args.adopt_script_id,
-                    path=source["path"], revision=source["revision"], approval_ref=str(receipt_path),
-                    depends_on=[], scope_description="审核站编导稿整版通过"), website_approval=website_approval)
+                result["adoption"] = _adopt_script(project, publication, receipt_path, args, website_approval)
+            except (OSError, ValueError, TypeError, KeyError) as cause:
+                blocked = _ScriptAdoptionBlocked(cause, args=args, receipt_path=receipt_path, receipt=receipt)
+                try:
+                    write_json(receipt_path, {**receipt, "local_adoption": blocked.report})
+                except OSError:
+                    blocked.report["local_adoption_note_saved"] = False
+                raise blocked from cause
         return result
 
 
@@ -302,6 +380,8 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     try:
         result = run(args)
+    except _ScriptAdoptionBlocked as exc:
+        parser.exit(2, json.dumps(exc.report, ensure_ascii=False) + "\n")
     except AgentReviewError as exc:
         parser.exit(2, "Agent Review failed (" + exc.code + "); check the receipt and remote status before retrying.\n")
     except (OSError, ValueError, TypeError, KeyError):

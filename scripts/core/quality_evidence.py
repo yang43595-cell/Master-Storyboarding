@@ -10,6 +10,7 @@ import hashlib
 import json
 import copy
 import math
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -21,6 +22,7 @@ IMAGE_ASPECTS = ('identity_wardrobe', 'hands_support', 'product_geometry',
 DRAFT_ASPECTS = ('action_chain', 'persistent_objects', 'state_boundaries',
                  'framing', 'timing', 'reference_conflicts', 'packaging_identity')
 PACKAGING_ASPECTS = ('shape_proportions', 'opening_structure', 'color_marks', 'product_version')
+_PROMPT_TIMECODE = re.compile(r'^\s*\d+(?:\.\d+)?\s*[-–—至]\s*\d+(?:\.\d+)?\s*秒\s*[:：]\s*')
 
 
 def fingerprint(value):
@@ -131,12 +133,12 @@ def draft_binding(draft):
     return {key: value for key, value in draft.items() if key != 'quality_evidence'}
 
 
-def validate_draft_evidence(draft):
+def validate_draft_evidence(draft, packaging_requirements=()):
     evidence = draft.get('quality_evidence')
     _observations(evidence, DRAFT_ASPECTS)
     if evidence.get('input_sha256') != fingerprint(draft_binding(draft)):
         raise ValueError('quality_evidence: 正文、参数或有序引用已变化；旧检查失效')
-    validate_packaging_scope(draft)
+    validate_packaging_scope(draft, packaging_requirements)
     return {'verification': 'evidence_consistency_only', 'visual_quality_verified': False}
 
 
@@ -473,7 +475,7 @@ def validate_native_binding_claims(value, root, revision=None, target=None, proj
         elif status not in {None, 'unknown', 'not_bound', 'unverified', 'not_checked', 'stale'}:
             raise ValueError('native_binding: 未识别状态不能冒充已回读')
     # Historical receipts/archives remain data, not current verified claims.
-    for key in ('drafts', 'generation_segments', 'creative_sections'):
+    for key in ('drafts', 'generation_segments', 'creative_sections', 'independent_candidate_ranges'):
         if key in value:
             validate_native_binding_claims(value[key], root, revision, target, project_id)
 
@@ -499,12 +501,12 @@ def source_shot_ids(row):
     return direct if direct is not None else mapped or []
 
 
-def required_visuals(storyboard):
+def required_visuals(storyboard, *, shot_ids=None):
     """Read only explicit director requirements; do not infer them from prose."""
     requirements = {}
     for scene in storyboard.get('scenes', []):
         for shot in scene.get('shots', []):
-            if 'required_visuals' not in shot:
+            if 'required_visuals' not in shot or (shot_ids is not None and shot.get('shot_id') not in shot_ids):
                 continue
             items = shot['required_visuals']
             shot_id = shot['shot_id']
@@ -616,7 +618,8 @@ def validate_required_visuals(rows, requirements, *, shot_order=(), project=None
     by_shot = {}
     for row in rows:
         ids = source_shot_ids(row)
-        body_lines = submitted_prompt_body(row).splitlines() if any(key in requirements for key in ids) else []
+        lines = submitted_prompt_body(row).splitlines() if any(key in requirements for key in ids) else []
+        body_lines = set(lines) | {_PROMPT_TIMECODE.sub('', line) for line in lines}
         for index, shot_id in enumerate(ids):
             by_shot.setdefault(shot_id, []).append((row, index, len(ids), body_lines))
     scoped = set(by_shot)
@@ -760,13 +763,15 @@ def validate_scene_state_coverage(row, needed):
             raise ValueError('scene_state: 新场景状态图待制作/待审或未实际引用，阻止提交；文字保持或假@不代替图片')
 
 
-def validate_scene_source_mapping(rows, sources, project, *, check_submitted_body=False):
+def validate_scene_source_mapping(rows, sources, project, *, check_submitted_body=False, delivery_platform=None):
     """Bind draft shot mapping to byte-checked source segments and director.
 
     sources contains (authority reference, resolved path, decoded JSON). Source
     director links must be present in source_artifacts: omission cannot downgrade
     the state check to a legacy/no-change path.
     """
+    from .web_content import SOURCE_SEGMENT_FIELDS, source_review_segments
+
     videos = []
     video_origins = {}
     all_shots = set()
@@ -774,10 +779,13 @@ def validate_scene_source_mapping(rows, sources, project, *, check_submitted_bod
     has_states = False
     has_packaging = False
     delivery_shots = {shot for row in rows for shot in source_shot_ids(row)}
+    delivery_segment_ids = ({row.get('source_segment_id', row.get('node_id')) for row in rows}
+                            if delivery_platform == 'redframe' else None)
     for ref, path, payload in sources:
         linked_director = False
         if not isinstance(payload, dict):
             continue
+        segments = source_review_segments(payload) if any(key in payload for key in SOURCE_SEGMENT_FIELDS) else []
         for shot_id, items in required_visuals(payload).items():
             if shot_id in visual_requirements and visual_requirements[shot_id] != items:
                 raise ValueError(f'required_visuals: {shot_id} 存在不同来源要求')
@@ -802,26 +810,26 @@ def validate_scene_source_mapping(rows, sources, project, *, check_submitted_bod
                     (upstream.get('sha256') and upstream['sha256'] != r.get('sha256')) or
                     not isinstance(value, dict) or not isinstance(value.get('scenes'), list)):
                 raise ValueError('scene_state: 视频源与导演修订/字节不一致')
-            if rows and ('generation_segments' in payload or 'creative_sections' in payload):
+            if rows and segments:
                 from .generation_boundaries import validate_generation_boundaries
                 validate_generation_boundaries(payload, value, Path(ref.get('project_path', project)),
+                                               delivery_platform=delivery_platform, delivery_segment_ids=delivery_segment_ids,
                                                action_shots=delivery_shots)
                 linked_director = True
-        segments = payload.get('generation_segments')
-        if segments is None and isinstance(payload.get('creative_sections'), list):
-            segments = [s for section in payload['creative_sections'] for s in section.get('generation_segments', [])]
         if segments:
             if rows and not linked_director and isinstance(payload.get('scenes'), list) and payload['scenes']:
                 # Existing composite source snapshots carry their director and
                 # segment mapping in the same byte-checked artifact.
                 from .generation_boundaries import validate_generation_boundaries
                 validate_generation_boundaries(payload, payload, Path(ref.get('project_path', project)),
+                                               delivery_platform=delivery_platform, delivery_segment_ids=delivery_segment_ids,
                                                action_shots=delivery_shots)
                 linked_director = True
             if rows and not linked_director:
                 raise ValueError('generation_boundary: 生成段源必须绑定准确导演，不能删来源绕过分段检查')
             from .generation_boundaries import validate_delivery_parameters
-            validate_delivery_parameters(rows, payload, Path(ref.get('project_path', project)))
+            validate_delivery_parameters(rows, payload, Path(ref.get('project_path', project)),
+                                         platform=delivery_platform)
             video_origins.update({segment['segment_id']: ref for segment in segments})
             videos.extend(segments)
     if any(row.get('source_segment_id') for row in rows) and not videos:

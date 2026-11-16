@@ -9,6 +9,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from scripts.core.candidate_test import configure, context, require_production
+from scripts.core.io import PROJECT_LOCK_RELATIVE
 from scripts.core.project_state import load_project_state, write_project_state
 from scripts.init_desktop_project import initialize
 
@@ -28,8 +29,11 @@ class CandidateStageEntryTests(unittest.TestCase):
         return configure(self.project, 'fixture-run', 'fixture explicit test authorization', [], **kwargs)
 
     def snapshot(self):
+        # Lock acquisition refreshes diagnostic ownership even for rejected
+        # requests. Compare project data independently of that timestamp.
         return {str(p.relative_to(self.project)): p.read_bytes()
-                for p in self.project.rglob('*') if p.is_file()}
+                for p in self.project.rglob('*')
+                if p.is_file() and p != self.project / PROJECT_LOCK_RELATIVE}
 
     def test_explicit_cli_stage_and_handoff_never_approve(self):
         result = self.cli('candidate-test', '--run-id', 'fixture-run', '--authorization-ref',

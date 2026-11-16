@@ -4,10 +4,10 @@
 
 ## 本 Skill 产出须命中的规范（缺即停）
 
-普通图片批次按[隔离准备入口](../../_shared/knowledge-access.md#图片批次的隔离准备)执行；产出前运行 `python scripts/stage_context_cli.py ensure-prepared --project <项目> --skill asset-image-assistant --context-id <本批ID> --actor-id <本批实际执行者> --task-id <本批任务>`，与本批 prepare／阅读登记保持一致。Web 只核本次 task-package，不运行该命令。两种入口均核对下列适用规范；真实缺项按 `skills/_shared/knowledge-access.md` 补齐或报告受影响范围，动态知识与本地规范分开核对：
+普通图片批次按[隔离准备入口](../../_shared/knowledge-access.md#图片批次的隔离准备)执行；产出前运行 `python scripts/stage_context_cli.py ensure-prepared --project <项目> --skill asset-image-assistant --context-id <本批ID> --actor-id <本批实际执行者> --task-id <本批任务>`，与本批 prepare／阅读登记保持一致。普通准备沿本轮启动包读取并登记现有方法。Web 只核本次 task-package，背景固定层的专业方法随场景制作项加载。两种入口均核对下列适用规范；真实缺项按当前普通准备或 Web 入口补齐或报告受影响范围，动态知识与本地规范分开核对：
 
 - **色卡统一风格**（锁整片跨镜头配色）：见 `references/01-style-master-guide.md` 的"整片色彩统一（色卡）"工作流；有 `STYLE_REFERENCE` 或需锁整片配色时必做，它是与背景母版、多角度参考组并列的第三种一致性路线。
-- **图片连续性规则（背景母版 + 多角度参考图组）**：必读 `../storyboard-director/references/image-continuity-hard-rules.md`，不再视为"涉风险才读"；按需用背景母版锁固定层、用多角度参考组锁场景空间。
+- **图片连续性**：核[共用检查](../../storyboard-director/references/image-continuity-hard-rules.md#共用检查)。人物只读对应输出规格和适用的身份引用；做场景时按[背景母版](../references/03-scene-master-guide.md#背景母版与单变量派生)及[多角度覆盖](../references/03-scene-master-guide.md#多角度场景参考组)核固定层和空间。
 - **对应类别 master-guide**：按当前 AST 类别必读 `references/01-style-master-guide.md`（风格/色卡）、`references/02-character-master-guide.md`（人类/人形角色）或 `references/02a-body-character-master-guide.md`（动物/非人形/PET）、`references/03-scene-master-guide.md`（场景）、`references/04-prop-product-master-guide.md`（道具/产品）的对应部分（非可选），把抽象词落成可观察的拍摄/材质/光线条件。
 - **提示词语言合规**：写提示词必读 `../voiceover-to-video-script/references/prompt-language-hard-rules.md` 并以其为准；禁用 影视级/8K/唯美/高级 等炫技含糊词。人物/空间/产品/光线四项连续性分别检查。
 
@@ -26,6 +26,8 @@
 CHARACTER 是叙事角色类别。先按 character_type 选择：人类及人形角色沿用人物身份与服装方法；动物和非人形角色读取 references/02a-body-character-master-guide.md，使用角色外观母版，不套用人类脸部、无头人台及服装拆分要求。普通 prepare 与 Web 均支持 body：按本轮已明确角色类型填写 `asset_method_scopes`，纯非人形启用 body 且不启用 character，只读取非人形指南及共同连续性方法；人类/人形用 character，混合角色两键均启用。普通请求已启用 character 时，显式 `body: false` 排除非人形指南；旧请求仅 `character: true` 继续兼容两类指南，类型未知不凭名称猜测或缩小范围。普通 prepare 不自动扫描 AST，执行者须覆盖当前完整需求；这些条件不改变角色类别或出图授权。所有路线仍执行图片连续性方法、动态提示词规则与用户审图确认。旧版未登记类型保持旧路线；已明确的类型更正写入项目资产需求调整，不改已确认剧情。
 
 ## 本轮要求到实际成图的自查
+
+人物灰模的用法和规格统一见[人物构图](../references/02-character-master-guide.md#九image2-提示词结构)。项目使用[用户确认的三段生图模板](../references/character-layout-prompts.md)作为正文。普通对话和红帧从本批 `task_basis.json` 取对应的 `character_prompt_templates` 正文和 `character_layout_references`。资产网页用同一正文和灰模。原参考在前、灰模在最后。按实际参考槽位补充本轮需求，避免另写整篇通用提示词。灰模只用于生成构图，不登记为已确认资产或下游素材。
 
 自查由完成本批读取、提示词、生成与授权内修正的图片执行者实际完成；沿用现有制作项、候选和审核记录，不另建平行清单。只写独占分配的文件，共用记录由阶段负责人接收准确内容后统一写入。开始、恢复执行及交付前，核对当前有效用户要求、资产需求调整、所用规范版本和授权；上下文摘要只作定位线索，不能替代原文。新执行者、上下文压缩后依据不完整，或要求、用途、版本发生变化时，重读相关持久原文及适用规范（Web 使用当前完整任务包）；同一有效上下文内未变化的材料按共享读取规则复用。不完整或相互冲突的关键依据只阻塞受影响项，不猜填、不报完成。用户最新明确调整按原登记流程生效，优先于通用默认，不取消安全、确认或生成授权门槛。
 

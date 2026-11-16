@@ -33,10 +33,11 @@ test('direction is optional and escaped in each asset editor',()=>{
  assert.match(html,/data-w-direction/);assert.match(html,/米色家居服/);assert.match(html,/生成方向/);
 });
 
-test('prop labels describe the asset instead of only the camera angle',()=>{
+test('prop labels preserve the planned view for generated and reused images',()=>{
  const code=all.slice(all.indexOf('function assetStepLabel('),all.indexOf('function compactStep('));
  const ctx=vm.createContext({});vm.runInContext(code,ctx);
- assert.equal(vm.runInContext("assetStepLabel({kind:'物品',name:'45°',state:''})",ctx),'物品四视图');
+ assert.equal(vm.runInContext("assetStepLabel({kind:'物品',name:'物品四视图 · 常态',generation_enabled:true})",ctx),'物品四视图 · 常态');
+ assert.equal(vm.runInContext("assetStepLabel({kind:'物品',name:'物品原图 · 常态',generation_enabled:false})",ctx),'物品原图 · 常态');
  assert.equal(vm.runInContext("assetStepLabel({kind:'环境',name:'45°'})",ctx),'45°');
 });
 

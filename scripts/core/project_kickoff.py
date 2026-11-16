@@ -1,6 +1,7 @@
 """Read the current production decisions from the existing project request."""
 
 import json
+import math
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -10,7 +11,7 @@ from .product_reference_pack import current_product_pack_revision, resolve_produ
 REQUEST_PATH = Path("00_项目管理/project_request.json")
 REDFRAME_MODEL = "Seedance 2.5"
 PRODUCT_MODES = {"none", "retain", "replace", "insert"}
-IMAGE_PROVIDERS = {"imagegen", "dreamina"}
+IMAGE_PROVIDERS = {"imagegen", "dreamina", "chatgpt", "redframe"}
 IMAGE_SCOPES = ("required_asset_outputs", "required_assets_and_supplements")
 
 _CREATOR_MASK_ID = "creator-polishing-mask-2"
@@ -31,6 +32,42 @@ def _normalize_product_id(record):
 
 def _text(value):
     return isinstance(value, str) and bool(value.strip())
+
+
+def _positive_seconds(value):
+    if type(value) not in (int, float) or value <= 0:
+        return None
+    try:
+        return value if math.isfinite(value) else None
+    except OverflowError:
+        return None
+
+
+def product_demo_timing_advisory(kickoff):
+    """Compare a confirmed target window with a referenced estimate."""
+    if not kickoff or kickoff["product"].get("product_usage") != "real_use":
+        return None
+    creation = kickoff.get("creation")
+    if not isinstance(creation, dict):
+        return None
+    timing = creation.get("product_demo_timing")
+    if not isinstance(timing, dict):
+        return None
+
+    window = _positive_seconds(timing.get("target_seconds"))
+    if window is None or not _text(timing.get("decision_ref")):
+        return None
+
+    report = {"window_seconds": window, "window_source": "confirmed"}
+    estimate = _positive_seconds(timing.get("estimated_minimum_seconds"))
+    basis = timing.get("estimate_basis")
+    if estimate is None or not _text(basis):
+        return {**report, "status": "unchecked", "reason": "missing_estimate_or_basis"}
+
+    conflict = estimate > window and not math.isclose(estimate, window, rel_tol=0, abs_tol=1e-6)
+    return {**report, "status": "conflict" if conflict else "fits",
+            "estimated_minimum_seconds": estimate, "estimate_basis": basis.strip(),
+            "shortfall_seconds": round(estimate - window, 6) if conflict else 0}
 
 
 def load_kickoff(project):
@@ -83,20 +120,21 @@ def validate_kickoff(kickoff, *, for_registration=False):
     if for_registration and isinstance(canvas, dict) and canvas.get("platform") == "redframe":
         canvas = {"aspect_ratio": "9:16", "resolution": "480p", **canvas, "model": REDFRAME_MODEL}
         kickoff = {**kickoff, "canvas": canvas}
-    if not isinstance(canvas, dict) or not all(_text(canvas.get(key)) for key in (
-        "platform", "model", "aspect_ratio", "resolution"
-    )):
-        raise ValueError("开工画布须登记平台、模型、画幅和分辨率")
-    if canvas.get("target_url") is not None:
-        url = urlsplit(canvas["target_url"] if _text(canvas["target_url"]) else "")
-        if url.scheme not in {"https", "http"} or not url.hostname or url.username or url.password:
-            raise ValueError("开工画布 target_url 必须是准确 HTTP(S) 地址")
-    if canvas.get("target_project_id") is not None and not _text(canvas["target_project_id"]):
-        raise ValueError("画布项目 ID 无效")
-    if canvas.get("target_url") is None and canvas.get("create_new") is not True:
-        raise ValueError("须登记准确画布地址或明确新建")
-    if canvas["platform"] == "xiaoyunque" and canvas["resolution"].lower() != "480p":
-        raise ValueError("小云雀画布须采用 480p")
+    if "canvas" in kickoff:
+        if not isinstance(canvas, dict) or not all(_text(canvas.get(key)) for key in (
+            "platform", "model", "aspect_ratio", "resolution"
+        )):
+            raise ValueError("画布须登记平台、模型、画幅和分辨率")
+        if canvas.get("target_url") is not None:
+            url = urlsplit(canvas["target_url"] if _text(canvas["target_url"]) else "")
+            if url.scheme not in {"https", "http"} or not url.hostname or url.username or url.password:
+                raise ValueError("画布 target_url 必须是准确 HTTP(S) 地址")
+        if canvas.get("target_project_id") is not None and not _text(canvas["target_project_id"]):
+            raise ValueError("画布项目 ID 无效")
+        if canvas.get("target_url") is None and canvas.get("create_new") is not True:
+            raise ValueError("须登记准确画布地址或明确新建")
+        if canvas["platform"] == "xiaoyunque" and canvas["resolution"].lower() != "480p":
+            raise ValueError("小云雀画布须采用 480p")
     generation = kickoff.get("image_generation")
     if generation is not None:
         if not isinstance(generation, dict):

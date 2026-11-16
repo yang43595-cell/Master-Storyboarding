@@ -4,6 +4,7 @@ import hashlib
 import re
 import sys
 from core.character_assets import production_kinds
+from core.character_layout import CHARACTER_PROMPT_PATH, render_character_prompt
 from core.image_technical import technical_check
 from core.knowledge_runtime import resolve_knowledge_root, verify_selected_file
 from pathlib import Path
@@ -36,7 +37,21 @@ def language_issues(prompt):
     return ['PROMPT-LANG：将含糊画质词改为可观察描述：' + '、'.join(dict.fromkeys(terms))] if terms else []
 
 
+def _output_kinds(kind, rows):
+    if not rows:
+        return [kind]
+    kinds = []
+    for row in rows:
+        requirement = row['requirement']
+        try:
+            kinds.append(production_kinds(requirement)[0])
+        except KeyError as exc:
+            raise ValueError('资产 Skill 未提供此 AST 类别：' + str(requirement.get('category'))) from exc
+    return kinds
+
+
 def local_references(kind, request=None):
+    rows = request.get('rows', []) if request else []
     common = ['docs/rules/execution.md', 'docs/rules/artifacts.md',
         'docs/rules/visual-production.md', 'PROJECT_RULES.md', 'skills/asset-image-assistant/SKILL.md',
         'skills/asset-image-assistant/modules/library-mode.md',
@@ -54,18 +69,15 @@ def local_references(kind, request=None):
         'skills/voiceover-to-video-script/references/prompt-language-hard-rules.md']
     common += ['skills/_shared/' + name + '.md' for name in
                ['skill-layers', 'draft-lifecycle', 'product-reference', 'path-delivery', 'user-confirmation', 'knowledge-access', 'prompt-language']]
-    if not request or not request.get('rows'):
-        common.append('skills/asset-image-assistant/references/' + recipe(kind)['guide'])
+    # Continuity rules specific to a kind come from its existing category guide.
+    common.extend('skills/asset-image-assistant/references/' + recipe(output_kind)['guide']
+                  for output_kind in _output_kinds(kind, rows))
     if request and request.get('mode') == 'project':
         common.remove('skills/asset-image-assistant/modules/library-mode.md')
+        if any(record.get('layout_only') for record in request.get('reference_records', [])):
+            common.append(CHARACTER_PROMPT_PATH.relative_to(ROOT).as_posix())
         common.append('skills/asset-image-assistant/modules/project-web-mode.md')
-        kinds = profile()['category_kinds']
-        for row in request.get('rows', []):
-            category = row['requirement']['category']
-            if category not in kinds:
-                raise ValueError('资产 Skill 未提供此 AST 类别：' + category)
-            common.append('skills/asset-image-assistant/references/' + recipe(production_kinds(row['requirement'])[0])['guide'])
-    if request and not request.get('rows'):
+    if request and not rows:
         # Planning and export contracts do not govern writing one image prompt.
         excluded = {'00-asset-production-workflow.md', '00a-asset-complexity-routing-guide.md',
                     '05-asset-manifest-handoff-guide.md', 'project-web-mode.md', 'library-mode.md',
@@ -76,8 +88,7 @@ def local_references(kind, request=None):
 
 def method_request(request):
     """Derive applicability from actual output kinds/AST rows, never free-text keywords."""
-    kinds = [request['kind']] if not request.get('rows') else [
-        production_kinds(row['requirement'])[0] for row in request['rows']]
+    kinds = _output_kinds(request['kind'], request.get('rows'))
     scopes = {recipe(kind)['method_scope']: True for kind in kinds}
     return {**request, 'asset_method_scopes': scopes,
             'knowledge_topics': ['image-prompt', 'prompt-pollution'],
@@ -99,13 +110,22 @@ def _knowledge(request):
     knowledge_profile = json.loads((SKILL / 'knowledge-profile.json').read_text(encoding='utf-8'))
     if knowledge_profile.get('skill') != 'asset-image-assistant':
         raise ValueError('资产 Skill 知识配置身份不匹配')
+    scopes = request['asset_method_scopes']
+    if not scopes.get('scene'):
+        # Keep the ordinary prepare profile intact. Web has an explicit output-kind scope.
+        entries = knowledge_profile.get('professional_methods')
+        if isinstance(entries, list):
+            knowledge_profile['professional_methods'] = [
+                entry for entry in entries
+                if not isinstance(entry, dict) or entry.get('id') != 'IMAGE-CONTINUITY-METHOD']
     state = _state_summary(_state(Path(request['project_path']))) if request.get('mode') == 'project' else {}
     resolved = resolve_method_documents(vault, knowledge_profile,
         {'skill': 'asset-image-assistant', 'request': request, 'project_state': state})
-    expected = set(profile()['required_methods'])
-    # Body anatomy uses the local body-character guide, not the Vault human clothing method.
-    # IMAGE-CONTINUITY-METHOD and the dynamic prompt rules still apply to every recipe.
-    expected.update('ASSET-' + scope.upper() + '-METHOD' for scope in request['asset_method_scopes'] if scope != 'body')
+    # Body anatomy uses its local guide. The fixed-background method belongs to scenes.
+    expected = {'ASSET-' + scope.upper() + '-METHOD' for scope, enabled in scopes.items()
+                if enabled and scope != 'body'}
+    if scopes.get('scene'):
+        expected.add('IMAGE-CONTINUITY-METHOD')
     pending = [entry['id'] for entry in resolved.pending
                if entry['id'] in expected and entry['reason'] == 'awaiting_user_confirmation']
     if pending:
@@ -187,6 +207,12 @@ def _template_excerpt(raw, kind, view='', index=None):
 def executable_template(kind, subject='', notes='', *, raw='', view='', index=None,
                         allow_unreferenced_design=False, reference_records=(), has_references=True):
     """Render the same bounded template for the seed and the model's task package."""
+    if reference_records and reference_records[-1].get('layout_only'):
+        if raw and Path(raw).resolve() != CHARACTER_PROMPT_PATH:
+            raise ValueError('人物灰模的提示词须使用项目已确认模板')
+        body = render_character_prompt(kind, reference_records)
+        return {'path': str(CHARACTER_PROMPT_PATH), 'sha256': _digest(CHARACTER_PROMPT_PATH.read_text(encoding='utf-8')),
+                'content': body, 'content_sha256': _digest(body), 'status': 'loaded'}
     template = _template_excerpt(raw, kind, view, index)
     if template['status'] != 'loaded':
         return template
@@ -236,13 +262,27 @@ def executable_template(kind, subject='', notes='', *, raw='', view='', index=No
 
 
 def _writing_rules(ref, content, single_item):
-    """Remove named non-writing sections; all other source text passes through verbatim."""
+    """Select the applicable sections without rewriting their source text."""
+    if ref == 'skills/_shared/knowledge-access.md':
+        required = {'## 制作的仓库知识根', '## 读取与执行开销', '## 压缩后的主动恢复核对'}
+        sections = {}
+        for section in re.split(r'(?m)(?=^## )', content):
+            heading, _, body = section.partition('\n')
+            if heading in required and body.strip():
+                sections[heading] = section
+        missing = required - sections.keys()
+        if missing:
+            raise ValueError('资产 Web 知识读取合同缺少正文：' + '、'.join(sorted(missing)))
+        return ''.join(sections.values())
     omitted = {
         'docs/rules/artifacts.md': {'JSON 交付与按需导出', '确认范围'},
         'docs/rules/visual-production.md': {'导演稿之后的生产顺序'},
         'skills/asset-image-assistant/SKILL.md': {'后续交接'},
-        'skills/_shared/knowledge-access.md': {'局部维护边界', '读取与执行开销'},
     }.get(ref, set()) if single_item else set()
+    if ref == 'skills/storyboard-director/references/image-continuity-hard-rules.md':
+        omitted = {'按任务读取'}
+    elif ref == 'docs/rules/execution.md':
+        omitted = {'等待与工具回传'}
     if not omitted:
         return content
     parts = re.split(r'(?m)(?=^## )', content)
@@ -285,11 +325,13 @@ def build_task_package(request, refs=None, startup_text='', methods=()):
                    **({'template_path': m.template_path, 'template_sha256': m.template_checksum,
                        'template_content': m.template_content} if m.template_path else {})} for m in methods]}
     if not request.get('rows'):
+        actual_paths = set(request.get('reference_paths', [])) - {
+            record['original'] for record in request.get('reference_records', []) if record.get('layout_only')}
         template = executable_template(request['kind'], request.get('subject', request.get('requirement', {}).get('name', '')),
             request.get('template_notes', ''), raw=request.get('template_source', ''), view=request.get('view', ''),
             index=request.get('index') if request.get('mode', 'asset-library') == 'asset-library' else None,
             allow_unreferenced_design=request.get('allow_unreferenced_design', False),
-            reference_records=request.get('reference_records', []), has_references=bool(request.get('reference_paths')))
+            reference_records=request.get('reference_records', []), has_references=bool(actual_paths))
         if request['kind'] == '环境' and template['status'] == 'loaded' and not request.get('reference_paths'):
             raise ValueError('场景派生模板需要参考母图；首张场景请使用分类指南')
         if template['status'] == 'category-guide':

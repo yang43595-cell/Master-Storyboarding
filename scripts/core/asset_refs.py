@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import hashlib
 import json
 import re
 import sys
@@ -37,6 +38,8 @@ IMPACT_DIR = "04_资产/变更影响"
 ASSET_TABLE = "04_资产/当前资产需求表.md"
 MASTER_DIR = "04_资产/母版"
 OUTPUT_DECISIONS = "00_项目管理/资产输出适用决定.json"
+PROP_BUILD_VIEW = "正面、左侧、背面、俯视四视图"
+PROP_REUSE_VIEW = "原图视角"
 SCAN_GLOBS = ("03_导演/*.md", "03_导演/*.json", "05_分镜/*.md", "05_分镜/**/*.json", "06_视频/*.md", "06_视频/**/*.json")
 
 # 图片之外的别名，只用于“恢复／新增资产后应补引用”的建议检索。
@@ -174,7 +177,51 @@ def _apply_output_decisions(root: Path, images: dict[str, dict]) -> None:
             image["availability_reason"] = "all_confirmed_outputs_rejected"
 
 
-def _confirmed_output(root: Path, asset_id: str, output: dict) -> dict | None:
+def _confirmation_evidence(path: Path, cache: dict) -> tuple[dict | None, dict]:
+    if path in cache:
+        return cache[path]
+    try:
+        receipt = _read(path)
+    except (OSError, ValueError):
+        receipt = None
+    receipt = receipt if isinstance(receipt, dict) else None
+    indexed = {}
+    items = receipt.get("items") if receipt is not None else None
+    for item in items if isinstance(items, list) else ():
+        if not isinstance(item, dict) or not isinstance(confirmation := item.get("confirmation"), dict):
+            continue
+        asset_id, output_id, fragment = item.get("ast_id"), item.get("output_id"), confirmation.get("id")
+        if not isinstance(asset_id, str) or not isinstance(fragment, str):
+            continue
+        keys = [(asset_id, fragment)]
+        if output_id is None or isinstance(output_id, str):
+            keys.append((asset_id, output_id, fragment))
+        for key in keys:
+            # Duplicate exact matches are ambiguous even if the records agree.
+            indexed[key] = None if key in indexed else confirmation
+    cache[path] = receipt, indexed
+    return receipt, indexed
+
+
+def legacy_prop_reuse_label(output: dict, receipt: dict) -> bool:
+    """Recognize the old reuse planner's layout label from its confirmed selection."""
+    if (output.get("output_kind", output.get("kind")) != "物品"
+            or output.get("view") != PROP_BUILD_VIEW
+            or not re.fullmatch(r"state\d+_view0", str(output.get("output_id") or output.get("key") or ""))
+            or output.get("purpose") != f"{output.get('state')} · 主图"
+            or not receipt.get("image_sha256")):
+        return False
+    check = receipt.get("technical_qc")
+    if not isinstance(check, dict) or check.get("passed") is not True:
+        return False
+    # Reuse recorded the exact pixel dimensions as the expected ratio;
+    # four-view production recorded the literal recipe ratio 16:9.
+    ratio = f"{check.get('width')}:{check.get('height')}"
+    return ratio != "16:9" and re.fullmatch(r"[1-9]\d*:[1-9]\d*", ratio) is not None and check.get("expected_ratio") == ratio
+
+
+def _confirmed_output(root: Path, asset_id: str, output: dict, *, confirmation_cache=None,
+                      display_label=False) -> dict | None:
     """Return one explicitly confirmed output, or None when its evidence is incomplete.
 
     Candidates are deliberately absent here.  A confirmation record can be concise, but
@@ -191,23 +238,17 @@ def _confirmed_output(root: Path, asset_id: str, output: dict) -> dict | None:
     receipt_path, fragment = _confirmation_file(root, reference)
     if receipt_path is None:
         return None
-    try:
-        receipt = _read(receipt_path)
-    except (OSError, ValueError, json.JSONDecodeError):
-        return None
-    if not isinstance(receipt, dict):
+    receipt, indexed = _confirmation_evidence(receipt_path, {} if confirmation_cache is None else confirmation_cache)
+    if receipt is None:
         return None
     items = receipt.get("items")
     if isinstance(items, list) and items:
-        matched = [item for item in items if isinstance(item, dict)
-            and item.get("ast_id") == asset_id
-            and item.get("output_id") == output.get("output_id")
-            and isinstance(item.get("confirmation"), dict)
-            and item["confirmation"].get("id") == fragment
-        ]
-        if len(matched) != 1:
+        output_id = output.get("output_id")
+        if output_id is not None and not isinstance(output_id, str):
             return None
-        image_receipt = matched[0]["confirmation"]
+        image_receipt = indexed.get((asset_id, output_id, fragment))
+        if image_receipt is None:
+            return None
     elif isinstance(receipt.get("images"), list):
         # Legacy scene selection receipts identify every selected image directly.
         # The fragment is the image/output ID in that record, so require all
@@ -236,17 +277,47 @@ def _confirmed_output(root: Path, asset_id: str, output: dict) -> dict | None:
         "output_id": output.get("output_id"),
         "purpose": output.get("purpose"),
         **({"output_kind": output["output_kind"]} if "output_kind" in output else {}),
-        "view": output.get("view"),
+        "view": PROP_REUSE_VIEW if display_label and legacy_prop_reuse_label(output, image_receipt) else output.get("view"),
         "state": output.get("state"),
         "candidate_id": output.get("candidate_id"),
         "path": str(image_path),
         "confirmation_ref": reference,
+        **({"sha256": image_receipt["image_sha256"]} if "image_sha256" in image_receipt else {}),
         "confirmed_at": str(receipt.get("at") or ""),
         "path_exists": True,
     }
 
 
-def _legacy_confirmed_output(root: Path, asset: dict) -> dict | None:
+def registered_output_snapshot(root: Path, entry: dict) -> dict[tuple[str, str], dict] | None:
+    """Read exact confirmed output identities from one byte-bound asset export."""
+    if entry.get('logical_id') != 'visual.asset.manifest' or entry.get('type') != 'visual-asset-manifest':
+        return None
+    try:
+        path = project_path(root, entry['path_or_url'])
+        if not path.is_relative_to(root.resolve()) or not entry.get('checksum'):
+            return None
+        raw = path.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != entry['checksum']:
+            return None
+        outputs = {}
+        confirmation_cache = {}
+        for asset in json.loads(raw.decode('utf-8-sig'))['assets']:
+            if asset.get('status') != 'confirmed':
+                return None
+            for output in asset['confirmed_outputs']:
+                key = (asset['asset_id'], output['output_id'])
+                selected = _confirmed_output(root, key[0], output, confirmation_cache=confirmation_cache)
+                if (key in outputs or not all(isinstance(value, str) and value for value in key)
+                        or not selected or not selected.get('sha256')
+                        or not Path(selected['path']).is_relative_to(root.resolve())):
+                    return None
+                outputs[key] = selected
+        return outputs
+    except (AttributeError, KeyError, OSError, TypeError, ValueError):
+        return None
+
+
+def _legacy_confirmed_output(root: Path, asset: dict, confirmation_cache: dict) -> dict | None:
     """Project a trustworthy pre-2.0 confirmed_asset into one main output."""
     asset_id = asset.get("asset_id")
     selected = asset.get("confirmed_asset")
@@ -270,25 +341,18 @@ def _legacy_confirmed_output(root: Path, asset: dict) -> dict | None:
     receipt_path, fragment = _confirmation_file(root, reference)
     if not candidate_matches or receipt_path is None or not fragment:
         return None
-    try:
-        receipt = _read(receipt_path)
-    except (OSError, ValueError, json.JSONDecodeError):
-        return None
-    items = receipt.get("items") if isinstance(receipt, dict) else None
-    matched = [item for item in (items if isinstance(items, list) else []) if isinstance(item, dict)
-        and item.get("ast_id") == asset_id
-        and isinstance(item.get("confirmation"), dict)
-        and item["confirmation"].get("id") == fragment
-    ]
-    if len(matched) != 1:
+    receipt, indexed = _confirmation_evidence(receipt_path, confirmation_cache)
+    image_receipt = indexed.get((asset_id, fragment))
+    if receipt is None or image_receipt is None:
         return None
     try:
-        verify_image_confirmation(image_path, matched[0]["confirmation"])
+        verify_image_confirmation(image_path, image_receipt)
     except (ValueError, OSError):
         return None
     return {
         "output_id": "legacy-main", "purpose": "legacy-main", "view": "legacy-main", "state": "",
         "candidate_id": candidate_id, "path": str(image_path), "confirmation_ref": reference,
+        **({"sha256": image_receipt["image_sha256"]} if "image_sha256" in image_receipt else {}),
         "confirmed_at": str(receipt.get("at") or ""), "path_exists": True,
     }
 
@@ -307,6 +371,7 @@ def confirmed_images(root: Path) -> dict[str, dict]:
     if not master.is_dir():
         return result
     registrations: dict[Path, list[dict]] = {}
+    confirmation_cache = {}
     for entry in load_manifest(root).get("artifacts", []):
         path_text = entry.get("path_or_url")
         if isinstance(path_text, str) and path_text:
@@ -349,13 +414,13 @@ def confirmed_images(root: Path) -> dict[str, dict]:
             if not current_manifest or asset.get("status") != "confirmed":
                 continue
             outputs = [item for item in (
-                _confirmed_output(root, asset_id, output)
+                _confirmed_output(root, asset_id, output, confirmation_cache=confirmation_cache, display_label=True)
                 for output in asset.get("confirmed_outputs", [])
                 if isinstance(output, dict)
             ) if item is not None]
             selected = asset.get("confirmed_asset")
             if "confirmed_outputs" not in asset:
-                legacy = _legacy_confirmed_output(root, asset)
+                legacy = _legacy_confirmed_output(root, asset, confirmation_cache)
                 outputs = [legacy] if legacy else []
             if not outputs:
                 continue
@@ -439,18 +504,24 @@ def load_asset_list(root: Path, narrative: dict | None = None, choices: dict | N
 
 
 def current_narrative(root: Path) -> dict:
-    """读取权威：唯一已确认的 narrative.package，绝不按文件名猜最新稿。"""
+    """读取权威：唯一已确认或已按流程授权正式采用的 narrative.package，绝不按文件名猜最新稿。
+
+    依据二选一：(a) artifact_is_confirmed——user_approved 且有整稿确认回执；
+    (b) artifact_is_adopted 的 agent 验收分支——status=current、agent_acceptance
+    记录完整且经 validate_agent_acceptance 复核（绑定授权 active 且覆盖该产物
+    对应阶段）。两者都不把采用冒充成用户确认。
+    """
     manifest = load_manifest(root)
     state = load_project_state(root)
     entries = [entry for entry in manifest.get("artifacts", [])
                if entry.get("logical_id") == "narrative.package" and entry.get("status") == "current"]
     if (len(entries) != 1 or entries[0].get("artifact_id") not in state["current_artifacts"]
-            or not artifact_is_confirmed(entries[0], state, root)):
+            or not artifact_is_adopted(entries[0], state, root)):
         raise ValueError(
-            "当前资产清单只认唯一且已确认的 narrative.package，"
+            "当前资产清单只认唯一且已确认或已按流程授权采用的 narrative.package，"
             f"现在清单里符合的条目为 {len(entries)} 条；不按文件名猜最新稿。"
             "请先确认编导稿并登记该产物，再核对 "
-            "00_项目管理/artifact_manifest.json 与 00_项目管理/project_state.json 的确认记录。"
+            "00_项目管理/artifact_manifest.json 与 00_项目管理/project_state.json 的确认/采用记录。"
         )
     path = project_path(root, entries[0].get("path_or_url", ""))
     if not path.is_file():
@@ -617,6 +688,8 @@ def _requested_output(item: dict, request: str) -> tuple[dict | None, str | None
     ) if output.get("output_id") == output_id]
     if not matches:
         return None, f"未找到已确认输出 {output_id}"
+    if len(matches) != 1:
+        return None, f"确认输出 {output_id} 不唯一"
     output = matches[0]
     applicability = output.get("applicability") or {}
     if applicability.get("status") == "unavailable":
@@ -700,68 +773,89 @@ def check_output_plan(root: Path, request: dict, *, candidate_test_mode: bool = 
     return requirements
 
 
-def require_final_images(root: Path, requests: list[str]) -> tuple[bool, list[str]]:
-    """Check only this delivery scope, retaining ordinary confirmation/file checks."""
+def _required_images(root: Path, requests: list[str], *, final: bool = False) -> tuple[dict[str, dict], list[str]]:
+    """Validate and resolve selections in the same read of the current asset list."""
+    from .revision_control import guard_action
     try:
-        requirements = character_output_contract(root, requests)
-        images = confirmed_images(root) if requirements else {}
-        problems = final_output_problems(requirements, requests,
-                                        {ast: image.get("outputs", []) for ast, image in images.items()})
-        # A bare AST means all registered finals; never demand intermediate build files.
+        guard_action(root, logical_ids=['narrative.package', 'visual.asset.manifest'])
+    except ValueError as exc:
+        return {}, [str(exc)]
+    index = asset_index(load_asset_list(root))
+    selected = {}
+    problems = []
+    requirements = character_output_contract(root, requests) if final else {}
+    if requirements:
+        problems.extend(final_output_problems(requirements, requests, {
+            ast: item.get("image", {}).get("outputs", []) for ast, item in index.items()
+        }))
+        # A bare AST means all registered final outputs, not intermediate build files.
         expanded = []
         for request in requests:
             ast, marker, _ = request.partition("@")
             expanded.extend([ast + "@" + output for output in requirements[ast]]
                             if not marker and ast in requirements else [request])
-        ok, ordinary = require_images(root, expanded)
-        problems.extend(ordinary)
-        if ok and not problems:
-            for request in dict.fromkeys(expanded):
-                ast, _, final_id = request.partition("@")
-                if final_id not in requirements.get(ast, {}):
-                    continue
-                output = next(item for item in images[ast]["outputs"] if item["output_id"] == final_id)
-                if issue := character_board_image_problem(output["path"]):
-                    problems.append(f"{request}：{issue}")
-        return ok and not problems, problems
-    except ValueError as exc:
-        return False, [str(exc)]
-
-
-def require_images(root: Path, asset_ids: list[str]) -> tuple[bool, list[str]]:
-    from .revision_control import guard_action
-    try:
-        guard_action(root, logical_ids=['narrative.package', 'visual.asset.manifest'])
-    except ValueError as exc:
-        return False, [str(exc)]
-    asset_list = load_asset_list(root)
-    index = asset_index(asset_list)
-    problems = []
-    for request in asset_ids:
-        asset_id = request.partition("@")[0]
+        requests = expanded
+    for request in dict.fromkeys(requests):
+        asset_id, marker, output_id = request.partition("@")
         item = index.get(asset_id)
-        for decision_issue in _decision_issues_for_request(root, request):
-            problems.append(f"{asset_id}：{decision_issue}")
+        for issue in _decision_issues_for_request(root, request):
+            problems.append(f"{asset_id}：{issue}")
         if item is None:
             problems.append(f"{asset_id}：不在当前资产清单中，先登记需求")
-        elif item["state"] != "needs_image":
+            continue
+        if item["state"] != "needs_image":
             problems.append(f"{asset_id}：状态 {item['state']}，不得放进素材清单")
-        elif "@" in request:
+            continue
+        image = item.get("image", {})
+        if marker:
             output, issue = _requested_output(item, request)
             if issue:
                 problems.append(f"{asset_id}：{issue}")
             elif not output.get("path_exists"):
                 problems.append(f"{asset_id}：选中的确认图片不存在：{output.get('path')}")
-        elif item.get("image", {}).get("status") == "unavailable":
-            rejected_count = len(item.get("image", {}).get("unavailable_outputs", []))
+            else:
+                if output_id in requirements.get(asset_id, {}):
+                    if issue := character_board_image_problem(output["path"]):
+                        problems.append(f"{request}：{issue}")
+                selected[request] = {**output, "manifest": image.get("manifest")}
+        elif image.get("status") == "unavailable":
+            rejected_count = len(image.get("unavailable_outputs", []))
             problems.append(
                 f"{asset_id}：没有当前项目可用的确认输出"
                 f"（{rejected_count} 个已确认输出均被明确拒用）"
             )
-        elif item.get("image", {}).get("status") != "confirmed":
+        elif image.get("status") != "confirmed":
             problems.append(f"{asset_id}：没有已确认母版图片，禁止放进素材清单（引用空白图）")
-    return not problems, problems
+    return selected, problems
 
+
+def require_final_images(root: Path, requests: list[str]) -> tuple[bool, list[str]]:
+    """Check only this delivery scope, retaining ordinary confirmation/file checks."""
+    try:
+        _, problems = _required_images(root, requests, final=True)
+        return not problems, problems
+    except ValueError as exc:
+        return False, [str(exc)]
+
+
+def resolve_final_images(root: Path, requests: list[str]) -> dict[str, dict]:
+    """Resolve explicit AST@OUTPUT bindings for delivery through the ordinary gate."""
+    if any(not re.fullmatch(r"[^@]+@[^@]+", request) for request in requests):
+        raise ValueError("正式素材必须指定准确 AST@输出")
+    if not requests:
+        return {}
+    selected, problems = _required_images(root, requests, final=True)
+    if problems:
+        raise ValueError("；".join(problems))
+    for request, output in selected.items():
+        if not output.get("sha256"):
+            raise ValueError(f"{request}：确认记录没有绑定图片字节")
+    return selected
+
+
+def require_images(root: Path, asset_ids: list[str]) -> tuple[bool, list[str]]:
+    _, problems = _required_images(root, asset_ids)
+    return not problems, problems
 
 
 def require_references(root: Path, artifact_ids: list[str], shot_ids: list[str] | None = None) -> tuple[bool, list[str]]:

@@ -30,7 +30,7 @@
 
 原片改字走上述 `authorized_revision` + `editorial_proposal`。删除/换序只在同一记录可选 `source_changes[]` 留精确映射：`action: delete` + `dialogue_id`，或 `action: reorder` + 完整剩余原片 `dialogue_ids` 顺序；每项带真实授权 `reference`、`scope`、`reason`，不删除原始证据。缺授权不通过，空引用/布尔“已授权”不通过；引用真实性仍须执行者核对。
 
-完整稿以 `dialogue_evidence_path` 和 `dialogue_evidence_sha256` 绑定审核记录，审核表、叙事包及正文的对白、说话人、段落和顺序须一致。候选整稿走[编导送审入口](../SKILL.md#本轮执行-sop)，该校验仅允许上段所述的待审定措辞。原片保真对白缺核验、说话人不明、授权或来源缺失时，仍须查实。正式采用须有覆盖该准确版本和范围的真实人工批准，按项目规则记录。网站发布或版本回读只说明送审状态，批准回执未能实际取得时保留待审。历史无绑定包只作一致性检查。显式 `candidate_test` 保留隔离试跑及现有生产阻塞。
+完整稿以 `dialogue_evidence_path` 和 `dialogue_evidence_sha256` 绑定审核记录，审核表、叙事包及正文的对白、说话人、段落和顺序须一致。候选整稿走[编导送审入口](../SKILL.md#本轮执行-sop)。除上述待审定措辞，用户明确要求以硬字幕为准时，可在开工记录 `creation.dialogue_review_basis` 登记 `hard_subtitle_with_whole_script_review`。原片对白须逐字绑定有指针的硬字幕来源，分页按有序证据拼接；无冲突且有具体候选说话人的条目可标明待核、随准确整稿首次送审。送审阅读稿列出待核对白 ID，审稿时同时核对白和归属。无来源、来源冲突、归属不明或虚构精确时码仍阻塞。不把送审或整稿批准写成逐句听核；正式采用仍须真实、准确版本的整稿人工通过，候选试跑不得使用该入口。
 
 仅做对白先行核对或诊断某份审核记录时，可运行 `python -m scripts.core.story_sources --project <项目> --dialogue-review <审核记录>`。完整叙事包校验已包含审核记录的校验。
 

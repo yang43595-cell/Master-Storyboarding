@@ -8,6 +8,8 @@ from urllib.parse import urlsplit
 from .artifacts import project_path, load_manifest
 from .io import sha256_file
 from .media_types import LOCAL_REFERENCE_EXTENSIONS
+from .product_reference_pack import resolve_product_pack
+from .project_kickoff import load_kickoff
 from .quality_evidence import IMAGE_ASPECTS
 
 # Conservative transfer budget for this workflow, not a universal platform limit.
@@ -59,8 +61,10 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
                           json_projections=None):
     """Follow selected JSON path fields and exact manifest IDs, never scan prose.
 
-    Paths are project-relative, as in artifact manifests; external absolute paths
-    need explicit roots. Only selected reachable JSON is read (cycles deduped).
+    Paths are project-relative, as in artifact manifests. External inputs need
+    explicit roots or an exact reference from the selected product pack.
+    Original Whisper transcripts can record their source media as a sibling filename.
+    Only selected reachable JSON is read (cycles deduped).
     Other document formats are checked as bytes, not parsed for more references.
     """
     project = Path(project).resolve()
@@ -75,6 +79,9 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
     # Internal consumers may select an exact node from a historical snapshot.
     # The original bytes remain checked; never expose projections as CLI input.
     projections = json_projections or {}
+    product_pack = None
+    pinned_files = {}
+    pack_evidence = {}
 
     def error(location, message):
         report['errors'].append(f'{location}: {message}')
@@ -135,14 +142,26 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
         if re.match(r'^[a-zA-Z][a-zA-Z0-9+.-]*://', raw):
             report['uncheckable'].append(f'{location}: remote reference cannot be checked locally: {raw}')
             return
-        errors = validate_required_files(project, [raw], input_roots)
+        path = _local_reference_path(project, raw)
+        manifest_file = product_pack and path == Path(product_pack['manifest_path'])
+        if path in pack_evidence:
+            if path not in seen_files:
+                if not path.is_file() or not path.stat().st_size:
+                    error(location, 'product pack evidence missing or empty')
+                    return
+                if sha256_file(path) != pack_evidence[path]:
+                    error(location, 'product pack evidence hash differs from actual bytes')
+                    return
+            resolve_manifest = follow_json = False
+        errors = [] if path in pinned_files or path in pack_evidence else validate_required_files(project, [raw], input_roots)
         if errors:
             report['errors'].extend(f'{location}: {e}' for e in errors)
             return
-        path = _local_reference_path(project, raw)
         if path not in seen_files:
             seen_files.add(path)
             report['checked_files'].append(str(path))
+        if verify_hashes and (path in pinned_files or path in pack_evidence):
+            hash_checked.add(str(path))
         # Cache path candidates, but check each reference's own identity.
         registered = entries_for_path(path) if resolve_manifest else []
         if (len(registered) > 1 and isinstance(bound_artifact_id, str)
@@ -169,6 +188,14 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
                 return
             try:
                 value = json.loads(path.read_text(encoding='utf-8-sig'))
+                if (manifest_file or path.name == 'manifest.json' and product_pack
+                        and sha256_file(path) == product_pack['manifest_sha256']):
+                    # The pack reader already verified entries relative to the
+                    # installed pack, using the declared usage and pinned bytes.
+                    expanded_files.add(path)
+                    for item in product_pack['references']:
+                        file(item['path'], location, resolve_manifest=False, follow_json=False)
+                    return
                 if not follow_json:
                     # A QA source is a byte-bound observation source. A plan
                     # inside it may still name failed/future outputs; these are
@@ -184,6 +211,20 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
                 walk(value, str(path))
             except (ValueError, OSError, UnicodeError, RecursionError) as exc:
                 error(str(path), f'cannot inspect JSON dependencies: {exc}')
+
+    def evidence_file(raw, sha256, location):
+        """Confirm a hashed evidence source without consuming its own history."""
+        file(raw, location, resolve_manifest=False, follow_json=False)
+        if (not isinstance(raw, str) or not isinstance(sha256, str)
+                or not re.fullmatch(r'[0-9a-fA-F]{64}', sha256)):
+            error(location, 'evidence must bind an exact path and SHA256')
+            return
+        path = _local_reference_path(project, raw)
+        if path in seen_files:
+            if sha256_file(path) != sha256.lower():
+                error(location, 'evidence hash differs from actual bytes')
+            elif verify_hashes:
+                hash_checked.add(str(path))
 
     def walk(value, location, *, registered=False):
         if isinstance(value, list):
@@ -208,13 +249,15 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
                         error(location, 'invalid declared file hash')
                     elif len({h.lower() for h in hashes}) != 1:
                         error(location, 'conflicting sha256/checksum declarations')
-                    elif '://' not in paths[0] and not validate_required_files(project, [paths[0]], input_roots):
+                    elif '://' not in paths[0]:
                         target = _local_reference_path(project, paths[0])
-                        actual = hashlib.sha256(target.read_bytes()).hexdigest()
-                        if actual != hashes[0].lower():
-                            error(location, 'declared file hash differs from actual bytes: ' + paths[0])
-                        else:
-                            hash_checked.add(str(target))
+                        if (target in pinned_files or target in pack_evidence
+                                or not validate_required_files(project, [paths[0]], input_roots)):
+                            actual = pinned_files.get(target) or pack_evidence.get(target) or sha256_file(target)
+                            if actual != hashes[0].lower():
+                                error(location, 'declared file hash differs from actual bytes: ' + paths[0])
+                            elif target not in pack_evidence:
+                                hash_checked.add(str(target))
             for key, child in value.items():
                 here = f'{location}/{key}'
                 if key == 'path' and change_pointer:
@@ -255,12 +298,22 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
                     # Context roots are directories; exact scope is checked by
                     # the consuming authority, not treated as a required file.
                     continue
+                elif (key == 'request' and value.get('kind') == 'agent-review-api-receipt'
+                      and isinstance(child, dict) and child.get('method') in {'GET', 'POST'}
+                      and isinstance(child.get('path'), str) and child['path'].startswith('/api/agent/review/')):
+                    # Review receipts record an HTTP request route, not a local file.
+                    walk({k: v for k, v in child.items() if k != 'path'}, here)
                 elif key == 'previous_quality_evidence_records':
                     # Append-only superseded observations are retained for
                     # audit, not re-used as current image admission evidence.
                     # The canonical quality_evidence and all selected files
                     # still take the ordinary current checks below.
                     continue
+                elif key == 'agent_acceptance' and registered and isinstance(child, dict):
+                    evidence_file(child.get('report_path'), child.get('report_sha256'), here)
+                elif (key in {'previous_candidate', 'rechecked_unchanged_base'}
+                      and isinstance(child, dict) and {'path', 'sha256'} <= child.keys()):
+                    evidence_file(child['path'], child['sha256'], here)
                 elif (key == 'source_prompt' and isinstance(child, dict)
                       and set(child) == {'path', 'sha256', 'segment_id', 'material_order'}
                       and isinstance(child['path'], str) and isinstance(child['sha256'], str)
@@ -271,13 +324,7 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
                       and location.endswith('/quality_evidence')):
                     # This prior observation names a historical prompt and slot.
                     # Its old active inputs are not this draft's active inputs.
-                    file(child['path'], here, resolve_manifest=False, follow_json=False)
-                    if not validate_required_files(project, [child['path']], input_roots):
-                        prior = _local_reference_path(project, child['path'])
-                        if hashlib.sha256(prior.read_bytes()).hexdigest() != child['sha256'].lower():
-                            error(here, 'historical source prompt hash differs from actual bytes')
-                        elif verify_hashes:
-                            hash_checked.add(str(prior))
+                    evidence_file(child['path'], child['sha256'], here)
                 elif key == 'professional_method_versions' and 'professional_methods_root' in value:
                     root = value['professional_methods_root']
                     if not isinstance(root, str) or not Path(root).is_absolute() or not isinstance(child, list):
@@ -334,6 +381,13 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
                         if isinstance(raw, dict):
                             walk(raw, here)
                         else:
+                            if (key == 'source_file' and isinstance(raw, str) and Path(raw).name == raw
+                                    and isinstance(value.get('producer'), str)
+                                    and value['producer'].startswith('mlx-whisper ')
+                                    and any(isinstance(value.get(name), list) for name in ('segments', 'windows'))):
+                                owner = Path(location)
+                                if owner.suffix.lower() == '.json' and owner.is_relative_to(project) and owner.is_file():
+                                    raw = str(owner.parent / raw)
                             file(raw, here, resolve_manifest=not registered,
                                  bound_artifact_id=value.get('artifact_id'),
                                  bound_sha256=value.get('sha256') or value.get('checksum'))
@@ -346,6 +400,12 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
                 else:
                     walk(child, here)
     try:
+        kickoff = load_kickoff(project)
+        product_pack = resolve_product_pack(kickoff['product'], include_evidence=True) if kickoff else None
+        if product_pack:
+            pinned_files = {Path(item['path']): item['sha256'] for item in product_pack['references']}
+            pinned_files[Path(product_pack['manifest_path'])] = product_pack['manifest_sha256']
+            pack_evidence = product_pack['evidence_files']
         for raw in files:
             file(str(raw), 'input')
         if payload is not None:

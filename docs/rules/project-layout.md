@@ -4,7 +4,7 @@
 
 ## 项目目录按生产流程排列
 
-新项目由 `scripts/init_desktop_project.py` 创建下列目录。各 Skill 交付写入对应目录，产物清单中的路径相对项目根目录；读取以登记路径为准。
+新项目使用仓库虚拟环境运行 `scripts/init_desktop_project.py`，macOS/Linux 直接用 `.venv/bin/python`。各 Skill 交付写入对应目录，产物路径相对项目根目录，读取以登记路径为准。
 
 | 目录 | 内容 |
 | --- | --- |
@@ -19,3 +19,38 @@
 | `99_历史与废弃` | 有追溯价值的旧版本和试验记录 |
 
 编号仅用于文件归属，不增加串行门禁：资产可按既有规则与导演并行，声音和分镜按需执行。旧项目按已登记路径继续读取；迁移同步路径引用，保留确认正文和必要迁移记录，不重新初始化已有项目。
+
+## 开工确认单
+
+| 确认项 | 按依赖确定的内容 |
+| --- | --- |
+| 本轮做什么 | 原创、改编或原样复现；使用哪些原片、稿件和参考；剧情、对白、人物与场景外观分别保留什么、可改什么。 |
+| 广告产品怎么处理 | 确认准确产品、展示或实际使用、可用宣称和本地参考包。涉及活动时，在编导开写前登记用户确认的活动原句和赠品，再写实际对白。批量改编先列共用要求，再列各条例外。 |
+| 成片范围和画布 | 开写前明确影响故事的取材范围或已锁成片时长。平台、目标画布和技术参数在首次开展依赖这些选择的工作前登记。红帧默认 Seedance 2.5、9:16、480p，小云雀沿用 480p。 |
+| 资产怎么做 | 开写时沿用影响故事的已定参考。需要生图时，在提交前确认工具、模型、费用和授权范围。分镜按需，白模和声音参考默认关闭。 |
+
+协调方先查本轮指令和项目现有记录，集中确认影响当前工作的缺项。将已确认决定通过 `python scripts/stage_context_cli.py kickoff --project <业务项目> --answers-json -` 从标准输入登记到 `00_项目管理/project_request.json` 的 `kickoff`。命令使用仓库虚拟环境中的 Python。已有答案文件可直接传路径，省略 `--answers-json` 只读。编导来源可在同一项目需求的顶层用 `source_files` 登记，`prepare --request-json` 指向这份项目需求。
+
+- `decision_ref` 记录准确用户依据。创作范围、来源、时长和参考选择随本轮决定记录。对标改编把原片在 `creation.reference_scope` 中记为剧情、字幕和镜头的核对依据。把对标裁片或截帧用于生成节点须有本轮明确依据，并按对应资产用途核验。速推沿用现有审核和采用依据，在已授权范围内并行。确有新事实、冲突或授权范围变化时，只补问受影响事项。
+- `product.mode` 选择 `none`、`retain`、`replace` 或 `insert`。广告涉及的准确商品填 `product_id`，展示填 `product_usage: "display"`，真实使用填 `"real_use"`。编导和导演的 `prepare` 直接带入产品和用途供已有方法选择。并行改编若使用不同商品，分别以各业务项目的需求为准。包装、动作参考与宣称仍须核实。
+- 真实使用受固定时长约束时，编导定稿前做[产品演示窗粗查](#核对真实使用的固定演示窗)。
+- 有活动时，将用户确认的原句存入 `product.promotion_copy`，用 `product.promotion_decision_ref` 记录确认依据。口播如经用户确认改写，另存完整的 `product.promotion_dialogue`，确认依据一并注明。编导送审和新稿采用时会检查实际对白中同一说话人连续说出的活动口播，只忽略标点和空白。其他对白里的优惠机制、赠品和数量仍由编导逐句核对。
+- 新任务只说「用造物者温泉酸面膜」即可选用项目里当前的参考包。开工登记将品名解析为 `creator-polishing-mask-2`，自动写入实际包版本及清单 SHA-256。展示或实际使用仍按本轮内容确定。需要指定某版时填 `product.reference_pack_revision`。
+- `canvas` 填 `platform`、`model`、`aspect_ratio`、`resolution`、`target_url` 及平台提供的 `target_project_id`。登记红帧开工决定时写入 Seedance 2.5，并为未指定的画幅和分辨率填入 9:16、480p。只有用户明确选用其他规格或实际控件与模板不符时，才处理该项差异。明确新建时先填 `create_new: true`，新建后登记实际地址和项目 ID。视频 Skill 直接读取本字段，正式画布校验核对目标及模型、画幅、分辨率。
+- `image_generation` 留空表示尚无可复用生图授权。要沿用既有额度时，填 `provider`、`model`、`fee_scope: "existing_quota"`、`reference_upload_authorized: true` 和 `authorization_ref`。范围可选 `outputs`（准确 AST 到获准输出 ID 数组的映射），或按用户明确给出的持续授权填 `scope: "required_asset_outputs"`（本轮有效需求的必要资产输出）或 `"required_assets_and_supplements"`（同时涵盖必要分镜补图）。后两种范围可在开工时确认，提交时再核对实际制作项。平台托管模型按实际披露记录，资产制作网页的 ImageGen 使用内部路由值 `5.0`。资产网页检查工具、模型、输出和当版提示词自查，排队后再次核对授权。超出范围、切换工具或额度方式时，核对新的授权依据。
+
+已有明确的自主继续授权时，协调方同时用[既有流程授权入口](../development/artifact-adoption.md#登记下游流程授权)登记相同的真实用户依据及阶段范围。开工决定供生产使用，编导与资产的准确成品按总规则接受实际人工确认。
+
+批量制作依赖画布能力的素材或提示词前，按[平台保存与回读依据](../../skills/voiceover-to-video-script/references/seedance-delivery-package.md#平台保存与回读依据)核本轮所选方式。
+
+## 使用已选产品参考包
+
+参考包放在仓库 `assets/product-references/<product_id>/<版本>/`，由 `manifest.json` 记录文件、来源、SHA-256、用途及缺口。每个产品保留一个当前包。更新时先核新版和仍依赖旧版的任务。造物者温泉酸抛光面膜 R04 随仓提供，实际外观和参考取法见[包内商品说明](../../assets/product-references/creator-polishing-mask-2/R04/PRODUCT_BRIEF.md)。
+
+运行 `python scripts/stage_context_cli.py kickoff --project <业务项目>`，从 `product_reference_pack.references` 取得已校验的包内文件和适用范围。按[产品使用参考](../../skills/_shared/product-usage-contract.md#广告中的产品展示与使用)选择 `display` 或 `real_use` 的文件。清单中的原片路径和时间码用于追溯。资产所需实物图沿 `reference_paths` 登记。视频需要核外置原件可达性时，按[直接读取的文件边界](../development/delivery-snapshot-checks.md#正式交付的文件依赖)传准确文件及所属根目录。
+
+## 核对真实使用的固定演示窗
+
+编导定稿前，沿本轮原片时间码核可用演示窗，并按[产品使用合同](../../skills/_shared/product-usage-contract.md#广告中的产品展示与使用)用已核实拍估算必保的准备、接触和可见结果需要多少画面时间。可同时承载的对白和动作只算一次，已有依据允许省略的等待不占完整实时时长，慢放片段按原速参考。
+
+在现有 `creation.product_demo_timing` 用 `original_seconds` 记对标时间。用户明确锁定新版演示窗时，用 `target_seconds` 和该窗口的 `decision_ref` 登记，沿用原窗的决定也按这两个字段记录。可定位的估时依据写入 `estimated_minimum_seconds` 和 `estimate_basis`，注明实拍、时码和必保动作。开工及阶段回读只对已锁目标报告超窗或缺估时依据。新版时长开放时，由导演在精排中估时。
