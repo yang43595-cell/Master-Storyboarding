@@ -378,6 +378,49 @@ class ProjectTests(unittest.TestCase):
             {'state': '夜晚', 'source_quote': '已登记昼夜场景', 'basis': '声称可由镜内照明覆盖'}]
         with self.assertRaises(ValueError):
             self.lib.projects.apply_plan(project, project['rows'], result, {})
+        result['rows'][0].pop('covered_states')
+        steps = result['rows'][0]['outputs']
+        steps[0]['covers_states'] = ['夜晚']
+        with self.assertRaisesRegex(ValueError, '已登记'):
+            self.lib.projects.apply_plan(project, project['rows'], result, {})
+        steps[0].pop('covers_states')
+        steps[2]['state'] = steps[3]['state'] = '夜晚'
+        steps[1]['dependencies'] = [steps[0]['key']]
+        steps[3]['dependencies'] = [steps[2]['key']]
+        self.lib.projects.apply_plan(project, project['rows'], result, {})
+        self.assertEqual({step['state'] for step in self.job()['steps']}, {'白天', '夜晚'})
+
+    def test_confirmed_scene_group_survives_planning_and_four_view_switch(self):
+        service = self.lib.projects
+        path = Path(self.p['path']) / 'narrative.json'
+        narrative = pmod.read(path)
+        background, furniture = '挂画和前景', '桌椅保持固定摆位'
+        narrative['asset_requirements'][0]['required_states'] = [background, furniture]
+        pmod.write(path, narrative)
+        update_narrative_checksum(self.p['path'])
+        service.sync(self.p['id'])
+        grouped = {'action': 'asset-choice', 'operation': 'same-image-states', 'project_id': self.p['id'],
+                   'ast_id': 'AST-ROOM', 'confirm': True, 'groups': [[background, furniture]],
+                   'evidence': '同一画面看清挂画与桌椅，保持同一布置。'}
+        with self.assertRaisesRegex(ValueError, '不重复的有效要求'):
+            service.action({**grouped, 'groups': [[background, '夜晚']]})
+        service.action(grouped)
+        p = service.get(self.p['id'])
+        result = plan_result()
+        scene, = result['rows'][0]['outputs'][:1]
+        scene['state'] = background
+        result['rows'][0]['outputs'] = [scene]
+        service.apply_plan(p, p['rows'], result, {})
+        job = self.job()
+        master, = job['steps']
+        self.assertEqual((master['state'], master['covers_states']), (background, [furniture]))
+        self.assertNotIn('covers_states', scene)
+        self.assertIn(furniture, self.lib.step_request(job, 0)['template_notes'])
+        service.scene_output_mode({'project_id': self.p['id'], 'ast_id': 'AST-ROOM', 'mode': 'four'})
+        steps = self.job()['steps']
+        self.assertEqual([s['view'] for s in steps], ['45°', '正面', '反面', '俯视'])
+        self.assertEqual([s['key'] for s in steps if s.get('covers_states')], [master['key']])
+        self.assertIn(furniture, steps[0]['purpose'])
 
     def test_plan_keeps_only_needed_other_image_with_approved_state_coverage(self):
         service = self.lib.projects
@@ -420,10 +463,11 @@ class ProjectTests(unittest.TestCase):
         planned = result['rows'][1]
         planned['outputs'][0].update(kind='产品', state='闭盒')
         expected = [{'state': '开盒', 'source_quote': '复用现有素材', 'basis': '采用同版开盒动作参考'}]
-        planned['covered_states'] = expected
+        planned['covered_states'] = [{**expected[0], 'source_quote': None}]
         service.apply_plan(project, project['rows'], result, {})
         job = self.job(1)
         self.assertEqual(job['covered_states'], expected)
+        self.assertIsNone(planned['covered_states'][0]['source_quote'])
         self.assertEqual([(s['state'], s['generation_enabled']) for s in job['steps']], [('闭盒', False)])
 
     def test_scene_dependencies_and_library_confirmation_are_separate(self):
