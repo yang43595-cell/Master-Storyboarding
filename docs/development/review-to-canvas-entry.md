@@ -59,6 +59,8 @@
 | 4 | [视频提示词](../../skills/voiceover-to-video-script/SKILL.md)，[当前正文模板](../../skills/voiceover-to-video-script/templates/video-script-template.md) | 同一业务 JSON 保存完整正文、参数、实际素材顺序与职责；运行现有来源、分段、引用检查，完成动作链、内容及全片接续自查；不恢复退役 production_plan |
 | 5 | 视频 Skill 的 [画布交付](../../skills/voiceover-to-video-script/references/seedance-delivery-package.md)、[画布紧凑排版](../../skills/voiceover-to-video-script/references/seedance-delivery-package.md#画布紧凑排版)与[快照核对](delivery-snapshot-checks.md) | 写入前必读排版规则和对应平台要求。所需人审和自主检查均通过且正式采用接线有效后，再写指定画布。排版、保存后刷新回读，在正常审阅缩放下验收布局并查看全景和关键细节截图。交付草稿后停止，由用户点击生成 |
 
+红帧资产图和补图走[红帧生图 SOP](../../skills/_shared/redframe-operations.md#生图)。先上传并当场归位素材卡，再用实际连线和正文原生引用核对生成输入。
+
 跨阶段接续沿现有交接检查。编导区分[对白说法与画面事实](../../skills/creative-director/modules/story-method.md#完整故事正文从整场变化写到连续现场)，导演定两侧起落幅和声音接法，分镜按[切点实际状态](../../skills/storyboard-director/references/storyboard-production-checklist.md#check-request)判断复用或补图，视频提示词核对实际剪入点。已获准生成且需要验成片时，先按[关键接缝试剪](../../skills/voiceover-to-video-script/references/video-qc-checklist.md#关键接缝试剪)验证最容易出问题的少量相邻段，再扩大范围。画布草稿交付继续按第 5 步收口。
 
 图片二进制与参考原件按原目录、文件和输出 ID 管理，JSON 保存其实际引用；网站阅读视图只是同版投影，不维护第二份可编辑正文。白模、声音等可选分支沿原 Skill 条件进入，不因本入口而默认开启。
@@ -289,7 +291,7 @@ python scripts/stage_context_cli.py accept-artifact \
 
 新创作轮、图片新批次及 Terra 平台任务按[干净上下文与完成回执](../rules/execution.md#画布执行与交接的宿主边界)交接。现有 `handoff` 支持目标、停止点与来源字节核对，完整原件、授权和未决项沿项目原记录读取。等待只消费完成通知与必要差异，过程日志及大图留原处。
 
-红帧按[成批写入](../../skills/_shared/redframe-operations.md#成批写入和整节点回读)执行，正式 `--delivery` 预检和回读接入[整节点合同](delivery-snapshot-checks.md#红帧整节点的源连线用途与时间)。更新前附最后可信基线与实际写前读数。普通准备、视频直读和画布的计量共用[检查点](token-budget.md#直接读取和画布的同一计量检查点)，不恢复视频准备包。离线合成验证只覆盖这些合同与拒绝行为，宿主执行、真实保存/回读和用量下降须按下一次准确运行分别验收。
+红帧视频草稿按[成批写入](../../skills/_shared/redframe-operations.md#成批写入和整节点回读)执行，正式 `--delivery` 预检和回读接入[整节点合同](delivery-snapshot-checks.md#红帧整节点的源连线用途与时间)。更新前附最后可信基线与实际写前读数。普通准备、视频直读和画布的计量共用[检查点](token-budget.md#直接读取和画布的同一计量检查点)，不恢复视频准备包。离线合成验证只覆盖这些合同与拒绝行为，宿主执行、真实保存/回读和用量下降须按下一次准确运行分别验收。
 
 ## 画布排版文件
 

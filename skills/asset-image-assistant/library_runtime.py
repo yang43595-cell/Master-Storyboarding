@@ -257,6 +257,20 @@ def executable_template(kind, subject='', notes='', *, raw='', view='', index=No
         body = render_character_prompt(kind, reference_records)
         return {'path': str(CHARACTER_PROMPT_PATH), 'sha256': _digest(CHARACTER_PROMPT_PATH.read_text(encoding='utf-8')),
                 'content': body, 'content_sha256': _digest(body), 'status': 'loaded'}
+    if kind in {'大头照', '服装'}:
+        if raw and Path(raw).resolve() != CHARACTER_PROMPT_PATH:
+            template_source(kind, raw)
+        refs = reference_records or ([{}] if has_references else [])
+        body = render_character_prompt(kind, refs)
+        roles = [(index, ref['role']) for index, ref in enumerate(refs, 1) if ref.get('role')]
+        if roles:
+            body += '\n\n参考职责：' + '；'.join(f'图{index}：{role}' for index, role in roles) + '。'
+        if subject:
+            body += '\n\n制作对象：' + subject
+        if notes:
+            body += '\n用户补充：' + notes
+        return {'path': str(CHARACTER_PROMPT_PATH), 'sha256': _digest(CHARACTER_PROMPT_PATH.read_text(encoding='utf-8')),
+                'content': body, 'content_sha256': _digest(body), 'status': 'loaded'}
     template = _template_excerpt(raw, kind, view, index)
     if template['status'] != 'loaded':
         return template

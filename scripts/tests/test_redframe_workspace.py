@@ -26,6 +26,21 @@ def native_node(node_id, filenames):
     ]}}}
 
 
+def test_image_wait_ignores_previous_output_on_same_node(monkeypatch):
+    monkeypatch.setattr('scripts.core.redframe_workspace.time.sleep', lambda _delay: None)
+    old = 'assets/image-node/old.png'
+    new = 'assets/image-node/new.png'
+
+    def canvas(output):
+        node = {'id': 'image-node', 'type': 'remote-imageGenerationNode',
+                'data': {'outputs': {'image': {'value': {'url': output}}}}}
+        return {'results': [{'status': 200, 'error': None,
+                             'graph': {'toonflowCanvas': True, 'nodes': [node], 'edges': []}}]}
+
+    workspace = RedframeWorkspace(PageReplies(canvas(old), canvas(new)), 'project')
+    assert workspace.wait_for_image_result('image-node', old) == new
+
+
 def test_attachment_reads_retry_only_transient_slots_and_preserve_order(monkeypatch):
     monkeypatch.setattr('scripts.core.redframe_workspace.time.sleep', lambda _delay: None)
     first_hash, retry_hash = 'a' * 64, 'b' * 64

@@ -17,7 +17,7 @@
   },
   "recipes": {
     "大头照": {
-      "label": "大头照 · 3:4 头顶至锁骨",
+      "label": "大头照 · 3:4 正面特写",
       "category": "大头照",
       "ratio": "3:4",
       "guide": "02-character-master-guide.md",
@@ -28,7 +28,7 @@
       "blocks": [
         1
       ],
-      "description": "保留身份、头顶和锁骨，画面内不出现衣服。",
+      "description": "保留身份，完整呈现头顶、发型和头饰，画面内无衣物。",
       "method_scope": "character"
     },
     "服装": {

@@ -25,7 +25,8 @@ try:
                                  adopt_initial_agent_artifact, validate_candidate_submission)
     from .core.asset_refs import check_output_plan
     from .core.asset_batch_receipt import summarize_asset_batch_receipt, validate_asset_batch_targets
-    from .core.character_layout import character_layout_references, character_prompt_templates
+    from .core.character_layout import (character_layout_references, character_prompt_templates,
+                                        character_template_kinds)
     from .core.agent_acceptance import register_workflow_authorization, require_workflow_authorization
     from .core.io import write_text, write_text_if_changed
     from .core.knowledge_runtime import resolve_knowledge_root, is_bundled_root, verify_bundle, verify_selected_file
@@ -50,7 +51,8 @@ except ImportError:  # direct CLI execution
                                 adopt_initial_agent_artifact, validate_candidate_submission)
     from core.asset_refs import check_output_plan
     from core.asset_batch_receipt import summarize_asset_batch_receipt, validate_asset_batch_targets
-    from core.character_layout import character_layout_references, character_prompt_templates
+    from core.character_layout import (character_layout_references, character_prompt_templates,
+                                        character_template_kinds)
     from core.agent_acceptance import register_workflow_authorization, require_workflow_authorization
     from core.io import write_text, write_text_if_changed
     from core.knowledge_runtime import resolve_knowledge_root, is_bundled_root, verify_bundle, verify_selected_file
@@ -1190,6 +1192,20 @@ def _registered_read_path(reference: str) -> Path | None:
     path = (ROOT / reference).resolve()
     if path.is_file():
         return path
+_REDFRAME_IMAGE_STANDARDS = (
+    "skills/_shared/redframe-operations.md",
+    "skills/voiceover-to-video-script/references/redframe-canvas-usage.md",
+    "skills/voiceover-to-video-script/references/redframe-canvas-layout.md",
+)
+
+
+def _redframe_image_batch(skill: str, request: dict[str, Any]) -> bool:
+    if skill not in IMAGE_SKILLS or not request.get("image_targets"):
+        return False
+    kickoff = request.get("kickoff") or {}
+    grant = kickoff.get("image_generation") or {}
+    return grant.get("provider") == "redframe"
+
     if (ROOT / "skills" / Path(reference).parts[1]).is_dir():
         raise StageContextError(f"跨 Skill 登记共读目标缺失：{reference}")
     return None
@@ -1273,7 +1289,8 @@ def _local_standard_documents(skill_dir: Path, request: dict[str, Any] | None = 
     shared_root = (ROOT / "skills/_shared").resolve()
     # These are the common redlines named collectively by Skill entries; their
     # presence must not depend on whether prose spells each link separately.
-    # RedFrame instructions apply only when referenced by the task or Skill.
+    # The platform contract is selected separately for Redframe image batches
+    # (or explicitly by the caller); its video-only links do not expand the set.
     shared = sorted(_local_knowledge_path(path) for path in shared_root.glob("*.md")
                     if path.name != "redframe-operations.md")
     leaf_paths: set[Path] = set()
@@ -1283,6 +1300,11 @@ def _local_standard_documents(skill_dir: Path, request: dict[str, Any] | None = 
             registered_path = _registered_read_path(registered_reference)
             if registered_path is not None:
                 leaf_paths.add(registered_path)
+    if is_repository_skill and _redframe_image_batch(skill_dir.name, request):
+        for reference in _REDFRAME_IMAGE_STANDARDS:
+            path = _registered_read_path(reference)
+            if path is not None:
+                leaf_paths.add(path)
     seen: set[Path] = set([*local, *shared, *leaf_paths])
     visited: set[Path] = set()
     pending = [_local_knowledge_path(ROOT / "PROJECT_RULES.md"), *local, *shared]
@@ -1302,9 +1324,8 @@ def _local_standard_documents(skill_dir: Path, request: dict[str, Any] | None = 
         references = re.findall(r"(?:skills/|\.\./)*_shared/[A-Za-z0-9_-]+\.md", text)
         if document.parent == shared_root:
             references.extend(re.findall(r"\]\(([A-Za-z0-9_-]+\.md)(?=[#)])", text))
-        # Like the seed glob above, RedFrame instructions are not pulled in
-        # by mere mention; they enter only via an explicit local_references
-        # selection for this task.
+        # Redframe procedures are selected by the actual task, not by a link
+        # mentioned in a general rule.
         references = [reference for reference in references
                       if Path(reference).name != "redframe-operations.md"]
         dependencies = []
@@ -1402,9 +1423,9 @@ def _validate_current_inputs(project: Path, basis: dict[str, Any]) -> dict[str, 
                                                     **({"candidate_test_mode": True} if snapshot.get("candidate_test") else {}))
         except ValueError as exc:
             raise StageContextError(str(exc)) from exc
-        if (layout_refs := basis.get("character_layout_references")) and layout_refs != character_layout_references():
+        if (layout_refs := basis.get("character_layout_references")) and layout_refs != character_layout_references(layout_refs):
             raise StageContextError("本批人物灰模已变化；请重新 prepare。")
-        if (templates := basis.get("character_prompt_templates")) and templates != character_prompt_templates():
+        if (templates := basis.get("character_prompt_templates")) and templates != character_prompt_templates(templates):
             raise StageContextError("本批人物生图提示词模板已变化；请重新 prepare。")
         if output_requirements != basis.get("character_output_requirements", {}):
             raise StageContextError("本批人物最终输出规格已变化；请重新 prepare 并核对受影响范围。")
@@ -1763,6 +1784,16 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     local_documents = _local_standard_documents(skill_dir, request)
     rule_documents = [path for path in local_documents
                       if path.is_relative_to((ROOT / "docs/rules").resolve())]
+    character_inputs = {}
+    if args.skill == "asset-image-assistant" and image_targets is not None:
+        kinds = request.get("image_output_kinds")
+        template_kinds = None
+        if isinstance(kinds, dict) and all(isinstance(kinds.get(target), str) and kinds[target].strip()
+                                           for target in image_targets):
+            template_kinds = character_template_kinds(kinds[target] for target in image_targets)
+        if template_kinds is None or template_kinds:
+            character_inputs = {"character_layout_references": character_layout_references(template_kinds),
+                                "character_prompt_templates": character_prompt_templates(template_kinds)}
     task_basis = {
         "schema_version": "1.0",
         "skill": args.skill,
@@ -1774,9 +1805,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "handoff_scope": handoff_scope,
         "task_request": _semantic_request(request),
         **({"character_output_requirements": output_requirements} if output_requirements else {}),
-        **({"character_layout_references": character_layout_references(),
-            "character_prompt_templates": character_prompt_templates()}
-           if args.skill == "asset-image-assistant" and image_targets is not None else {}),
+        **character_inputs,
         "request_path": str(Path(args.request_json).resolve()) if args.request_json else None,
         "knowledge_profile": fingerprint(profile_path),
         "scope": {key: request[key] for key in ("task_kind", "scope", "source_shot_ids", "generation_authorized", "model_selected", "image_targets") if key in request},
@@ -1821,6 +1850,8 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
           if task_basis.get("character_layout_references") else []),
         _recovery_link(), "",
         "## 当前项目事实", "", "```json",
+        *([f"- 红帧生图：读取 `{ROOT / _REDFRAME_IMAGE_STANDARDS[0]}#生图` 及同页连接入口。先上传素材卡并当场归位，再接线和核正文；配套上传与排版规则同批冻结。"]
+          if _redframe_image_batch(args.skill, request) else []),
         json.dumps(_state_reading_view(summary), ensure_ascii=False, indent=2), "```", "",
         *(["## 上一阶段交接事实", "", f"- 已核交接卡：`{_handoff_path(project)}`。从原卡读取准确输入及停止点。", ""]
           if handoff_text else []),

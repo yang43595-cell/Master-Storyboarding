@@ -106,7 +106,7 @@ def template_prompt(kind, subject, notes, index=0, *, allow_unreferenced_design=
     template = asset_skill.executable_template(kind, subject, notes, raw=str(source), index=index,
         allow_unreferenced_design=allow_unreferenced_design,
         reference_records=reference_records, has_references=has_references)
-    return template['content'], str(source)
+    return template['content'], template['path']
 
 
 def now():
@@ -1322,6 +1322,7 @@ class Library:
                 adjustment = None
                 if job.get('upload_source_id'):
                     provenance.update(upload_source_id=job['upload_source_id'], generated_original=str(resolved))
+                if job.get('upload_source_id') and kind not in {'大头照', '人物1x4'}:
                     category = asset_skill.recipe(kind)['category']
                     fitted = self.root / 'requests' / ident / str(index) / 'normalized' / (uid() + '.png')
                     adjustment = visual_asset_upload.crop_to_category(resolved, fitted, category,
@@ -1355,7 +1356,7 @@ class Library:
                 item['group'] = job['title']
                 item['name'] = job['title'] + '_' + step['name'] + '_' + item['id'][:6]
                 item['backup'] = {'status': 'pending'}
-                item['technical_check'] = asset_skill.technical_check(item['original'], ratio)
+                item['technical_check'] = asset_skill.technical_check(item['original'], None if kind == '人物1x4' else ratio)
                 if adjustment:
                     item['upload_crop'] = adjustment
                 self.save(item)

@@ -24,7 +24,7 @@ spec.loader.exec_module(m)
 
 
 class LibraryTests(unittest.TestCase):
-    def test_file_upload_keeps_inputs_out_of_collection_and_normalizes_generated_output(self):
+    def test_file_upload_keeps_inputs_out_of_collection_and_preserves_generated_head(self):
         source = self.root / 'input-portrait.png'
         Image.new('RGB', (401, 399), 'red').save(source)
         original = source.read_bytes()
@@ -58,7 +58,9 @@ class LibraryTests(unittest.TestCase):
         job = self.lib.attach(result['job_id'], 0, [output])
         candidate = self.lib.get(job['steps'][0]['outputs'][0])
         self.assertFalse(candidate['reference_only'])
-        self.assertEqual(candidate['width'] * 4, candidate['height'] * 3)
+        self.assertEqual((candidate['width'], candidate['height']), (401, 399))
+        self.assertEqual(Path(candidate['original']).read_bytes(), generated_bytes)
+        self.assertFalse(candidate['technical_check']['passed'])
         self.assertEqual(candidate['status'], 'unreviewed')
         self.assertEqual(candidate['provenance']['upload_source_id'], record['id'])
         self.assertEqual(source.read_bytes(), original)
@@ -1056,15 +1058,15 @@ class LibraryTests(unittest.TestCase):
         self.assertFalse(result['approved'])
 
     def test_template_outputs_and_edited_prompt_survive_reload(self):
-        for kind, expected in [('大头照', '从头顶到锁骨的紧凑大头特写'), ('服装', '1×3 网格')]:
+        for kind, expected in [('大头照', '完整拍到头顶'), ('服装', '单行三格')]:
             job = self.lib.create_job({'source_id': self.asset['id'], 'subject': '照片中的对象', 'kind': kind})
             self.assertEqual(len(job['steps']), 1)
             request = self.lib.prepare(job['id'], 0)
             self.assertIn(expected, request['prompt'])
             self.assertEqual(request['ratio'], '3:4' if kind == '大头照' else '16:9')
             if kind == '大头照':
-                self.assertIn('画面内不出现任何衣服', request['prompt'])
-                self.assertIn('下边缘止于锁骨下缘', request['prompt'])
+                self.assertIn('画面内无衣物、领口或肩带', request['prompt'])
+                self.assertNotIn('锁骨', request['prompt'])
             self.assertNotIn('【', request['prompt'])
             self.lib.save_prompt({'id': job['id'], 'index': 0, 'prompt': '保留指定细节，蓝色背景', 'provider': 'dreamina', 'model': '5.0Pro'})
             request = m.Library(self.lib.root, vault=self.lib.vault).prepare(job['id'], 0)
@@ -1236,7 +1238,7 @@ class LibraryTests(unittest.TestCase):
             self.assertIn('ASSET-OBJECT-METHOD', {method['id'] for method in evidence['methods']})
             job = self.lib.create_job({'source_id': self.asset['id'], 'kind': '大头照', 'subject': '人物甲'})
             job['steps'][0]['template_source'] = str(external)
-            self.assertEqual(self.lib.step_request(job, 0)['template_source'], str(bundled_root() / relative))
+            self.assertEqual(self.lib.step_request(job, 0)['template_source'], str(m.asset_skill.CHARACTER_PROMPT_PATH))
 
     def test_local_upload_protects_the_actual_vault(self):
         source = self.lib.vault / 'not-yet-indexed.png'

@@ -296,6 +296,30 @@ class RedframeWorkspace:
             raise RedframeWorkspaceError('canvas read', attempts)
         return graph
 
+    def _wait_for_image_node(self, node_id, ready, timeout, message):
+        if not isinstance(node_id, str) or not _ID.fullmatch(node_id) or not 0 <= timeout <= 300:
+            raise ValueError('须指定准确图片节点 ID 和有界等待时间')
+        deadline = time.monotonic() + timeout
+        while True:
+            nodes = [node for node in self.read_canvas()['nodes'] if node.get('id') == node_id]
+            if len(nodes) > 1 or (nodes and nodes[0].get('type') != 'remote-imageGenerationNode'):
+                raise ValueError(f'图片节点身份不符：{node_id}')
+            if nodes and ready(nodes[0]):
+                return nodes[0]
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ValueError(f'{message}：{node_id}')
+            time.sleep(min(1, remaining))
+
+    def wait_for_image_result(self, node_id, previous_output, *, timeout=120):
+        """Wait for a new output on the same node after a single submission."""
+        def ready(node):
+            output = _image_output_path(node)
+            return output is not None and output != previous_output
+
+        node = self._wait_for_image_node(node_id, ready, timeout, '未读到新原图；先查询原任务')
+        return _image_output_path(node)
+
     def write_canvas(self, expected_graph, next_graph):
         """Check the current canvas, then send a single save within that page evaluation."""
         if not all(map(_is_canvas, (expected_graph, next_graph))):
@@ -348,3 +372,10 @@ def _slot_path(path, node_id):
     parts = path.split('/')
     return (len(parts) >= 3 and parts[:2] == ['assets', node_id]
             and all(part not in {'', '.', '..'} for part in parts))
+
+
+
+def _image_output_path(node):
+    image = node['data'].get('outputs', {}).get('image') or {}
+    path = (image.get('value') or {}).get('url')
+    return path if _slot_path(path, node['id']) else None

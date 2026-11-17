@@ -441,7 +441,7 @@ def test_asset_publication_checks_exact_final_character_canvas_before_post(tmp_p
     candidate = tmp_path / "candidate.png"
     Image.new("RGB", (300, 400)).save(candidate)
     final = publish_asset_args(tmp_path, "final.json", ast="AST-LEAD", output_id="HOME-FINAL")
-    with pytest.raises(ValueError, match=r"AST-LEAD@HOME-FINAL.*16:9"):
+    with pytest.raises(ValueError, match=r"AST-LEAD@HOME-FINAL.*横向拼版"):
         cli.run(final)
     assert not (tmp_path / "final.json").exists()
     assert not asset_review_site.posts

@@ -48,6 +48,38 @@ def record_batch_methods(args):
         candidate_scope=[]))
 
 
+@pytest.mark.parametrize(("skill", "target"), [
+    ("asset-image-assistant", "AST-ONE@view"),
+    ("storyboard-director", "VS-S01-OPEN"),
+])
+def test_redframe_image_batch_freezes_sop_from_project_kickoff(tmp_path, skill, target):
+    args, _ = make_batch_context(tmp_path, skill=skill, targets=[target])
+    args.vault = None
+    kickoff_path = Path(args.project) / cli.REQUEST_PATH
+    kickoff_path.write_text(json.dumps({"kickoff": {
+        "decision_ref": "synthetic kickoff",
+        "creation": {"target_duration_seconds": 30},
+        "product": {"mode": "none"},
+        "canvas": {"platform": "redframe", "model": "Seedance 2.5",
+                   "aspect_ratio": "9:16", "resolution": "480p", "create_new": True},
+        "image_generation": {
+            "provider": "redframe", "model": "Doubao Seedream 5.5",
+            "fee_scope": "existing_quota", "reference_upload_authorized": True,
+            "authorization_ref": "synthetic grant", "scope": "required_assets_and_supplements",
+        },
+    }}), encoding="utf-8")
+    prepared = cli.prepare(args)
+    folder = batch_folder(args)
+    startup = Path(prepared["path"]).read_text(encoding="utf-8")
+    assert "redframe-operations.md#生图" in startup
+    basis = json.loads((folder / "task_basis.json").read_text(encoding="utf-8"))
+    paths = {Path(item["path"]).name for item in basis["standards"]["local_documents"]}
+    assert {"redframe-operations.md", "redframe-canvas-usage.md", "redframe-canvas-layout.md"} <= paths
+    assert "seedance-delivery-package.md" not in paths
+    record_batch_methods(args)
+    assert cli.ensure_prepared(args)["ok"]
+
+
 def test_two_concurrent_batches_keep_worker_inputs_receipts_and_cache_separate(tmp_path):
     first, _ = make_batch_context(tmp_path)
     second, _ = make_batch_context(tmp_path, project=Path(first.project), vault=Path(first.vault),
@@ -239,6 +271,26 @@ def test_eight_exact_targets_are_allowed_and_frozen(tmp_path, skill):
         assert reading["task_basis"]["character_prompt_templates"] == character_prompt_templates()
     else:
         assert "character_layout_references" not in basis
+
+
+@pytest.mark.parametrize("kinds,templates", [
+    (["服装三视图", "场景"], {"服装"}),
+    (["场景", "道具"], set()),
+])
+def test_typed_asset_batches_only_load_their_character_templates(tmp_path, kinds, templates):
+    targets = ["AST-ONE@view", "AST-TWO@view"]
+    args, _ = make_batch_context(tmp_path, skill="asset-image-assistant", targets=targets)
+    args.vault = None
+    request = Path(args.request_json)
+    payload = json.loads(request.read_text(encoding="utf-8"))
+    payload["image_output_kinds"] = dict(zip(targets, kinds))
+    request.write_text(json.dumps(payload), encoding="utf-8")
+    assert cli.prepare(args)["valid"]
+    record_batch_methods(args)
+    result = cli.ensure_prepared(argparse.Namespace(**vars(args), show_task_basis=True))
+    assert result["ok"]
+    assert result["task_basis"].get("character_prompt_templates", {}) == character_prompt_templates(templates)
+    assert set(result["task_basis"].get("character_layout_references", {})) == templates
 
 
 @pytest.mark.parametrize("context_id", ["", "../escape", "/absolute", "a/b", "a\\b", ".", "a b", "BATCH-A", "batch-A"])

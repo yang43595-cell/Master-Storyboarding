@@ -1218,7 +1218,7 @@ class Projects:
                 raise ValueError('项目参考图不能确认为制作结果')
             if asset.get('trashed_at'):
                 raise ValueError('图片已删除')
-            check = self.skill.technical_check(asset['original'], step['ratio'])
+            check = self.skill.technical_check(asset['original'], None if step['kind'] == '人物1x4' else step['ratio'])
             if not check['passed'] or check['format'] not in {'PNG', 'JPEG', 'WEBP'}:
                 raise ValueError('技术检查不通过：' + check['message'])
             if job.get('blockers') and payload.get('resolve_blockers') is not True:
@@ -1401,7 +1401,7 @@ class Projects:
                         self.context(job, index, ident)
                         self.dependencies(job, step)
                         asset = self.lib.get(step['selected'], require_file=True)
-                        check = self.skill.technical_check(asset['original'], step['ratio'])
+                        check = self.skill.technical_check(asset['original'], None if step['kind'] == '人物1x4' else step['ratio'])
                         if (digest(Path(asset['original'])) != member['image']['sha256']
                                 or step['status'] not in {'awaiting_review', 'confirmed'} or job.get('blockers')
                                 or asset.get('reference_only') or asset.get('trashed_at')
@@ -1531,7 +1531,7 @@ class Projects:
                         if not self._has_current_confirmation(p, job, step, asset):
                             raise ValueError('已有确认的来源、图片或用途已变化：' + label)
                         continue
-                    check = self.skill.technical_check(asset['original'], step['ratio'])
+                    check = self.skill.technical_check(asset['original'], None if step['kind'] == '人物1x4' else step['ratio'])
                     if (step['status'] != 'awaiting_review' or job.get('blockers')
                             or asset.get('reference_only') or asset.get('trashed_at') or not check['passed']
                             or check['format'] not in {'PNG', 'JPEG', 'WEBP'}):
@@ -1892,7 +1892,7 @@ class Projects:
                     backup_path = Path(asset['backup']['path'])
                     if not backup_path.is_file() or backup_path.read_bytes() != Path(asset['original']).read_bytes():
                         raise ValueError('知识库备份缺失或与选图不一致，请先修复备份')
-                    check = self.skill.technical_check(asset['original'], step['ratio'])
+                    check = self.skill.technical_check(asset['original'], None if step['kind'] == '人物1x4' else step['ratio'])
                     if not check['passed']:
                         raise ValueError('图片技术检查未通过')
                     collected.append((row, job, step, asset, check))
