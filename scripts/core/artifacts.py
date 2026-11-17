@@ -105,6 +105,7 @@ def save_manifest(project_root: Path, manifest: dict[str, Any]) -> None:
     previous = load_manifest(project_root)
     prior_protected = {item.get("artifact_id"): item for item in previous.get("artifacts", [])
                        if item.get("agent_acceptance") or
+                       item.get("asset_review_sha256") and item.get("status") != "candidate" or
                        item.get("logical_id") in _FORMAL_PACKAGE_LOGICAL_IDS and item.get("status") == "current"}
     prior_current = {ident: item for ident, item in prior_protected.items() if item.get("status") == "current"}
     guarded_logical_ids = _FORMAL_PACKAGE_LOGICAL_IDS | {
@@ -113,10 +114,13 @@ def save_manifest(project_root: Path, manifest: dict[str, Any]) -> None:
     removed = set(prior_protected) - set(new_by_id)
     if removed:
         raise ValueError("save_manifest 不能删除 current 正式稿件历史记录")
-    immutable = ("logical_id", "type", "revision", "path_or_url", "checksum", "depends_on", "user_approved", "agent_acceptance")
+    immutable = ("logical_id", "type", "revision", "path_or_url", "checksum", "depends_on",
+                 "user_approved", "agent_acceptance")
     for artifact_id, existing in prior_protected.items():
         item = new_by_id[artifact_id]
         protected_fields = immutable + (("quality_evidence", "product_reference") if existing.get("agent_acceptance") else ())
+        if existing.get("asset_review_sha256"):
+            protected_fields += ("asset_review_sha256", "confirmation_ref")
         if any(item.get(key) != existing.get(key) for key in protected_fields):
             raise ValueError("save_manifest 不能改写 current 正式稿件身份、来源或确认 hash；请创建经校验的新修订")
     for item in manifest.get("artifacts", []):
@@ -159,8 +163,9 @@ def exact_narrative_approval(receipt: Any, entry: dict[str, Any], sha256: str) -
             and receipt.get("revision") == entry.get("revision"))
 
 
-def narrative_has_exact_approval(project_root: Path, source_path: Path, narrative: dict[str, Any]) -> bool:
-    """Recognize an existing whole-package human approval, bound to the original bytes."""
+def narrative_has_exact_approval(project_root: Path, source_path: Path, narrative: dict[str, Any],
+                                 *, delegated=False) -> bool:
+    """Recognize the requested adoption basis for these exact narrative bytes."""
     root = Path(project_root).resolve()
     source_path = project_path(root, source_path)
     if not source_path.is_relative_to(root) or not source_path.is_file():
@@ -168,18 +173,33 @@ def narrative_has_exact_approval(project_root: Path, source_path: Path, narrativ
     state = load_project_state(root)
     for entry in load_manifest(root).get("artifacts", []):
         if (entry.get("logical_id") != "narrative.package" or entry.get("revision") != narrative.get("revision")
-                or not artifact_is_confirmed(entry, state, root)):
+                or entry.get("status") != "current"):
             continue
         sha256 = entry.get("checksum")
-        if not sha256 or not any(exact_narrative_approval(receipt, entry, sha256)
-                                for receipt in state.get("user_confirmations", [])):
+        if not sha256:
             continue
         path = project_path(root, entry.get("path_or_url", ""))
-        if path == source_path:
-            raw = path.read_bytes()
-            if hashlib.sha256(raw).hexdigest() == sha256 and json.loads(raw.decode("utf-8-sig")) == narrative:
-                return True
+        if path != source_path:
+            continue
+        raw = path.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != sha256 or json.loads(raw.decode("utf-8-sig")) != narrative:
+            continue
+        if delegated:
+            if entry.get("agent_acceptance") and entry.get("user_approved") is False:
+                try:
+                    return _delegated_dialogue_passed(root, entry, state)
+                except (ValueError, OSError, KeyError, TypeError):
+                    return False
+        elif artifact_is_confirmed(entry, state, root) and any(
+                exact_narrative_approval(receipt, entry, sha256) for receipt in state.get("user_confirmations", [])):
+            return True
     return False
+
+
+def _delegated_dialogue_passed(root, entry, state):
+    from .agent_acceptance import validate_agent_acceptance
+    report = validate_agent_acceptance(root, entry, state=state)
+    return any(check["id"] == "CREATIVE-DIALOGUE" and check["result"] == "pass" for check in report["checks"])
 
 
 def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
@@ -234,10 +254,12 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
         if "story_paragraphs" not in payload:
             raise ValueError("正式 narrative.package 必须包含 story_paragraphs 来源对账")
         from .story_sources import validate_story_sources
+        delegated = bool(entry.get("agent_acceptance") and _delegated_dialogue_passed(root, entry, state))
         validate_story_sources(payload, project_root=root, narrative_path=path, require_dialogue_evidence=True,
                                require_character_output=not reading_existing,
                                require_promotion_dialogue=not reading_existing,
-                               exact_human_approval=exact_narrative_approval(approval_receipt, entry, candidate_sha256))
+                               exact_human_approval=exact_narrative_approval(approval_receipt, entry, candidate_sha256),
+                               delegated_creative_approval=delegated)
     elif logical_id == "storyboard.package":
         if payload.get("schema_version") != "4.0":
             raise ValueError("旧导演事件包仅保留历史读取；正式 storyboard.package 须使用 4.0 JSON 契约")
@@ -790,10 +812,14 @@ def promote_candidate(project_root: Path, logical_id: str, artifact_id: str, *, 
     # Compute on the adopted graph before replacement; existing manual callers
     # may already have invalidated it, so stale rows must remain idempotent.
     if logical_id == 'visual.asset.manifest':
+        if new_item.get('user_approved') is False:
+            from .asset_refs import registered_output_snapshot
+            if not _asset_review_receipt_valid(new_item, project_root) or not registered_output_snapshot(project_root, new_item):
+                raise ValueError('代审资产导出缺少有效的逐图采用记录')
         baseline = asset_export_snapshot(project_root, active[0], previous_asset_snapshot)[1] if active else None
         replacement = asset_export_snapshot(project_root, new_item)[1]
         unchanged_edges, segments = asset_output_impact(project_root, manifest, baseline, replacement)
-        mark_impacted_artifacts_stale(manifest, {logical_id}, '用户确认了新的资产表',
+        mark_impacted_artifacts_stale(manifest, {logical_id}, '采用了新的资产表',
                                      new_item.get('revision', ''), unchanged_edges=unchanged_edges,
                                      asset_output_segments=segments)
     elif active:
@@ -913,13 +939,38 @@ def artifact_is_confirmed(entry, state, root=None):
     return bool(root and formal_adoption(entry, root))
 
 
+def _asset_review_receipt_valid(entry, root):
+    if (entry.get('logical_id') != 'visual.asset.manifest' or entry.get('type') != 'visual-asset-manifest'
+            or entry.get('user_approved') is not False or not entry.get('asset_review_sha256')
+            or not entry.get('checksum')):
+        return False
+    try:
+        path = project_path(root, entry['path_or_url'])
+        receipt = project_path(root, entry['confirmation_ref'])
+        if (not path.is_relative_to(Path(root).resolve()) or not receipt.is_relative_to(Path(root).resolve())
+                or digest(path) != entry['checksum']):
+            return False
+        raw = receipt.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != entry['asset_review_sha256']:
+            return False
+        record = json.loads(raw)
+        return (record.get('kind') == 'delegated-asset-export' and record.get('revision') == entry['revision']
+                and 'visual-assets-' + record['id'] == entry['artifact_id']
+                and any(item['confirmation'].get('agent_review') for item in record['items']))
+    except (AttributeError, KeyError, OSError, TypeError, ValueError):
+        return False
+
+
 def artifact_is_adopted(entry, state, root=None):
     """Read human adoption or separately authorized, byte-bound agent acceptance."""
     if artifact_is_confirmed(entry, state, root):
         return True
     if (root is None or entry.get('status') != 'current' or entry.get('user_approved') is not False
-            or entry.get('candidate_test') or entry.get('production_blocked') or state.get('candidate_test')
-            or not entry.get('agent_acceptance')):
+            or entry.get('candidate_test') or entry.get('production_blocked') or state.get('candidate_test')):
+        return False
+    if entry.get('asset_review_sha256'):
+        return _asset_review_receipt_valid(entry, root)
+    if not entry.get('agent_acceptance'):
         return False
     from .agent_acceptance import validate_agent_acceptance
     try:

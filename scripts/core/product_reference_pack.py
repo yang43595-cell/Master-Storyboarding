@@ -81,10 +81,19 @@ def resolve_product_pack(product, *, for_registration=False, include_evidence=Fa
     if not root.is_relative_to(packs) or root == packs:
         raise ValueError(f"产品参考包目录越界：{product_id}/{revision}")
     path = _local_file(root, "manifest.json")
+    current_path = path
     raw = path.read_bytes()
     manifest_hash = hashlib.sha256(raw).hexdigest()
-    if product.get("reference_pack_sha256", manifest_hash) != manifest_hash:
-        raise ValueError(f"产品参考包清单与开工锁定的版本不符：{path}")
+    expected_hash = product.get("reference_pack_sha256", manifest_hash)
+    if expected_hash != manifest_hash:
+        # A metadata correction can keep the release name. Explicit old
+        # pins still use their original bytes and the same verified media.
+        archived = _local_file(root, f"history/{expected_hash}/manifest.json", require_file=False)
+        raw = archived.read_bytes() if archived.is_file() else b""
+        if hashlib.sha256(raw).hexdigest() != expected_hash:
+            raise ValueError(f"产品参考包清单与开工锁定的版本不符：{path}")
+        path = archived
+        manifest_hash = expected_hash
     manifest = json.loads(raw.decode("utf-8-sig"))
     if not isinstance(manifest, dict) or (manifest.get("product_id"), manifest.get("revision")) != (product_id, revision):
         raise ValueError(f"产品参考包清单的产品或版本不符：{path}")
@@ -119,6 +128,8 @@ def resolve_product_pack(product, *, for_registration=False, include_evidence=Fa
         raise ValueError(f"产品参考包没有适用 {usage} 的参考：{path}")
     result = {"product_id": product_id, "product_name": name, "aliases": aliases, "revision": revision, "usage": usage,
               "manifest_path": str(path), "manifest_sha256": manifest_hash, "references": selected, "gaps": gaps}
+    if path != current_path:
+        result["current_manifest_path"] = str(current_path)
     if include_evidence:
         evidence = manifest.get("evidence_files", [])
         if not isinstance(evidence, list):
@@ -128,6 +139,10 @@ def resolve_product_pack(product, *, for_registration=False, include_evidence=Fa
             if not isinstance(item, dict) or not _matches(_SHA256, item.get("sha256")):
                 raise ValueError(f"产品参考包证据须登记文件和 SHA-256：{path}")
             file = _local_file(root, item.get("path"), require_file=False)
+            if path != current_path:
+                archived_file = _local_file(path.parent, item["path"], require_file=False)
+                if archived_file.is_file():
+                    file = archived_file
             result["evidence_files"][file] = item["sha256"]
     return result
 
@@ -145,6 +160,8 @@ def resolve_pack_media(project, pack, reference, asset_requirements):
                               or sha256_file(path) != entry["sha256"]):
         raise ValueError("产品参考须为已锁产品包原件或来源和字节相同的项目副本")
     selected_paths = {Path(pack["manifest_path"]), canonical}
+    if pack.get("current_manifest_path"):
+        selected_paths.add(Path(pack["current_manifest_path"]))
     if not any(asset.get("asset_id") == reference.get("asset_id") and asset.get("category") == "REAL_PRODUCT"
                and any((project / raw).resolve() in selected_paths
                        for raw in asset.get("reference_paths", []) if isinstance(raw, str))

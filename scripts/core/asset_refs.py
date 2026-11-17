@@ -229,7 +229,7 @@ def _confirmed_output(root: Path, asset_id: str, output: dict, *, confirmation_c
     item or be the replacement record for this exact file.
     """
     path_text = output.get("path")
-    reference = output.get("user_confirmation_ref")
+    reference = output.get("agent_review_ref") or output.get("user_confirmation_ref")
     if not isinstance(path_text, str) or not isinstance(reference, str) or not reference:
         return None
     image_path = _image_path(root, path_text)
@@ -270,8 +270,20 @@ def _confirmed_output(root: Path, asset_id: str, output: dict, *, confirmation_c
     else:
         return None
     try:
+        review = image_receipt.get("agent_review")
+        if output.get("agent_review_ref"):
+            from .agent_acceptance import validate_asset_review
+            if (not review or output.get("user_confirmation_ref")
+                    or review.get("ast_id") != asset_id or review.get("output_id") != output.get("output_id")
+                    or review.get("purpose") != output.get("purpose")
+                    or review.get("asset_id") != image_receipt.get("asset_id")
+                    or review.get("image_sha256") != image_receipt.get("image_sha256")):
+                return None
+            validate_asset_review(root, review)
+        elif review:
+            return None
         verify_image_confirmation(image_path, image_receipt)
-    except (ValueError, OSError):
+    except (ValueError, OSError, KeyError, TypeError):
         return None
     return {
         "output_id": output.get("output_id"),
@@ -398,7 +410,7 @@ def confirmed_images(root: Path) -> dict[str, dict]:
         manifest = _read(manifest_path)
         current_manifest = entries is None or any(
             entry.get("artifact_id") in state["current_artifacts"]
-            and artifact_is_confirmed(entry, state, root)
+            and artifact_is_adopted(entry, state, root)
             and (not entry.get("checksum") or digest(manifest_path) == entry["checksum"])
             for entry in entries
         )

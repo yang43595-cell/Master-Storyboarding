@@ -437,10 +437,13 @@
     "confirmedAsset": {
       "type": "object",
       "additionalProperties": false,
+      "oneOf": [
+        {"required": ["user_confirmation_ref"]},
+        {"required": ["agent_review_ref"]}
+      ],
       "required": [
         "candidate_id",
-        "path",
-        "user_confirmation_ref"
+        "path"
       ],
       "properties": {
         "candidate_id": {
@@ -452,20 +455,26 @@
         },
         "user_confirmation_ref": {
           "$ref": "#/$defs/nonEmptyString"
+        },
+        "agent_review_ref": {
+          "$ref": "#/$defs/nonEmptyString"
         }
       }
     },
     "confirmedOutput": {
       "type": "object",
       "additionalProperties": false,
+      "oneOf": [
+        {"required": ["user_confirmation_ref"]},
+        {"required": ["agent_review_ref"]}
+      ],
       "required": [
         "output_id",
         "purpose",
         "view",
         "state",
         "candidate_id",
-        "path",
-        "user_confirmation_ref"
+        "path"
       ],
       "properties": {
         "output_id": {
@@ -491,6 +500,9 @@
           "$ref": "#/$defs/pathString"
         },
         "user_confirmation_ref": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "agent_review_ref": {
           "$ref": "#/$defs/nonEmptyString"
         }
       }

@@ -541,7 +541,7 @@ def test_asset_publication_requires_locally_adopted_exact_script(tmp_path, asset
     artifacts.register_workspace_artifact(tmp_path, {"artifact_id": "N-R01", "logical_id": "narrative.package",
         "type": "narrative.package", "path_or_url": source.name, "revision": "R01", "depends_on": [],
         "checksum": artifacts.digest(source), "user_approved": False})
-    with pytest.raises(ValueError, match="当前有效且已由你确认"):
+    with pytest.raises(ValueError, match="当前有效且已采用"):
         cli.run(publish_asset_args(tmp_path, "unadopted.json"))
     website_decision(tmp_path, "script-approved.json")
 

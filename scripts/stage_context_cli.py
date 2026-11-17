@@ -23,7 +23,7 @@ try:
                                  validate_current_dependencies, load_manifest,
                                  register_workspace_artifact, adopt_initial_package,
                                  adopt_initial_agent_artifact, validate_candidate_submission)
-    from .core.asset_refs import check_output_plan
+    from .core.asset_refs import check_output_plan, registered_output_snapshot
     from .core.asset_batch_receipt import summarize_asset_batch_receipt, validate_asset_batch_targets
     from .core.character_layout import (character_layout_references, character_prompt_templates,
                                         character_template_kinds)
@@ -49,7 +49,7 @@ except ImportError:  # direct CLI execution
                                 validate_current_dependencies, load_manifest,
                                 register_workspace_artifact, adopt_initial_package,
                                 adopt_initial_agent_artifact, validate_candidate_submission)
-    from core.asset_refs import check_output_plan
+    from core.asset_refs import check_output_plan, registered_output_snapshot
     from core.asset_batch_receipt import summarize_asset_batch_receipt, validate_asset_batch_targets
     from core.character_layout import (character_layout_references, character_prompt_templates,
                                        character_template_kinds)
@@ -564,27 +564,32 @@ def _confirmed_handoff_inputs(project: Path, target_skill: str, *, state=None) -
 
 def _first_director_handoff(project, state):
     receipts = state["user_confirmations"]
-    if not receipts:
+    manifest = load_manifest(project)
+    if not receipts and not any(a.get("logical_id") == "narrative.package"
+            and a.get("status") == "current" and a.get("agent_acceptance")
+            and a.get("artifact_id") in state["current_artifacts"] for a in manifest["artifacts"]):
         raise StageContextError("project_state.next_stage 为空；没有编导整稿的正式采用记录")
     _, _, blockers = _handoff_revision_status(project)
     if blockers:
         raise StageContextError("正式交接被修订状态阻止：" + "；".join(blockers))
-    _, inputs = _confirmed_project_inputs(project, state)
+    _, inputs = _confirmed_project_inputs(project, state, manifest=manifest)
     for entry in inputs:
-        for receipt in receipts:
-            if not exact_narrative_approval(receipt, entry, entry["checksum"]):
+        if entry.get("logical_id") != "narrative.package":
+            continue
+        exact_receipts = [r for r in receipts if exact_narrative_approval(r, entry, entry["checksum"])]
+        if any(is_recorded_website_script_approval(project, entry, r["approval_ref"]) for r in exact_receipts):
+            return inputs
+        if not exact_receipts and not entry.get("agent_acceptance"):
+            continue
+        for authorization in state["workflow_authorizations"]:
+            if not isinstance(authorization, dict):
                 continue
-            if is_recorded_website_script_approval(project, entry, receipt["approval_ref"]):
-                return inputs
-            for authorization in state["workflow_authorizations"]:
-                if not isinstance(authorization, dict):
-                    continue
-                try:
-                    require_workflow_authorization(project, authorization.get("id"), "storyboard-planner", state=state)
-                except ValueError:
-                    continue
-                return inputs
-    raise StageContextError("project_state.next_stage 为空；缺少当前准确编导整稿的确认或已有导演流程授权")
+            try:
+                require_workflow_authorization(project, authorization.get("id"), "storyboard-planner", state=state)
+            except ValueError:
+                continue
+            return inputs
+    raise StageContextError("project_state.next_stage 为空；缺少当前准确编导整稿的采用依据或已有导演流程授权")
 
 
 def status(args: argparse.Namespace) -> dict[str, Any]:
@@ -769,6 +774,9 @@ def _confirmed_project_inputs(project: Path, state: dict[str, Any], *, manifest=
             else:
                 validate_current_dependencies(item, manifest, state, project,
                                               checked=checked_dependencies, file_digest=file_digest)
+                if item.get("asset_review_sha256"):
+                    if not registered_output_snapshot(project, item):
+                        raise ValueError("资产交接存在无效的逐图代审或图片字节依据：" + artifact_id)
         except ValueError as exc:
             raise StageContextError(str(exc)) from exc
         inputs.append(item)

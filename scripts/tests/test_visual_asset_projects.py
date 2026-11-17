@@ -1528,6 +1528,149 @@ class ProjectTests(unittest.TestCase):
         service = self.lib.projects
         return root, service, service.bind(str(root))
 
+    def test_delegated_narrative_asset_review_rework_and_handoff(self):
+        from core import agent_acceptance as aa, artifacts
+        from core.asset_refs import require_final_images, resolve_final_images
+        from core.project_kickoff import REQUEST_PATH
+        from test_formal_package_submission import narrative, register
+
+        root = (self.base / 'delegated-review').resolve()
+        root.mkdir()
+        package = narrative(root)
+        package.pop('human_readable_path')
+        package['status'] = 'candidate'
+        package['asset_requirements'][0].update(image_decision='无需独立图', image_reason='合成测试无需人物图')
+        real_reference = root / 'product-reference.png'
+        Image.new('RGB', (400, 300), 'yellow').save(real_reference)
+        package['asset_requirements'].extend([
+            {'asset_id': ast, 'category': category, 'name': name, 'narrative_purpose': '合成验收',
+             'source_paragraph_ids': ['STP-01'], 'identity_constraints': [], 'required_states': [],
+             'interactions': [], 'reference_paths': refs, 'unknowns': [],
+             'image_decision': '复用现有素材', 'image_reason': '合成测试图片'}
+            for ast, category, name, refs in (
+                ('AST-PROP-PAPER', 'PROP', '纸张', []),
+                ('AST-REAL-BOX', 'REAL_PRODUCT', '合成盒', [real_reference.name]))])
+        pmod.write(root / REQUEST_PATH, {'kickoff': {'decision_ref': 'synthetic kickoff',
+            'product': {'mode': 'none'}, 'canvas': {'platform': 'redframe', 'model': 'fixture',
+                'aspect_ratio': '9:16', 'resolution': '720p', 'create_new': True}}})
+        dialogue = root / package['dialogue_evidence_path']
+        evidence = pmod.read(dialogue)
+        evidence['dialogues'][0].pop('verification')
+        pmod.write(dialogue, evidence)
+        package['dialogue_evidence_sha256'] = pmod.digest(dialogue)
+        entry = register(root, 'N-AGENT', 'narrative.package', package)
+        aa.register_workflow_authorization(root, authorization_id='SYNTHETIC-TEXT',
+            authorization_ref='synthetic creative and planning authorization',
+            skills=['creative-director', 'storyboard-planner'])
+        profile = aa.ROOT / 'skills/creative-director/review-profile.json'
+        report_path = root / 'narrative-review.json'
+        checked_at = '2026-11-17T03:00:00Z'
+        report = {'schema_version': '1.0', 'kind': 'agent-self-check', 'scope': 'artifact',
+                  'verdict': 'pass', 'agent_id': 'synthetic reviewer', 'checked_at': checked_at,
+                  'authorization_id': 'SYNTHETIC-TEXT', **aa.acceptance_binding(root, entry),
+                  'review_profile_sha256': pmod.digest(profile),
+                  'checks': [{'id': check['id'], 'result': 'pass', 'observation': 'synthetic check',
+                              'locator': 'synthetic input'}
+                             for check in pmod.read(profile)['production_artifact_checks']]}
+        # A valid whole-report shape cannot clear a dialogue check marked inapplicable.
+        dialogue_check = next(check for check in report['checks'] if check['id'] == 'CREATIVE-DIALOGUE')
+        dialogue_check.update(result='not_applicable', reason='synthetic negative case')
+        pmod.write(report_path, report)
+        with self.assertRaisesRegex(ValueError, '未核对白证据'):
+            artifacts.adopt_initial_agent_artifact(root, entry['artifact_id'], str(report_path))
+        dialogue_check.update(result='pass')
+        dialogue_check.pop('reason')
+        pmod.write(report_path, report)
+        artifacts.adopt_initial_agent_artifact(root, entry['artifact_id'], str(report_path))
+        self.assertEqual(pmod.read(dialogue), evidence)
+
+        service = self.lib.projects
+        project = service.action({'action': 'bind', 'path': str(root)})
+        ident = project['id']
+        grant = subprocess.run([sys.executable, str(Path(m.__file__)), 'authorize-asset-review',
+            '--project', str(root), '--authorization-id', 'SYNTHETIC-ASSETS',
+            '--authorization-ref', 'synthetic delegated authority for image review'], capture_output=True, text=True)
+        self.assertEqual(grant.returncode, 0, grant.stderr)
+        aa.register_asset_workflow_authorization(root, authorization_id='SYNTHETIC-CHAT',
+            authorization_ref='synthetic authority for the human chat route')
+        with self.assertRaisesRegex(ValueError, '未明确覆盖逐图代审'):
+            service.apply_agent_review(ident, authorization_id='SYNTHETIC-CHAT', review={'outputs': []})
+        jobs = {}
+        for ast in ('AST-PROP-PAPER', 'AST-REAL-BOX'):
+            service.prepare_reuse({'project_id': ident, 'ast_id': ast})
+            jobs[ast] = service.row(service.get(ident), ast)['job_id']
+
+        def select(ast, name, color):
+            image = self.base / name
+            Image.new('RGB', (400, 300), color).save(image)
+            asset, _ = self.lib.import_file(image, category='其他')
+            service.select({'project_id': ident, 'job_id': jobs[ast], 'index': 0, 'asset_id': asset['id']})
+            step = self.lib.get(jobs[ast], 'jobs')['steps'][0]
+            return {'ast_id': ast, 'output_id': pmod.step_output_id(step), 'asset_id': asset['id'],
+                    'image_sha256': pmod.digest(Path(asset['original'])), 'purpose': step['purpose'],
+                    'result': 'pass', 'observation': 'synthetic fixture pixels', 'locator': 'whole original image'}
+
+        paper = select('AST-PROP-PAPER', 'paper.png', 'blue')
+        box = select('AST-REAL-BOX', 'box.png', 'yellowgreen')
+        source = project['source']
+        review = {'source_narrative': {**source, 'sha256': pmod.digest(Path(source['path']))},
+                  'agent_id': 'synthetic reviewer', 'checked_at': checked_at, 'report_ref': 'synthetic batch'}
+        authorization = 'SYNTHETIC-ASSETS'
+        with self.assertRaisesRegex(ValueError, '产品参考图'):
+            service.apply_agent_review(ident, authorization_id=authorization, review={**review, 'outputs': [paper, box]})
+        self.assertIsNone(self.lib.get(jobs[paper['ast_id']], 'jobs')['steps'][0]['project_confirmation'])
+        box['product_check'] = {'result': 'pass', 'observation': 'synthetic product check',
+            'locator': 'whole source image', 'references': [{'path': str(real_reference),
+                                                             'sha256': pmod.digest(real_reference)}]}
+        asset_report = root / 'asset-review.json'
+        pmod.write(asset_report, {**review, 'outputs': [paper, box]})
+        command = [sys.executable, str(Path(m.__file__)), '--library', str(self.lib.root),
+            '--asset-vault', str(self.lib.vault), 'apply-agent-review', '--project-id', ident,
+            '--authorization-id', authorization, '--review-file', str(asset_report)]
+        first = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        initial = json.loads(first.stdout)['export']
+        queries = [f"{item['ast_id']}@{item['output_id']}" for item in (paper, box)]
+        first_outputs = resolve_final_images(root, queries)
+        self.assertEqual(set(first_outputs), set(queries))
+        receipt_file = Path(initial['folder']) / '资产采用记录.json'
+        first_receipt = receipt_file.read_bytes()
+        first_manifest = Path(initial['manifest']).read_bytes()
+        self.assertTrue(all('agent_review_ref' in asset['confirmed_outputs'][0]
+                            for asset in json.loads(first_manifest)['assets']))
+        self.assertEqual(load_project_state(root)['user_confirmations'], [])
+        repeated = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(repeated.returncode, 0, repeated.stderr)
+        self.assertEqual(json.loads(repeated.stdout)['export'], initial)
+
+        service.reopen({'project_id': ident, 'job_id': jobs[box['ast_id']], 'index': 0})
+        self.assertEqual(require_final_images(root, queries[:1]), (True, []))
+        self.assertFalse(require_final_images(root, queries[1:])[0])
+        revised = select(box['ast_id'], 'box-reworked.png', 'orange')
+        revised['product_check'] = box['product_check']
+        outdated = subprocess.run(command, capture_output=True, text=True)
+        self.assertNotEqual(outdated.returncode, 0)
+        self.assertIn('选图、用途或字节', outdated.stderr)
+        pmod.write(asset_report, {**review, 'report_ref': 'synthetic rework', 'outputs': [revised]})
+        second = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        new_export = json.loads(second.stdout)['export']
+        final_outputs = resolve_final_images(root, queries)
+        self.assertEqual(final_outputs[queries[0]]['path'], first_outputs[queries[0]]['path'])
+        self.assertEqual(final_outputs[queries[1]]['sha256'], revised['image_sha256'])
+        self.assertNotEqual(new_export['revision'], initial['revision'])
+        self.assertEqual(receipt_file.read_bytes(), first_receipt)
+        self.assertEqual(Path(initial['manifest']).read_bytes(), first_manifest)
+        self.assertEqual(load_project_state(root)['user_confirmations'], [])
+
+        handoff = subprocess.run([sys.executable, str(pmod.ROOT / 'scripts/stage_context_cli.py'),
+            'handoff', '--project', str(root), '--to-skill', 'storyboard-planner'], capture_output=True, text=True)
+        self.assertEqual(handoff.returncode, 0, handoff.stderr)
+        self.assertIn(new_export['artifact_id'], service.continue_project(ident)['content'])
+        real_reference.write_bytes(b'changed product reference')
+        self.assertEqual(require_final_images(root, queries[:1]), (True, []))
+        self.assertFalse(require_final_images(root, queries[1:])[0])
+
     def test_chat_confirmation_adopts_exact_asset_with_dual_basis(self):
         from core.agent_acceptance import register_asset_workflow_authorization, register_workflow_authorization
         root, service, p = self.kickoff_project('chat-confirmation')

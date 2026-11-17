@@ -36,6 +36,14 @@
 
 沿项目既有对话审图授权，经 `register_asset_workflow_authorization` 登记后，使用 `visual_asset_library.py apply-chat-confirmation`。本批确认文件记录 `quote`、`at`、`review_ref` 和 `outputs`，每项含 `ast_id`、`output_id`、`asset_id`（选图 ID）、`image_sha256` 和 `purpose`。已有确认随原依据保留，只对本次准确确认的新选图写回执。备份完成后可沿同一入口传 `{"outputs":[]}`，导出已有有效确认的输出。
 
+### 资产代审
+
+用户明确委托本项目逐图代审后，用 `visual_asset_library.py authorize-asset-review --project <项目> --authorization-id <ID> --authorization-ref <用户授权消息引用>` 登记已有授权。在工作台选定实际图片后，用 `visual_asset_library.py apply-agent-review --project-id <工作台项目ID> --authorization-id <ID> --review-file <代审JSON>` 提交实际观察。
+
+报告含 `agent_id`、带时区的 `checked_at`、`report_ref` 和 `source_narrative`。上游字段沿用工作台显示的 `artifact_id`、`logical_id`、`revision`、绝对 `path`，另附 `sha256`。每个 `outputs` 条目包含 `ast_id`、`output_id`、选图 `asset_id`、`image_sha256`、`purpose`、`result: "pass"`、具体原图 `observation` 和 `locator`。真实产品另需 `product_check`，含通过结论、观察、定位及实际对照参考图的 `references: [{path, sha256}]`。
+
+交接记录保留逐图代审依据。返修后对新选图提交新报告，有效旧输出按原依据接续。传 `{"outputs":[]}` 可恢复已通过图的备份和导出。正式交接与下游只读取当前适用的输出。
+
 ## 人物需求的选择优先流程
 
 人物需求进入网页后，按已确认叙事包的 `character_output_kind` 进入单图或身份与服装1×4路线，再选择已有图或新制作。人物板按 `wardrobe_states[].output_id` 逐套绑定最终图。没有结构化规格的旧项目仍按当前用途选择路线，明确登记的旧人物板要求仍生效。普通一次配角可以单图覆盖；显式上游状态仍须覆盖。已登记无需独立图的角色不进入图片任务，保留故事事实与镜内文字。身份板路线沿用已有最终人物1×4或重新制作；不要求先运行全表盘点。制作路径登记仅建立工作台任务，不等于完成 Skill 的准备、提示词或图片生产。

@@ -1907,8 +1907,22 @@ if __name__ == '__main__':
     chat.add_argument('--authorization-id', required=True)
     chat.add_argument('--confirmation-file', required=True, type=Path,
                       help='JSON with the exact quote, at, review_ref and approved outputs; outputs=[] resumes existing confirmed outputs')
+    delegated = subs.add_parser('apply-agent-review')
+    delegated.add_argument('--project-id', required=True)
+    delegated.add_argument('--authorization-id', required=True)
+    delegated.add_argument('--review-file', required=True, type=Path)
+    grant = subs.add_parser('authorize-asset-review')
+    grant.add_argument('--project', required=True, type=Path)
+    grant.add_argument('--authorization-id', required=True)
+    grant.add_argument('--authorization-ref', required=True)
     subs.add_parser('list')
     args = parser.parse_args()
+    if args.command == 'authorize-asset-review':
+        from core.agent_acceptance import register_asset_workflow_authorization
+        result = register_asset_workflow_authorization(args.project, authorization_id=args.authorization_id,
+                                                       authorization_ref=args.authorization_ref, delegated=True)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        sys.exit(0)
     lib = Library(args.library, vault=args.asset_vault)
     if args.command == 'serve':
         serve(lib, args.port, args.open)
@@ -1924,6 +1938,11 @@ if __name__ == '__main__':
         confirmation = json.loads(args.confirmation_file.read_text(encoding='utf-8-sig'))
         result = apply_project_review(lib, lambda **options: lib.projects.apply_chat_confirmation(
             args.project_id, authorization_id=args.authorization_id, confirmation=confirmation, **options))
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    elif args.command == 'apply-agent-review':
+        review = json.loads(args.review_file.read_text(encoding='utf-8-sig'))
+        result = apply_project_review(lib, lambda **options: lib.projects.apply_agent_review(
+            args.project_id, authorization_id=args.authorization_id, review=review, **options))
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         print(json.dumps(lib.import_tree(args.source) if args.command == 'import' else lib.items(), ensure_ascii=False, indent=2))
