@@ -2399,7 +2399,7 @@ class Projects:
         return {'cancelled': False, 'asset_id': asset['id'],
                 'message': '已放入项目参考，未加入资产收藏；电脑原文件保留'}
 
-    def action(self, payload):
+    def action(self, payload, *, background=True):
         if payload.get('job_id'):
             job = self.lib.get(payload['job_id'], 'jobs')
             if not payload.get('project_id') or payload['project_id'] != job.get('project_id'):
@@ -2411,11 +2411,19 @@ class Projects:
             self.fresh(p)
             return self.lib.relocate_project_reference(payload['asset_id'], p)
         if payload['action'] == 'product-usage':
+            ident = payload['project_id']
+            mode = payload.get('mode', 'prepare')
+            if mode == 'apply':
+                return product_usage.apply(self, ident, payload.get('signature'), payload.get('result'))
             with self.lib.lock:
-                p = self.get(payload['project_id'])
+                p = self.get(ident)
                 self.fresh(p)
-                product_usage.schedule(self, p, force=True)
-                return self.detail(p['id'])
+                if mode == 'prepare':
+                    return product_usage.prepare(self, p)
+                if mode == 'codex-cli':
+                    product_usage.schedule(self, p, use_cli=True, background=background)
+                    return self.detail(p['id'])
+                raise ValueError('未知的产品动作核对方式')
         from visual_asset_choices import change
         actions = {'character-output-mode': lambda: self.character_output_mode(payload), 'scene-reference': lambda: self.scene_reference(payload), 'asset-choice': lambda: change(self, payload), 'scene-output-mode': lambda: self.scene_output_mode(payload), 'prepare-reuse': lambda: self.prepare_reuse(payload), 'prepare-character': lambda: prepare_character(self, payload), 'production-route': lambda: self.production_route(payload), 'character-route': lambda: choose_character_route(self, payload), 'bind': lambda: self.bind(payload['path']), 'detail': lambda: self.detail(payload['project_id']),
                    'sync': lambda: self.sync(payload['project_id']), 'references': lambda: self.references(payload),

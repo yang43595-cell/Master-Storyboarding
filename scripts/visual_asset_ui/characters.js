@@ -68,12 +68,72 @@ function renderRequirementWorkspace(){
 function renderProductUsage(p){
  const u=p.narrative?._product_usage||{},check=p.product_reference_check||{};
  if(!u.references?.length&&!u.material_references?.length&&!u.effects?.length&&!check.status)return '';
- const labels={running:'正在核对剧情动作…',done:'已按剧情核对',error:check.message||'核对未完成'};
+ const labels={awaiting_match:'待当前执行者匹配',running:'正在核对剧情动作…',done:'已按剧情核对',error:check.message||'核对未完成'};
+ const disabled=check.status==='running'?'disabled':'';
+ const actions=u.reference_pack_usage==='display'?'':`<div class="req-choice-tabs">
+  <button type="button" data-product-usage="download">下载匹配输入</button>
+  <button type="button" data-product-usage="import">导入匹配结果</button>
+  <input type="file" accept=".json,application/json" data-product-usage-file hidden>
+  <button type="button" class="req-text-button" data-product-usage="codex-cli" ${disabled}>本地 Codex CLI（可选）</button>
+ </div>`;
  const actor=id=>p.narrative.asset_requirements.find(r=>r.asset_id===id)?.name||id;
  const media=(r,variant)=>r.pack_reference?`/product-reference-media/${encodeURIComponent(p.id)}/${encodeURIComponent(r.asset_id)}`:`/media/${encodeURIComponent(r.asset_id)}/${variant}`;
- return `<details class="product-usage-panel" open><summary>产品动作参考与真实使用效果图需求</summary><div class="product-usage-toolbar"><span>${esc(labels[check.status]||u.message||'')}</span><button data-product-usage-check ${check.status==='running'?'disabled':''}>重新核对产品参考</button></div><div class="product-usage-videos">${(u.references||[]).map(r=>`<article><strong>${esc(r.name)}</strong>${r.asset_id?`<video controls preload="metadata" src="${esc(media(r,'original'))}"></video>`:'<p>缺少参考，留空等待补充</p>'}<small>${esc(r.paragraph_ids.join('、'))}</small><p>${esc(r.evidence)}</p><span>${r.project_path?'已复制到项目':'未补入'}</span></article>`).join('')}</div>${(u.material_references||[]).length?`<div class="product-usage-textures">${u.material_references.map(r=>`<figure><img src="${esc(media(r,'thumbnail'))}" alt="${esc(r.name)}"><figcaption>${esc(r.name)} · 已补入项目</figcaption></figure>`).join('')}</div>`:''}${(u.effects||[]).map(e=>`<div class="product-usage-effect"><strong>${esc(actor(e.character_ast_id))} · ${esc(e.reference_need||'产品使用参考职责待核对')}</strong><p>${esc(e.reference_reason||'参考用途尚待核对')} · ${e.needs_reference===false?'无需独立图':'候选需求待核对，图片留空'}。尚未建立生图任务。</p></div>`).join('')}<p class="muted">动作参考不继承手模身份或原背景。幻想使用画面在分镜阶段制作；使用参考按当前产品实际职责登记。</p></details>`;
+ return `<details class="product-usage-panel" open><summary>产品动作参考与真实使用效果图需求</summary><div class="product-usage-toolbar"><span>${esc(labels[check.status]||u.message||'')}</span>${actions}</div><div class="product-usage-videos">${(u.references||[]).map(r=>`<article><strong>${esc(r.name)}</strong>${r.asset_id?`<video controls preload="metadata" src="${esc(media(r,'original'))}"></video>`:'<p>缺少参考，留空等待补充</p>'}<small>${esc(r.paragraph_ids.join('、'))}</small><p>${esc(r.evidence)}</p><span>${r.project_path?'已复制到项目':'未补入'}</span></article>`).join('')}</div>${(u.material_references||[]).length?`<div class="product-usage-textures">${u.material_references.map(r=>`<figure><img src="${esc(media(r,'thumbnail'))}" alt="${esc(r.name)}"><figcaption>${esc(r.name)} · 已补入项目</figcaption></figure>`).join('')}</div>`:''}${(u.effects||[]).map(e=>`<div class="product-usage-effect"><strong>${esc(actor(e.character_ast_id))} · ${esc(e.reference_need||'产品使用参考职责待核对')}</strong><p>${esc(e.reference_reason||'参考用途尚待核对')} · ${e.needs_reference===false?'无需独立图':'候选需求待核对，图片留空'}。尚未建立生图任务。</p></div>`).join('')}<p class="muted">动作参考不继承手模身份或原背景。幻想使用画面在分镜阶段制作；使用参考按当前产品实际职责登记。</p></details>`;
 }
-document.addEventListener('click',e=>{const b=e.target.closest('[data-product-usage-check]');if(b)guarded(async()=>{projectData=await projectApi('product-usage');projectRender();},b);});
+document.addEventListener('click', e => {
+ const button = e.target.closest('[data-product-usage]');
+ if (!button) return;
+ const action = button.dataset.productUsage;
+ const requestedId = projectId;
+ if (action === 'import') {
+  button.closest('.product-usage-panel').querySelector('[data-product-usage-file]').click();
+  return;
+ }
+ guarded(async () => {
+  if (action === 'codex-cli') {
+   const detail = await projectApi('product-usage', {mode: 'codex-cli', project_id: requestedId});
+   if (projectId === requestedId) {
+    projectData = detail;
+    projectRender();
+   }
+   return;
+  }
+  const task = await projectApi('product-usage', {project_id: requestedId});
+  if (projectId !== requestedId) return;
+  if (task.status === 'not_required') {
+   toast(task.message || '当前项目无需匹配使用动作');
+   await projectLoad();
+   return;
+  }
+  const url = URL.createObjectURL(new Blob([JSON.stringify(task, null, 2)], {type: 'application/json'}));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = '产品动作匹配输入.json';
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+ }, button);
+});
+document.addEventListener('change', e => {
+ const input = e.target;
+ if (!input.matches('[data-product-usage-file]')) return;
+ const file = input.files[0];
+ if (!file) return;
+ input.value = '';
+ const requestedId = projectId;
+ guarded(async () => {
+  const data = JSON.parse((await file.text()).replace(/^\uFEFF/, ''));
+  if (typeof data?.signature !== 'string' || !data.result) throw Error('匹配结果须包含输入签名和结果');
+  if (projectId !== requestedId) return;
+  const detail = await projectApi('product-usage', {
+   mode: 'apply', signature: data.signature, result: data.result, project_id: requestedId
+  });
+  if (projectId === requestedId) {
+   projectData = detail;
+   projectRender();
+   toast('已登记产品动作匹配结果');
+  }
+ });
+});
 function characterModeButtons(r){
  const kind=r.requirement.character_output_kind;
  if(kind)return '<p class="muted">上游已确认交付'+(kind==='人物1x4'?'人物1×4':'人物单图')+'。</p>';

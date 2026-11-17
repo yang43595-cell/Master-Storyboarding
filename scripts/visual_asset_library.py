@@ -1915,6 +1915,13 @@ if __name__ == '__main__':
     grant.add_argument('--project', required=True, type=Path)
     grant.add_argument('--authorization-id', required=True)
     grant.add_argument('--authorization-ref', required=True)
+    usage = subs.add_parser('product-usage')
+    usage_project = usage.add_mutually_exclusive_group(required=True)
+    usage_project.add_argument('--project', type=Path)
+    usage_project.add_argument('--project-id')
+    usage_mode = usage.add_mutually_exclusive_group()
+    usage_mode.add_argument('--result-file', type=Path)
+    usage_mode.add_argument('--codex-cli', action='store_true')
     subs.add_parser('list')
     args = parser.parse_args()
     if args.command == 'authorize-asset-review':
@@ -1944,5 +1951,19 @@ if __name__ == '__main__':
         result = apply_project_review(lib, lambda **options: lib.projects.apply_agent_review(
             args.project_id, authorization_id=args.authorization_id, review=review, **options))
         print(json.dumps(result, ensure_ascii=False, indent=2))
+    elif args.command == 'product-usage':
+        ident = args.project_id or lib.projects.bind(str(args.project))['id']
+        payload = {'action': 'product-usage', 'project_id': ident}
+        if args.result_file:
+            result_file = json.loads(args.result_file.read_text(encoding='utf-8-sig'))
+            if not isinstance(result_file, dict) or set(result_file) != {'signature', 'result'}:
+                raise ValueError('产品动作核对文件须包含 signature 和 result')
+            payload.update(result_file, mode='apply')
+        elif args.codex_cli:
+            payload['mode'] = 'codex-cli'
+        result = lib.projects.action(payload, background=False)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        if args.codex_cli and result.get('product_reference_check', {}).get('status') == 'error':
+            sys.exit(1)
     else:
         print(json.dumps(lib.import_tree(args.source) if args.command == 'import' else lib.items(), ensure_ascii=False, indent=2))
