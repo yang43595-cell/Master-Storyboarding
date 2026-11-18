@@ -5,7 +5,7 @@
 ## 连接与登录
 
 - 通过可达内网的本机连接。先读本机 `~/.local/share/codex-headless-browser/README.md`，默认由实际配置为 `gpt-6.1-terra` 的执行者使用 `task_browser(redframe=True)`；用户在本轮明确指定其他执行者时，按其指定执行，并在业务项目记录中登记指定原话与范围（2026-11-13 普拉提 vlog 案例即由用户指定 Muse 本人执行）。登录态失效时走 `redframe_login_browser()`，由用户本人登录，再在新后台会话中验证。会话只保存在本机。
-- 页面打不开时先查内网连通性、域名解析及代理分流；权限、节点插件或原生控件缺失时，记录具体缺项并暂停受影响操作。页面卡住或报错先刷新，再核对原项目已保存范围；结果未知先只读确认，避免重复提交。具体按[刷新与重试](../voiceover-to-video-script/references/redframe-canvas-layout.md#卡住或报错先刷新)执行。
+- 页面打不开时先查内网连通性、域名解析及代理分流；权限、节点插件或原生控件缺失时，记录具体缺项并暂停受影响操作。页面卡住或报错时保留当前目标与待写内容；结果未知先只读查原节点，再按原要求刷新并核对已保存范围，避免重复提交。具体按[刷新与重试](../voiceover-to-video-script/references/redframe-canvas-layout.md#卡住或报错先刷新)执行。
 
 ## 生图
 
@@ -13,6 +13,49 @@
 2. 同批沿一个后台会话完成上传、提交和取图。按控件就绪和参考预览到位推进。人物资产从本批 `task_basis.json` 取对应模板及灰模，先传实际参考，灰模最后，等原生引用落位再填正文。灰模只负责位置和大小。
 3. 提交前在同一页面用 `RedframeWorkspace.wait_for_image_request(node_id, prompt, reference_sha256, parameters)` 核持久化正文、原生引用及其原件顺序、`model/size/ratio/count`，并记录返回的旧结果路径。核实后提交一次，再用 `wait_for_image_result(node_id, previous_output)` 等同一节点的新结果。超时先查原任务。取原图、核宽高比和实看后登记本批回执；统一保存或布局验收时再独立重开。
 4. 后台命令负责有界等待，向模型只回节点 ID、阶段变化、结果路径或失败摘要。沿同一进程续等，不逐次上报空轮询，也不反复打印画布、编辑器 HTML 或图片字节。只在异常时取关联节点细节。
+
+### 图片页面共用入口
+
+图片页面动作使用 `scripts/core/redframe_image_ui.py` 的 `image_browser_session` 与 `RedframeImageUI`，由本轮实际获准的界面执行者调用。入口接收本机既有 `task_browser` 工厂，创建并关闭本任务的独立后台上下文，不连接现有浏览器，不运行任意 stdin/exec 常驻循环。控件动作默认 7 秒、导航 30 秒；页面驱动本身失联时退出本任务会话，保留原节点和回执，不依赖循环捕获异常继续操作。不要按进程名批量关闭其他任务或用户浏览器。
+
+适配器使用机场任务实录中的 `data-id`、`image → in` 端口、节点名、生成提示词、引用参考素材、图片序号、生成图片、适应视图和关闭对话控件。创建与上传坐标由执行者在本任务视口中实看选定空位；不使用固定屏幕点。可复用源卡时直接给准确源节点 ID。接线前检查原边，已存在不再画线；提示词通过原生菜单插入引用，随后从真实 `promptModel` 核源节点身份及完整正文。提交前重新核实际连线、模型/画幅/尺寸/张数，并读取源卡原件字节与已确认文件 SHA-256 比较。当前实现可设置已观察到的比例控件；模型、尺寸、张数以实际原生字段核对，不符则保留节点并报告具体差异，不能猜控件或把期望值写成实采结果。
+
+下面是单图的调用方式；`target`、`settings`、`source_hashes`、`parts`、空位和回执路径取本轮真实材料。新节点先创建、命名和归位，已有节点直接复用，不重复运行创建/上传。`receipt_path` 是本图现有候选/生成回执，由本批独占写入；不是新增审批账本。
+
+```python
+from pathlib import Path
+from headless_edge import task_browser  # 按本机 README 加载，不复制会话文件
+from scripts.core.io import read_json, write_json
+from scripts.core.redframe_image_ui import image_browser_session
+
+receipt_path = Path(receipt_path)
+receipt = read_json(receipt_path) if receipt_path.exists() else {"target": target}
+with image_browser_session(task_browser, project_id=project_id, canvas_url=canvas_url) as ui:
+    if receipt.get("image_submission"):
+        result = ui.query(receipt, timeout=60)  # 只查已登记的原节点
+    else:
+        # 首次需要时：source_id = ui.upload_source(source_file, empty_x, empty_y)
+        # 首次需要时：node_id = ui.create_image_node(empty_x, empty_y)
+        ui.rename(node_id, node_label)
+        for source_id in source_hashes:
+            ui.connect(source_id, node_id)
+        # parts 中普通字符串直接写入；引用项写：
+        # {"index": 1, "source_id": source_id, "text": "本图准确参考职责；"}
+        prompt = ui.write_prompt(node_id, parts)
+        ui.set_ratio(node_id, settings["ratio"])
+        ui.submit_once(node_id, settings=settings, sources=source_hashes,
+                       prompt=prompt, receipt=receipt,
+                       save_receipt=lambda value: write_json(receipt_path, value))
+        result = ui.query(receipt, timeout=60)
+    receipt["image_result"] = result
+    write_json(receipt_path, receipt)
+```
+
+`source_hashes` 为按实际平台槽顺序构造的 `{准确源节点ID: 已确认原件SHA256}`；每个原生 `{{ref N}}` 必须指向该顺序的第 N 个源卡，不能只核源 ID 集合。模型使用原生持久化标识，例如当前已观察的 `model='["volcengineArkVideo","doubao-seedream-5-5-261028"]'`，并填写本轮确定的 `ratio`、`size`、`count`。模型、尺寸或张数不同，由实际界面执行者通过本轮已核的原生控件选择，再以持久化字段预检；尚未核到的菜单不假称已支持。参数示例不授予模型或生图授权。
+
+`submit_once` 在点击前先将准确目标、输入绑定、旧成图路径及 `status: unknown` 写入该图回执；落盘失败不点击，按钮超时不重提。已有 `image_submission` 的回执只可查询；新获准的视觉返修使用原流程的新候选版本和本图回执。查询只返回同一节点的新原图路径，不把按钮返回、图片出现或程序通过称为任务 ID、视觉合格或用户采用。创建/上传中断时，沿此前节点 ID 集合调用 `find_new_nodes` 只读找回新卡，不能因异常重复创建。
+
+该入口及离线测试只覆盖已记录的字段与有界动作协议，尚未证明当前线上完整 DOM、真实鼠标连线、模型菜单、保存持久化及提供方提交仍然有效。下一次正常制作由实际界面执行者用本来要做的首张图核验，保留真实回执；控件缺失、多匹配、视口或遮罩仍阻挡时返回具体缺口，不用合成页面测试冒充线上通过。
 
 ## 视频画布
 

@@ -271,7 +271,7 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
             raise ValueError("正式视频提示词必须包含真实 generation_segments，材料分组不能代替生成段")
         if not reading_existing:
             from .asset_refs import resolve_final_images
-            from .delivery_files import discover_dependencies
+            from .delivery_files import declared_input_roots, discover_dependencies
             from .prompt_body import submitted_body_issues, submitted_prompt_body
             scope = payload.get("scope")
             if (payload.get("production_blocked") is True
@@ -295,7 +295,8 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
                 if (not ref.get("path") or project_path(root, ref["path"]) != Path(output["path"]).resolve()
                         or ref.get("sha256") != output["sha256"]):
                     raise ValueError(f"{key}: 视频素材与已确认输出的路径或字节不一致")
-            dependencies = discover_dependencies(root, payload=payload, verify_hashes=True)
+            dependencies = discover_dependencies(
+                root, payload=payload, input_roots=declared_input_roots(payload), verify_hashes=True)
             if not dependencies["ok"]:
                 raise ValueError("视频稿输入不可用：" + "；".join(dependencies["errors"] + dependencies["uncheckable"]))
         from .quality_evidence import director_shot_audio, replay_source_audio, source_shot_ids
@@ -312,7 +313,10 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
         if prior:
             revision_control._validate_segment_reconciliation(root, prior[0], payload)
         from .generation_boundaries import validate_generation_boundaries
-        validate_generation_boundaries(payload, storyboard, root, require_physical=not reading_existing)
+        validate_generation_boundaries(
+            payload, storyboard, root, require_physical=not reading_existing,
+            source_artifact={'artifact_id': entry['artifact_id'], 'revision': entry['revision'],
+                             'sha256': candidate_sha256}, state=state)
         if not reading_existing:
             shot_audio = director_shot_audio([storyboard])
             if shot_audio or any("source_audio" in row for row in segments):
@@ -448,7 +452,7 @@ def validate_agent_submission(project_root: Path, entry: dict[str, Any], manifes
         raise ValueError("自主验收补图用途镜号不属于准确当前导演包")
     from .quality_evidence import validate_image_evidence
     validate_image_evidence(root, path, entry.get("quality_evidence"), usage,
-                            product_reference=entry.get("product_reference"))
+                            product_reference=entry.get("product_reference"), artifact=entry, state=state)
     return digest(path)
 
 

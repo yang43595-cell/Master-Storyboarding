@@ -62,7 +62,7 @@ python scripts/canvas_readback.py --delivery --project <项目> --frozen <本修
 
 正式 validate_submission（包括 --delivery 的 preflight、回读和现有 revision_control 调用）递归检查本交付 JSON 可达的结构化依赖。支持 path/paths/path_or_url/file/files/localPath 及 *_path(s)/*_file(s)、reference(s)/image(s) 的已知文件扩展名、source_image/source_video/source_audio、reference_images/reference_videos、准确 artifact_id/source_artifact_id/artifact_ids/source_artifact_ids，以及 depends_on 的唯一 current logical_id（候选检查仅按本轮 input_artifact_ids 选择，保留 production_blocked/unreviewed）；相对路径始终按项目根解析，与 manifest 一致。每处引用分别核对 manifest 身份。同一文件路径对应多个登记时，该处须有准确 `artifact_id` 和匹配的 SHA-256，引用顺序不改变结果。JSON 循环去重，不全项目扫描，不从自由文字猜文件、不解析 Markdown 链接；空的可选 path 字段表示未选用，不制造声音/补图需求。已声明 required_reference_roles 的职责覆盖仍由原校验负责，未结构化的业务必要性仍须人工核对。
 
-外置输入只在直接读取 CLI 中通过准确 --input-root 允许；正式画布交付依赖要求位于项目内。丢失、空文件、越界、无效 JSON、manifest 缺失/歧义或远端不可核验均不返回成功。文件可读不是确认或版本证据，既有 current/revision/hash/确认检查继续执行，候选生产阻塞不改变。
+外置输入在直接读取 CLI 中通过准确 `--input-root` 允许；正式画布交付只继承本页前述准确已采用来源正文的 `input_roots`，冻结快照不能自行扩权。丢失、空文件、越界、无效 JSON、manifest 缺失/歧义或远端不可核验均不返回成功。文件可读不是确认或版本证据，既有 current/revision/hash/确认检查继续执行，候选生产阻塞不改变。
 
 图片质量证据既有 `source_files` 是观察来源的准确原件：逐份检查可读、JSON 完整性及 SHA256，不把这些原件内的历史制作计划再次展开为本次活动输入。例如已完成图的原计划仍可记着失败的 v001 目标，而当前交付实际选择 v002；这不要求恢复失败图。该处理仅适用于完整图片 QA 结构，不适用于普通 `source_files` 或本次明确选择的输入；同一文件另被活动引用时仍递归检查，当前图片、来源原件或字节有缺失/变化继续失败。原质量及失败记录不改写，不产生确认或生成授权。
 
@@ -118,6 +118,8 @@ manifest 的 `metadata.previous_quality_evidence_records` 保存已被替代的�
 草稿存在 `layout` 引用、来源 `scene_states` 命中，或已有 `scene_state_assessment` 声明时，在原 `quality_evidence.checks.persistent_objects` 的 `observation`／`locator` 中记录具体判断依据，并添加 `scene_state_assessment: changed | unchanged`、`source_shot_ids: [全段镜号]`。`changed` 必须有准确来源 `scene_states` 链；`unchanged` 必须有实际来源依据，不能由省略或删除 `scene_states` 推定。没有判断或判断未覆盖全段时阻止提交。此声明仍只证明所填证据一致，不代替独立阅读剧情、看图或用户终审。 泛用 `state_reference` 也可承担演员动作切点，不能全部视作环境或强制场景判断；这类引用保持原切点合同。场景用途的 `state_reference` 作者必须按本节显式填写场景判断。程序不能从角色／实体 ID 名称自动识别环境，未登记场景状态却假装演员用途的缺漏不在自动识别能力内；须由原文阅读和人工核对揭示，不宣称已被技术检查全面拦截。
 
 一个生成段涉及多个场景状态且没有逐镜或真实起终原生控制证据时，本轮消费者阻止提交；包括前半段沿用前态、后半段切到一个已声明后态的情形，即使只登记了一个变化后态也不能冒充全段同态。可以保留明确起终态的文字候选，待核实平台能力并接入可验证控制，或在不违背导演与用户产品同段限定的前提下修订分段。不会自动切段，也不会把用途文字当成平台能力。
+
+用户明确选择不补图、由提示词生成时，沿现有 `project_state.accepted_issues` 保存 `kind=prompt_scene_state_control` 的准确决定：项目、画布、视频源 `artifact_id/revision/sha256`、段号及完整镜号、实体范围和用户原话／消息依据。正式草稿的 `prompt_state_control` 仅引用该 `decision_id/sha256`；不能在冻结稿自行填写接受范围。源稿诊断和正式采用复用同一条准确决定，不改导演或新增状态台账。仅该范围免除“必须提供后态静帧或逐镜原生硬控制”的要求；完整状态判断、实际活动引用的旧态冲突／用途越界、真实产品、来源字节、权限和保存后原生回读仍逐项核对。结果只记 `user_accepted_prompt_control`、`generated_state_verification=pending`，不表示生成效果已核。决定或源版本变化、范围不符时不得套用。
 
 ## 新稿不得继承旧回读通过
 

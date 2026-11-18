@@ -24,6 +24,52 @@ def _image_qa_sources(path):
                               'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}]}
 
 
+def test_external_project_json_keeps_its_media_root_and_hash(tmp_path):
+    project, original = tmp_path / 'adaptation', tmp_path / 'original'
+    project.mkdir()
+    write_json(original / '00_项目管理/artifact_manifest.json', {'artifacts': []})
+    media = original / '01_原始资料/source.mp4'
+    media.parent.mkdir(parents=True, exist_ok=True)
+    media.write_bytes(b'original media')
+    wrong = project / '01_原始资料/source.mp4'
+    wrong.parent.mkdir(parents=True)
+    wrong.write_bytes(b'different media with the same relative name')
+    receipt = original / '01_原始资料/source.json'
+    write_json(receipt, {'path': '01_原始资料/source.mp4', 'sha256': artifacts.digest(media)})
+    result = discover_dependencies(project, files=[receipt], input_roots=[original], verify_hashes=True)
+    assert result['ok']
+    assert str(media) in result['checked_files'] and str(wrong) not in result['checked_files']
+    assert not discover_dependencies(project, files=[receipt])['ok']
+    media.unlink()
+    assert not discover_dependencies(project, files=[receipt], input_roots=[original])['ok']
+    media.write_bytes(b'changed original')
+    assert not discover_dependencies(project, files=[receipt], input_roots=[original], verify_hashes=True)['ok']
+
+
+def test_external_project_root_does_not_leak_to_next_selected_document(tmp_path):
+    project, original = tmp_path / 'adaptation', tmp_path / 'original'
+    project.mkdir()
+    write_json(original / '00_项目管理/artifact_manifest.json', {'artifacts': []})
+    media = original / 'original.mp4'; media.write_bytes(b'original')
+    receipt = original / 'receipt.json'; write_json(receipt, {'file': media.name})
+    current = project / 'current.mp4'; current.write_bytes(b'current')
+    local = project / 'current.json'; write_json(local, {'file': current.name})
+    result = discover_dependencies(project, files=[receipt, local], input_roots=[original])
+    assert result['ok'] and str(current) in result['checked_files']
+
+
+@pytest.mark.parametrize('reference', ['../outside.mp4', 'link.mp4'])
+def test_external_project_relative_reference_cannot_escape_its_owner(tmp_path, reference):
+    project, original = tmp_path / 'adaptation', tmp_path / 'original'
+    project.mkdir()
+    write_json(original / '00_项目管理/artifact_manifest.json', {'artifacts': []})
+    outside = tmp_path / 'outside.mp4'; outside.write_bytes(b'outside')
+    (original / 'link.mp4').symlink_to(outside)
+    receipt = original / 'receipt.json'; write_json(receipt, {'file': reference})
+    result = discover_dependencies(project, files=[receipt], input_roots=[original, tmp_path])
+    assert not result['ok'] and str(outside) not in result['checked_files']
+
+
 def test_image_qa_checks_plan_bytes_without_requiring_historical_outputs(tmp_path):
     plan = tmp_path/'original-plan.json'
     write_json(plan, {'output_path': 'failed-v001.png', 'source_image': 'historical.jpg'})

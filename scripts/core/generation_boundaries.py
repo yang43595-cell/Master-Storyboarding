@@ -15,7 +15,7 @@ from pathlib import Path
 
 from .quality_evidence import (generation_duration_values, required_visuals, reference_shot_ids, scene_state_requirements,
                                source_shot_ids, validate_required_visuals,
-                               validate_scene_state_coverage, validate_shot_durations)
+                               validate_scene_state_coverage, validate_shot_durations, validate_prompt_timeline)
 from .prompt_body import submitted_prompt_body
 from .project_kickoff import load_kickoff
 
@@ -365,7 +365,7 @@ def _require_physical_refs(refs, row, shot, dimension, side, hashes, boundary, *
 
 def validate_generation_boundaries(payload, storyboard, project, *, require_physical=True,
                                    delivery_platform=None, delivery_segment_ids=None, action_shots=None,
-                                   review_segment_ids=None):
+                                   review_segment_ids=None, source_artifact=None, state=None):
     """Validate a full or partial current draft without writing/approving it.
 
     Missing facts may remain in a candidate, but this strict check fails until
@@ -375,9 +375,14 @@ def validate_generation_boundaries(payload, storyboard, project, *, require_phys
     A local review checks named segments and their joins in the actual draft.
     """
     try:
-        return _validate(payload, storyboard, Path(project).resolve(), require_physical=require_physical,
-                         delivery_platform=delivery_platform, delivery_segment_ids=delivery_segment_ids,
-                         action_shots=action_shots, review_segment_ids=review_segment_ids)
+        result = _validate(payload, storyboard, Path(project).resolve(), require_physical=require_physical,
+                           delivery_platform=delivery_platform, delivery_segment_ids=delivery_segment_ids,
+                           action_shots=action_shots, review_segment_ids=review_segment_ids)
+        result['scene_state_plan'] = diagnose_scene_state_plan(
+            payload, storyboard, segment_ids=review_segment_ids, project=project,
+            source_artifact=source_artifact, state=state,
+            strict_prompt_controls=require_physical and source_artifact is not None)
+        return result
     except (KeyError, TypeError, AttributeError, IndexError) as exc:
         raise ValueError("generation_boundary: 分段依据或来源结构无效") from exc
 
@@ -442,6 +447,8 @@ def _validate(payload, storyboard, root, *, require_physical, delivery_platform,
             _check_generation_duration(row, parameters, capability)
         if "shot_durations" in row:
             validate_shot_durations(row, parameters)
+        if check_cross_scene and capability is not None:
+            validate_prompt_timeline(row, parameters)
     covered = {shot for ids in mapped for shot in ids}
     if scope_type == "full_local_authored" and not local_review:
         _need(covered == set(shots), "全片稿生成段未完整覆盖准确导演镜号")
@@ -575,7 +582,8 @@ def validate_delivery_cutpoints(rows, segments):
     return external_predecessors
 
 
-def diagnose_scene_state_plan(payload, storyboard, *, segment_ids=None):
+def diagnose_scene_state_plan(payload, storyboard, *, segment_ids=None, project=None,
+                              source_artifact=None, state=None, strict_prompt_controls=False):
     """Report state coverage in the proposed references, before any native binding."""
     rows = _rows(payload)
     if segment_ids is not None:
@@ -584,6 +592,9 @@ def diagnose_scene_state_plan(payload, storyboard, *, segment_ids=None):
         storyboard = {'scenes': [scene for scene in storyboard.get('scenes', [])
                                  if any(shot.get('shot_id') in shots for shot in scene.get('shots', []))]}
     requirements = scene_state_requirements(storyboard)
+    if project is not None and state is None:
+        from .project_state import load_project_state
+        state = load_project_state(Path(project))
     report = []
     for segment in rows:
         shots = source_shot_ids(segment)
@@ -592,7 +603,12 @@ def diagnose_scene_state_plan(payload, storyboard, *, segment_ids=None):
             continue
         result = {"segment_id": segment["segment_id"], "status": "covered"}
         refs = []
+        control = None
         try:
+            if project is not None:
+                from .prompt_scene_control import source_prompt_scene_control
+                control = source_prompt_scene_control(segment, payload, project, state,
+                                                       source_artifact, requirements)
             for ref in segment.get("materials", segment.get("candidate_upload_order", [])):
                 planned = dict(ref)
                 if "kind" not in planned:
@@ -601,10 +617,17 @@ def diagnose_scene_state_plan(payload, storyboard, *, segment_ids=None):
                         planned["kind"] = "image"
                 refs.append(planned)
             validate_scene_state_coverage(
-                {"source_shot_ids": shots, "reference_checks": refs}, needed)
+                {"source_shot_ids": shots, "reference_checks": refs}, needed,
+                accepted_prompt_control=control is not None)
+            if control is not None:
+                result.update(status='user_accepted_prompt_control', prompt_state_control=control)
         except ValueError as exc:
+            if strict_prompt_controls and (control is not None or 'prompt_state_control' in str(exc)):
+                raise
             result.update(status="needs_review", issue=str(exc))
-        except TypeError:
+        except TypeError as exc:
+            if strict_prompt_controls and control is not None:
+                raise ValueError('scene_state: 拟用素材结构无效') from exc
             result.update(status="needs_review", issue="scene_state: 拟用素材结构无效")
         report.append(result)
     return {"scope": "declared plan only; native control and visual observations not checked",
@@ -619,10 +642,32 @@ def main(argv=None):
     parser.add_argument("--segment-id", action="append", help="仅自查所列生成段及稿内相邻接缝，可重复；省略时检查整稿")
     args = parser.parse_args(argv)
     try:
-        payload = json.loads((args.project / args.prompt).read_text(encoding="utf-8-sig"))
+        prompt_path = (args.project / args.prompt).resolve()
+        prompt_bytes = prompt_path.read_bytes()
+        payload = json.loads(prompt_bytes.decode('utf-8-sig'))
         storyboard = json.loads((args.project / args.storyboard).read_text(encoding="utf-8-sig"))
-        result = validate_generation_boundaries(payload, storyboard, args.project, review_segment_ids=args.segment_id)
-        result["scene_state_plan"] = diagnose_scene_state_plan(payload, storyboard, segment_ids=args.segment_id)
+        from .artifacts import load_manifest, project_path
+        sources = [entry for entry in load_manifest(args.project)['artifacts']
+                   if entry.get('logical_id') == 'video.prompt'
+                   and entry.get('status') in {'candidate', 'current'}
+                   and project_path(args.project, entry.get('path_or_url', '')) == prompt_path]
+        source_artifact = None
+        if sources:
+            if len(sources) != 1:
+                raise ValueError('prompt_state_control source registration is ambiguous')
+            entry, actual = sources[0], hashlib.sha256(prompt_bytes).hexdigest()
+            if entry.get('checksum', actual) != actual or entry.get('revision') != payload.get('revision', entry.get('revision')):
+                raise ValueError('prompt_state_control source bytes/revision differ from registration')
+            source_artifact = {'artifact_id': entry['artifact_id'], 'revision': entry['revision'], 'sha256': actual}
+        result = validate_generation_boundaries(payload, storyboard, args.project, review_segment_ids=args.segment_id,
+                                                source_artifact=source_artifact)
+        if (payload.get('scope') or {}).get('type') in {'full_local_authored', 'selected_ranges'}:
+            from .delivery_files import declared_input_roots, discover_dependencies
+            dependencies = discover_dependencies(args.project, payload=payload,
+                                                 input_roots=declared_input_roots(payload), verify_hashes=True)
+            if not dependencies['ok']:
+                raise ValueError('视频稿输入不可用：' + '; '.join(dependencies['errors'] + dependencies['uncheckable']))
+            result['input_files_checked'] = len(dependencies['checked_files'])
     except (ValueError, OSError) as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
         return 1

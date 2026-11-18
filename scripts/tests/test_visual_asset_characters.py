@@ -422,3 +422,52 @@ class CharacterRoutes(unittest.TestCase):
         self.assertEqual(len(row['job']['steps']), 2)
         self.assertEqual(prepare_character(self.lib.projects, payload)['rows'][0]['job'], row['job'])
         self.assertTrue(all(not s['project_confirmation'] for s in row['job']['steps']))
+
+    def test_explicit_look_label_mapping_retains_exact_confirmed_board(self):
+        from visual_asset_choices import change, read_choices
+        service = self.lib.projects
+        payload = {'project_id': self.project['id'], 'ast_id': 'AST-PERSON'}
+        self.set_approved_character_output('人物1x4', wardrobe_states=[
+            {'name': 'LOOK-03', 'evidence': '同一出差造型槽位', 'output_id': 'TRAVEL-FINAL'}])
+        service.sync(self.project['id'])
+        job = prepare_character(service, payload)['rows'][0]['job']
+        board_path = self.base / 'confirmed-board.png'
+        Image.new('RGB', (640, 360), 'blue').save(board_path)
+        self.assets['人物1x4'] = self.lib.import_file(board_path, category='人物1x4')[0]
+        self.confirm(job, job['steps'][0]['key'], '人物1x4')
+        before = copy.deepcopy(self.lib.get(job['id'], 'jobs')['steps'])
+        story = Path(self.project['path']) / 'narrative.json'
+        story_bytes = story.read_bytes()
+        with self.assertRaisesRegex(ValueError, '外观未变化'):
+            change(service, {'project_id': self.project['id'], 'operation': 'production-spec',
+                'ast_id': 'AST-PERSON', 'confirm': True, 'decision_ref': 'synthetic-message',
+                'quote': '这是新的衣服', 'specification': {'wardrobe_name_map': {'LOOK-03': '新衣服'}}})
+        for label in ('机场出差造型', '机场造型'):
+            result = change(service, {'project_id': self.project['id'], 'operation': 'production-spec',
+                'ast_id': 'AST-PERSON', 'confirm': True, 'decision_ref': 'synthetic-label-message-' + label,
+                'quote': '仅对应旧LOOK标签，仍使用已确认原图，不改变造型',
+                'specification': {'wardrobe_name_map': {'LOOK-03': label}, 'unchanged_appearance': True}})
+            retained = result['rows'][0]['job']
+            self.assertEqual(retained['id'], job['id'])
+            self.assertEqual(retained['steps'], before)
+            self.assertEqual(retained['character_workflow']['outfits'][0]['name'], label)
+            self.assertEqual(prepare_character(service, payload)['rows'][0]['job']['steps'], before)
+        self.assertEqual(story.read_bytes(), story_bytes)
+        self.assertEqual(read_choices(story.parent)['production_specs']['AST-PERSON']['wardrobe_name_map'],
+                         {'LOOK-03': '机场造型'})
+
+    def test_unrecorded_look_change_keeps_existing_recheck_boundary(self):
+        service = self.lib.projects
+        payload = {'project_id': self.project['id'], 'ast_id': 'AST-PERSON'}
+        self.set_approved_character_output('人物1x4', wardrobe_states=[
+            {'name': 'LOOK-03', 'evidence': '原造型', 'output_id': 'TRAVEL-FINAL'}])
+        service.sync(self.project['id'])
+        old = prepare_character(service, payload)['rows'][0]['job']
+        story = Path(self.project['path']) / 'narrative.json'
+        narrative = json.loads(story.read_text(encoding='utf8'))
+        narrative['asset_requirements'][0]['wardrobe_states'][0].update(name='新制服', evidence='实际服装已变化')
+        story.write_text(json.dumps(narrative, ensure_ascii=False), encoding='utf8')
+        update_narrative_checksum(story.parent)
+        row = service.sync(self.project['id'])['rows'][0]
+        self.assertIsNone(row['job_id'])
+        self.assertTrue(self.lib.get(old['id'], 'jobs')['project_stale'])

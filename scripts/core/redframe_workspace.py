@@ -199,12 +199,15 @@ class RedframeWorkspace:
             raise RedframeWorkspaceError(operation, [_attempt({'error': 'invalid_page_result'})])
         return results
 
-    def _read(self, operation, payload, slots=None):
-        deadline = time.monotonic() + self.read_budget / 1000
+    def _read(self, operation, payload, slots=None, *, budget_ms=None):
+        budget = self.read_budget if budget_ms is None else budget_ms
+        if not isinstance(budget, int) or not 0 < budget <= self.read_budget:
+            raise ValueError("invalid Redframe read budget")
+        deadline = time.monotonic() + budget / 1000
         count = len(slots) if slots is not None else 1
         if not count:
             return []
-        first = self._request(operation, payload, count, self.read_budget)
+        first = self._request(operation, payload, count, budget)
         attempts = [[_attempt(item)] for item in first]
         retries = [i for i, attempt in enumerate(attempts) if _retryable(attempt[-1])]
         if retries and deadline - time.monotonic() > 0.25:
@@ -217,8 +220,8 @@ class RedframeWorkspace:
                     attempts[i].append(_attempt(value))
         return [{**item, 'attempts': history} for item, history in zip(first, attempts)]
 
-    def read_canvas(self):
-        result, = self._read('canvas', {'path': _CANVAS_FILE})
+    def read_canvas(self, *, budget_ms=None):
+        result, = self._read('canvas', {'path': _CANVAS_FILE}, budget_ms=budget_ms)
         graph = result.get('graph')
         if result.get('error') is not None or result.get('status') != 200 or not _is_canvas(graph):
             attempts = result['attempts']
@@ -232,7 +235,9 @@ class RedframeWorkspace:
             raise ValueError('须指定准确图片节点 ID 和有界等待时间')
         deadline = time.monotonic() + timeout
         while True:
-            nodes = [node for node in self.read_canvas()['nodes'] if node.get('id') == node_id]
+            remaining_ms = max(1, int((deadline - time.monotonic()) * 1000))
+            nodes = [node for node in self.read_canvas(budget_ms=min(self.read_budget, remaining_ms))['nodes']
+                     if node.get('id') == node_id]
             if len(nodes) > 1 or (nodes and nodes[0].get('type') != 'remote-imageGenerationNode'):
                 raise ValueError(f'图片节点身份不符：{node_id}')
             if nodes and ready(nodes[0]):
@@ -300,6 +305,23 @@ class RedframeWorkspace:
         if result.get('error') is not None or not isinstance(status, int) or not 200 <= status < 300:
             attempts = [_attempt(item) for item in (result.get('before_write'), result) if item is not None]
             raise RedframeWorkspaceError('canvas save', attempts)
+
+    def digest_image_outputs(self, nodes):
+        """Read exact source-card image bytes through the existing bounded transport."""
+        records, slots, seen = [], [], set()
+        for node in nodes:
+            node_id = node.get('id') if isinstance(node, dict) else None
+            if (not isinstance(node_id, str) or not _ID.fullmatch(node_id) or node_id in seen
+                    or node.get('type') not in {'remote-imageNode', 'remote-imageGenerationNode'}):
+                raise ValueError('expected unique native source image nodes')
+            path = _image_output_path(node)
+            if path is None:
+                raise ValueError(f'source image has no native output: {node_id}')
+            seen.add(node_id)
+            records.append({'node_id': node_id, 'path': path})
+            slots.append({'path': path, 'family': 'image'})
+        results = self._read('attachments', {'slots': slots}, slots=slots)
+        return [{**record, **result} for record, result in zip(records, results)]
 
     def digest_slots(self, nodes):
         """Hash persisted attachment files directly, in the canvas's slot order."""

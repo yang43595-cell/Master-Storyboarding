@@ -482,6 +482,13 @@
         "state": {
           "type": "string"
         },
+        "covered_states": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/nonEmptyString"},
+          "description": "用户已明确同一静态空间不变时，此准确输出覆盖的原 required_states；不是新增看图或生成效果证明。"
+        },
         "candidate_id": {
           "type": "string",
           "pattern": "^AST-[A-Z0-9-]+-C[0-9]{2,}$"

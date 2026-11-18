@@ -539,6 +539,36 @@ def test_formal_video_adoption_catches_known_delivery_failures(tmp_path, reason)
         artifacts.promote_candidate(tmp_path, "video.prompt", entry["artifact_id"])
 
 
+@pytest.mark.parametrize("declare_root", [False, True])
+def test_formal_video_adoption_checks_declared_external_input_roots(tmp_path, declare_root):
+    root, external = tmp_path / "film", tmp_path / "selected-inputs"
+    root.mkdir()
+    payload = video_project(root, current_prompt=False)
+    external.mkdir()
+    evidence = external / "source.txt"; evidence.write_text("selected source")
+    payload["sources"] = [{"path": str(evidence), "sha256": artifacts.digest(evidence)}]
+    if declare_root:
+        payload["input_roots"] = [str(external)]
+    entry = register(root, "P-EXTERNAL", "video.prompt", payload, ["storyboard.package"])
+    if not declare_root:
+        with pytest.raises(ValueError, match="越出项目及显式 input-root"):
+            artifacts.adopt_initial_package(root, entry["artifact_id"], "synthetic approval")
+    else:
+        artifacts.adopt_initial_package(root, entry["artifact_id"], "synthetic approval")
+        adopted = next(item for item in artifacts.load_manifest(root)["artifacts"]
+                       if item["artifact_id"] == entry["artifact_id"])
+        assert adopted["status"] == "current"
+
+
+@pytest.mark.parametrize("roots", ["not-an-array", ["relative"], ["/"]])
+def test_formal_video_adoption_rejects_unbounded_input_roots(tmp_path, roots):
+    payload = video_project(tmp_path, current_prompt=False)
+    payload["input_roots"] = roots
+    entry = register(tmp_path, "P-ROOTS", "video.prompt", payload, ["storyboard.package"])
+    with pytest.raises(ValueError, match="input_roots"):
+        artifacts.adopt_initial_package(tmp_path, entry["artifact_id"], "synthetic approval")
+
+
 @pytest.mark.parametrize("declared_total", [None, 3, 2], ids=["legacy", "matching", "impossible"])
 def test_adopt_package_checks_video_shot_schedule_against_declared_total(tmp_path, declared_total):
     payload = video_project(tmp_path, current_prompt=False)

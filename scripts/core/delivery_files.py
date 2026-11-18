@@ -57,17 +57,34 @@ def validate_required_files(project: Path, files: list[str], input_roots: list[P
     return errors
 
 
+def declared_input_roots(payload: dict) -> list[Path]:
+    """Read byte-bound input scope; this declares no new user authorization."""
+    roots = payload.get('input_roots', [])
+    if (not isinstance(roots, list)
+            or any(not isinstance(value, str) or not value
+                   or not Path(value).is_absolute()
+                   or str(Path(value).resolve()) != value
+                   or Path(value).parent == Path(value) for value in roots)):
+        raise ValueError('input_roots 必须为本轮已选外置输入的规范绝对目录，不能使用磁盘根')
+    return [Path(value) for value in roots]
+
+
 def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=None, verify_hashes=False,
                           json_projections=None):
     """Follow selected JSON path fields and exact manifest IDs, never scan prose.
 
-    Paths are project-relative, as in artifact manifests. External inputs need
-    explicit roots or an exact reference from the selected product pack.
+    Paths are project-relative, as in artifact manifests. Selected JSON from an
+    explicitly allowed business project keeps that project's relative root.
+    External inputs need explicit roots or an exact selected product reference.
     Original Whisper transcripts can record their source media as a sibling filename.
     Only selected reachable JSON is read (cycles deduped).
     Other document formats are checked as bytes, not parsed for more references.
     """
     project = Path(project).resolve()
+    input_roots = [Path(root).resolve() for root in input_roots]
+    document_project = project
+    external_projects = [root for root in input_roots
+                         if (root / '00_项目管理/artifact_manifest.json').is_file()]
     report = {'ok': False, 'checked_files': [], 'errors': [], 'uncheckable': [],
               'coverage': 'Selected JSON path fields, artifact_id and depends_on; no prose or remote fetch'}
     manifest = None
@@ -85,6 +102,17 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
 
     def error(location, message):
         report['errors'].append(f'{location}: {message}')
+
+    def owner_project(path):
+        if path.is_relative_to(project):
+            return project
+        owners = [root for root in external_projects if path.is_relative_to(root)]
+        return max(owners, key=lambda root: len(root.parts)) if owners else project
+
+    def reference_errors(raw):
+        # Preserve relative-path and symlink confinement to the owning project;
+        # an explicitly absolute reference still needs an allowed input root.
+        return validate_required_files(document_project, [raw], [project, *input_roots])
 
     def entries():
         nonlocal manifest, testing
@@ -112,6 +140,7 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
         return manifest_matches[path]
 
     def artifact(ident, location, logical=False, source=None):
+        nonlocal document_project
         if not isinstance(ident, str) or not ident.strip():
             error(location, 'missing artifact dependency ID')
             return
@@ -132,17 +161,23 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
         if len(matches) != 1:
             error(location, f'missing/ambiguous current or selected manifest dependency: {ident}')
             return
-        walk(matches[0], location + '/' + ident, registered=True)
+        previous_project = document_project
+        document_project = project  # IDs belong to this delivery's manifest.
+        try:
+            walk(matches[0], location + '/' + ident, registered=True)
+        finally:
+            document_project = previous_project
 
     def file(raw, location, *, resolve_manifest=True, follow_json=True,
              bound_artifact_id=None, bound_sha256=None):
+        nonlocal document_project
         if not isinstance(raw, str):
             error(location, 'file reference must be a string')
             return
         if re.match(r'^[a-zA-Z][a-zA-Z0-9+.-]*://', raw):
             report['uncheckable'].append(f'{location}: remote reference cannot be checked locally: {raw}')
             return
-        path = _local_reference_path(project, raw)
+        path = _local_reference_path(document_project, raw)
         manifest_file = product_pack and path == Path(product_pack['manifest_path'])
         if path in pack_evidence:
             if path not in seen_files:
@@ -153,7 +188,7 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
                     error(location, 'product pack evidence hash differs from actual bytes')
                     return
             resolve_manifest = follow_json = False
-        errors = [] if path in pinned_files or path in pack_evidence else validate_required_files(project, [raw], input_roots)
+        errors = [] if path in pinned_files or path in pack_evidence else reference_errors(raw)
         if errors:
             report['errors'].extend(f'{location}: {e}' for e in errors)
             return
@@ -208,7 +243,12 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
                     if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
                         raise ValueError('selected snapshot bytes changed')
                     value = selected
-                walk(value, str(path))
+                previous_project = document_project
+                document_project = owner_project(path)
+                try:
+                    walk(value, str(path))
+                finally:
+                    document_project = previous_project
             except (ValueError, OSError, UnicodeError, RecursionError) as exc:
                 error(str(path), f'cannot inspect JSON dependencies: {exc}')
 
@@ -219,7 +259,7 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
                 or not re.fullmatch(r'[0-9a-fA-F]{64}', sha256)):
             error(location, 'evidence must bind an exact path and SHA256')
             return
-        path = _local_reference_path(project, raw)
+        path = _local_reference_path(document_project, raw)
         if path in seen_files:
             if sha256_file(path) != sha256.lower():
                 error(location, 'evidence hash differs from actual bytes')
@@ -250,9 +290,9 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
                     elif len({h.lower() for h in hashes}) != 1:
                         error(location, 'conflicting sha256/checksum declarations')
                     elif '://' not in paths[0]:
-                        target = _local_reference_path(project, paths[0])
+                        target = _local_reference_path(document_project, paths[0])
                         if (target in pinned_files or target in pack_evidence
-                                or not validate_required_files(project, [paths[0]], input_roots)):
+                                or not reference_errors(paths[0])):
                             actual = pinned_files.get(target) or pack_evidence.get(target) or sha256_file(target)
                             if actual != hashes[0].lower():
                                 error(location, 'declared file hash differs from actual bytes: ' + paths[0])
@@ -279,8 +319,8 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
                         package_sources = {}
                         if registered and testing:
                             raw = value.get('path_or_url')
-                            if isinstance(raw, str) and not validate_required_files(project, [raw], input_roots):
-                                path = _local_reference_path(project, raw)
+                            if isinstance(raw, str) and not reference_errors(raw):
+                                path = _local_reference_path(document_project, raw)
                                 if path.suffix.lower() == '.json':
                                     package_sources = json.loads(path.read_text(encoding='utf-8-sig'))
                                     if not isinstance(package_sources, dict):
@@ -366,8 +406,8 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
                             error(where, 'image QA source must bind an exact path and SHA256')
                             continue
                         file(source['path'], where, resolve_manifest=False, follow_json=False)
-                        if verify_hashes and not validate_required_files(project, [source['path']], input_roots):
-                            source_path = _local_reference_path(project, source['path'])
+                        if verify_hashes and not reference_errors(source['path']):
+                            source_path = _local_reference_path(document_project, source['path'])
                             if hashlib.sha256(source_path.read_bytes()).hexdigest() != source['sha256'].lower():
                                 error(where, 'image QA source hash differs from actual bytes')
                             else:
@@ -386,7 +426,7 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
                                     and value['producer'].startswith('mlx-whisper ')
                                     and any(isinstance(value.get(name), list) for name in ('segments', 'windows'))):
                                 owner = Path(location)
-                                if owner.suffix.lower() == '.json' and owner.is_relative_to(project) and owner.is_file():
+                                if owner.suffix.lower() == '.json' and owner.is_relative_to(document_project) and owner.is_file():
                                     raw = str(owner.parent / raw)
                             file(raw, here, resolve_manifest=not registered,
                                  bound_artifact_id=value.get('artifact_id'),

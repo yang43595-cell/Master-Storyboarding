@@ -182,7 +182,7 @@ def test_redframe_duration_evidence_and_authored_edit_are_checked(tmp_path):
     payload, board = fixture(tmp_path, maximum=30)
     bind_redframe_capability(tmp_path, payload, list(range(4, 31)))
     model = payload['selected_video_model']
-    source = dict(segment_id='MERGED', prompt='Synthetic continuous action.',
+    source = dict(segment_id='MERGED', prompt='0–2.48秒 Synthetic first action. 2.48–6秒 Synthetic continuation.',
                   source_shot_ids=['S1', 'S2'], target_edit_duration_seconds=5.8,
                   edit_in_seconds=10, edit_out_seconds=15.8, shot_durations=[2.48, 3.52],
                   parameters=dict(payload['platform'], duration=6))
@@ -230,7 +230,7 @@ def test_redframe_duration_evidence_and_authored_edit_are_checked(tmp_path):
 def test_redframe_duration_matches_exact_native_options_and_resolution(tmp_path):
     payload, board = fixture(tmp_path, maximum=30)
     bind_redframe_capability(tmp_path, payload, [4, 23, 30])
-    source = dict(segment_id='G1', source_shot_ids=['S1'], target_edit_duration_seconds=22.8,
+    source = dict(segment_id='G1', source_shot_ids=['S1'], prompt='0–23秒 Synthetic action.', target_edit_duration_seconds=22.8,
                   shot_durations=[23], parameters=dict(payload['platform'], duration=23))
     payload['generation_segments'] = [source]
     actual = dict(source_segment_id='G1', parameters=dict(source['parameters']), duration_bounds=[4, 30])
@@ -253,6 +253,77 @@ def test_redframe_duration_matches_exact_native_options_and_resolution(tmp_path)
             validate_generation_boundaries(payload, board, tmp_path)
         with pytest.raises(ValueError, match=error):
             validate_delivery_parameters([actual], payload, tmp_path, platform='redframe')
+
+
+@pytest.mark.parametrize('prompt,issue', [
+    ('Synthetic action without timeline.', 'one explicit seconds range'),
+    ('0–2秒 A. 3–6秒 B.', 'conflicts with shot_durations'),
+    ('0–2秒 A. 2–5秒 B.', 'conflicts with shot_durations'),
+    ('0–6秒 A.', 'one explicit seconds range'),
+    ('0–2秒 A. 2–6秒 B.', None),
+])
+def test_redframe_source_checks_submitted_timeline_before_canvas(tmp_path, prompt, issue):
+    payload, board = fixture(tmp_path, maximum=30)
+    bind_redframe_capability(tmp_path, payload, list(range(4, 31)))
+    payload['generation_segments'] = [dict(segment_id='MERGED', prompt=prompt,
+        source_shot_ids=['S1', 'S2'], target_edit_duration_seconds=6,
+        shot_durations=[2, 4], parameters=dict(payload['platform'], duration=6))]
+    if issue:
+        with pytest.raises(ValueError, match=issue):
+            validate_generation_boundaries(payload, board, tmp_path)
+    else:
+        assert validate_generation_boundaries(payload, board, tmp_path)['segment_count'] == 1
+
+
+@pytest.mark.parametrize('with_timeline', [False, True])
+def test_formal_redframe_adoption_checks_timeline_before_becoming_current(tmp_path, with_timeline):
+    from scripts.core import artifacts
+    from scripts.tests.test_formal_package_submission import video_project, register
+    payload = video_project(tmp_path, current_prompt=False)
+    model, _ = fixture(tmp_path, maximum=30)
+    payload.update(platform=model['platform'], selected_video_model=model['selected_video_model'])
+    bind_redframe_capability(tmp_path, payload, list(range(4, 31)))
+    rows = payload['generation_segments']
+    payload['generation_segments'] = [dict(segment_id='MERGED',
+        prompt=('0–3秒 Alice stops. 3–6秒 Alice turns. 时间标记仅用于动作控制，不渲染文字。'
+                if with_timeline else 'Alice stops, then turns.'),
+        source_shot_ids=[s for row in rows for s in row['source_shot_ids']],
+        source_audio=[audio for row in rows for audio in row['source_audio']],
+        target_edit_duration_seconds=6, shot_durations=[3, 3],
+        parameters=dict(payload['platform'], duration=6))]
+    entry = register(tmp_path, 'P-RED-FORMAL', 'video.prompt', payload, ['storyboard.package'])
+    if with_timeline:
+        artifacts.adopt_initial_package(tmp_path, entry['artifact_id'], 'synthetic exact approval')
+        assert next(a for a in artifacts.load_manifest(tmp_path)['artifacts']
+                    if a['artifact_id'] == entry['artifact_id'])['status'] == 'current'
+    else:
+        with pytest.raises(ValueError, match='one explicit seconds range'):
+            artifacts.adopt_initial_package(tmp_path, entry['artifact_id'], 'synthetic exact approval')
+        assert next(a for a in artifacts.load_manifest(tmp_path)['artifacts']
+                    if a['artifact_id'] == entry['artifact_id'])['status'] == 'candidate'
+
+
+@pytest.mark.parametrize('declare_root', [False, True])
+def test_full_source_cli_checks_external_inputs_before_adoption(tmp_path, capsys, declare_root):
+    from scripts.core.io import write_json
+    external = tmp_path.parent / (tmp_path.name + '-selected-source')
+    external.mkdir()
+    evidence = external / 'original.txt'
+    evidence.write_text('Synthetic source bytes.')
+    payload = {'scope': {'type': 'full_local_authored'},
+               'generation_segments': [{'segment_id': 'V01', 'source_shot_ids': ['S1'], 'prompt': 'Synthetic action.'}],
+               'sources': [{'path': str(evidence), 'sha256': hashlib.sha256(evidence.read_bytes()).hexdigest()}]}
+    if declare_root:
+        payload['input_roots'] = [str(external)]
+    write_json(tmp_path / 'source.json', payload)
+    write_json(tmp_path / 'board.json', {'scenes': [{'scene_id': 'C1', 'shots': [{'shot_id': 'S1'}]}]})
+    code = main(['--project', str(tmp_path), '--prompt', 'source.json', '--storyboard', 'board.json'])
+    report = json.loads(capsys.readouterr().out)
+    assert code == (0 if declare_root else 1)
+    if declare_root:
+        assert report['input_files_checked'] == 1
+    else:
+        assert '越出项目及显式 input-root' in report['error']
 
 
 @pytest.mark.parametrize(('change', 'issue'), [
@@ -279,6 +350,7 @@ def test_selected_ranges_skip_only_a_declared_gap_with_omitted_director_shots(tm
         for i in range(1, 5)
     ]}
     rows = [dict(segment_id=f"G{i}", source_shot_ids=[f"S{i}"], edit_in_seconds=start,
+                 prompt='0–5秒 Synthetic action.', shot_durations=[5],
                  edit_out_seconds=start + 5, parameters=dict(payload['platform'], duration=5))
             for i, start in ((1, 0), (3, 10), (4, 15))]
     rows[-1]['cross_scene_continuity'] = dict(from_segment_id="G3", decision="new_action_or_time_jump",
@@ -719,7 +791,8 @@ def test_redframe_checks_cross_scene_action_before_writing(tmp_path, write_only_
     right.pop("same_scene_split")
     right.pop("continuity")
     for row in (left, right):
-        row.update(materials=[], target_edit_duration_seconds=9)
+        row.update(materials=[], target_edit_duration_seconds=9,
+                   prompt='0–9秒 Synthetic action.', shot_durations=[9])
     indoors = board["scenes"][0]
     outside_shot, third_shot = indoors["shots"][1:]
     indoors["shots"] = indoors["shots"][:1]
@@ -765,7 +838,8 @@ def test_redframe_checks_cross_scene_action_before_writing(tmp_path, write_only_
 
     third.pop("same_scene_split")
     third.pop("continuity")
-    third.update(materials=[], target_edit_duration_seconds=9)
+    third.update(materials=[], target_edit_duration_seconds=9,
+                 prompt='0–9秒 Synthetic action.', shot_durations=[9])
     payload["generation_segments"].append(third)
     board["scenes"].append({"scene_id": "OFFICE", "shots": [third_shot]})
     with pytest.raises(ValueError, match="G2→G3 缺跨场动作接续判断"):

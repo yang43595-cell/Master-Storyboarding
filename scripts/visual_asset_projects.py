@@ -14,10 +14,11 @@ import uuid
 from visual_asset_source import (project_path, source_project, prompt_context, resolve_reference,
                                  local_reference_document, TEXT_REFERENCE_SUFFIXES)
 from core.artifacts import artifact_is_confirmed, digest, verify_image_confirmation
-from visual_asset_choices import image_work_items, image_decision
+from visual_asset_choices import (image_work_items, image_decision, retained_specification,
+                                  scene_state_coverage)
 import visual_asset_product_usage as product_usage
 from visual_asset_characters import (character_route, prepare_character, choose_character_route, upstream_outfits,
-                                     enable_character_ai_finals, character_final_ids, final_output_updates)
+                                     enable_character_ai_finals, character_final_ids, final_output_updates, retain_character_labels)
 from core.character_assets import uses_wardrobe, production_kinds, character_type, final_output_problems, step_output_id
 from core.asset_refs import PROP_BUILD_VIEW, PROP_REUSE_VIEW, character_output_contract, legacy_prop_reuse_label
 from core.character_layout import character_layout_reference
@@ -79,6 +80,7 @@ def validate(data, filename):
 
 def production_basis(narrative, ast_ids):
     context = prompt_context(narrative, ast_ids)
+    context.pop('revision', None)
     context['asset_requirements'] = [
         {k: v for k, v in r.items() if k not in {'image_decision', 'image_reason'}}
         for r in context['asset_requirements']]
@@ -213,9 +215,22 @@ class Projects:
             context_changed = context_changed or old_background != new_background
             for req in image_work_items(narrative):
                 row = old.pop(req['asset_id'], None)
+                retained = row is not None and retained_specification(row['requirement'], req, narrative, p['narrative'])
+                if retained and row.get('job_id'):
+                    retained = retain_character_labels(
+                        copy.deepcopy(self.lib.get(row['job_id'], 'jobs')), req, narrative)
+                previous_narrative = p['narrative']
+                if retained:
+                    previous_narrative = copy.deepcopy(previous_narrative)
+                    previous_narrative['asset_requirements'] = [
+                        copy.deepcopy(req) if r['asset_id'] == req['asset_id'] else r
+                        for r in previous_narrative['asset_requirements']]
                 paragraph_changed = narrative.get('schema_version') == '2.0' and row is not None and (
-                    production_basis(p['narrative'], [req['asset_id']]) != production_basis(narrative, [req['asset_id']]))
-                if row is None or {k: v for k, v in row['requirement'].items() if k not in {'image_decision', 'image_reason'}} != {k: v for k, v in req.items() if k not in {'image_decision', 'image_reason'}} or context_changed or paragraph_changed:
+                    production_basis(previous_narrative, [req['asset_id']]) != production_basis(narrative, [req['asset_id']]))
+                requirement_changed = row is not None and not retained and (
+                    {k: v for k, v in row['requirement'].items() if k not in {'image_decision', 'image_reason'}} !=
+                    {k: v for k, v in req.items() if k not in {'image_decision', 'image_reason'}})
+                if row is None or requirement_changed or context_changed or paragraph_changed:
                     changes.append(req['asset_id'] + (' 新增' if row is None else ' 需求或叙事上下文变化，需重新核对'))
                     if row:
                         p.setdefault('history', []).append(copy.deepcopy(row))
@@ -227,6 +242,14 @@ class Projects:
                             self.lib.save(job, 'jobs')
                     row = {'requirement': req, 'reference_ids': (row or {}).get('reference_ids', []), 'job_id': None}
                 row['requirement'] = req
+                if row.get('job_id'):
+                    job = self.lib.get(row['job_id'], 'jobs')
+                    if retained:
+                        retain_character_labels(job, req, narrative)
+                        job['requirement'] = copy.deepcopy(req)
+                    if req['category'] == 'LOCATION':
+                        self.apply_scene_coverage(job, scene_state_coverage(narrative, req))
+                    self.lib.save(job, 'jobs')
                 rows.append(row)
             for row in old.values():
                 changes.append(row['requirement']['asset_id'] + ' 已从需求表移除')
@@ -395,8 +418,11 @@ class Projects:
             # choice cannot invalidate an otherwise identical export.
             before = [(s['key'], s.get('required', True), tuple(s.get('dependencies', []))) for s in job['steps']]
             groups = {}
+            coverage = scene_state_coverage(p['narrative'], row['requirement'])
+            aliases = {state for states in coverage.values() for state in states} - set(coverage)
             for step in job['steps']:
-                groups.setdefault(step['state'], []).append(step)
+                if step['state'] not in aliases:
+                    groups.setdefault(step['state'], []).append(step)
             if mode == 'four':
                 if len(groups) * 4 > 16:
                     raise ValueError('当前四图方案超过16张预算，请先核对状态与必要覆盖，不自动扩张')
@@ -436,6 +462,7 @@ class Projects:
                             invalid.add(step['key'])
             if invalid:
                 self.reset_steps(job, self.dependent_keys(job, invalid))
+            self.apply_scene_coverage(job, coverage)
             job['scene_output_mode'] = mode
             row['scene_output_mode'] = mode
             after = [(s['key'], s.get('required', True), tuple(s.get('dependencies', []))) for s in job['steps']]
@@ -451,6 +478,21 @@ class Projects:
             self.save(p)
             return self.detail(p['id'])
 
+    @staticmethod
+    def apply_scene_coverage(job, coverage):
+        # A coverage decision changes output quantity, never image bytes or receipts.
+        for step in job['steps']:
+            if step['kind'] != '环境':
+                continue
+            if '_required_before_scene_coverage' in step:
+                step['required'] = step.pop('_required_before_scene_coverage')
+            step.pop('covered_states', None)
+            if step['state'] in coverage:
+                step['covered_states'] = list(coverage[step['state']])
+            elif any(step['state'] in states for states in coverage.values()):
+                step['_required_before_scene_coverage'] = step.get('required', True)
+                step['required'] = False
+
     def prepare_reuse(self, payload):
         with self.lib.lock:
             p = self.get(payload['project_id'])
@@ -463,7 +505,8 @@ class Projects:
             req = row['requirement']
             kind = self.row_kinds(row)[0]
             recipe = self.skill.recipe(kind)
-            states = ['外观母版'] if kind == '角色外观' else req['required_states'] or [req['name']]
+            states = (list(scene_state_coverage(p['narrative'], req)) if kind == '环境' else
+                      ['外观母版'] if kind == '角色外观' else req['required_states']) or [req['name']]
             views = ['任意视角'] if kind == '环境' else ['主图']
             outputs = [{'key':f'state{n}_view{i}', 'kind':kind, 'state':s, 'view':v,
                         'ratio':recipe['ratio'], 'purpose':s + ' · ' + v,
@@ -510,7 +553,7 @@ class Projects:
                 if job:
                     row.setdefault('job_history', []).append(job['id'])
                 req = row['requirement']
-                states = req['required_states'] or [req['name']]
+                states = list(scene_state_coverage(p['narrative'], req)) or [req['name']]
                 outputs = [{'key': f'state{n}_view{i}', 'kind': '环境', 'state': state,
                             'view': view, 'ratio': self.skill.recipe('环境')['ratio'],
                             'purpose': state + ' · ' + view, 'rationale': '按用户选择生成四张环境资产图',
@@ -609,7 +652,9 @@ class Projects:
             slots = planned['outputs']
             if not slots or len(slots) > 16:
                 raise ValueError('每项需求须有 1 至 16 个必要输出；不能静默省略需求')
-            if req['category'] != 'PROP' and production_kinds(req) != ['角色外观'] and not set(req['required_states']).issubset({s['state'] for s in slots}):
+            coverage = scene_state_coverage(p['narrative'], req) if req['category'] == 'LOCATION' else {}
+            covered = {state for slot in slots for state in coverage.get(slot['state'], [slot['state']])}
+            if req['category'] != 'PROP' and production_kinds(req) != ['角色外观'] and not set(req['required_states']).issubset(covered):
                 raise ValueError('制作项未完整覆盖 AST 所需状态，请重新盘点')
             seen = set()
             for s in slots:
@@ -667,6 +712,8 @@ class Projects:
                    'character_output_mode': self.row_character_mode(row),
                    'scene_output_mode': row.get('scene_output_mode'),
                    'plan_rationale': planned['rationale'], 'blockers': planned['blockers']}
+            if req['category'] == 'LOCATION':
+                self.apply_scene_coverage(job, coverage)
             jobs.append((row, job))
         for row, job in jobs:
             self.lib.save(job, 'jobs')
@@ -2117,8 +2164,11 @@ class Projects:
                         'generation_record': dict(external) if external else ({'tool': actual_provider, 'model': actual_model,
                             'user_authorization_ref': str(receipt_path) + '#' + output_id} if step.get('authorization') and provenance.get('kind') != 'manual_result_import' else None)})
                     confirmed = {'candidate_id': candidate_id, 'path': str(target), 'user_confirmation_ref': confirm_ref}
+                    covered_states = (scene_state_coverage(p['narrative'], req).get(step['state'], [])
+                                      if req['category'] == 'LOCATION' else [])
                     record['confirmed_outputs'].append({**confirmed, 'output_id': output_id, 'purpose': step['purpose'],
-                                                        'view': step['view'], 'state': step['state'], 'output_kind': step['kind']})
+                                                        'view': step['view'], 'state': step['state'], 'output_kind': step['kind'],
+                                                        **({'covered_states': covered_states} if len(covered_states) > 1 else {})})
                     prior_character_final = any(o['output_id'] in {step_output_id(s) for s in job['steps'] if s['kind'] == '人物1x4'} for o in record['confirmed_outputs'][:-1])
                     if record['confirmed_asset'] is None or (job.get('character_workflow') and step['kind'] == '人物1x4' and not prior_character_final):
                         record['confirmed_asset'] = confirmed

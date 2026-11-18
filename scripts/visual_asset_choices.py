@@ -1,5 +1,6 @@
 """Explicit project image requirements, separate from immutable story approvals."""
 import copy
+import hashlib
 if __package__:
     from .core.character_assets import CHARACTER_TYPES, uses_wardrobe
 else:
@@ -37,6 +38,80 @@ def image_work_items(narrative):
             if image_decision(r) in {'需要制作', '复用现有素材'}]
 
 
+def requirement_digest(requirement):
+    """Bind production choices to the unchanged source requirement, not its label."""
+    raw = json.dumps({k: v for k, v in requirement.items() if k not in {'image_decision', 'image_reason'}}, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest()
+
+
+def narrative_digest(narrative):
+    business = {k: v for k, v in narrative.items() if not k.startswith('_')}
+    raw = json.dumps(business, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest()
+
+
+def _apply_production_spec(requirement, specification):
+    result = copy.deepcopy(requirement)
+    names = specification.get('wardrobe_name_map', {})
+    if 'wardrobe_name_map' in specification:
+        if (not isinstance(names, dict) or not names
+                or specification.get('unchanged_appearance') is not True):
+            raise ValueError('造型标签对应须明确外观未变化；实际换装不能继承原图确认')
+        states = result.get('wardrobe_states')
+        if (result.get('category') != 'CHARACTER' or not isinstance(states, list)
+                or not states or not isinstance(names, dict)
+                or not set(names) <= {s['name'] for s in states}
+                or any(not isinstance(v, str) or not v.strip() for v in names.values())):
+            raise ValueError('造型标签对应须引用已有明确服装槽位，不能新增换装或修改人物身份')
+        for state in states:
+            state['name'] = names.get(state['name'], state['name'])
+        if len({s['name'] for s in states}) != len(states):
+            raise ValueError('造型标签对应不能合并不同服装槽位')
+    coverage = specification.get('scene_state_coverage')
+    if coverage is not None:
+        states = result.get('required_states', [])
+        if (result.get('category') != 'LOCATION' or not isinstance(coverage, dict) or not coverage
+                or specification.get('unchanged_static_space') is not True):
+            raise ValueError('场景复用须明确同一静态空间未变化，并逐项对应原状态')
+        flattened = []
+        for primary, covered in coverage.items():
+            if (primary not in states or not isinstance(covered, list) or not covered
+                    or primary not in covered or any(v not in states for v in covered)):
+                raise ValueError('场景覆盖必须引用原 required_states，且包含主状态')
+            flattened.extend(covered)
+        if len(flattened) != len(set(flattened)) or set(flattened) != set(states):
+            raise ValueError('场景覆盖须完整且唯一，不能遗漏、重叠或合并未知状态')
+    return result
+
+
+def production_spec(narrative, requirement):
+    specification = (narrative.get('_asset_choices', {}).get('production_specs', {})
+                     .get(requirement['asset_id']))
+    return specification or {}
+
+
+def scene_state_coverage(narrative, requirement):
+    specification = production_spec(narrative, requirement)
+    coverage = specification.get('scene_state_coverage')
+    return copy.deepcopy(coverage) if coverage is not None else {
+        state: [state] for state in requirement.get('required_states', [])}
+
+
+def retained_specification(old_requirement, new_requirement, narrative, previous_narrative=None):
+    """Only an explicitly recorded label mapping may retain an existing image job."""
+    specification = production_spec(narrative, new_requirement)
+    baseline = copy.deepcopy(old_requirement)
+    if previous_narrative is not None:
+        prior = production_spec(previous_narrative, old_requirement).get('wardrobe_name_map', {})
+        reverse = {new: old for old, new in prior.items()}
+        for state in baseline.get('wardrobe_states', []):
+            state['name'] = reverse.get(state['name'], state['name'])
+    if (not specification.get('wardrobe_name_map')
+            or specification.get('source_requirement_sha256') != requirement_digest(baseline)):
+        return False
+    return _apply_production_spec(baseline, specification) == new_requirement
+
+
 def effective(narrative, choices):
     requirements = copy.deepcopy(narrative['asset_requirements'])
     ids = {r['asset_id'] for r in requirements}
@@ -68,6 +143,19 @@ def effective(narrative, choices):
                     or not str(decision.get('image_reason', '')).strip()):
                 raise ValueError('资产图判断缺少有效结论或依据：' + req['asset_id'])
             req.update({k: decision[k] for k in ('image_decision', 'image_reason')})
+    specifications = choices.get('production_specs', {})
+    if not isinstance(specifications, dict) or set(specifications) - ids:
+        raise ValueError('制作规格引用了不存在的资产编号')
+    for ast, specification in specifications.items():
+        req = next(r for r in requirements if r['asset_id'] == ast)
+        if (not isinstance(specification, dict)
+                or specification.get('source_revision') != narrative['revision']
+                or specification.get('source_requirement_sha256') != requirement_digest(req)
+                or specification.get('source_narrative_sha256') != narrative_digest(narrative)
+                or not all(isinstance(specification.get(k), str) and specification[k].strip()
+                           for k in ('decision_ref', 'quote'))):
+            raise ValueError('制作规格的上游或决定依据已失效，请核对：' + ast)
+        req.update(_apply_production_spec(req, specification))
     disabled = set(choices['excluded']) | set(choices['replaced'])
     types = choices.get('character_types', {})
     for ast, item in types.items():
@@ -164,6 +252,12 @@ def save_choices(root, narrative, choices):
         rows.append('| ' + ' | '.join(map(cell, [ast, item['name'], '—', '见原需求', '无需独立图', '用户明确不需要；可恢复', image_state(ast), '—'])) + ' |')
     for ast, item in choices['replaced'].items():
         rows.append('| ' + ' | '.join(map(cell, [ast, item['name'], '—', '见原需求', '已拆分', '已拆分为：' + '、'.join(item['children']), image_state(ast), '—'])) + ' |')
+    for ast, specification in choices.get('production_specs', {}).items():
+        labels = [old + ' → ' + new for old, new in specification.get('wardrobe_name_map', {}).items()]
+        coverage = [primary + ' 覆盖 ' + '、'.join(states)
+                    for primary, states in specification.get('scene_state_coverage', {}).items()]
+        rows.extend(['', '制作规格 ' + ast + '：' + '；'.join(labels + coverage),
+                     '用户原话：' + specification['quote'] + '；依据：' + specification['decision_ref']])
     (path.parent / '当前资产需求表.md').write_text('\n'.join(rows) + '\n', encoding='utf-8')
     if __package__:
         from .visual_asset_product_usage import load_usage, append_table
@@ -208,6 +302,26 @@ def change(service, payload):
                 raise ValueError('请选择角色类型并提供已确认依据')
             choices.setdefault('character_types', {})[req['asset_id']] = {
                 'character_type': value, 'evidence': evidence, 'source_revision': narrative['revision']}
+        elif action == 'production-spec':
+            req = next((r for r in narrative['asset_requirements'] if r['asset_id'] == payload['ast_id']), None)
+            if req is None:
+                raise ValueError('制作规格只能对应原叙事中的准确 AST')
+            allowed = {'wardrobe_name_map', 'unchanged_appearance',
+                       'scene_state_coverage', 'unchanged_static_space'}
+            supplied = payload.get('specification')
+            if (not isinstance(supplied, dict) or not supplied or set(supplied) - allowed
+                    or not (set(supplied) & {'wardrobe_name_map', 'scene_state_coverage'})
+                    or not all(isinstance(payload.get(k), str) and payload[k].strip()
+                               for k in ('decision_ref', 'quote'))):
+                raise ValueError('制作规格只接受造型标签对应或静态场景覆盖，并须记录真实用户原话及依据')
+            specification = {**copy.deepcopy(supplied), 'source_revision': narrative['revision'],
+                             'source_requirement_sha256': requirement_digest(req),
+                             'source_narrative_sha256': narrative_digest(narrative),
+                             'decision_ref': payload['decision_ref'], 'quote': payload['quote']}
+            _apply_production_spec(req, specification)
+            if choices.get('production_specs', {}).get(req['asset_id']) == specification:
+                return service.detail(p['id'])
+            choices.setdefault('production_specs', {})[req['asset_id']] = specification
         elif action == 'add':
             name = str(payload.get('name', '')).strip()
             category = payload.get('category')
@@ -244,7 +358,8 @@ def change(service, payload):
         choices['revision'] += 1
         choices['history'].append({'operation': action, 'at': now, 'user_confirmed': True,
             'ast_id': payload.get('ast_id', locals().get('ast')), 'appearance': payload.get('appearance', ''),
-            'source_revision': p['source']['revision']})
+            'source_revision': p['source']['revision'],
+            **({k: payload[k] for k in ('decision_ref', 'quote')} if action == 'production-spec' else {})})
         # Validate additions with the same narrative contract before any persistence.
         if __package__:
             from .core.schema_contracts import require_schema

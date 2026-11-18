@@ -39,6 +39,8 @@
 - `canvas` 填 `platform`、`model`、`aspect_ratio`、`resolution`、`target_url` 及平台提供的 `target_project_id`。登记红帧开工决定时写入 Seedance 2.5，并为未指定的画幅和分辨率填入 9:16、480p。只有用户明确选用其他规格或实际控件与模板不符时，才处理该项差异。明确新建时先填 `create_new: true`，新建后登记实际地址和项目 ID。视频 Skill 直接读取本字段，正式画布校验核对目标及模型、画幅、分辨率。
 - `image_generation` 留空表示尚无可复用生图授权。要沿用既有额度时，填 `provider`、`model`、`fee_scope: "existing_quota"`、`reference_upload_authorized: true` 和 `authorization_ref`。范围可选 `outputs`（准确 AST 到获准输出 ID 数组的映射），或按用户明确给出的持续授权填 `scope: "required_asset_outputs"`（本轮有效需求的必要资产输出）或 `"required_assets_and_supplements"`（同时涵盖必要分镜补图）。后两种范围可在开工时确认，提交时再核对实际制作项。平台托管模型按实际披露记录，资产制作网页的 ImageGen 使用内部路由值 `5.0`。资产网页检查工具、模型、输出和当版提示词自查，排队后再次核对授权。超出范围、切换工具或额度方式时，核对新的授权依据。
 
+用户已明确选定的造型、包位、复用或取消补图，当轮将原话、消息引用和受影响 AST／请求／镜号写入现有 `brief`、资产调整或对应请求，后续直接消费同一决定，不再要求同义确认或另问“豁免”。制作决定不替代准确编导整稿或图片人审；真正改变故事事实、对白或动作链时，先合并已有意见并自查成一个准确新版本，再集中确认整稿。
+
 已有明确的自主继续授权时，协调方同时用[既有流程授权入口](../development/artifact-adoption.md#登记下游流程授权)登记相同的真实用户依据及阶段范围。开工决定供生产使用，编导与资产的准确成品按总规则接受实际人工确认。
 
 批量制作依赖画布能力的素材或提示词前，按[平台保存与回读依据](../../skills/voiceover-to-video-script/references/seedance-delivery-package.md#平台保存与回读依据)核本轮所选方式。

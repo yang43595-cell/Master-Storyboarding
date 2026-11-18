@@ -271,7 +271,23 @@ def _confirmed_output(root: Path, asset_id: str, output: dict, *, confirmation_c
         return None
     try:
         verify_image_confirmation(image_path, image_receipt)
-    except (ValueError, OSError):
+        covered_states = output.get('covered_states')
+        if covered_states is not None:
+            if (not isinstance(covered_states, list) or not covered_states
+                    or any(not isinstance(value, str) or not value.strip() for value in covered_states)
+                    or len(covered_states) != len(set(covered_states))
+                    or output.get('state') not in covered_states):
+                return None
+            # Coverage is a production decision about unchanged static space,
+            # not a new image approval or an arbitrary manifest declaration.
+            narrative, choices = current_narrative(root), read_choices(root)
+            requirements = effective(narrative, choices)
+            requirement = next((req for req in requirements if req['asset_id'] == asset_id), None)
+            specification = choices.get('production_specs', {}).get(asset_id, {})
+            if (requirement is None or requirement['category'] != 'LOCATION'
+                    or specification.get('scene_state_coverage', {}).get(output['state']) != covered_states):
+                return None
+    except (ValueError, OSError, KeyError, TypeError):
         return None
     return {
         "output_id": output.get("output_id"),
@@ -279,6 +295,7 @@ def _confirmed_output(root: Path, asset_id: str, output: dict, *, confirmation_c
         **({"output_kind": output["output_kind"]} if "output_kind" in output else {}),
         "view": PROP_REUSE_VIEW if display_label and legacy_prop_reuse_label(output, image_receipt) else output.get("view"),
         "state": output.get("state"),
+        **({'covered_states': list(covered_states)} if covered_states is not None else {}),
         "candidate_id": output.get("candidate_id"),
         "path": str(image_path),
         "confirmation_ref": reference,
@@ -465,6 +482,8 @@ def build_asset_list(root: Path, narrative: dict, choices: dict | None = None) -
             "appearance": requirement.get("source_paragraph_ids", []),
             "image": images.get(asset_id, {"status": "missing"}),
             "action_references": [r for r in usage.get('references', []) if r['product_ast_id'] == asset_id],
+            **({'production_spec': choices['production_specs'][asset_id]}
+               if asset_id in choices.get('production_specs', {}) else {}),
         })
     for asset_id, item in choices.get("excluded", {}).items():
         items.append({"asset_id": asset_id, "name": item.get("name", ""), "category": item.get("category", ""),
@@ -944,7 +963,7 @@ def require_references(root: Path, artifact_ids: list[str], shot_ids: list[str] 
             if entry.get('type') == 'visual-supplement-image':
                 from .quality_evidence import validate_image_evidence
                 validate_image_evidence(root, path, entry.get('quality_evidence'), shot_ids,
-                                        product_reference=entry.get('product_reference'))
+                                        product_reference=entry.get('product_reference'), artifact=entry, state=state)
 
             if shot_ids and not set(shot_ids) <= permitted_shots:
                 raise ValueError('本图确认用途未覆盖这些镜头，不能自行扩用：' + ', '.join(sorted(set(shot_ids) - permitted_shots)))

@@ -301,7 +301,7 @@ def _validate_report(project, entry, report, state, pointer=None):
             raise ValueError("分镜图片验收必须绑定准确导演上游")
         validate_image_evidence(project, _file(project, entry["path_or_url"]),
                                 entry.get("quality_evidence"), shots,
-                                product_reference=entry.get("product_reference"))
+                                product_reference=entry.get("product_reference"), artifact=entry, state=state)
     elif report.get("usage") is not None:
         raise ValueError("图片用途仅允许独立分镜图片登记")
     if "reference_groups" in report:

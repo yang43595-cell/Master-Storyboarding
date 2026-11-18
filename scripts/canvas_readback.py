@@ -107,26 +107,11 @@ def validate_canvas_inputs(row: dict, *, redframe: bool = False, before_upload: 
         actual = row.get(field)
         if not isinstance(actual, list) or sorted(map(digest, actual)) != sorted(map(digest, expected)):
             raise ValueError(f'canvas {field}: missing, extra or conflicting source/edge')
-    # Read actual ranges from the submitted body, not a second timing ledger.
-    number = r'\d+(?:\.\d+)?'
-    ranges = re.findall(rf'(?<![\d.])({number})\s*(?:秒|s)?\s*[-–—~～至到]\s*({number})\s*(?:秒|s)(?![a-z])',
-                        row.get('prompt', ''), flags=re.IGNORECASE)
-    shots = row.get('shot_durations')
-    if not ranges or not isinstance(shots, list) or len(ranges) != len(shots):
-        raise ValueError('canvas prompt timeline needs one explicit seconds range per shot')
-    cursor = 0.0
-    for (start, end), seconds in zip(ranges, shots):
-        start, end = float(start), float(end)
-        if (type(seconds) not in (int, float) or not math.isfinite(seconds)
-                or seconds <= 0 or end <= start or not math.isclose(start, cursor, abs_tol=0.01)
-                or not math.isclose(end - start, seconds, abs_tol=0.01)):
-            raise ValueError('canvas prompt timeline conflicts with shot_durations')
-        cursor = end
-    parameters = row.get('parameters', {})
-    duration = parameters.get('duration', parameters.get('duration_seconds'))
-    if (type(duration) not in (int, float) or not math.isfinite(duration)
-            or not math.isclose(cursor, duration, abs_tol=0.01)):
-        raise ValueError('canvas prompt end conflicts with total duration')
+    try:
+        from .core.quality_evidence import validate_prompt_timeline
+    except ImportError:
+        from core.quality_evidence import validate_prompt_timeline
+    validate_prompt_timeline(row, row.get('parameters', {}))
 
 
 def compare_baseline(baseline: dict, current: dict) -> dict:
@@ -399,7 +384,7 @@ def preview_scope(frozen: dict, project: Path, *, json_projections=None, context
             validate_registered_product_reference(root, ref, item,
                                                   allowed_roots=[Path(p) for p in roots + input_roots])
             validate_image_evidence(root, path, item.get('quality_evidence'), reference_shot_ids(ref, row),
-                                    allowed_roots=[Path(p) for p in roots + input_roots], reference=ref)
+                                    allowed_roots=[Path(p) for p in roots + input_roots], reference=ref, artifact=item)
         binding = ref.get('upload_binding', {})
         if row.get('native_identity_mode') == 'first_last_frame_download':
             if digest(binding) != digest(_endpoint_upload_expected(frozen, row, ref, media, slot)):
@@ -513,6 +498,15 @@ def predecessor_contexts(frozen, project, manifest, private_preview):
     return contexts, projections
 
 
+def prompt_scene_control(row, frozen, project, state, requirements, *, formal_delivery=False):
+    try:
+        from .core.prompt_scene_control import resolve_prompt_scene_control
+    except ImportError:
+        from core.prompt_scene_control import resolve_prompt_scene_control
+    return resolve_prompt_scene_control(row, frozen, project, state, requirements,
+                                        formal_delivery=formal_delivery)
+
+
 def validate_submission(frozen: dict, project: Path, *, private_preview: bool = False,
                         formal_delivery: bool = False, preflight: bool = False) -> dict:
     """Check the existing frozen delivery JSON, using current project authority.
@@ -520,6 +514,8 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
     Roles/states are explicit production decisions, not inferred visual facts.
     No remote reads, generation, adoption or additional ledger.
     """
+    if isinstance(frozen, dict) and 'generation_segments' in frozen and 'drafts' not in frozen:
+        raise ValueError('画布预检需要含 target_url/drafts 的交付冻结快照，不能直接传入 video.prompt 源稿')
     import math
     try:
         from .core.artifacts import load_manifest, artifact_is_adopted, project_path, digest as file_digest, validate_current_dependencies
@@ -590,9 +586,6 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
     else:
         if 'preview_authorization' in frozen:
             raise ValueError('preview scope cannot be used by formal delivery')
-        dependencies = discover_dependencies(project, payload=frozen, json_projections=projections)
-    if not dependencies['ok']:
-        raise ValueError('Dependency readiness failed: ' + '; '.join(dependencies['errors'] + dependencies['uncheckable']))
     if not isinstance(frozen.get('revision'), str) or not frozen['revision'].strip():
         raise ValueError('submission revision required')
     def authority(ref):
@@ -644,6 +637,21 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                 scene_requirements.extend(scene_state_requirements(source_payload))
                 package_requirements.extend(packaging_requirements(source_payload))
                 scene_sources.append((ref, source_path.resolve(), source_payload))
+    if not private_preview:
+        try:
+            from .core.delivery_files import declared_input_roots
+        except ImportError:
+            from core.delivery_files import declared_input_roots
+        # Only exact, currently adopted source bytes can extend input scope.
+        # Untrusted roots placed on the frozen payload are not authority.
+        input_roots = list(dict.fromkeys(
+            path for _, _, source_payload in scene_sources
+            for path in declared_input_roots(source_payload)))
+        dependencies = discover_dependencies(
+            project, input_roots=input_roots, payload=frozen,
+            json_projections=projections)
+    if not dependencies['ok']:
+        raise ValueError('Dependency readiness failed: ' + '; '.join(dependencies['errors'] + dependencies['uncheckable']))
     reuse_source_review = False
     product_pack = None
     product_requirements = []
@@ -792,6 +800,8 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             from core.asset_refs import resolve_final_images
         asset_outputs = resolve_final_images(project, sorted(exact_outputs))
     endpoint_control_checks = {}
+    prompt_state_control_checks = {}
+    accepted_image_uses = []
     for row in validation_rows:
         row_frozen = context_scopes.get(row['node_id'], frozen)
         before_upload = formal_redframe and preflight and row['node_id'] in planned_ids
@@ -805,7 +815,13 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         if not endpoint_mode:
             if 'state_control' in row:
                 raise ValueError('endpoint state_control requires its explicit verified identity mode')
-            validate_scene_state_references(row, scene_requirements)
+            prompt_control = prompt_scene_control(
+                row, frozen, project, state, scene_requirements,
+                formal_delivery=formal_delivery and not private_preview)
+            validate_scene_state_references(
+                row, scene_requirements, accepted_prompt_control=prompt_control is not None)
+            if prompt_control is not None:
+                prompt_state_control_checks[row['node_id']] = prompt_control
         packaging_selected = any(set(item['source_shot_ids']) & set(source_shot_ids(row))
                                  for item in package_requirements) or any(
             (ref.get('product_reference') or {}).get('reference_role') == 'packaging'
@@ -959,7 +975,13 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                     from .core.quality_evidence import validate_image_evidence, reference_shot_ids
                 except ImportError:
                     from core.quality_evidence import validate_image_evidence, reference_shot_ids
-                validate_image_evidence(project, path, item.get('quality_evidence'), reference_shot_ids(ref, row), reference=ref)
+                image_check = validate_image_evidence(
+                    project, path, item.get('quality_evidence'), reference_shot_ids(ref, row),
+                    reference=ref, artifact=item, state=state)
+                if image_check['accepted_deviations']:
+                    accepted_image_uses.append({'node_id': row['node_id'], 'artifact_id': item['artifact_id'],
+                                                'source_shot_ids': reference_shot_ids(ref, row),
+                                                **image_check})
             if 'action' in assigned and kind != 'video':
                 raise ValueError('action video cannot be replaced by identity/still reference')
             if 'action' in assigned or (xiaoyunque and kind == 'video'):
@@ -1062,6 +1084,9 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                 'upload_mapping_pending_nodes': sorted(planned_ids)} if formal_redframe and preflight else {}),
             'dependency_checks': dependencies,
             'endpoint_control_checks': endpoint_control_checks,
+            **({'prompt_state_control_checks': prompt_state_control_checks}
+               if prompt_state_control_checks else {}),
+            **({'accepted_image_uses': accepted_image_uses} if accepted_image_uses else {}),
             'predecessor_context_nodes': list(context_scopes),
             'canvas_input_checks': {row['node_id']: ('passed' if redframe or 'edges' in row else 'not_checked')
                                     for row in frozen['drafts']},

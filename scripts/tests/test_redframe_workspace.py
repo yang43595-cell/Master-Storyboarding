@@ -176,3 +176,28 @@ def test_canvas_read_requires_persisted_graph_and_exact_origin():
         workspace.read_canvas()
     with pytest.raises(RedframeWorkspaceError, match='wrong_origin'):
         workspace.read_canvas()
+
+
+def test_image_source_card_download_uses_native_output_path_and_bounded_transport():
+    page = PageReplies({'results': [{'status': 200, 'error': None, 'bytes': 42, 'sha256': 'a' * 64}]})
+    source = {'id': 'source', 'type': 'remote-imageNode',
+              'data': {'outputs': {'image': {'value': {'url': 'assets/source/original.png'}}}}}
+    result, = RedframeWorkspace(page, 'project').digest_image_outputs([source])
+    assert (result['node_id'], result['path'], result['sha256']) == ('source', 'assets/source/original.png', 'a' * 64)
+    assert page.calls[0]['payload'] == {'slots': [{'path': 'assets/source/original.png', 'family': 'image'}]}
+
+
+def test_image_source_card_cannot_download_another_nodes_file():
+    page = PageReplies()
+    source = {'id': 'source', 'type': 'remote-imageNode',
+              'data': {'outputs': {'image': {'value': {'url': 'assets/other/original.png'}}}}}
+    with pytest.raises(ValueError, match='no native output'):
+        RedframeWorkspace(page, 'project').digest_image_outputs([source])
+    assert page.calls == []
+
+
+def test_canvas_read_can_use_remaining_outer_budget():
+    graph = {'toonflowCanvas': True, 'nodes': [], 'edges': []}
+    page = PageReplies({'results': [{'status': 200, 'error': None, 'graph': graph}]})
+    assert RedframeWorkspace(page, 'project').read_canvas(budget_ms=1500) == graph
+    assert page.calls[0]['budget'] == 1500

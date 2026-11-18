@@ -71,12 +71,108 @@ def _observations(evidence, aspects):
     # Text is an assertion, never proof that a person/agent actually inspected it.
 
 
+def _image_confirmation_usages(root, artifact, state):
+    """Read image permissions from human receipts, never a draft/self-check claim."""
+    from .confirmation_scope import is_whole_artifact
+    from .artifacts import project_path
+
+    ident, checksum = artifact.get('artifact_id'), artifact.get('checksum')
+    receipts = list(state.get('user_confirmations', []))
+    reference = artifact.get('confirmation_ref')
+    if isinstance(reference, str):
+        path = project_path(root, reference.partition('#')[0])
+        if path.is_relative_to(root) and path.is_file():
+            receipts.append(json.loads(path.read_text(encoding='utf-8-sig')))
+    for receipt in receipts:
+        if (not is_whole_artifact(receipt) or not _text(receipt.get('approval_ref'))):
+            continue
+        if (receipt.get('artifact_id') == ident and receipt.get('sha256') == checksum
+                and receipt.get('revision') == artifact.get('revision')):
+            yield receipt.get('usage')
+        if ident not in receipt.get('artifact_ids', []):
+            continue
+        images = receipt.get('images')
+        if images is None:
+            images = [{'artifact_id': ident, 'path': receipt.get('image_path'),
+                       'sha256': receipt.get('image_sha256'), 'usage': receipt.get('usage')}]
+        if not isinstance(images, list):
+            continue
+        for image in images:
+            if (not isinstance(image, dict) or image.get('artifact_id') != ident
+                    or image.get('sha256') != checksum or not _text(image.get('path'))
+                    or project_path(root, image['path']) != project_path(root, artifact['path_or_url'])):
+                continue
+            yield image.get('usage', receipt.get('usage'))
+
+
+def _accepted_image_checks(root, image_path, evidence, shot_ids, reference, artifact, state):
+    """Resolve explicitly accepted observations for exact pixels and one image use."""
+    from .confirmation_scope import image_usage_shots
+    from .project_state import load_project_state
+    from .artifacts import project_path
+
+    if (not isinstance(artifact, dict) or artifact.get('type') != 'visual-supplement-image'
+            or artifact.get('checksum') != evidence.get('image_sha256')
+            or project_path(root, artifact.get('path_or_url', '')) != image_path):
+        return {}
+    state = load_project_state(root) if state is None else state
+    expected = image_use(reference, shot_ids) if reference is not None else None
+    observed_uses = evidence.get('uses', [])
+    accepted = {}
+    for usage in _image_confirmation_usages(root, artifact, state):
+        if not isinstance(usage, dict) or not usage.get('accepted_deviations'):
+            continue
+        if not set(shot_ids) <= set(image_usage_shots(usage, required=True)):
+            continue
+        records = usage['accepted_deviations']
+        if not isinstance(records, list):
+            raise ValueError('quality_evidence: accepted_deviations 必须逐项记录准确用途和问题')
+        for record in records:
+            if (not isinstance(record, dict) or record.get('image_sha256') != artifact['checksum']
+                    or not _text(record.get('quote')) or not _text(record.get('decision_ref'))):
+                raise ValueError('quality_evidence: 接受偏差缺准确图片、用户原话或决定来源')
+            use = record.get('use')
+            if (not isinstance(use, dict) or not isinstance(use.get('source_shot_ids'), list)
+                    or not set(shot_ids) <= set(use['source_shot_ids'])):
+                continue
+            # A query with no role only checks that a permitted use exists. The
+            # real delivery consumer must also match its roles/entities/state.
+            applicable = any(use == observed for observed in observed_uses)
+            if expected is not None:
+                narrowed = {**use, 'source_shot_ids': sorted(shot_ids)}
+                applicable = applicable and narrowed == expected
+            if not applicable:
+                continue
+            checks = record.get('checks')
+            if not isinstance(checks, dict) or not checks or not set(checks) <= set(IMAGE_ASPECTS):
+                raise ValueError('quality_evidence: 接受偏差须列明图片检查项，不能概括放行')
+            for aspect, observation in checks.items():
+                if (not isinstance(observation, dict) or observation.get('result') not in {'fail', 'unknown'}
+                        or observation != evidence.get('checks', {}).get(aspect)):
+                    raise ValueError('quality_evidence: 已接受问题与当前准确观察不一致：' + aspect)
+                accepted[aspect] = observation
+    return accepted
+
+
 def validate_image_evidence(root, image_path, evidence, shot_ids, *, allowed_roots=(), reference=None,
-                            product_reference=None):
+                            product_reference=None, artifact=None, state=None):
     """Require exact image/source bytes and explicit observations for this use."""
-    _observations(evidence, IMAGE_ASPECTS)
     path = Path(image_path).resolve()
     root = Path(root).resolve()
+    accepted = {}
+    checks = evidence.get('checks') if isinstance(evidence, dict) else None
+    if isinstance(evidence, dict) and (evidence.get('status') != 'pass' or any(
+            isinstance(check, dict) and check.get('result') in {'fail', 'unknown'}
+            for check in (checks.values() if isinstance(checks, dict) else []))):
+        accepted = _accepted_image_checks(root, path, evidence, shot_ids, reference, artifact, state)
+    checked = copy.deepcopy(evidence)
+    if accepted:
+        # Validate completeness with a local projection; preserve every original
+        # failed observation and never report accepted pixels as visually pass.
+        checked['status'] = 'pass'
+        for aspect in accepted:
+            checked['checks'][aspect]['result'] = 'pass'
+    _observations(checked, IMAGE_ASPECTS)
     _file(root, {'path': str(path), 'sha256': evidence.get('image_sha256')}, allowed_roots)
     if not isinstance(evidence.get('source_files'), list) or not evidence['source_files']:
         raise ValueError('quality_evidence: 缺实际对照的源文件及指纹')
@@ -113,7 +209,9 @@ def validate_image_evidence(root, image_path, evidence, shot_ids, *, allowed_roo
                 or any(c['result'] != 'pass' for c in packaging['checks'].values())):
             raise ValueError('packaging: 包装专项观察未覆盖准确商品版本/来源；旧动作QA不能替代')
     return {'verification': 'evidence_consistency_only', 'visual_quality_verified': False,
-            'usage_checked': reference is not None, 'physical_variant_verified': False}
+            'usage_checked': reference is not None, 'physical_variant_verified': False,
+            'accepted_deviations': sorted(accepted),
+            'image_use_status': 'user_accepted_deviations' if accepted else 'observations_passed'}
 
 
 def image_use(reference, shot_ids):
@@ -650,6 +748,28 @@ def validate_required_visuals(rows, requirements, *, shot_order=(), project=None
                                  f"（{action['product_ast_id']}）")
 
 
+def validate_prompt_timeline(row, parameters):
+    """Use the submitted body's ranges at both the source and canvas boundary."""
+    identity = row.get('segment_id') or row.get('node_id')
+    validate_shot_durations(row, parameters)
+    number = r'\d+(?:\.\d+)?'
+    ranges = re.findall(rf'(?<![\d.])({number})\s*(?:秒|s)?\s*[-–—~～至到]\s*({number})\s*(?:秒|s)(?![a-z])',
+                        submitted_prompt_body(row), flags=re.IGNORECASE)
+    shots = row['shot_durations']
+    if not ranges or len(ranges) != len(shots):
+        raise ValueError(f'{identity}: prompt timeline needs one explicit seconds range per shot')
+    cursor = 0.0
+    for (start, end), seconds in zip(ranges, shots):
+        start, end = float(start), float(end)
+        if (end <= start or not math.isclose(start, cursor, abs_tol=0.01)
+                or not math.isclose(end - start, seconds, abs_tol=0.01)):
+            raise ValueError(f'{identity}: prompt timeline conflicts with shot_durations')
+        cursor = end
+    durations = generation_duration_values(row, parameters)
+    if not durations or not math.isclose(cursor, durations[0], abs_tol=0.01):
+        raise ValueError(f'{identity}: prompt end conflicts with total duration')
+
+
 def scene_state_requirements(payload):
     """Read persistent changes from the existing director JSON; no NLP/vision.
 
@@ -706,7 +826,7 @@ def reference_shot_ids(reference, row):
     return ids
 
 
-def validate_scene_state_references(row, requirements):
+def validate_scene_state_references(row, requirements, *, accepted_prompt_control=False):
     """Consumer-side declared state coverage, not image or native control proof."""
     shots = source_shot_ids(row)
     refs = row.get('reference_checks', [])
@@ -725,20 +845,20 @@ def validate_scene_state_references(row, requirements):
         return
     if not shots:
         raise ValueError('scene_state: 有持久场景状态时必须提供完整 source_shots 映射')
-    validate_scene_state_coverage(row, needed)
+    validate_scene_state_coverage(row, needed, accepted_prompt_control=accepted_prompt_control)
 
 
-def validate_scene_state_coverage(row, needed):
+def validate_scene_state_coverage(row, needed, *, accepted_prompt_control=False):
     """Check declared coverage of the applicable states, independently of observation."""
     shots = source_shot_ids(row)
     refs = row.get('reference_checks', [])
     by_entity = {}
     for state in needed:
         by_entity.setdefault(state['entity_id'], set()).add(state['state_id'])
-    if any(len(states) > 1 for states in by_entity.values()):
+    if not accepted_prompt_control and any(len(states) > 1 for states in by_entity.values()):
         raise ValueError('scene_state: 同段多个持久状态，逐镜原生控制未证明；明确起终态并核平台能力或在真实剧情变化处分段，不能拆开用户限定的产品连续段')
     for state in needed:
-        if not set(shots) <= set(state['source_shot_ids']):
+        if not accepted_prompt_control and not set(shots) <= set(state['source_shot_ids']):
             raise ValueError('scene_state: 同段含变化前后镜号，文字用途范围不等于原生逐镜控制；先核真实起终控制或合法叙事分段')
     for state in needed:
         required_shots = set(shots) & set(state['source_shot_ids'])
@@ -759,7 +879,7 @@ def validate_scene_state_coverage(row, needed):
                     raise ValueError('scene_state: 新态图用途越出源导演状态范围')
                 if ref.get('kind') == 'image' and 'state_reference' in roles:
                     covered.update(used)
-        if not required_shots <= covered:
+        if not accepted_prompt_control and not required_shots <= covered:
             raise ValueError('scene_state: 新场景状态图待制作/待审或未实际引用，阻止提交；文字保持或假@不代替图片')
 
 

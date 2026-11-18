@@ -7,7 +7,7 @@ from uuid import uuid4
 from pathlib import Path
 from core.asset_refs import character_output_contract
 from core.character_assets import board_outfit_ids, step_output_id, uses_wardrobe
-from visual_asset_choices import read_choices
+from visual_asset_choices import read_choices, production_spec
 
 
 def enable_character_ai_finals(job):
@@ -141,6 +141,31 @@ def bind_final_output_ids(service, project, row, job, updates):
         step.pop('prompt_approval', None)
     service.invalidate_export(project, '人物最终输出 ID 已调整，受影响图片待按准确输出核对')
     project.pop('export_pending', None)
+
+
+def retain_character_labels(job, requirement, narrative):
+    """Rename explicitly mapped slots while retaining exact image receipts and step IDs."""
+    mapping = production_spec(narrative, requirement).get('wardrobe_name_map', {})
+    workflow = job.get('character_workflow')
+    if not mapping or not workflow:
+        return False
+    outfits = workflow.get('outfits', [])
+    expected = upstream_outfits(requirement)
+    previous = (job.get('production_spec_history') or [{}])[-1].get('wardrobe_name_map', {})
+    reverse = {new: old for old, new in previous.items()}
+    renamed = [mapping.get(reverse.get(v['name'], v['name']), reverse.get(v['name'], v['name']))
+               for v in outfits]
+    if renamed != [v['name'] for v in expected]:
+        return False
+    changed = False
+    for outfit, name in zip(outfits, renamed):
+        if name != outfit['name']:
+            outfit['name'] = name
+            changed = True
+    workflow['upstream_outfits'] = expected
+    if changed:
+        job.setdefault('production_spec_history', []).append(copy.deepcopy(production_spec(narrative, requirement)))
+    return True
 
 
 def prepare_character(service, payload):
