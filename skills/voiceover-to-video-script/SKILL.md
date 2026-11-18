@@ -45,7 +45,7 @@ description: 根据已有导演包、原文对白和真实素材编写分段视�
 
 核对范围、导演包及其叙事包的准确版本、最终对白和所用素材。写改提示词及保存画布时，从项目需求的 `kickoff.canvas` 读取平台、模型、画幅、分辨率和目标画布，可用 `python scripts/stage_context_cli.py kickoff --project <业务项目>` 只读核对。范围未变时沿用开工决定。正式产出使用已确认来源；仅在用户明确授权试写时使用候选来源并标出阻塞，不能据此提交生成。
 
-按入口表读写稿或返修小节、[语言规范](references/prompt-language-hard-rules.md)及适用来源。候选返修遵守[未确认稿生命周期](../_shared/draft-lifecycle.md)；使用参考图时核[图片连续性的共用检查](../storyboard-director/references/image-continuity-hard-rules.md#共用检查)。指定图片承担开场状态时读[真实开场状态](../storyboard-director/references/reference-asset-contract.md#真实开场状态)，引用人物 1×4 时核[唯一面部来源](../asset-image-assistant/references/02-character-master-guide.md#唯一面部来源)，涉及灯光表达时读取[灯光提示词规范](../storyboard-planner/references/lighting-prompt-standard.md)的适用小节。涉及真实外观时实际查看本段选中的确认输出，不从文件名推断；已核验且用途未变的图片复用既有结论，只在新用途、版本变化或结论不足时补看。声音参考仅在用户明确提出或选用时读取，按[项目可选边界](../../docs/rules/visual-production.md#导演稿之后的生产顺序)处理；视觉补充只在使用时读取。Blender、白模和正式分镜图不是必需输入。
+按入口表读写稿或返修小节、[语言规范](references/prompt-language-hard-rules.md)及适用来源。候选返修遵守[未确认稿生命周期](../_shared/draft-lifecycle.md)；使用参考图时核[图片连续性的共用检查](../storyboard-director/references/image-continuity-hard-rules.md#共用检查)。指定图片承担开场状态时读[真实开场状态](../storyboard-director/references/reference-asset-contract.md#真实开场状态)，引用人物 1×4 时核[唯一面部来源](../asset-image-assistant/references/02-character-master-guide.md#唯一面部来源)，涉及灯光表达时读取[灯光提示词规范](../storyboard-planner/references/lighting-prompt-standard.md)的适用小节。涉及真实外观时实际查看本段选中的确认输出，不从文件名推断；已核验且用途未变的图片复用既有结论，只在新用途、版本变化或结论不足时补看。声音参考仅在用户明确提出或选用时读取，按[项目可选边界](../../docs/rules/visual-production.md#导演稿之后的生产顺序)处理；视觉补充只在使用时读取。
 
 已在开工选择本地产品参考包时，通过同一 `kickoff --project` 输出读取 `product_reference_pack`，把本段所选包内文件作为实际输入。按[产品参考对接](../_shared/product-usage-contract.md#广告中的产品展示与使用)核参考职责和缺口。
 
@@ -91,10 +91,10 @@ description: 根据已有导演包、原文对白和真实素材编写分段视�
 模型选择不等于上传、付费或提交授权；已有授权仅在原范围内有效，缺实质参数才询问。来源或授权冲突阻塞相关动作，不改对白、不猜素材、不改导演决定、不进入其他 Skill。
 
 素材清单只放 `04_资产/当前资产清单.json` 里状态为“要出图”且有已确认母版图片的资产；被取消或被拆分的父项不放进素材、也不写进正文引用，无图人物或物件只写在镜内过程或动作文字里，保留外观描述、在场状态与对白归属，不虚造图片引用。候选逐项列选中的准确 output ID 和拟上传顺序；平台操作后核同一清单的实际上传与原生绑定，不把计划写成已执行。提交前用 `python -m scripts.core.asset_refs --project <项目> --require-final-image <AST-ID@OUTPUT-ID...>` 核对本段实际选择。已登记最终人物板的造型须选对应板。首尾帧模式按该平台槽位核对准确端点及其制作时实际采用的人物板，并由端点继承身份、服装和空间尺度。裸 `AST-ID` 只可做资产可用性检查，不能证明某个具体版本已核验；无图、输出不存在或已取消的项直接阻塞。
-分镜补图与白模按准确ART-ID用同一入口 `--require-reference` 核对，补图同时传 `--for-shots <本次镜号...>` 并按[观察证据准入](../storyboard-director/references/image-evidence-admission.md)核对登记中的本用途观察；可与 `--require-final-image` 同次检查。文件/确认通过不等于切点状态正确，仍须实际看图并核对获准用途。旧ID失效时返回相应返工步骤，不按同名文件自动换新版。
+分镜补图按准确 ART-ID 用 `--require-reference` 核对，同时传 `--for-shots <本次镜号...>` 并按[观察证据准入](../storyboard-director/references/image-evidence-admission.md)核对登记中的本用途观察；可与 `--require-final-image` 同次检查。文件/确认通过不等于切点状态正确，仍须实际看图并核对获准用途。旧ID失效时返回相应返工步骤，不按同名文件自动换新版。
 
 有广告产品出镜时，按[广告中的产品展示与使用](../_shared/product-usage-contract.md#广告中的产品展示与使用)核对展示、使用动作、参考覆盖与有效时长。涉及使用动作时按同一合同读取当前资产清单的 `product_usage` / `action_references`，只取本轮镜头实际对应的动作；缺关键参考或拍法时返回上游。产品案例随适用的第二层方法按需选读。
 
 ## 视觉生产衔接细则
 
-本阶段涉及资产、按需分镜、场景状态或可选白模时，读取 [视觉生产与资产调整](../../docs/rules/visual-production.md)，仅执行本职及已授权分支。
+本阶段涉及资产、按需分镜或场景状态时，读取 [视觉生产与资产调整](../../docs/rules/visual-production.md)，仅执行本职及已授权分支。

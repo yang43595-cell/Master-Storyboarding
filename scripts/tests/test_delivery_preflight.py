@@ -110,6 +110,34 @@ def bind_synthetic_canvas(root, frozen, observed):
     observed['frozen_sha256'] = digest(frozen)
 
 
+@pytest.mark.parametrize('declare_on_source', [False, True])
+def test_delivery_external_scope_comes_from_exact_adopted_source(tmp_path, declare_on_source):
+    frozen, _ = delivery(tmp_path)
+    external = tmp_path.parent / (tmp_path.name + '-selected-inputs')
+    external.mkdir()
+    evidence = external / 'original.txt'; evidence.write_text('selected original')
+    source = {'fixture': 'director', 'evidence_path': str(evidence)}
+    if declare_on_source:
+        source['input_roots'] = [str(external)]
+    else:
+        frozen['input_roots'] = [str(external)]  # A frozen claim cannot widen scope.
+    write_json(tmp_path / 'director.json', source)
+    manifest = artifacts.load_manifest(tmp_path)
+    entry = next(item for item in manifest['artifacts'] if item['artifact_id'] == 'DIRECTOR')
+    entry['checksum'] = artifacts.digest(tmp_path / 'director.json')
+    frozen['source_artifacts'][0]['sha256'] = entry['checksum']
+    write_json(tmp_path / artifacts.MANIFEST_PATH, manifest)
+    bind_synthetic_quality(tmp_path, frozen)
+    if declare_on_source:
+        validate_submission(frozen, tmp_path, preflight=True)
+        frozen['source_artifacts'][0]['sha256'] = '0' * 64
+        with pytest.raises(ValueError, match='file/hash'):
+            validate_submission(frozen, tmp_path, preflight=True)
+    else:
+        with pytest.raises(ValueError, match='Dependency readiness failed'):
+            validate_submission(frozen, tmp_path, preflight=True)
+
+
 def test_full_reference_and_native_readback_then_mutation_fails(tmp_path):
     frozen, observed = delivery(tmp_path)
     assert compare(frozen, observed, tmp_path)['ok']

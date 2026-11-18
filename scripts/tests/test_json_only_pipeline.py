@@ -17,7 +17,6 @@ from scripts.core.io import read_json, write_json
 from scripts.core.product_refs import validate_documents
 from scripts.core.project_state import load_project_state, write_project_state
 from scripts.core.story_sources import reading_supplement, validate_story_sources
-from scripts.blender_previs.project import director_input
 from scripts.visual_asset_source import receive_table
 from scripts.tests.test_delivery_preflight import delivery, bind_synthetic_quality
 from test_story_paragraph_sources import narrative
@@ -121,9 +120,6 @@ def run_pipeline(root):
     hits = scan_references(root, ['AST-PROD'], listing)['assets'][0]['reference_hits']
     assert {h['file'].split('/')[0] for h in hits} >= {'05_分镜', '06_视频'}
     assert all(h.get('json_path') for h in hits)
-    source = director_input(root, 'S01-010')
-    assert source['source_director_text'] is None
-    assert source['shot'] == board['scenes'][0]['shots'][0]
     frozen = read_json(root / '06_视频/current.json')
     assert validate_submission(frozen, root)['ok']
     observed = copy.deepcopy(frozen)

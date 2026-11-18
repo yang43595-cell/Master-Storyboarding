@@ -23,7 +23,7 @@ try:
                                  validate_current_dependencies, load_manifest,
                                  register_workspace_artifact, adopt_initial_package,
                                  adopt_initial_agent_artifact, validate_candidate_submission)
-    from .core.asset_refs import check_output_plan
+    from .core.asset_refs import check_output_plan, registered_output_snapshot
     from .core.asset_batch_receipt import summarize_asset_batch_receipt, validate_asset_batch_targets
     from .core.character_layout import (character_layout_references, character_prompt_templates,
                                         character_template_kinds)
@@ -49,7 +49,7 @@ except ImportError:  # direct CLI execution
                                 validate_current_dependencies, load_manifest,
                                 register_workspace_artifact, adopt_initial_package,
                                 adopt_initial_agent_artifact, validate_candidate_submission)
-    from core.asset_refs import check_output_plan
+    from core.asset_refs import check_output_plan, registered_output_snapshot
     from core.asset_batch_receipt import summarize_asset_batch_receipt, validate_asset_batch_targets
     from core.character_layout import (character_layout_references, character_prompt_templates,
                                        character_template_kinds)
@@ -564,27 +564,32 @@ def _confirmed_handoff_inputs(project: Path, target_skill: str, *, state=None) -
 
 def _first_director_handoff(project, state):
     receipts = state["user_confirmations"]
-    if not receipts:
+    manifest = load_manifest(project)
+    if not receipts and not any(a.get("logical_id") == "narrative.package"
+            and a.get("status") == "current" and a.get("agent_acceptance")
+            and a.get("artifact_id") in state["current_artifacts"] for a in manifest["artifacts"]):
         raise StageContextError("project_state.next_stage 为空；没有编导整稿的正式采用记录")
     _, _, blockers = _handoff_revision_status(project)
     if blockers:
         raise StageContextError("正式交接被修订状态阻止：" + "；".join(blockers))
-    _, inputs = _confirmed_project_inputs(project, state)
+    _, inputs = _confirmed_project_inputs(project, state, manifest=manifest)
     for entry in inputs:
-        for receipt in receipts:
-            if not exact_narrative_approval(receipt, entry, entry["checksum"]):
+        if entry.get("logical_id") != "narrative.package":
+            continue
+        exact_receipts = [r for r in receipts if exact_narrative_approval(r, entry, entry["checksum"])]
+        if any(is_recorded_website_script_approval(project, entry, r["approval_ref"]) for r in exact_receipts):
+            return inputs
+        if not exact_receipts and not entry.get("agent_acceptance"):
+            continue
+        for authorization in state["workflow_authorizations"]:
+            if not isinstance(authorization, dict):
                 continue
-            if is_recorded_website_script_approval(project, entry, receipt["approval_ref"]):
-                return inputs
-            for authorization in state["workflow_authorizations"]:
-                if not isinstance(authorization, dict):
-                    continue
-                try:
-                    require_workflow_authorization(project, authorization.get("id"), "storyboard-planner", state=state)
-                except ValueError:
-                    continue
-                return inputs
-    raise StageContextError("project_state.next_stage 为空；缺少当前准确编导整稿的确认或已有导演流程授权")
+            try:
+                require_workflow_authorization(project, authorization.get("id"), "storyboard-planner", state=state)
+            except ValueError:
+                continue
+            return inputs
+    raise StageContextError("project_state.next_stage 为空；缺少当前准确编导整稿的采用依据或已有导演流程授权")
 
 
 def status(args: argparse.Namespace) -> dict[str, Any]:
@@ -769,6 +774,9 @@ def _confirmed_project_inputs(project: Path, state: dict[str, Any], *, manifest=
             else:
                 validate_current_dependencies(item, manifest, state, project,
                                               checked=checked_dependencies, file_digest=file_digest)
+                if item.get("asset_review_sha256"):
+                    if not registered_output_snapshot(project, item):
+                        raise ValueError("资产交接存在无效的逐图代审或图片字节依据：" + artifact_id)
         except ValueError as exc:
             raise StageContextError(str(exc)) from exc
         inputs.append(item)
@@ -1202,6 +1210,20 @@ _CROSS_SKILL_DEPENDENCIES: dict[tuple[str, str], tuple[str, ...]] = {
         ("skills/knowledge-maintainer/modules/maintenance-method.md",),
 }
 
+_REDFRAME_IMAGE_STANDARDS = (
+    "skills/_shared/redframe-operations.md",
+    "skills/voiceover-to-video-script/references/redframe-canvas-usage.md",
+    "skills/voiceover-to-video-script/references/redframe-canvas-layout.md",
+)
+
+
+def _redframe_image_batch(skill: str, request: dict[str, Any]) -> bool:
+    if skill not in IMAGE_SKILLS or not request.get("image_targets"):
+        return False
+    kickoff = request.get("kickoff") or {}
+    grant = kickoff.get("image_generation") or {}
+    return grant.get("provider") == "redframe"
+
 
 def _registered_read_path(reference: str) -> Path | None:
     """Resolve a registry target. Missing target file fails closed when the
@@ -1297,11 +1319,17 @@ def _local_standard_documents(skill_dir: Path, request: dict[str, Any] | None = 
     shared_root = (ROOT / "skills/_shared").resolve()
     # These are the common redlines named collectively by Skill entries; their
     # presence must not depend on whether prose spells each link separately.
-    # RedFrame instructions apply only when referenced by the task or Skill.
+    # The platform contract is selected separately for Redframe image batches
+    # (or explicitly by the caller); its video-only links do not expand the set.
     shared = sorted(_local_knowledge_path(path) for path in shared_root.glob("*.md")
                     if path.name != "redframe-operations.md")
     leaf_paths: set[Path] = set()
     is_repository_skill = skill_dir.resolve() == (ROOT / "skills" / skill_dir.name).resolve()
+    if is_repository_skill and _redframe_image_batch(skill_dir.name, request):
+        for reference in _REDFRAME_IMAGE_STANDARDS:
+            path = _registered_read_path(reference)
+            if path is not None:
+                leaf_paths.add(path)
     for (registered_skill, registered_reference) in _CROSS_SKILL_READS:
         if registered_skill == skill_dir.name and is_repository_skill:
             registered_path = _registered_read_path(registered_reference)
@@ -1326,9 +1354,8 @@ def _local_standard_documents(skill_dir: Path, request: dict[str, Any] | None = 
         references = re.findall(r"(?:skills/|\.\./)*_shared/[A-Za-z0-9_-]+\.md", text)
         if document.parent == shared_root:
             references.extend(re.findall(r"\]\(([A-Za-z0-9_-]+\.md)(?=[#)])", text))
-        # Like the seed glob above, RedFrame instructions are not pulled in
-        # by mere mention; they enter only via an explicit local_references
-        # selection for this task.
+        # Redframe procedures are selected by the actual task, not by a link
+        # mentioned in a general rule.
         references = [reference for reference in references
                       if Path(reference).name != "redframe-operations.md"]
         dependencies = []
@@ -1866,6 +1893,8 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "- 执行分工：遵守根规则的干净上下文启动规则；新一轮编导等创作生产或实质重跑由全新专属生产 agent 执行，不继承长主会话；本轮执行者读取、准备、产出并自查。其他任务按根规则执行。",
         "- 上下文边界：交接当前有效规则、原始素材、本轮约束与已确认决定及依据、现行版本、未决事项、范围和停止点；不得以摘要替代原片。已在本轮专属 agent 内的逐段推进和局部返修可继续；目标、来源或基线重大变化时新开，不按修订号机械重开。",
         *([f"- 图片批次：`{_CONTEXT_ID.get()}`，本批冻结 {len(image_targets)} 个 image_targets；阶段负责人统筹整体方向、跨批连续性和正式交接，本批执行者读取真实参考、完成获准图片及实看自查，只回传准确路径与检查摘要。批次目录不构成已生成、已检查、人工确认或正式采用。"] if image_targets is not None else []),
+        *([f"- 红帧生图：读取 `{ROOT / _REDFRAME_IMAGE_STANDARDS[0]}#生图` 及同页连接入口。先上传素材卡并当场归位，再接线和核正文；配套上传与排版规则同批冻结。"]
+          if _redframe_image_batch(args.skill, request) else []),
         *(_asset_batch_delivery_lines(asset_batch) if asset_batch and not handoff_batch_bindings else []),
         *(["- 人物生图按输出类型读取 task_basis.json 的 character_prompt_templates 与 character_layout_references，使用对应模板正文，原参考在前、灰模在最后。按实际槽位绑定原生引用。"]
           if task_basis.get("character_layout_references") else []),
@@ -2580,11 +2609,6 @@ def record_method_reading(args: argparse.Namespace) -> dict[str, Any]:
     return {"kind": "reading_evidence", "path": str(output), "packet_path": str(packet), "skill": skill, "method_count": len(methods), "candidate_count": len(records), "evidence": "agent_reported_not_program_verified", "ok": True}
 
 
-def record_candidate_reading(args: argparse.Namespace) -> dict[str, Any]:
-    """Retired command retained only to direct callers to the unified receipt."""
-    raise StageContextError("record-candidate-reading 已退役；请使用 record-method-reading --candidate-rule，并显式列出全部 --method。")
-
-
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(description=__doc__)
     commands = root.add_subparsers(dest="command", required=True)
@@ -2674,14 +2698,6 @@ def parser() -> argparse.ArgumentParser:
     receipt.add_argument("--candidate-rule", action="append", default=[], help="实际采用并按精确目录读取的候选规则 ID，可重复")
     receipt.add_argument("--candidate-scope", action="append", default=[], help="跨职责候选的本职采用范围：ID=范围及适用理由；范围外内容不成为产出要求")
     receipt.add_argument("--vault", help="兼容旧命令；如提供，必须是本仓库 knowledge/runtime")
-    candidate_receipt = commands.add_parser("record-candidate-reading")
-    candidate_receipt.add_argument("--project", required=True)
-    candidate_receipt.add_argument("--skill", required=True)
-    candidate_receipt.add_argument("--actor-id", required=True, help="实际执行此任务的 agent 标识")
-    candidate_receipt.add_argument("--task-id", required=True, help="稳定任务标识")
-    candidate_receipt.add_argument("--candidate-rule", action="append", default=[], help="已按候选目录精确路径完整阅读并采用的规则 ID，可重复")
-    candidate_receipt.add_argument("--candidate-scope", action="append", default=[])
-    candidate_receipt.add_argument("--vault")
     review = commands.add_parser("review-pack")
     review.add_argument("--project", required=True)
     review.add_argument("--skill", required=True)
@@ -2783,8 +2799,6 @@ def main(argv: list[str] | None = None) -> int:
         result = ensure_prepared(args)
     elif args.command == "record-method-reading":
         result = record_method_reading(args)
-    elif args.command == "record-candidate-reading":
-        result = record_candidate_reading(args)
     elif args.command == "review-pack":
         result = review_pack(args)
     elif args.command == "handoff":

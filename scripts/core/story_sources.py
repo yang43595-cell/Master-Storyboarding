@@ -488,7 +488,8 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
                            require_promotion_dialogue: bool = False,
                            review_ready: bool = False,
                            narrative_path: Path | None = None,
-                           exact_human_approval: bool = False) -> dict | None:
+                           exact_human_approval: bool = False,
+                           delegated_creative_approval: bool = False) -> dict | None:
     """Validate sources, separating readiness for review from human approval.
 
     Read-only inspection retains historical unbound packages. Formal adoption
@@ -575,6 +576,10 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
             if exact_human_approval or (narrative_path is not None
                                         and narrative_has_exact_approval(project_root, narrative_path, narrative)):
                 unresolved = [ident for ident in unresolved if ident not in eligible]
+            elif awaiting_approval and (delegated_creative_approval or (
+                    narrative_path is not None and narrative_has_exact_approval(
+                        project_root, narrative_path, narrative, delegated=True))):
+                unresolved = [ident for ident in unresolved if ident not in awaiting_approval]
         if unresolved:
             if test_report is None:
                 raise ValueError('完整叙事包仍有未核对白证据：' + ', '.join(unresolved))
@@ -889,13 +894,6 @@ def validate_shot_plan(path: Path, project_root: Path, strict: bool = False) -> 
         print('告警：' + warning, file=sys.stderr)
     if errors:
         raise ValueError('镜头资产引用不可用：\n- ' + '\n- '.join(errors))
-
-
-def _latest_narrative_name(project_root: Path) -> str:
-    candidates = sorted((project_root / '02_编导').glob('R*_叙事包.json'))
-    if not candidates:
-        raise ValueError('找不到叙事包，无法核对资产编号')
-    return candidates[-1].name
 
 
 def reading_supplement(narrative: dict, project_root: Path, *, narrative_path: Path | None = None) -> dict:

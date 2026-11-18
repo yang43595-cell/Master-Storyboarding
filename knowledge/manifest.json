@@ -426,8 +426,8 @@
     },
     {
       "path": "wiki/reference/提示词模板/1x4三视图模板提示词.md",
-      "sha256": "ad7b36da39e18e1292b0a9d385349868853793027725337954dc18851006a41b",
-      "size_bytes": 9281,
+      "sha256": "61953c108a493ebdb8c21311612c7d27a1fe1719d820400fb4dd072b98253e38",
+      "size_bytes": 8984,
       "role": "template",
       "inclusion_basis": "Existing asset-image-assistant library-profile recipe dependency; current upstream bytes read on 2026-11-04",
       "local_adaptation": "Project character layout guidance and headwear spacing, based on original SHA-256 d311538d9a78f05059075814484a2908b84c7e61d9d759ad17fff669542b55ed",

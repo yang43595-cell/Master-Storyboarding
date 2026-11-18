@@ -28,7 +28,7 @@ def test_canvas_timeline_accepts_existing_duration_aliases(duration_key):
                shot_durations=[1, 3], parameters={duration_key: 4})
     validate_canvas_inputs(row)
     row['parameters'][duration_key] = 5
-    with pytest.raises(ValueError, match='total duration'):
+    with pytest.raises(ValueError, match='逐镜合计|total duration'):
         validate_canvas_inputs(row)
 
 
@@ -85,6 +85,7 @@ def bind_redframe_production_sources(root, frozen, observed):
         shots.append(dict(scene_id=ident, shots=[dict(shot_id=shot, take={'start': f'{shot} starts a new action'})]))
         segments.append(dict(segment_id=ident, source_shot_ids=[shot], prompt=row['prompt'],
                              parameters=copy.deepcopy(row['parameters']),
+                             shot_durations=copy.deepcopy(row['shot_durations']),
                              target_edit_duration_seconds=sum(row['shot_durations']),
                              materials=[dict(sha256=ref['sha256']) for ref in row['reference_checks']]))
     for previous, current in zip(segments, segments[1:]):
@@ -176,7 +177,8 @@ def test_redframe_preflight_rejects_declared_conflicts(tmp_path, mutation):
         bind_synthetic_quality(tmp_path, frozen)
     result = canvas_cli(tmp_path, frozen)
     assert result.returncode != 0
-    assert 'canvas' in json.loads(result.stdout)['error']
+    expected = 'timeline' if mutation.startswith('timeline_') else 'canvas'
+    assert expected in json.loads(result.stdout)['error']
 
 
 def test_money_tree_rush_uses_formal_redframe_write_preflight(tmp_path):

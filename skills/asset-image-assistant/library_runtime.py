@@ -4,7 +4,7 @@ import hashlib
 import re
 import sys
 from core.character_assets import production_kinds
-from core.character_layout import CHARACTER_PROMPT_PATH, render_character_prompt
+from core.character_layout import CHARACTER_PROMPT_PATH, render_character_prompt, unfilled_character_prompt_fields
 from core.image_technical import technical_check
 from core.knowledge_runtime import resolve_knowledge_root, verify_selected_file
 from pathlib import Path
@@ -213,6 +213,20 @@ def executable_template(kind, subject='', notes='', *, raw='', view='', index=No
         body = render_character_prompt(kind, reference_records)
         return {'path': str(CHARACTER_PROMPT_PATH), 'sha256': _digest(CHARACTER_PROMPT_PATH.read_text(encoding='utf-8')),
                 'content': body, 'content_sha256': _digest(body), 'status': 'loaded'}
+    if kind in {'大头照', '服装'}:
+        if raw and Path(raw).resolve() != CHARACTER_PROMPT_PATH:
+            template_source(kind, raw)
+        refs = reference_records or ([{}] if has_references else [])
+        body = render_character_prompt(kind, refs)
+        roles = [(index, ref['role']) for index, ref in enumerate(refs, 1) if ref.get('role')]
+        if roles:
+            body += '\n\n参考职责：' + '；'.join(f'图{index}：{role}' for index, role in roles) + '。'
+        if subject:
+            body += '\n\n制作对象：' + subject
+        if notes:
+            body += '\n用户补充：' + notes
+        return {'path': str(CHARACTER_PROMPT_PATH), 'sha256': _digest(CHARACTER_PROMPT_PATH.read_text(encoding='utf-8')),
+                'content': body, 'content_sha256': _digest(body), 'status': 'loaded'}
     template = _template_excerpt(raw, kind, view, index)
     if template['status'] != 'loaded':
         return template
@@ -365,8 +379,16 @@ def prepare(folder, request):
     return package_text, evidence
 
 
+def prompt_issues(prompt, kind):
+    issues = [] if kind == '物品' else language_issues(prompt)
+    fields = unfilled_character_prompt_fields(kind, prompt)
+    if fields:
+        issues.append('请填写人物提示词模板中的字段：' + '、'.join(fields))
+    return issues
+
+
 def validate_review(data, mode='asset-library', kind=None):
-    issues = [] if kind == '物品' else language_issues(data['prompt'])
+    issues = prompt_issues(data['prompt'], kind)
     found = {line.split(':', 1)[0].split('：', 1)[0].strip() for line in data.get('checks', [])}
     missing = [c['id'] for c in checks(mode, kind) if c['id'] not in found]
     if missing:
@@ -377,7 +399,7 @@ def validate_review(data, mode='asset-library', kind=None):
     return data
 
 
-def approved(step):
+def approved(step, job_kind=None):
     a = step.get('audit', {})
     return (a.get('status') == 'passed' and a.get('skill_execution', {}).get('version') == profile()['version']
-            and (step.get('kind') == '物品' or not language_issues(step.get('prompt', ''))))
+            and not prompt_issues(step.get('prompt', ''), step.get('kind', job_kind)))

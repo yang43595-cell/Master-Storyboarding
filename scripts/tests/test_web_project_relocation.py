@@ -27,7 +27,7 @@ def source_path(relative, absolute):
 
 def compile_all(root, media):
     outputs = {}
-    for stage in ('script', 'director', 'assets', 'prompts', 'white_model', 'storyboard'):
+    for stage in ('script', 'director', 'assets', 'prompts', 'storyboard'):
         outputs[stage] = web.compile_content(
             (root / (stage + '.json')).read_bytes(), stage=stage, case_id='01',
             source_script_version=hashlib.sha256(b'synthetic-source-head').hexdigest(),
@@ -56,9 +56,8 @@ def test_project_copy_keeps_json_confirmations_and_web_request_version(tmp_path,
         output['path'] = source_path(output['path'], absolute)
     preview = source_path('fixture/preview.png', absolute)
     media[preview] = media.pop('fixture/preview.png')
-    for stage in ('white_model', 'storyboard'):
-        values[stage] = {'project_id': 'SYNTHETIC', 'revision': 'R01', 'files': [
-            {'path': preview, 'sha256': media[preview]['sha256']} ]}
+    values['storyboard'] = {'project_id': 'SYNTHETIC', 'revision': 'R01', 'files': [
+        {'path': preview, 'sha256': media[preview]['sha256']} ]}
     for stage in ('director', 'assets'):
         values[stage]['source_narrative'].update(artifact_id='SYNTH-SCRIPT', logical_id='narrative.package', path=source_path('script.json', absolute))
     entries = []

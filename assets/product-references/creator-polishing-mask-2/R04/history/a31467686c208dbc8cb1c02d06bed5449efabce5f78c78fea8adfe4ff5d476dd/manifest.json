@@ -1,0 +1,683 @@
+{
+  "schema_version": "1.0",
+  "product_id": "creator-polishing-mask-2",
+  "product_name": "造物者温泉酸抛光面膜 2.0",
+  "revision": "R04",
+  "supersedes_for_new_selection": "R03",
+  "reviewed_on": "2026-11-08",
+  "visual_scope": "R05大字造物者CREATOR、中央金徽版礼盒及白A/香槟金B。物理SKU与批次未核。",
+  "references": [
+    {
+      "id": "BRIEF",
+      "path": "PRODUCT_BRIEF.md",
+      "role": "brief",
+      "coverage": "商品名称、尺寸证据、动作参考及视频展示范围。",
+      "source": "包内手册、实物参考、红魔方历史原片及本轮实看",
+      "usages": [
+        "display",
+        "real_use"
+      ],
+      "sha256": "aed33055bafc974c096d526bdec33816c808035b2b3733306cbe1b6aae0eafd8"
+    },
+    {
+      "id": "BOX-GOLD-EMBLEM",
+      "path": "图片/造物者温泉酸-礼盒外观.png",
+      "sha256": "5068c644d0e9adb0e67e689767988491276f4031602f23d561048202bc89713b",
+      "role": "packaging",
+      "usages": [
+        "display",
+        "real_use"
+      ],
+      "source": "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/01_原始资料/产品参考/造物者温泉酸-礼盒外观.png",
+      "coverage": "白色长方闭盒的大字造物者CREATOR、中央金徽、正面品名和可见右侧轮廓。",
+      "origin": "original_visual_reference",
+      "prior_use": "素颜霜前90秒改编 R05 V04；村姑眼膜前105秒同字节参考。",
+      "approval_basis": "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/04_资产/母版/R01_聊天确认/用户确认记录.json#CHAT-R01-AST-006-PRODUCT-BOX（历史项目准确文件及用途）"
+    },
+    {
+      "id": "TUBES-AB",
+      "path": "图片/造物者温泉酸-A与B双剂外观.png",
+      "sha256": "cada2ea9093aff8ba3f884d9ba7c89c4f04f72b50aaccb346274846cf2ccb807",
+      "role": "packaging",
+      "usages": [
+        "display",
+        "real_use"
+      ],
+      "source": "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/01_原始资料/产品参考/造物者温泉酸-A与B双剂外观.png",
+      "coverage": "白A、香槟金B管壳、正面标识与可见尖端。管壳颜色与料色分开。",
+      "origin": "original_visual_reference",
+      "prior_use": "素颜霜前90秒改编 R05 V04；村姑眼膜前105秒同字节参考。",
+      "approval_basis": "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/04_资产/母版/R01_聊天确认/用户确认记录.json#CHAT-R01-AST-006-PRODUCT-AB（历史项目准确文件及用途）"
+    },
+    {
+      "id": "MIX-BOWL",
+      "path": "图片/造物者温泉酸-透明面膜碗.png",
+      "sha256": "6074e2f1ed5113cf8cbbb6755d545330fe9afa9ed4f5b3551dea1e000763b4ac",
+      "role": "material",
+      "usages": [
+        "real_use"
+      ],
+      "source": "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/01_原始资料/产品参考/造物者温泉酸-透明面膜碗.png",
+      "coverage": "横纹透明半球碗的碗口与可见轮廓。",
+      "origin": "original_visual_reference",
+      "prior_use": "素颜霜前90秒改编 R05 V04；村姑眼膜前105秒同字节参考。",
+      "approval_basis": "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/04_资产/母版/R01_聊天确认/用户确认记录.json#CHAT-R01-AST-007-MIX-BOWL（历史项目准确文件及用途）",
+      "scale_reference": {
+        "path": "证据/手持实拍/透明碗_原片0.12秒.png",
+        "sha256": "ba6501b2c599c655f9d93a97f61ff8c429e247cf9e39ca0dcaf5a703f1b5ef8f"
+      }
+    },
+    {
+      "id": "BRISTLE-BRUSH",
+      "path": "图片/造物者温泉酸-毛刷_白底电商.png",
+      "sha256": "fbc347d4ce569c267d142d84bbe8576fa205db8c55bb713aa912eb1fc6e3a429",
+      "role": "material",
+      "usages": [
+        "real_use"
+      ],
+      "source": "证据/生图输入/毛刷_用户实拍.png",
+      "coverage": "用户指定的象牙白扇形刷毛、暖白刷颈与透明细长柄，白底图为后续带刷画面的造型依据。",
+      "origin": "built_in_imagegen_based_on_real_source",
+      "source_sha256": "b7460a624fddde55613cac2a9778223c381efff3c9f4357ab877cda52fc936bd",
+      "source_status": "user_supplied_photo",
+      "generated_status": "candidate"
+    },
+    {
+      "id": "ACTION-01",
+      "path": "视频/分动作/01_开盒.mp4",
+      "role": "action",
+      "coverage": "礼盒闭合→翻盖打开并看清内装",
+      "source": "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/01_原始资料/产品动作参考/开盒.mp4",
+      "usages": [
+        "real_use"
+      ],
+      "sha256": "00ad6324e477d1f390560bfb46e3e4caad9643738f52e51b44ced10ea8e69a86",
+      "action_key": "开盒",
+      "duration_seconds": 2.3,
+      "playback_speed": 0.8696,
+      "source_window": [
+        0.0,
+        2.0
+      ],
+      "timeline": [
+        0.0,
+        2.3
+      ],
+      "source_sha256": "c7729f90334429b74d57a072dd2d5d1ced138edef26e5bd2651a14ff56a3158a"
+    },
+    {
+      "id": "ACTION-02",
+      "path": "视频/分动作/02_掰白管.mp4",
+      "role": "action",
+      "coverage": "白A管单独侧掰折断管头",
+      "source": "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/01_原始资料/产品动作参考/掰白管.mp4",
+      "usages": [
+        "real_use"
+      ],
+      "sha256": "82da3699b49203579edc5540f8d0e393584b242ca64c1d8770c533915147e658",
+      "action_key": "掰白管",
+      "duration_seconds": 2.433333,
+      "playback_speed": 0.3846,
+      "source_window": [
+        0.0,
+        0.933333
+      ],
+      "timeline": [
+        2.3,
+        4.733
+      ],
+      "source_sha256": "4e830cb4ba2c9c8ada1e2fd180c3d9fa053a5f5afdb06efe12c7c847998d4372"
+    },
+    {
+      "id": "ACTION-03",
+      "path": "视频/分动作/03_挤白管.mp4",
+      "role": "action",
+      "coverage": "乳白A剂挤入空透明碗",
+      "source": "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/01_原始资料/产品动作参考/挤白管.mp4",
+      "usages": [
+        "real_use"
+      ],
+      "sha256": "818cea984d849ae88a87a222d5cdc3406d074da64f2c8e35cebacc5ba48c57a0",
+      "action_key": "挤白管",
+      "duration_seconds": 2.3,
+      "playback_speed": 0.8696,
+      "source_window": [
+        0.0,
+        2.0
+      ],
+      "timeline": [
+        4.733,
+        7.033
+      ],
+      "source_sha256": "4d96a7779f2308814105d7bafc4dd73f079f2ee18a4ebcc1fc720ab187113049"
+    },
+    {
+      "id": "ACTION-04",
+      "path": "视频/分动作/04_掰金管.mp4",
+      "role": "action",
+      "coverage": "香槟金B管单独侧掰折断管头",
+      "source": "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/01_原始资料/产品动作参考/掰金管.mp4",
+      "usages": [
+        "real_use"
+      ],
+      "sha256": "9968e61750a90dc40c06ca9fef547d800de75acc830a6174888ee952d6170ae2",
+      "action_key": "掰金管",
+      "duration_seconds": 2.433333,
+      "playback_speed": 0.3846,
+      "source_window": [
+        0.0,
+        0.933333
+      ],
+      "timeline": [
+        7.033,
+        9.467
+      ],
+      "source_sha256": "7bcf2b029b09155ab4834e1f5e8eeecbea36b110c14135034642915ca44d02a6"
+    },
+    {
+      "id": "ACTION-05",
+      "path": "视频/分动作/05_挤金管.mp4",
+      "role": "action",
+      "coverage": "B剂挤入已盛A剂的同一透明碗",
+      "source": "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/01_原始资料/产品动作参考/挤金管.mp4",
+      "usages": [
+        "real_use"
+      ],
+      "sha256": "c733ce002e72d9e2a011281bf50a8fad8a2d25f70c98f512ae00bccbd1b58479",
+      "action_key": "挤金管",
+      "duration_seconds": 2.3,
+      "playback_speed": 0.8696,
+      "source_window": [
+        0.0,
+        2.0
+      ],
+      "timeline": [
+        9.467,
+        11.767
+      ],
+      "source_sha256": "8a5ed77ed37d2183021c77feac75a712ed027fcccba65f2da99725d63c5298d6"
+    },
+    {
+      "id": "ACTION-06",
+      "path": "视频/分动作/06A_起手搅拌两色混合.mp4",
+      "role": "action",
+      "usages": [
+        "real_use"
+      ],
+      "action_key": "搅拌发泡",
+      "sha256": "983377199097a463b6eab3a3cf46847150838ac0e8c938db3358288c0b8d0a44",
+      "source": "/Volumes/liuyang-1/2026/11/09/原片22290172 搅拌01.MP4",
+      "source_material_id": "22290172",
+      "source_size_bytes": 733881345,
+      "source_window": [
+        0.0,
+        4.2
+      ],
+      "playback_speed": 1.0,
+      "coverage": "刷头开始绕圈，乳白和浅暖色的料体相互卷入、逐渐混匀。",
+      "duration_seconds": 4.2,
+      "timeline": [
+        11.767,
+        15.967
+      ]
+    },
+    {
+      "id": "ACTION-06-LIFT",
+      "path": "视频/分动作/06B_完全起泡后提刷.mp4",
+      "role": "action",
+      "usages": [
+        "real_use"
+      ],
+      "action_key": "起泡后提刷",
+      "sha256": "a7ca41b572c4e525b0370dea556bb59efd0ae244f8969157d78fc743e860e2e4",
+      "source": "/Volumes/liuyang-1/2026/11/09/原片22290172 搅拌01.MP4",
+      "source_material_id": "22290172",
+      "source_size_bytes": 733881345,
+      "source_window": [
+        101.2,
+        106.6
+      ],
+      "playback_speed": 1.0,
+      "coverage": "碗内已有均匀乳白泡沫，刷头抬离并带起黏连的泡体，保留提拉过程。",
+      "duration_seconds": 5.4,
+      "timeline": [
+        15.967,
+        21.367
+      ]
+    },
+    {
+      "id": "ACTION-07",
+      "path": "视频/分动作/07_净脸第一颊起手.mp4",
+      "role": "technique",
+      "coverage": "从碗取料、刷头靠近无明显膜层的脸颊、贴上并形成第一块薄膜。",
+      "source": "/Volumes/liuyang-1/2026/10/23/原片22271830 全脸涂抹.mp4",
+      "usages": [
+        "real_use"
+      ],
+      "sha256": "29813b30c032d501a1f0ee5c6c3690c5b2bb3c846d6fa0e30e090e82ce9b4049",
+      "action_key": "净脸第一颊起手",
+      "duration_seconds": 4.9,
+      "playback_speed": 1.0,
+      "source_window": [
+        0.0,
+        4.9
+      ],
+      "timeline": [
+        21.367,
+        26.267
+      ]
+    },
+    {
+      "id": "ACTION-08",
+      "path": "视频/分动作/08_另一颊开始刷涂.mp4",
+      "role": "technique",
+      "coverage": "一侧已见乳白薄膜，刷头转向另一颊并开始铺开。",
+      "source": "/Volumes/liuyang-1/2026/10/23/原片22271830 全脸涂抹.mp4",
+      "usages": [
+        "real_use"
+      ],
+      "sha256": "8f10beffb61565f76fbf3d219d62bb402f9dbaa031838aec8d96832ebb4dbb4b",
+      "action_key": "另一颊开始刷涂",
+      "duration_seconds": 2.8,
+      "playback_speed": 1.0,
+      "source_window": [
+        26.9,
+        29.7
+      ],
+      "timeline": [
+        26.267,
+        29.067
+      ]
+    },
+    {
+      "id": "ACTION-09",
+      "path": "视频/分动作/09_额头铺开.mp4",
+      "role": "technique",
+      "coverage": "双颊已有膜，刷头接触额头并铺开额心膜层。",
+      "source": "/Volumes/liuyang-1/2026/10/23/原片22271830 全脸涂抹.mp4",
+      "usages": [
+        "real_use"
+      ],
+      "sha256": "6fa5603ca913153879c60be695f7b7d40361e04b8279b33f2f3a62de4cfcf2f9",
+      "action_key": "额头铺开",
+      "duration_seconds": 2.866667,
+      "playback_speed": 1.0,
+      "source_window": [
+        64.2,
+        67.05
+      ],
+      "timeline": [
+        29.067,
+        31.933
+      ]
+    },
+    {
+      "id": "ACTION-10",
+      "path": "视频/分动作/10_下巴铺开.mp4",
+      "role": "technique",
+      "coverage": "额头与双颊已有膜，刷头在下巴分次铺开。",
+      "source": "/Volumes/liuyang-1/2026/10/23/原片22271830 全脸涂抹.mp4",
+      "usages": [
+        "real_use"
+      ],
+      "sha256": "19d695108da199db32d49d0fa2645f9134e3c71f1480b5c3a06b1ef75a981c95",
+      "action_key": "下巴铺开",
+      "duration_seconds": 2.866667,
+      "playback_speed": 1.0,
+      "source_window": [
+        136.8,
+        139.65
+      ],
+      "timeline": [
+        31.933,
+        34.8
+      ]
+    },
+    {
+      "id": "ACTION-11",
+      "path": "视频/分动作/11_鼻周轻刷.mp4",
+      "role": "technique",
+      "coverage": "额头、双颊和下巴已有薄膜，刷头上移轻刷鼻周。",
+      "source": "/Volumes/liuyang-1/2026/10/23/原片22271830 全脸涂抹.mp4",
+      "usages": [
+        "real_use"
+      ],
+      "sha256": "38efad11d709a73fd313e532e738c78f37feb50e2677a7d385ffbe4eb26fefd3",
+      "action_key": "鼻周轻刷",
+      "duration_seconds": 3.166667,
+      "playback_speed": 1.0,
+      "source_window": [
+        168.4,
+        171.55
+      ],
+      "timeline": [
+        34.8,
+        37.967
+      ]
+    },
+    {
+      "id": "ACTION-12",
+      "path": "视频/分动作/12_补涂并展示全脸薄膜.mp4",
+      "role": "technique",
+      "coverage": "短刷下巴一侧后，刷头离开脸部，展示额头、双颊、鼻周和下巴的近完整乳白亮膜。",
+      "source": "/Volumes/liuyang-1/2026/10/23/原片22271830 全脸涂抹.mp4",
+      "usages": [
+        "real_use"
+      ],
+      "sha256": "4526a1f39b8515b524750f340ecea05bd22cc8aaf4c01d94fd469228b3594e4e",
+      "action_key": "补涂并展示全脸薄膜",
+      "duration_seconds": 2.275,
+      "playback_speed": 1.0,
+      "source_window": [
+        281.2,
+        284.1
+      ],
+      "timeline": [
+        37.967,
+        40.867
+      ],
+      "source_end": 283.475
+    },
+    {
+      "id": "ACTION-13",
+      "path": "视频/分动作/13_纸巾从鼻侧向外擦过一侧脸颊.mp4",
+      "role": "technique",
+      "coverage": "纸巾已贴在靠鼻一侧，向外带过同侧脸颊再抬离，露出擦过的皮肤。额头和对侧仍有膜，纸巾含水未知。",
+      "source": "/Volumes/liuyang-1/2026/10/23/原片22271832 纸巾擦脸.mp4",
+      "usages": [
+        "real_use"
+      ],
+      "sha256": "17bbf19b9b5fe6873e6289ff550b7e1389d43258131f8b3218485b4410ab654c",
+      "action_key": "纸巾从鼻侧向外擦过一侧脸颊",
+      "duration_seconds": 2.433008,
+      "playback_speed": 1.0,
+      "source_window": [
+        1.8,
+        4.85
+      ],
+      "timeline": [
+        40.867,
+        43.933
+      ],
+      "match_guidance": "剧情明确擦除温泉酸面膜时，湿擦、擦膜或全脸分区擦除统一返回这一条动作键，跨区域合并段落。原片只参考单颊的贴肤、移动和离肤。其他分区、湿洁面巾及擦净终态由提示词约束，无需增补擦除片段。",
+      "source_end": 4.233
+    },
+    {
+      "id": "ORDERED-MONTAGE",
+      "path": "视频/温泉酸_使用动作顺序参考.mp4",
+      "role": "technique",
+      "coverage": "开盒与双剂沿已核实物原片，搅拌仅取用户指定原片 22290172 的首段两色混合及末段完全起泡后提拉，略去原片中段。上脸和单颊纸巾擦拭沿同一出镜者原拍时序。动作合辑省略等待，准确物理批次和纸巾湿润程度待核。",
+      "source": "视频/动作顺序与来源.json",
+      "usages": [
+        "real_use"
+      ],
+      "sha256": "8966762eca6d6d096efac5f3ca7e88f6c7422373850ec48a60957637e0500152",
+      "action_key": "使用动作顺序合辑",
+      "duration_seconds": 43.933333,
+      "sequence_only": true
+    },
+    {
+      "id": "TUBES-HAND-SCALE",
+      "path": "图片/手持效果/02_AB双剂_手持.png",
+      "sha256": "90a90ea184e2d53bac02ffbcd6fd5524179b4432a87704d1a3fa65cd2b77160b",
+      "role": "packaging",
+      "usages": [
+        "display",
+        "real_use"
+      ],
+      "source": "图片/造物者温泉酸-A与B双剂外观.png；A/B 手持原帧",
+      "coverage": "只用于白 A、金 B 与手的相对大小及拿取动作；放到桌面后两支宽面平躺、窄边与折断嘴均不作支点。",
+      "origin": "built_in_imagegen_based_on_real_source",
+      "generated_status": "confirmed_for_reference",
+      "user_confirmation": {
+        "scope": "正式双剂手持尺寸参考",
+        "user_feedback": "然后待选图可以进入正式了。",
+        "sha256": "90a90ea184e2d53bac02ffbcd6fd5524179b4432a87704d1a3fa65cd2b77160b"
+      }
+    },
+    {
+      "id": "TUBES-TABLETOP",
+      "path": "图片/造物者温泉酸-A与B双剂_桌面平放.png",
+      "sha256": "3d378cc48f06ef3c235bb1e0a4866170331668c4a0a9347400d1620d9e1bfe87",
+      "role": "packaging",
+      "usages": [
+        "display",
+        "real_use"
+      ],
+      "source": "图片/造物者温泉酸-A与B双剂外观.png",
+      "coverage": "只用于桌面摆放。白 A 和金 B 各自用宽面贴着同一桌面横放，正面标签朝上，带同一平面的接触阴影。两支窄折断嘴、封尾均不作为支点。取用或放回动作保持这一桌面终态。",
+      "origin": "built_in_imagegen_based_on_real_source",
+      "generated_status": "candidate",
+      "generation": {
+        "tool": "built-in ImageGen",
+        "observer": "/root/tabletop_ab",
+        "inputs": [
+          {
+            "path": "图片/造物者温泉酸-A与B双剂外观.png",
+            "sha256": "cada2ea9093aff8ba3f884d9ba7c89c4f04f72b50aaccb346274846cf2ccb807",
+            "use": "真实包装身份与正面印刷"
+          },
+          {
+            "path": "图片/手持效果/02_AB双剂_手持.png",
+            "sha256": "90a90ea184e2d53bac02ffbcd6fd5524179b4432a87704d1a3fa65cd2b77160b",
+            "use": "相对尺寸"
+          }
+        ],
+        "prompt": "生成一张写实的产品台面摆位参考照片，单张连续画面。图1是真实包装身份参考，保留白 A 与香槟金 B 的薄扁软管轮廓、平直压纹尾封、逐渐收窄的管身、白色折断式短尖头、品牌字样和各自标签原排版。图2仅用于两支软管彼此的真实尺寸关系，两支是同规格的小支单次用量软管。画面中仅有这两支完整未开封的软管和一张浅暖灰色哑光桌面。\n\n香槟金 B 在画面左侧，白 A 在画面右侧，两支背面大面积贴在同一个水平桌面上，印字的宽正面朝向上方，薄侧边清楚可见。两支平行并排，之间留一点桌面空隙；两条管身长轴平行于桌面，沿台面纵深略带对角线地从画面近处朝远处延伸。两支白色尖头都朝向近处，平而宽的压纹尾封都在远处。桌面托住两支软管的整个管身，软管宽面的底缘紧挨桌面，接触位置有紧贴薄边、短而柔和的连续阴影。相机与桌面约成 45°，从两支的侧前上方斜俯拍，透视同时交代印字宽正面、贴桌的薄侧边和两支之间的同一块桌面。均匀柔和的侧上方漫射光。两支从尾封到尖端完整入画、全管清楚。\n\n保持图1印刷，白 A 正面为「造物者」「A」「多肽精华乳」「POLYPEPTIDE SERUM」，香槟金 B 正面为「造物者」「B」「碳酸精华露」「CARBONATED LIQUID」，靠尖端处为图1原有的「▼90°斜角掰开▼」。两管均为横卧平放状态，无直立、倚靠、重叠、悬浮或支架。\n",
+        "visual_review": "金 B 在左、白 A 在右，宽面贴着同一桌面平行分开、标签朝上、白尖同向。薄侧缘有连续接触阴影，画面没有支架。",
+        "limitations": "成图前肩较实物略饱满。仅供桌面摆位，包装几何和印刷以真实原图为准。"
+      }
+    },
+    {
+      "id": "FILM-LIN-FULL",
+      "path": "图片/上脸膜态/林奕希_全脸膜态.png",
+      "sha256": "f7708a9daa784c9c7d8773871ea35cbfae3c3e1cf83f63cf14e03fabaecdff44",
+      "source": "/Volumes/liuyang-1/2026/10/23/原片22271830 全脸涂抹.mp4",
+      "source_url": "https://rsspro.xmpaohong.com/rss/hmf/materialDetail?id=22271830",
+      "source_time_seconds": 280.0,
+      "coverage": "同一原拍后段较完整的湿润半透明膜态。额头、两颊、鼻、下巴与眼唇留空可对照。",
+      "status": "confirmed",
+      "origin": "raw_video_frame",
+      "product_variant": "历史红魔方合集17276登记关联造物者极地奢养抛光面膜2.0，拍摄实物批次未核。",
+      "role": "state",
+      "usages": [
+        "real_use"
+      ],
+      "user_confirmation": {
+        "scope": "正式膜态参考，限定当前帧可见质地及覆盖范围",
+        "user_feedback": "然后待选图可以进入正式了。",
+        "sha256": "f7708a9daa784c9c7d8773871ea35cbfae3c3e1cf83f63cf14e03fabaecdff44"
+      }
+    },
+    {
+      "id": "HAND-BOWL",
+      "path": "图片/手持效果/03_透明面膜碗_手持.png",
+      "sha256": "d6bab38d982d0af2bc06fae05d316d1a8932e221c09c7f65dc19ca39ca9e183e",
+      "source": "证据/手持实拍/透明碗_原片0.12秒.png",
+      "coverage": "同款小碗与成人手掌同框，供相对比例和托持参考。",
+      "status": "confirmed",
+      "origin": "built_in_imagegen_candidate",
+      "role": "material",
+      "usages": [
+        "real_use"
+      ],
+      "user_confirmation": {
+        "scope": "正式手持参考，按相对比例与持握用途",
+        "user_feedback": "然后待选图可以进入正式了。",
+        "sha256": "d6bab38d982d0af2bc06fae05d316d1a8932e221c09c7f65dc19ca39ca9e183e"
+      }
+    },
+    {
+      "id": "HAND-BRISTLE-BRUSH",
+      "path": "图片/手持效果/04_毛刷_手持.png",
+      "sha256": "de00ace2eb6fb6ecc309d74bbb32c80b98f8779eb553a1e419897db548abbb55",
+      "source": "证据/生图输入/毛刷_用户实拍.png",
+      "coverage": "中间尺寸的同款扇形毛刷手持候选，供相对比例与拿法参考。纤细女性手和透粉杏仁形美甲清晰。",
+      "status": "confirmed",
+      "origin": "built_in_imagegen_candidate",
+      "visual_review": "同一横幅和相近拇指甲投影下，新图刷身明显大于退回的小版，且相对手明显小于最初的大版。沿刷轴与同画面拇指甲长轴粗估：过小版约 800/150（约 5.3 倍），当前新版约 1100/155（约 7.1 倍），原过大版约 1440/110（约 13.1 倍）；用户实拍约 630/80（约 7.9 倍）。纤细女性手、透粉杏仁美甲、拇指与食指夹在透明柄中下段；完整象牙白扇形细毛、白斜肩刷颈、细接缝和细透长柄可辨。",
+      "user_confirmation": {
+        "scope": "正式手持参考，按相对比例与持握用途",
+        "user_feedback": "然后待选图可以进入正式了。",
+        "sha256": "de00ace2eb6fb6ecc309d74bbb32c80b98f8779eb553a1e419897db548abbb55"
+      },
+      "role": "material",
+      "usages": [
+        "real_use"
+      ],
+      "previous_scope_confirmation": {
+        "scope": "毛刷与手的相对比例",
+        "user_feedback": "这张比例可以",
+        "sha256": "de00ace2eb6fb6ecc309d74bbb32c80b98f8779eb553a1e419897db548abbb55"
+      }
+    },
+    {
+      "id": "BOX-HAND-REFERENCE",
+      "path": "图片/手持效果/01_礼盒_手持.png",
+      "sha256": "f06dc36163e5d16e82a1d6730f3ac585561e8ae2817d75a33584a3545264c5d4",
+      "role": "packaging",
+      "usages": [
+        "display",
+        "real_use"
+      ],
+      "source": "图片/造物者温泉酸-礼盒外观.png",
+      "coverage": "仅用于大字金徽版礼盒与手的相对大小及托持方式。包装细字与徽章以实拍为准。",
+      "origin": "built_in_imagegen_based_on_real_source",
+      "generated_status": "confirmed_for_reference",
+      "user_confirmation": {
+        "scope": "正式礼盒手持尺寸参考",
+        "user_feedback": "然后待选图可以进入正式了。",
+        "sha256": "f06dc36163e5d16e82a1d6730f3ac585561e8ae2817d75a33584a3545264c5d4"
+      }
+    }
+  ],
+  "evidence_files": [
+    {
+      "path": "证据/温泉酸产品手册.pdf",
+      "sha256": "b7892491b61051187fa5abbea4a46d6cd01539bd463eb5473eeae5723b775b3d",
+      "source": "/Users/liuyang/Desktop/案例10_融合修订_20261105/01_原始资料/product-manual-温泉酸.pdf",
+      "coverage": "第3、8、9、37页用于核对产品名称、工具和用法。历史宣称仅供溯源。"
+    },
+    {
+      "path": "证据/手持实拍/开盒_实拍双手.png",
+      "sha256": "9c3a863554f411623c2dd62b7e499e240e38b3ba219b37b1bb050d4a6d8d4142",
+      "source": "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/01_原始资料/产品动作参考/开盒.mp4",
+      "source_sha256": "c7729f90334429b74d57a072dd2d5d1ced138edef26e5bd2651a14ff56a3158a",
+      "source_time_seconds": 1.55,
+      "coverage": "真实原帧，复核手与物的相对比例。"
+    },
+    {
+      "path": "证据/手持实拍/白A管_实拍手指.png",
+      "sha256": "c48782f6c5458e54b00f683300cb564a900ee7704b9b2dbed30ae7653d976332",
+      "source": "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/01_原始资料/产品动作参考/掰白管.mp4",
+      "source_sha256": "4e830cb4ba2c9c8ada1e2fd180c3d9fa053a5f5afdb06efe12c7c847998d4372",
+      "source_time_seconds": 0.05,
+      "coverage": "真实原帧，复核手与物的相对比例。"
+    },
+    {
+      "path": "证据/手持实拍/金B管_实拍手指.png",
+      "sha256": "908405462a60b61adde2b0c148784e76941f0e792b7ae43c4511cadf3be20fd8",
+      "source": "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/01_原始资料/产品动作参考/掰金管.mp4",
+      "source_sha256": "7bcf2b029b09155ab4834e1f5e8eeecbea36b110c14135034642915ca44d02a6",
+      "source_time_seconds": 0.05,
+      "coverage": "真实原帧，复核手与物的相对比例。"
+    },
+    {
+      "path": "证据/生图输入/闭盒_0.30秒.png",
+      "sha256": "cd010ea6f79beb8b4f4cc5af3c583d05d3194441b0cb99cd4887089d12f35611",
+      "source": "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/01_原始资料/产品动作参考/开盒.mp4",
+      "source_sha256": "c7729f90334429b74d57a072dd2d5d1ced138edef26e5bd2651a14ff56a3158a",
+      "source_time_seconds": 0.3,
+      "coverage": "本轮内置 ImageGen 使用的同款开盒原始画面。"
+    },
+    {
+      "path": "证据/生图输入/开盒_1.68秒.png",
+      "sha256": "078c6c05784900e8debdfd513d7b79523144dfddca41bdfe96ade844b7b1a2a5",
+      "source": "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/01_原始资料/产品动作参考/开盒.mp4",
+      "source_sha256": "c7729f90334429b74d57a072dd2d5d1ced138edef26e5bd2651a14ff56a3158a",
+      "source_time_seconds": 1.68,
+      "coverage": "本轮内置 ImageGen 使用的同款开盒原始画面。"
+    },
+    {
+      "path": "视频/动作顺序与来源.json",
+      "sha256": "3c097657430e39d30deabcdb71fa484b7214dd7f0373f83ab4789ccf0616824a",
+      "source": "本轮重剪与逐段抽帧、全段解码核验",
+      "coverage": "原片区间、合辑时间轴、播放速度、职责与字节。"
+    },
+    {
+      "path": "证据/生图输入/毛刷_用户实拍.png",
+      "sha256": "b7460a624fddde55613cac2a9778223c381efff3c9f4357ab877cda52fc936bd",
+      "source": "本轮用户附图",
+      "coverage": "原实拍显示象牙白扇形毛头、暖白刷颈、透明长柄和手持比例。"
+    },
+    {
+      "path": "证据/手持实拍/透明碗_原片0.12秒.png",
+      "sha256": "ba6501b2c599c655f9d93a97f61ff8c429e247cf9e39ca0dcaf5a703f1b5ef8f",
+      "source": "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/01_原始资料/产品动作参考/挤白管.mp4",
+      "source_time_seconds": 0.12,
+      "source_sha256": "4d96a7779f2308814105d7bafc4dd73f079f2ee18a4ebcc1fc720ab187113049",
+      "coverage": "只核对横纹透明小碗与手掌相对尺度。"
+    },
+    {
+      "path": "图片/手持效果/生成记录.json",
+      "sha256": "9584c339d6b09c012c7dacfe016366c67efc9dcabf8c72f381032c27840465e6",
+      "source": "R03 手持图制作记录",
+      "coverage": "手持图实际输入、提示词、用途和用户采用范围。"
+    }
+  ],
+  "candidate_visuals": [],
+  "excluded": [
+    {
+      "item": "R01 FILM-REAL 和 FILM-IMAGEGEN",
+      "reason": "本轮用户否决两图，退出 R02。"
+    },
+    {
+      "item": "R01 两条动作合辑",
+      "reason": "以 R02 合辑及分动作替代，补回连续搅拌并纠正膜态顺序。"
+    },
+    {
+      "item": "R02 的刷擦合辑及偏厚的全脸候选",
+      "reason": "本版改用林奕希同组原拍，从净脸起手并按可见膜态顺序排列。"
+    },
+    {
+      "item": "FOAM-IN-BOWL",
+      "reason": "用户已清理此图，退出当前参考包。"
+    },
+    {
+      "item": "BOX-HAND-SCALE-REAL",
+      "reason": "用户已清理此图，退出当前参考包。"
+    },
+    {
+      "item": "PRODUCT-2X2",
+      "reason": "用户已清理此图，退出当前参考包。"
+    },
+    {
+      "item": "PRODUCT-HAND-SCALE",
+      "reason": "用户已清理此图，退出当前参考包。"
+    },
+    {
+      "item": "FILM-LIN",
+      "reason": "转正式前该待选文件已从目录清理，只转入实际保留的图片。"
+    },
+    {
+      "item": "分动作/06_连续搅拌并提刷.mp4",
+      "reason": "用户指定改用 22290172 的首尾两段。"
+    }
+  ],
+  "gaps": [
+    {
+      "scope": "packaging",
+      "detail": "厘米数、不可见盒面和实际批次待核。生成图的比例和摆放用途按各自登记使用。"
+    },
+    {
+      "scope": "claims",
+      "detail": "历史手册中的功效、数据和广告承诺需单独核对。"
+    }
+  ],
+  "aliases": [
+    "造物者温泉酸面膜",
+    "造物者温泉酸抛光面膜",
+    "造物者温泉酸抛光面膜2.0",
+    "造物者极地奢养抛光面膜"
+  ]
+}

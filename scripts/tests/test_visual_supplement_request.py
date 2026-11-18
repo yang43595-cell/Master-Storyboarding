@@ -34,13 +34,11 @@ def test_return_requires_reason_without_fake_gap():
     assert list(Draft202012Validator(SCHEMA).iter_errors(value))
 
 
-def test_spatial_rework_can_return_to_previs_without_authorizing_images():
+def test_retired_blender_target_cannot_route_new_supplement_request():
     value = request()
     value.update(decision='return_upstream', status='blocked', max_images=0,
                  return_upstream={'required': True, 'target': 'blender-previs',
-                                  'reason': '已有白模机位没有看见指定承托点；同场景逐镜修订'})
-    Draft202012Validator(SCHEMA).validate(value)
-    value['max_images'] = 1
+                                  'reason': '需核对指定承托点'})
     assert list(Draft202012Validator(SCHEMA).iter_errors(value))
 
 

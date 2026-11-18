@@ -197,14 +197,30 @@ class ImportedVisualCheckTests(unittest.TestCase):
         candidate = next(a for a in self.lib.items() if a['provenance'].get('job_id') == job['id'])
         self.assertEqual(candidate['provenance']['visual_self_check']['status'], 'unknown')
 
-    def test_upload_normalization_does_not_approve_unseen_cropped_bytes(self):
-        job, request, output = self.pending('crop-change', kind='大头照')
+    def test_upload_head_with_wrong_ratio_is_blocked_even_when_visual_check_passes(self):
+        job, request, output = self.pending('wrong-ratio', kind='大头照')
         job['upload_source_id'] = self.source['id']
         self.lib.save(job, 'jobs')
         evidence = observations(output, request['prompt'])
         with patch.object(m.codex_bridge, 'generate_image', return_value={
                 'output_path': str(output), 'visual_self_check': evidence}):
-            self.lib._imagegen_worker('synthetic', job['id'], 0, 'crop-change', request)
+            self.lib._imagegen_worker('synthetic', job['id'], 0, 'wrong-ratio', request)
+        step = self.lib.get(job['id'], 'jobs')['steps'][0]
+        self.assertEqual(step['status'], 'unknown')
+        self.assertEqual(step['outputs'], [])
+        self.assertIn('大头照未入库：实测 160×90，要求 3:4', step['message'])
+        self.assertEqual(m.digest(output), evidence['image_sha256'])
+        self.assertFalse(any(a['provenance'].get('job_id') == job['id'] for a in self.lib.items()))
+
+    def test_upload_normalization_does_not_approve_unseen_adjusted_bytes(self):
+        job, request, output = self.pending('normalization-change')
+        job['upload_source_id'] = self.source['id']
+        self.lib.save(job, 'jobs')
+        Image.new('RGB', (160, 120), 'blue').save(output)
+        evidence = observations(output, request['prompt'])
+        with patch.object(m.codex_bridge, 'generate_image', return_value={
+                'output_path': str(output), 'visual_self_check': evidence}):
+            self.lib._imagegen_worker('synthetic', job['id'], 0, 'normalization-change', request)
         step = self.lib.get(job['id'], 'jobs')['steps'][0]
         self.assertEqual(step['status'], 'awaiting_review')
         self.assertEqual(step['visual_self_check']['status'], 'unknown')

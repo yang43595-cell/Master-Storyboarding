@@ -6,10 +6,12 @@ from scripts.core.image_technical import character_board_image_problem
 def test_board_checks_decoded_canvas_not_file_name(tmp_path):
     path = tmp_path / 'final.png'
     Image.new('RGB', (300, 400)).save(path)
-    assert '16:9' in character_board_image_problem(path)
+    assert '横向拼版' in character_board_image_problem(path)
 
     # These bytes satisfy the technical gate. Panel content still needs review.
     Image.new('RGB', (160, 90)).save(path)
+    assert character_board_image_problem(path) is None
+    Image.new('RGB', (910, 360)).save(path)
     assert character_board_image_problem(path) is None
 
 

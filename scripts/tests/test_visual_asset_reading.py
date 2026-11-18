@@ -333,7 +333,7 @@ class WebReadingTests(unittest.TestCase):
         for kind in ['大头照', '服装']:
             with self.subTest(kind=kind):
                 request = self.request(kind, 'project')
-                records = [] if kind == '大头照' else [{'role': '已确认大头照，唯一面部身份来源'}]
+                records = [] if kind == '大头照' else [{'category': '大头照', 'role': '已确认大头照，唯一面部身份来源'}]
                 request.update(subject='海城高级中学角色', template_notes='保留标识4K-24；量规4K。',
                     allow_unreferenced_design=True, reference_records=records,
                     reference_paths=[] if not records else ['confirmed-face.png'])
@@ -344,22 +344,25 @@ class WebReadingTests(unittest.TestCase):
                 package, _ = asset.prepare(folder, request)
                 template = json.loads(package)['production_item']['template']
                 self.assertEqual(template['content'], seed)
-                self.assertEqual(template['sha256'], hashlib.sha256(before).hexdigest())
+                self.assertEqual(template['sha256'], hashlib.sha256(Path(path).read_bytes()).hexdigest())
                 self.assertEqual(template['content_sha256'], hashlib.sha256(seed.encode()).hexdigest())
                 self.assertNotIn('4K，高细节', seed)
+                if kind == '大头照':
+                    self.assertNotIn('锁骨', seed)
+                    self.assertIn('画面内无衣物、领口或肩带', seed)
                 self.assertIn('保留标识4K-24；量规4K。', seed)
                 self.assertIn('海城高级中学角色', seed)
                 self.assertNotIn('从参考照片中提取', seed)
                 self.assertNotIn('参照输入图片中的', seed)
                 if records:
                     self.assertIn('图1：已确认大头照，唯一面部身份来源', seed)
-                    self.assertIn('不把身份参考中的服装当作本次服装设计', seed)
+                    self.assertIn('穿搭设定：', seed)
                 result = {'prompt': seed, 'passed': True, 'observations': [], 'uncertainties': [],
                           'checks': [c['id'] + '：本测试检查证据' for c in json.loads(package)['review_checks']], 'issues': []}
                 def simulated_cli(command, **kwargs):
                     delivered = kwargs['input']
                     self.assertIn(package, delivered)
-                    self.assertIn('依据当前需求设计', delivered)
+                    self.assertIn('生成一张虚构人物的正面大头照' if kind == '大头照' else '穿搭设定：', delivered)
                     self.assertIn('保留标识4K-24', delivered)
                     self.assertNotIn('4K，高细节', delivered)
                     (folder / 'draft.json').write_text(json.dumps(result), encoding='utf-8')
@@ -433,4 +436,3 @@ class WebReadingTests(unittest.TestCase):
         self.assertEqual(shared.vault_path, asset_method.vault_path)
         body, _ = asset.prepare(self.root/'asset-with-visual-method-present', self.request('物品', 'asset-library'))
         self.assertNotIn('VISUAL-SUPPLEMENT-METHOD', {m['id'] for m in json.loads(body)['professional_methods']})
-        self.assertEqual(resolve_method_documents(self.vault, profile, {'skill': 'blender-previs'}).required, [])

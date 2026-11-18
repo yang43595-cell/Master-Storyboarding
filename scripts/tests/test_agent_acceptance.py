@@ -163,7 +163,7 @@ def test_malformed_registration_has_no_side_effects(tmp_path, skills):
 
 @pytest.mark.parametrize("logical,kind", [
     ("visual-asset-manifest", "visual-asset-manifest"),
-    ("previs.test", "blender-previs"), ("voice.test", "voice-reference"),
+    ("voice.test", "voice-reference"),
     ("narrative.package", "visual-supplement-image"), ([], "visual-supplement-image"),
 ])
 def test_human_stages_cannot_use_agent_acceptance(logical, kind):

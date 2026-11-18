@@ -21,7 +21,7 @@ python -m scripts.core.knowledge_runtime
 python scripts/stage_context_cli.py --help
 ```
 
-仅运行核心 CLI 时可以把安装命令的文件换成 `config/requirements.txt`；包含图片资产功能及测试时使用上述 dev 清单。三份 `config/requirements*.txt` 均固定直接和间接依赖版本及发行包 SHA256；对应 `.in` 文件只表达维护时的兼容范围，不作为日常安装入口。依赖只从既定官方包源安装，不把 `.venv/` 或缓存提交到 Git。JavaScript 网页适配/测试使用 Node.js 24 与锁定的 Zod 3.25.76（`package-lock.json`）；Blender、ASR 和浏览器生成工具是按需能力，依各自 Skill 安装或连接，不要求普通文字阶段预装所有工具。
+仅运行核心 CLI 时可以把安装命令的文件换成 `config/requirements.txt`；包含图片资产功能及测试时使用上述 dev 清单。三份 `config/requirements*.txt` 均固定直接和间接依赖版本及发行包 SHA256；对应 `.in` 文件只表达维护时的兼容范围，不作为日常安装入口。依赖只从既定官方包源安装，不把 `.venv/` 或缓存提交到 Git。JavaScript 网页适配/测试使用 Node.js 24 与锁定的 Zod 3.25.76（`package-lock.json`）；ASR 和浏览器生成工具是按需能力，依各自 Skill 安装或连接，不要求普通文字阶段预装所有工具。
 
 锁文件以 CPython 3.12 为验证基线，保留 Windows 等平台条件依赖，不能把一次 Linux 通过当成其他系统已实测。`--only-binary=:all:` 在缺少适用 wheel 时明确失败，不临时编译未知构建依赖；不要为安装成功而去掉哈希检查。Python、Node、FFmpeg 和系统库本身不包含在 Python 锁文件中。更新依赖与自动检查说明见 [依赖与自动检查](dependency-checks.md)。
 
@@ -68,7 +68,7 @@ python -m scripts.core.knowledge_runtime
 
 | 入口 | 实际读取 |
 | --- | --- |
-| 编导、导演、普通资产、分镜及已选用的声音或白模 | 从本 Skill 入口和 profile 选仓库本地合同、模板和 `knowledge/runtime/` 中的适用方法与参考。 |
+| 编导、导演、普通资产、分镜及已选用的声音 | 从本 Skill 入口和 profile 选仓库本地合同、模板和 `knowledge/runtime/` 中的适用方法与参考。 |
 | 资产 Web | 从同一内置包组装方法和模板，按本次项目或素材登记读取实际媒体。 |
 | 视频提示词 | 直接读取本 Skill 指定的仓库方法、模板及业务输入。 |
 | 审核与画布交付 | 读取当轮已经冻结的要求、准确稿件、素材和实际平台回读。 |
@@ -87,4 +87,6 @@ python -m scripts.core.knowledge_runtime
 
 造物者温泉酸抛光面膜 R04 随仓保存在 `assets/product-references/creator-polishing-mask-2/R04/`，包含产品 brief、参考图、动作视频和来源核对材料。新检出可直接按[开工入口](../rules/project-layout.md#使用已选产品参考包)锁定版本与文件哈希。原始长片和历史案例按项目输入登记，R04 的适用范围与未覆盖动作以包清单为准。缺少业务素材时须提供真实文件或停止受影响操作。若缺必需的知识方法或模板，先由维护流程把准确文件纳入仓库，再运行该分支。可选案例缺失时略过该案例。
 
-浏览器登录、平台账户、付费生成、Blender/ASR 软件、真实媒体和用户批准都不是源码可打包的权限。方法加载、测试或离线网页编译通过，不表示已生成图片/视频、已验证效果、已发布审核站点或已得到用户确认。
+R04 的合辑时长与来源窗已校正。新登记使用当前清单，已锁定旧哈希的项目从同包 `history/<sha256>/` 读取原清单和原来源表。两套清单均校验所选媒体字节。
+
+浏览器登录、平台账户、付费生成、ASR 软件、真实媒体和用户批准都不是源码可打包的权限。方法加载、测试或离线网页编译通过，不表示已生成图片/视频、已验证效果、已发布审核站点或已得到用户确认。

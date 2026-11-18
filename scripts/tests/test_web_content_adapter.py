@@ -85,8 +85,8 @@ def test_cross_project_goldens_real_schema_and_source_basis(tmp_path, case):
     assert values == initial and not list(tmp_path.glob('*.md'))
 
 
-@pytest.mark.parametrize('stage', ['white_model','storyboard'])
-def test_registered_reference_view_is_supported_without_claiming_assets_v2(tmp_path,stage):
+def test_registered_reference_view_is_supported_without_claiming_assets_v2(tmp_path):
+    stage = 'storyboard'
     media = registry(tmp_path)
     source = {'project_id':'fixture','revision':'R01','files':[{'path':'fixture/preview.png','sha256':hashlib.sha256(PNG).hexdigest()}]}
     assert compile_fixture(stage,source,media)['request']['content']['stage'] == stage

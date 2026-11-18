@@ -284,7 +284,8 @@ class CharacterRoutes(unittest.TestCase):
         self.assertTrue(request['reference_records'][0]['layout_only'])
         self.assertTrue(request['allow_unreferenced_design'])
         self.assertEqual(request['requirement']['asset_id'],'AST-PERSON')
-        self.assertIn('依据当前需求设计', request['prompt'])
+        self.assertIn('生成一张虚构人物的正面大头照', request['prompt'])
+        self.assertIn('[年龄段与角色气质]', request['prompt'])
         self.assertNotIn('从参考照片中提取', request['prompt'])
         self.assertEqual(self.lib.projects.skill.build_task_package(request)['production_item']['template']['content'], request['prompt'])
         self.confirm(j,'shared_head','大头照')
@@ -295,6 +296,32 @@ class CharacterRoutes(unittest.TestCase):
         self.assertTrue(request['allow_unreferenced_design'])
         self.assertIn('参考图 2 是服装灰模，只参考', request['prompt'])
         self.assertIn('不把身份参考中的服装当作本次服装设计', request['prompt'])
+        self.assertIn('[逐件填写款式、颜色、材质和叠穿方式]', request['prompt'])
+
+    def test_character_template_fields_block_review_and_existing_approval(self):
+        skill = self.lib.projects.skill
+        for kind, template, completed in (
+            ('大头照', '[具体脸型]', '鹅蛋脸'),
+            ('服装', '[逐件填写款式、颜色、材质和叠穿方式]', '灰色棉质衬衫叠穿深蓝针织背心'),
+        ):
+            with self.subTest(kind=kind):
+                checks = [c['id'] + '：合成测试' for c in skill.checks('project', kind)]
+                review = skill.validate_review({'prompt': template, 'passed': True, 'checks': checks, 'issues': []},
+                                               'project', kind)
+                self.assertFalse(review['passed'])
+                self.assertIn(template, review['issues'][0])
+                step = {'kind': kind, 'prompt': template, 'audit': {'status': 'passed', 'prompt': template,
+                        'skill_execution': {'mode': 'project', 'version': skill.profile()['version']}},
+                        'prompt_approval': {'prompt': template}}
+                job = {'project_id': self.project['id'], 'steps': [step]}
+                self.assertFalse(self.lib.prompt_is_approved(job, 0))
+                review = skill.validate_review({'prompt': completed, 'passed': True, 'checks': checks, 'issues': []},
+                                               'project', kind)
+                self.assertTrue(review['passed'])
+                self.assertEqual(review['issues'], [])
+                step.update(prompt=completed, prompt_approval={'prompt': completed})
+                step['audit']['prompt'] = completed
+                self.assertTrue(self.lib.prompt_is_approved(job, 0))
 
     def test_upstream_clothes_ignore_skin_and_preserve_unassigned_legacy_image(self):
         path=Path(self.project['path'])/'narrative.json'
@@ -432,7 +459,7 @@ class CharacterRoutes(unittest.TestCase):
         service.sync(self.project['id'])
         job = prepare_character(service, payload)['rows'][0]['job']
         board_path = self.base / 'confirmed-board.png'
-        Image.new('RGB', (640, 360), 'blue').save(board_path)
+        Image.new('RGB', (910, 360), 'blue').save(board_path)
         self.assets['人物1x4'] = self.lib.import_file(board_path, category='人物1x4')[0]
         self.confirm(job, job['steps'][0]['key'], '人物1x4')
         before = copy.deepcopy(self.lib.get(job['id'], 'jobs')['steps'])

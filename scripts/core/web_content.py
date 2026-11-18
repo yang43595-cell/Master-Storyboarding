@@ -490,11 +490,11 @@ def compile_content(raw: bytes, *, stage: str, case_id: str, source_script_versi
                           reference_anchor(draft['node_id'], {'reference':ref,'native':native}), ref['sha256'])
                     for native, ref in zip(ordered, checks)]
             block(draft['node_id'], '视频段：' + draft['node_id'], draft['prompt'] + '\n\n参数：' + canonical(draft['parameters']), refs)
-    elif stage in {'white_model','storyboard'}:
+    elif stage == 'storyboard':
         if not business.get('files'):
             raise WebContentError('缺少已登记预览 files；不能从 assets-v2 缺失路径补造媒体')
         refs = [media(f['path'], reference_anchor('preview', f), f.get('sha256'), expected_path=f['path']) for f in business['files']]
-        block('reference-views', '已登记参考视图', '仅展示已有登记，不运行白模或生成图片。', refs)
+        block('reference-views', '已登记参考视图', '展示已登记的参考视图。', refs)
         if reviewable:
             raise WebContentError('此历史 JSON 仅能提供参考视图；完整 assets-v2 适配未恢复')
     else:

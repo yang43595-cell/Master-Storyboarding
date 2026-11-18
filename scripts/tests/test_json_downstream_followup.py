@@ -6,23 +6,7 @@ from scripts.core.asset_refs import current_files, scan_references
 from scripts.core.product_refs import validate_documents
 from scripts.core.io import read_json, write_json
 from scripts.core.project_state import new_project_state, write_project_state
-from scripts.blender_previs import project as previs
-from scripts.tests.test_blender_previs_project import project
 from scripts.tests.test_delivery_preflight import delivery
-
-
-def test_json_only_director_reaches_previs_without_markdown(project):
-    root, _, _, _, path = project
-    data = read_json(path); data.pop('human_readable_path'); write_json(path, data)
-    manifest = artifacts.load_manifest(root)
-    entry = next(a for a in manifest['artifacts'] if a['artifact_id'] == 'PACKAGE')
-    entry['checksum'] = artifacts.digest(path)
-    write_json(root / artifacts.MANIFEST_PATH, manifest)
-    result = previs.director_input(root, 'S03-150')
-    assert result['shot']['shot_id'] == 'S03-150'
-    assert result['source_director_text'] is None
-    path.write_text('{}')
-    with pytest.raises(ValueError): previs.director_input(root, 'S03-150')
 
 
 @pytest.mark.parametrize('folder', ['05_分镜', '06_视频'])
