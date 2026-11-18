@@ -3,7 +3,7 @@
 Selectors and persisted fields come from the airport image run on 2026-11-17/18:
 node data-id, image/in handles, Chinese accessible labels and promptModel chips.
 This is an offline implementation of that observed contract, not a live-site
-certification. An actual Terra run must check the first required image.
+certification. Check the first required image on the live site during production.
 """
 from __future__ import annotations
 
@@ -418,7 +418,7 @@ class RedframeImageUI:
 
 @contextmanager
 def image_browser_session(task_browser, *, project_id, canvas_url, action_timeout_ms=7_000):
-    """Terra passes the existing task_browser factory; no profiles/CDP/stdin loop."""
+    """Use the existing task_browser factory to open an isolated task session."""
     _canvas_id(canvas_url)
     with task_browser(redframe=True) as context:
         page = context.new_page()

@@ -4,7 +4,7 @@
 
 ## 连接与登录
 
-- 通过可达内网的本机连接。先读本机 `~/.local/share/codex-headless-browser/README.md`，默认由实际配置为 `gpt-6.1-terra` 的执行者使用 `task_browser(redframe=True)`；用户在本轮明确指定其他执行者时，按其指定执行，并在业务项目记录中登记指定原话与范围（2026-11-13 普拉提 vlog 案例即由用户指定 Muse 本人执行）。登录态失效时走 `redframe_login_browser()`，由用户本人登录，再在新后台会话中验证。会话只保存在本机。
+- 通过可达内网的本机连接。先读本机 `~/.local/share/codex-headless-browser/README.md`，本项目由主对话按[项目专用界面分工](../../docs/rules/execution.md#画布执行与交接的宿主边界)使用 `task_browser(redframe=True)`。登录态失效时走 `redframe_login_browser()`，由用户本人登录，再在新后台会话中验证。会话只保存在本机。
 - 页面打不开时先查内网连通性、域名解析及代理分流；权限、节点插件或原生控件缺失时，记录具体缺项并暂停受影响操作。页面卡住或报错时保留当前目标与待写内容；结果未知先只读查原节点，再按原要求刷新并核对已保存范围，避免重复提交。具体按[刷新与重试](../voiceover-to-video-script/references/redframe-canvas-layout.md#卡住或报错先刷新)执行。
 
 ## 生图
@@ -67,7 +67,7 @@ with image_browser_session(task_browser, project_id=project_id, canvas_url=canva
 
 ### 成批写入和整节点回读
 
-新平台操作任务按[执行交接](../../docs/rules/execution.md#画布执行与交接的宿主边界)交干净执行者（默认 Terra，用户本轮明确指定其他执行者时从其指定），沿同一任务后台 Edge 会话完成。已定稿草稿没有本轮修改授权时保持只读。正式写入消费同一份已采用源稿与冻结快照。先核[写前内容与快照](../voiceover-to-video-script/references/seedance-delivery-package.md#正式草稿写前检查)，按本页相应字段和操作执行。
+主对话按[项目专用界面分工](../../docs/rules/execution.md#画布执行与交接的宿主边界)沿同一任务后台 Edge 会话完成平台操作。已定稿草稿没有本轮修改授权时保持只读。正式写入消费同一份已采用源稿与冻结快照。先核[写前内容与快照](../voiceover-to-video-script/references/seedance-delivery-package.md#正式草稿写前检查)，按本页相应字段和操作执行。
 
 1. 写前对实际目标和本批冻结 JSON 运行[正式预检 `--delivery --preflight`](../../docs/development/delivery-snapshot-checks.md#操作与采用)，按返回的 `ok: true`、目标、段号和 `frozen_sha256` 执行。缺图的段记下具体依赖，等生图回执齐备后另批；素材齐备的独立段先写。首次上传可按[新建直传计划](#新建直传计划和回读)只列计划直传槽。更新走[最后可信基线和实际写前读数](#更新前核已有编辑)。
 2. 同一批次沿用同一份通过的预检。目标、正文、参数、镜号或引用来源／顺序变化时，只重跑受影响段。素材区复用已核卡片，缺需认证或审阅的卡片才按[素材区上传](../voiceover-to-video-script/references/redframe-canvas-usage.md#素材区上传)补。各草稿从自己的原生「上传参考」控件按序直传，每槽发起一次上传。用持久画布的槽数和有序槽 ID 确认就绪，再写原生 `@` 和参数。异常先读原节点，定位缺失槽后才补。后台命令有界续等，输出仅留段号、状态及异常，完成时交一次回执。

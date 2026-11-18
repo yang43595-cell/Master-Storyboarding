@@ -7,7 +7,7 @@ description: 在有效导演稿和资产图就绪后、视频提示词之前，�
 
 开始本职任务前读取[共用三层规范](../_shared/skill-layers.md)。本 Skill 适用边界：承接确认导演稿与资产，先检查动作、表情、空间及连续性；实际补图按缺口，不强制每镜生成，不改导演决定。
 
-图片生产按 [图片生产批次](../../docs/rules/execution.md#图片生产批次) 交给干净上下文的专属图片子 agent，每批最多 8 张目标图，同批返修续用、不递归。子 agent 完成读输入／方法／参考、写提示词、生成、实看、授权内修正、独占落盘和自查交接；阶段负责人掌缺口、跨批依赖、全片覆盖及正式采用，不只外包一次生图调用。
+图片生产按[图片生产批次](../../docs/rules/execution.md#图片生产批次)确定执行者，每批最多 8 张目标图。涉及界面操作的批次由主对话负责输入、提示词、生成、实看、修正及回执，其他批次沿既有委派规则。
 
 读取 `PROJECT_RULES.md`、[普通准备与选知](../_shared/knowledge-access.md#普通阶段准备与选知)、当前 `stage_startup.md`、`../_shared/draft-lifecycle.md` 等六项共享红线（含 `../_shared/prompt-language.md`）、`modules/storyboard-method.md`、`references/reference-asset-contract.md`、`references/storyboard-production-checklist.md`、[图片连续性的共用检查](references/image-continuity-hard-rules.md#共用检查)、`templates/storyboard-image-template.md` 与 `../../schemas/visual-supplement-request.schema.json`。涉及灯光风险时才读取 `../storyboard-planner/references/lighting-prompt-standard.md` 的对应小节；写本 Skill 提示词时必读 `../voiceover-to-video-script/references/prompt-language-hard-rules.md` 并以其为准。使用人物 1×4 时核[唯一面部来源](../asset-image-assistant/references/02-character-master-guide.md#唯一面部来源)。使用场景参考时核[背景母版](../asset-image-assistant/references/03-scene-master-guide.md#背景母版与单变量派生)及[多角度覆盖](../asset-image-assistant/references/03-scene-master-guide.md#多角度场景参考组)。这些引用不授予修改导演镜头或视频提示词的权力。
 
