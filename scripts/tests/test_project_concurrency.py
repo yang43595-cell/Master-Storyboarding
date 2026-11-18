@@ -390,13 +390,13 @@ def test_terminal_transaction_recovery_is_read_only_and_does_not_reopen_journal(
     assert (tx_dir / 'result.json').read_bytes() == original_result
 
 
-@pytest.mark.parametrize('result_state', ['missing', 'unknown', 'aborted', 'invalid_json'])
-def test_nonfinal_result_never_suppresses_pending_commit_intent(tmp_path, result_state):
+@pytest.mark.parametrize('result_state', ['missing', 'unknown', 'invalid_json'])
+def test_nonterminal_transaction_result_never_suppresses_pending_recovery(tmp_path, result_state):
     _interrupt_project_revision(tmp_path)
     tx_dir, = (tmp_path / revision_control.TRANSACTION_ROOT).iterdir()
     result_path = tx_dir / 'result.json'
-    if result_state in {'unknown', 'aborted'}:
-        io.write_json(result_path, {'state': result_state})
+    if result_state == 'unknown':
+        io.write_json(result_path, {'state': 'unknown'})
     elif result_state == 'invalid_json':
         result_path.write_text('{')
         before = (tmp_path / '00_项目管理/project_state.json').read_bytes()

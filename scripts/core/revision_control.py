@@ -383,12 +383,13 @@ def recover_transactions(project: Path) -> list[dict[str, Any]]:
             if not transaction_path.is_file():
                 continue
             result_path = tx_dir / "result.json"
-            intent_path = tx_dir / "commit_intent.json"
-            state = read_json(result_path).get("state") if result_path.is_file() else None
-            # Skip settled journals. An intent still takes precedence over an aborted result.
-            if state == "committed" or (state == "aborted" and not intent_path.is_file()):
+            # Completed journals are history: do not reparse their full payload
+            # or repeatedly rewrite an already-aborted preparation. Missing,
+            # unknown or invalid results still take the normal recovery path.
+            if result_path.is_file() and read_json(result_path).get("state") in {"committed", "aborted"}:
                 continue
             transaction = read_json(transaction_path)
+            intent_path = tx_dir / "commit_intent.json"
             if not intent_path.is_file():
                 write_json(result_path, {"state": "aborted", "recovered_at": utc_now()})
                 outcomes.append({"transaction_id": transaction.get("transaction_id"), "state": "aborted"})

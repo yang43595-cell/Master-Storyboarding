@@ -84,6 +84,26 @@ class LibraryTests(unittest.TestCase):
         self.assertEqual(self.lib.get(other['id'], 'jobs')['steps'][0]['outputs'], [])
         self.assertEqual(source.read_bytes(), original)
 
+    def test_upload_result_keeps_current_wardrobe_canvas_and_other_asset_ratios(self):
+        for kind, size, color in [('服装', (400, 300), 'green'),
+                                  ('角色外观', (160, 90), 'purple'),
+                                  ('物品', (160, 90), 'orange')]:
+            with self.subTest(kind=kind):
+                job = self.lib.create_job({'source_id': self.asset['id'], 'kind': kind, 'subject': kind})
+                job['upload_source_id'] = self.asset['id']
+                self.lib.save(job, 'jobs')
+                source = self.root / (kind + '-generated.png')
+                Image.new('RGB', size, color).save(source)
+                original = source.read_bytes()
+                result = self.lib.attach(job['id'], 0, [source])
+                output = self.lib.get(result['steps'][0]['outputs'][0])
+                with Image.open(output['original']) as stored:
+                    self.assertEqual(stored.size, size)
+                self.assertEqual(output['upload_crop']['status'], 'already_correct')
+                self.assertTrue(output['technical_check']['passed'])
+                self.assertEqual(Path(output['original']).read_bytes(), original)
+                self.assertEqual(source.read_bytes(), original)
+
     def test_manual_product_category_survives_read_and_web_view_preserves_evidence(self):
         asset = self.lib.get(self.asset['id'])
         asset.update(name='手镜', category='产品')
@@ -535,9 +555,12 @@ class LibraryTests(unittest.TestCase):
             self.lib.save_prompt({'id': job['id'], 'index': 0, 'prompt': prompt, 'approve': True})
 
     def test_skill_categories_and_board_import_only(self):
-        for kind in ['物品', '产品', '风格', '色卡']:
+        for kind in ['物品', '产品']:
             job = self.lib.create_job({'source_id': self.asset['id'], 'subject': '测试', 'kind': kind})
             self.assertEqual(self.lib.prepare(job['id'], 0)['ratio'], m.asset_skill.recipe(kind)['ratio'])
+        for kind in ['风格', '色卡']:
+            with self.assertRaisesRegex(ValueError, '有效的输出类型'):
+                self.lib.create_job({'source_id': self.asset['id'], 'subject': '测试', 'kind': kind})
         with self.assertRaisesRegex(ValueError, '不再生图'):
             self.lib.create_job({'source_id': self.asset['id'], 'subject': '人物', 'kind': '人物1x4'})
 
@@ -771,7 +794,7 @@ class LibraryTests(unittest.TestCase):
             self.assertEqual(len(job['steps']), 1)
             request = self.lib.prepare(job['id'], 0)
             self.assertIn(expected, request['prompt'])
-            self.assertEqual(request['ratio'], '3:4' if kind == '大头照' else '16:9')
+            self.assertEqual(request['ratio'], '3:4' if kind == '大头照' else '4:3')
             if kind == '大头照':
                 self.assertIn('画面内无衣物、领口或肩带', request['prompt'])
                 self.assertNotIn('锁骨', request['prompt'])
@@ -1084,7 +1107,7 @@ class LibraryTests(unittest.TestCase):
         alternatives = []
         for index in range(2):
             path = self.root / f'candidate-{index}.png'
-            Image.new('RGB', (320, 180), (50, index * 70, 20)).save(path)
+            Image.new('RGB', (320, 240), (50, index * 70, 20)).save(path)
             alternatives.append(path)
         job = self.lib.attach(job['id'], 0, alternatives)
         first, second = job['steps'][0]['outputs']
