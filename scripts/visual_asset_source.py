@@ -5,14 +5,14 @@ import json
 import re
 from pathlib import Path
 if __package__:
-    from .core.artifacts import artifact_is_confirmed, project_path, digest, load_manifest
+    from .core.artifacts import artifact_is_adopted, artifact_is_confirmed, project_path, digest, load_manifest
     from .core.project_state import load_project_state
     from .core.schema_contracts import require_schema
     from .core.story_sources import validate_story_sources
     from .visual_asset_choices import apply_choices
     from .visual_asset_product_usage import load_usage
 else:
-    from core.artifacts import artifact_is_confirmed, project_path, digest, load_manifest
+    from core.artifacts import artifact_is_adopted, artifact_is_confirmed, project_path, digest, load_manifest
     from core.project_state import load_project_state
     from core.schema_contracts import require_schema
     from core.story_sources import validate_story_sources
@@ -129,15 +129,15 @@ def source_project(path):
         raise ValueError('所选目录没有项目产物登记表：' + str(root / '00_项目管理/artifact_manifest.json'))
     artifacts = load_manifest(root)['artifacts']
     entries = [a for a in artifacts if a.get('logical_id') == 'narrative.package' and a.get('status') == 'current']
-    if len(entries) != 1 or entries[0].get('user_approved') is not True:
-        raise ValueError('项目必须有唯一、当前有效且已由你确认的 narrative.package')
+    if len(entries) != 1:
+        raise ValueError('项目必须有唯一、当前有效且已采用的 narrative.package')
     entry = entries[0]
     path = project_path(root, entry['path_or_url'])
     if not path.is_relative_to(root):
         raise ValueError('叙事包必须登记在项目文件夹内：' + str(path))
     state = load_project_state(root)
-    if not artifact_is_confirmed(entry, state, root):
-        raise ValueError('项目状态缺少叙事包的用户确认记录，请先在项目中完成确认')
+    if not artifact_is_adopted(entry, state, root):
+        raise ValueError('项目状态缺少叙事包的用户确认记录或有效的授权代审依据')
     raw = path.read_bytes()
     narrative = json.loads(raw.decode("utf-8-sig"))
     require_schema(narrative, 'narrative-package.schema.json', label='项目资产数据')

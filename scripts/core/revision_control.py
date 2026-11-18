@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import copy
 import hashlib
-import shutil
 import uuid
 from pathlib import Path
 from typing import Any, Iterable
@@ -514,7 +513,6 @@ def open_change(
             "opened_at": utc_now(),
             "candidate_receipt": None,
             "review": None,
-            "paid_approvals": [],
         }
         if authorization is not None:
             change["workflow_authorization"] = authorization
@@ -1087,80 +1085,24 @@ def cancel_change(project: Path, *, change_id: str, reason: str) -> dict[str, An
         return _commit_json_transaction_unlocked(project, {project / CONTROL_RELATIVE: control}, reason="cancel revision change")
 
 
-def record_paid_approval(
-    project: Path,
-    *,
-    change_id: str,
-    paid_action_id: str,
-    approval_ref: str,
-    targets: list[str],
-    quantity: int,
-) -> dict[str, Any]:
-    # 项目裁定（2026-09-21）：资产图生成不挂变更案，因此本项目没有调用方，
-    # 资产费用门槛仍在资产网页"用户点授权生成"那一下。机制保留给需要预算门禁的
-    # 项目，删除会被当成缺陷重新提，接线会打断资产与导演规划的并行流程。
-    if not approval_ref.strip() or quantity <= 0:
-        raise RevisionControlError("付费授权需要 approval_ref 和正数量")
-    from .candidate_test import require_production
-    project = project.resolve()
-    with project_lock(project):
-        require_production(project)
-        control = _load_control(project)
-        change = _assert_active(control, change_id)
-        approval = {
-            "paid_action_id": paid_action_id,
-            "approval_ref": approval_ref,
-            "targets": sorted(set(targets)),
-            "quantity": quantity,
-            "remaining": quantity,
-            "origin_verification": "policy_only",
-            "recorded_at": utc_now(),
-        }
-        change.setdefault("paid_approvals", []).append(approval)
-        state = load_project_state(project)
-        _append_confirmation(state, {"kind": "revision-paid", "change_id": change_id, **approval})
-        return _commit_json_transaction_unlocked(project, {
-            project / CONTROL_RELATIVE: control,
-            project / MANAGE / "project_state.json": state,
-        }, reason="record paid approval")
-
-
 def guard_action(
     project: Path,
     *,
     logical_ids: list[str],
     change_id: str | None = None,
-    paid_action_id: str | None = None,
 ) -> dict[str, Any]:
     """Fail closed when a requested action touches a frozen branch."""
-    if paid_action_id:
-        from .candidate_test import require_production
-        require_production(project)
     project = project.resolve()
     control = _load_control(project)
     active = control.get("active_change")
     if not isinstance(active, dict):
-        if paid_action_id:
-            raise RevisionControlError("付费动作必须属于活动变更案并有明确授权")
         return {"allowed": True, "reason": "no_active_change"}
     touched = sorted(set(logical_ids) & set(active.get("frozen_logical_ids") or []))
     if touched and change_id != active.get("change_id"):
         raise RevisionControlError(f"动作触及冻结分支：{', '.join(touched)}")
-    if paid_action_id:
-        approval = next((item for item in active.get("paid_approvals") or [] if item.get("paid_action_id") == paid_action_id), None)
-        if approval is None or approval.get("remaining", 0) <= 0:
-            raise RevisionControlError("付费动作缺少可用的用户授权记录")
     return {"allowed": True, "change_id": active.get("change_id"), "frozen_intersection": touched}
 
 
 def show_change(project: Path) -> dict[str, Any]:
     project = project.resolve()
     return _load_control(project)
-
-
-def discard_uncommitted_transaction(project: Path, transaction_id: str) -> None:
-    """Test helper: remove only a transaction that never received commit intent."""
-    tx_dir = _transaction_dir(project.resolve(), transaction_id)
-    if (tx_dir / "commit_intent.json").exists():
-        raise RevisionControlError("已决定的事务不能清理，只能 recover")
-    shutil.rmtree(tx_dir)

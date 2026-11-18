@@ -1004,7 +1004,7 @@ def test_ensure_prepared_distinguishes_empty_selection_and_missing_evidence(tmp_
         cli.ensure_prepared(args)
 
 
-@pytest.mark.parametrize("skill", ["blender-previs", "voice-reference-manager", "stage-reviewer", "knowledge-maintainer"])
+@pytest.mark.parametrize("skill", ["voice-reference-manager", "stage-reviewer", "knowledge-maintainer"])
 def test_three_layer_prepare_keeps_unmigrated_skill_compatible(tmp_path: Path, skill: str) -> None:
     project = _project(tmp_path)
     original = (project / "00_项目管理/project_state.json").read_bytes()
@@ -1130,7 +1130,7 @@ def test_startup_boundary_scan_does_not_treat_rule_body_heading_as_candidate_par
 
 
 def test_other_skills_keep_isolated_nonempty_profile_rule_compatible(tmp_path: Path) -> None:
-    skills = ("asset-image-assistant", "blender-previs", "creative-director", "knowledge-maintainer", "storyboard-director", "storyboard-planner", "stage-reviewer", "voice-reference-manager")
+    skills = ("asset-image-assistant", "creative-director", "knowledge-maintainer", "storyboard-director", "storyboard-planner", "stage-reviewer", "voice-reference-manager")
     vault = _method_vault(tmp_path / "vault")
     profiles = {skill: json.loads((cli.ROOT / "skills" / skill / "knowledge-profile.json").read_text(encoding="utf-8")) for skill in skills}
     topics = sorted({topic for profile in profiles.values() for topic in profile.get("topics", [])})
@@ -1650,7 +1650,6 @@ def test_stage_sets_respect_skill_boundaries():
     expectations = {
         'creative-director': False,
         'storyboard-planner': True,
-        'blender-previs': True,
         'asset-image-assistant': True,
         'voice-reference-manager': True,
         'storyboard-director': True,

@@ -1,8 +1,4 @@
-"""Vault-owned visual originals, Web cache, and generation requests.
-
-Run with the bundled Python (Pillow required): serve --open, import --source PATH.
-No generation runs at startup. Dreamina submission requires a reviewed step in the UI.
-"""
+"""Visual asset storage, review commands, and local HTTP API."""
 from __future__ import annotations
 
 import argparse
@@ -19,12 +15,11 @@ import subprocess
 import sys
 import threading
 import uuid
-import webbrowser
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import unquote, urlparse
 
 from PIL import Image, ImageOps
 
@@ -52,7 +47,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent)) if str(Path(__file__).r
 from visual_asset_projects import Projects
 import visual_asset_backup
 import visual_asset_upload
-import visual_asset_previs
 DEFAULT_LIBRARY = ROOT / '.master-storyboarding' / 'visual-library'
 IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tif', '.tiff'}
 VIDEO_EXTS = {'.mp4', '.mov', '.webm'}
@@ -60,8 +54,6 @@ CATEGORIES = ['人物单图', '大头照', '服装三视图', '人物1x4', '宠�
 ROLES = ['母版', '候选', '参考', '分镜', '历史', '待整理']
 MODELS = ['5.0', '5.0Pro', '4.7', '4.6', '4.5', '4.1', '4.0']
 _UNSCOPED_PROJECT = object()
-# Only the exact, repository-owned import map in visual_asset_ui/index.html may run inline.
-PREVIS_IMPORTMAP_SHA256 = 'dkIVxJOkhk+dsLekdBE1wjlHzMelv+mUnkUYQRC39To='
 
 
 def external_generation_provenance(source, record):
@@ -106,7 +98,7 @@ def template_prompt(kind, subject, notes, index=0, *, allow_unreferenced_design=
     template = asset_skill.executable_template(kind, subject, notes, raw=str(source), index=index,
         allow_unreferenced_design=allow_unreferenced_design,
         reference_records=reference_records, has_references=has_references)
-    return template['content'], str(source)
+    return template['content'], template['path']
 
 
 def now():
@@ -205,7 +197,6 @@ class Library:
         self.backup_wakeup = threading.Event()
         self.root.mkdir(parents=True, exist_ok=True)
         self.lock = threading.RLock()
-        self.upload_lock = threading.Lock()
         with self.connect() as db:
             db.execute('CREATE TABLE IF NOT EXISTS assets (id TEXT PRIMARY KEY, source_key TEXT UNIQUE, data TEXT NOT NULL)')
             db.execute('CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, data TEXT NOT NULL)')
@@ -620,238 +611,6 @@ class Library:
                 raise ValueError('知识库入库失败：' + result['message'])
             return self.get(ident), True
 
-    def upload_file(self, source, *, category=None, original_source=None):
-        """Keep one usable asset; reject duplicates and unfixable ratios before import."""
-        with self.upload_lock:
-            return self._upload_file(source, category=category, original_source=original_source)
-
-    def _upload_file(self, source, *, category=None, original_source=None):
-        if category is not None and category not in CATEGORIES:
-            raise ValueError('无效图片分类')
-        source = Path(source).resolve()
-        with Image.open(source) as picture:
-            picture.verify()
-        size = source.stat().st_size
-        digest = visual_asset_upload.digest(source)
-        for item in self.items():
-            if item.get('trashed_at') or item.get('reference_only'):
-                continue
-            existing = Path(item['original'])
-            if existing.is_file() and existing.stat().st_size == size and visual_asset_upload.digest(existing) == digest:
-                if category and item['category'] != category:
-                    return {'upload_processing': {'status': 'error', 'message':
-                            f'已有图片属于「{item["category"]}」，项目位置是「{category}」；未入库'}}
-                return {**item, 'upload_processing': {'status': 'duplicate', 'message': '与资产库已有图片完全相同，未重复入库'}}
-        request_folder = (self.root / 'requests' / 'uploads' / uid()).resolve()
-        try:
-            recognition = visual_asset_upload.recognize(source, request_folder)
-        except (OSError, ValueError, json.JSONDecodeError, subprocess.SubprocessError) as exc:
-            return {'upload_processing': {'status': 'error', 'message': f'看图识别失败：{exc}；未入库'}}
-        finally:
-            reference = request_folder / 'reference'
-            if reference.is_dir() and reference.is_relative_to((self.root / 'requests' / 'uploads').resolve()):
-                for temporary in reference.iterdir():
-                    if temporary.is_file() and not temporary.is_symlink():
-                        temporary.unlink()
-                reference.rmdir()
-        if recognition['confidence'] == '低':
-            return {'upload_processing': {'status': 'error', 'message': '类别识别把握较低，未入库；请人工核对'}}
-        if category and recognition['category'] != category:
-            return {'upload_processing': {'status': 'error', 'message':
-                    f'项目位置是「{category}」，图片识别为「{recognition["category"]}」；未入库，请核对'}}
-        chosen = category or recognition['category']
-        destination = source.parent / (source.stem + '_自动调整比例.png')
-        try:
-            adjustment = visual_asset_upload.crop_to_category(source, destination, chosen, recognition)
-        except (OSError, ValueError, Image.DecompressionBombError) as exc:
-            return {'upload_processing': {'status': 'error', 'message': f'比例处理失败：{exc}；未入库'}}
-        if adjustment['status'] == 'skipped':
-            return {'upload_processing': {'status': 'rejected', 'message':
-                    f'比例不符合「{chosen}」要求，且无法安全调整：{adjustment["reason"]}；未入库'}}
-        selected = destination if adjustment['status'] in {'cropped', 'padded', 'oriented'} else source
-        try:
-            visual_asset_upload.validate_dimensions(selected, chosen)
-        except (OSError, ValueError, Image.DecompressionBombError) as exc:
-            return {'upload_processing': {'status': 'error', 'message': f'尺寸核对失败：{exc}；未入库'}}
-        provenance = {'kind': 'upload_adjusted' if selected == destination else 'upload',
-                      'original_source': str(original_source or source)}
-        if adjustment['status'] == 'cropped':
-            provenance['crop_box'] = adjustment['box']
-        elif adjustment['status'] == 'padded':
-            provenance['placement'] = adjustment['placement']
-        generated_name = str(recognition.get('asset_name') or recognition.get('description') or '').strip()[:60]
-        metadata = {'source': str(original_source or source), 'name': generated_name,
-                    'name_history': [Path(original_source or source).stem],
-                    'name_source': 'codex_cli' if recognition.get('asset_name') else 'description_fallback',
-                    'upload_recognition': {'model': 'gpt-6-luna', 'result': recognition,
-                        'suggested_category': recognition['category'],
-                        'category_source': 'project_step' if category else 'image'},
-                    'upload_crop': adjustment}
-        asset, _ = self.import_file(selected, project='手动导入',
-                                    role='候选' if selected == destination else '参考',
-                                    category=chosen, provenance=provenance, metadata=metadata)
-        if visual_asset_upload.digest(asset['original']) != visual_asset_upload.digest(selected):
-            raise ValueError('入库副本校验失败，原文件尚未删除')
-        return {**asset, 'upload_processing': {'status': 'added', 'message':
-                f'已自动规范为 {asset["width"]}×{asset["height"]}（{adjustment["ratio"]}），已入库'
-                if selected == destination else '原图尺寸符合要求，已入库'}}
-
-    def local_upload_source(self, source):
-        """Keep finished-asset uploads out of managed project and catalog folders."""
-        source = Path(source)
-        if source.is_symlink() or not source.is_file():
-            raise ValueError('所选文件不是普通图片')
-        source = source.resolve()
-        protected_roots = [ROOT.resolve(), self.vault.resolve(),
-                           self.root, *(Path(p['path']).resolve() for p in self.projects.summaries())]
-        if any(source.is_relative_to(root) for root in protected_roots):
-            raise ValueError('所选文件位于项目、知识库或资产库中，未上传也未删除')
-        for asset in self.items():
-            if any(source == Path(value).resolve() for value in
-                   (asset.get('source'), asset.get('original'), asset.get('thumbnail'),
-                    asset.get('backup', {}).get('path')) if value):
-                raise ValueError('所选文件已被资产记录引用，未上传也未删除')
-        if source.suffix.lower() not in IMAGE_EXTS or source.stat().st_size > 64 * 1024 * 1024:
-            raise ValueError('只支持不超过 64 MB 的 PNG、JPG、WEBP、BMP、TIFF 图片；文件未删除')
-        return source
-
-    def upload_local_file(self, path, *, category=None):
-        """Process a temporary copy while always preserving the selected source."""
-        source = self.local_upload_source(path)
-        source_digest = visual_asset_upload.digest(source)
-        staged_folder = (self.root / 'uploads' / uid()).resolve()
-        staged_folder.mkdir(parents=True)
-        staged = staged_folder / source.name
-        try:
-            shutil.copy2(source, staged)
-            if visual_asset_upload.digest(staged) != source_digest:
-                raise ValueError('上传暂存副本校验失败，电脑原文件未删除')
-            result = self.upload_file(staged, category=category, original_source=source)
-            result['upload_processing']['source_deleted'] = False
-            result['upload_processing']['message'] += '；电脑原文件保留'
-            return result
-        finally:
-            if staged_folder.is_relative_to((self.root / 'uploads').resolve()) and staged_folder.is_dir():
-                for temporary in staged_folder.iterdir():
-                    if temporary.is_file() and not temporary.is_symlink():
-                        temporary.unlink()
-                staged_folder.rmdir()
-
-    def prepare_upload(self, payload):
-        """Turn an input-only record into an existing Skill generation job."""
-        source = self.get(payload['source_id'], require_file=True)
-        if source.get('record_scope') != 'upload_reference':
-            raise ValueError('请选择上传的制作参考文件')
-        kind = payload.get('kind', '')
-        recipes = asset_skill.profile()['recipes']
-        if kind and (kind not in recipes or kind == '人物1x4'):
-            raise ValueError('人物1×4需要已确认脸部和服装，请从照片转资产制作')
-        subject = str(payload.get('subject', '')).strip()[:200]
-        options = {'kind': kind, 'subject': subject}
-        recognition = source.get('upload_recognition') if source.get('upload_options') == options else None
-        source['upload_options'] = options
-        if not recognition:
-            source.pop('upload_recognition', None)
-        self.save(source)
-        refs = [source]
-        if source.get('media_type') == 'video':
-            refs = [self.get(ident, require_file=True) for ident in source.get('frame_ids', [])]
-            if not refs:
-                frames = visual_asset_upload.video_frames(source['original'],
-                    Path(source['original']).parent / 'frames', source['duration'])
-                for frame, timestamp in frames:
-                    record, _ = self.import_file(frame, project='上传参考', upload_reference=True,
-                        provenance={'kind': 'video_frame', 'source_id': source['id'], 'timestamp': timestamp})
-                    refs.append(record)
-                source['frame_ids'] = [record['id'] for record in refs]
-                self.save(source)
-        if not recognition:
-            recognition = visual_asset_upload.recognize([r['original'] for r in refs],
-                self.root / 'requests' / 'uploads' / uid(), kind=kind, subject=subject)
-        source['upload_recognition'] = recognition
-        self.save(source)
-        if recognition['confidence'] == '低' or (recognition.get('has_multiple_subjects') and not subject):
-            return {'id': source['id'], 'name': source['name'], 'upload_processing': {
-                'status': 'needs_choice', 'message': '无法唯一确定提取主体，请指定要提取的人物、服装或物品；源文件保留',
-                'source_deleted': False}}
-        kind = kind or {'大头照': '大头照', '服装三视图': '服装', '宠物': '角色外观',
-                        '场景': '环境', '物品': '物品', '产品': '产品', '风格': '风格'}.get(recognition['category'])
-        if not kind:
-            return {'id': source['id'], 'name': source['name'], 'upload_processing': {
-                'status': 'needs_choice', 'message': '未能确定独立资产类型，请选择提取类型；源文件保留', 'source_deleted': False}}
-        subject = str(subject or recognition.get('asset_name') or recognition['description']).strip()[:200]
-        # Re-selecting the same unchanged input must not create another identical job.
-        existing = next((j for j in self.items('jobs') if j.get('upload_source_id') == source['id']
-                         and j['kind'] == kind and j['title'] == subject), None)
-        if existing:
-            return {'id': source['id'], 'job_id': existing['id'], 'name': source['name'],
-                    'upload_processing': {'status': 'duplicate', 'message': '已有此文件的制作记录，已保留源文件',
-                                          'source_deleted': False}}
-        job = self.create_job({'source_id': refs[0]['id'], 'kind': kind, 'subject': subject,
-            'notes': '从上传参考重新生成干净的独立资产，按该类别规范构图。保留主体身份或服装结构；'
-                     '去除原画面杂物、叠加文字与水印、临时动作和剧情布光；'
-                     '保留主体本身的图案、文字、标识与产品标签。不可见细节标明推测。',
-            'must_inherit': {'大头照': '参考主体的面部身份、五官比例、发型和发色',
-                             '服装': '目标服装的款式、剪裁、颜色、材质、图案及配饰关系'}.get(kind,
-                             '参考中目标主体的固定外观特征，按当前资产类型的规范保留'),
-            'must_not_inherit': '原背景、外加文字与水印、临时动作；大头照不继承衣服，服装图不继承脸部身份'})
-        job.update(upload_source_id=source['id'], extra_reference_ids=[r['id'] for r in refs[1:]])
-        self.save(job, 'jobs')
-        message = '参考已保存，正在按资产规则准备重新生成；源文件保留'
-        try:
-            self.audit_prompt({'id': job['id'], 'index': 0, 'mode': 'write'})
-        except ValueError as exc:
-            message = '制作记录已建立，提示词准备需重试：' + str(exc) + '；源文件保留'
-            job['steps'][0]['audit'] = {'status': 'error', 'message': str(exc)}
-            self.save(job, 'jobs')
-        return {'id': source['id'], 'job_id': job['id'], 'name': source['name'],
-                'upload_processing': {'status': 'prepared', 'message': message, 'source_deleted': False}}
-
-    def pick_files(self, payload):
-        if not isinstance(payload.get('multiple', False), bool):
-            raise ValueError('选文件参数无效')
-        kind = payload.get('kind', '')
-        if kind and (kind not in asset_skill.profile()['recipes'] or kind == '人物1x4'):
-            raise ValueError('无效提取类型')
-        paths = visual_asset_upload.pick_local_files(payload.get('multiple', False), media=True)
-        results = []
-        for path in paths:
-            record = None
-            try:
-                source = Path(path).resolve()
-                if source.suffix.lower() not in IMAGE_EXTS | VIDEO_EXTS or not source.is_file():
-                    raise ValueError('请选择图片或 MP4、MOV、WEBM 视频')
-                if source.suffix.lower() in IMAGE_EXTS and source.stat().st_size > 64 * 1024 ** 2:
-                    raise ValueError('图片不能超过 64 MB')
-                record, _ = self.import_file(source, project='上传参考', upload_reference=True,
-                                            provenance={'kind': 'uploaded_source'})
-                result = self.prepare_upload({**payload, 'source_id': record['id']})
-                results.append(result)
-            except (OSError, ValueError, subprocess.SubprocessError, Image.DecompressionBombError) as exc:
-                results.append({'id': record['id'] if record else None, 'name': Path(path).name, 'upload_processing':
-                                {'status': 'error', 'message': str(exc) + '；源文件保留', 'source_deleted': False}})
-        return {'cancelled': not paths, 'results': results}
-
-    def pick_upload(self, payload):
-        category = payload.get('category')
-        multiple = payload.get('multiple', False)
-        if category is not None and category not in CATEGORIES:
-            raise ValueError('无效图片分类')
-        if not isinstance(multiple, bool):
-            raise ValueError('选图参数无效')
-        paths = visual_asset_upload.pick_local_files(multiple)
-        results = []
-        for path in paths:
-            try:
-                results.append(self.upload_local_file(path, category=category))
-            except (OSError, ValueError, Image.DecompressionBombError) as exc:
-                results.append({'name': Path(path).name, 'upload_processing':
-                                {'status': 'error', 'message': str(exc), 'source_deleted': False}})
-        return {'cancelled': not paths, 'results': results}
-
-    def pick_video(self, payload):
-        return self.pick_files(payload)
-
     def import_tree(self, source, *, external_generation=None):
         source = Path(source).expanduser().resolve()
         if not source.exists() or source == self.root or source.is_relative_to(self.root):
@@ -1118,7 +877,7 @@ class Library:
             step['prompt'] = prompt
             if p.get('approve') is True:
                 audit = step.get('audit', {})
-                if not asset_skill.approved(step) or audit.get('prompt') != prompt:
+                if not asset_skill.approved(step, job.get('kind')) or audit.get('prompt') != prompt:
                     raise ValueError('请先让Codex审查当前提示词并通过，再确认生成')
                 step['prompt_approval'] = {'prompt': prompt, 'at': now()}
             job.update(provider=provider, model=model)
@@ -1224,7 +983,7 @@ class Library:
 
     def prompt_is_approved(self, job, index):
         step = job['steps'][index]
-        return (asset_skill.approved(step) and
+        return (asset_skill.approved(step, job.get('kind')) and
                 (not job.get('project_id') or step.get('audit', {}).get('skill_execution', {}).get('mode') == 'project') and
                 step.get('audit', {}).get('prompt') == step.get('prompt') and
                 step.get('prompt_approval', {}).get('prompt') == step.get('prompt'))
@@ -1253,8 +1012,9 @@ class Library:
                 (folder / '交给Codex.txt').write_text(text, encoding='utf-8')
             approved = self.prompt_is_approved(job, index)
             audit = dict(job['steps'][index].get('audit', {'status': 'idle'}))
-            if audit.get('status') == 'passed' and not asset_skill.approved(job['steps'][index]):
-                audit.update(status='stale', message='这是旧流程的审查记录，请按资产Skill重新审查。')
+            if audit.get('status') == 'passed' and not asset_skill.approved(job['steps'][index], job.get('kind')):
+                issues = asset_skill.prompt_issues(request['prompt'], request['kind'])
+                audit.update(status='stale', message='；'.join(issues) or '这是旧流程的审查记录，请按资产Skill重新审查。')
             return {**request, 'path': str(path), 'handoff': text if approved else '',
                     'audit': audit, 'approved': approved}
 
@@ -1301,8 +1061,14 @@ class Library:
                 step.pop('visual_self_check', None)
             kind = step['kind'] if job.get('project_id') else job['kind']
             ratio = step['ratio'] if job.get('project_id') else asset_skill.recipe(kind)['ratio']
-            for path in paths:
-                resolved = Path(path).resolve()
+            resolved_paths = [Path(path).resolve() for path in paths]
+            if kind == '大头照':
+                for resolved in resolved_paths:
+                    check = asset_skill.technical_check(resolved, ratio)
+                    if not check['passed']:
+                        raise ValueError(
+                            f"大头照未入库：实测 {check['width']}×{check['height']}，要求 {ratio}，请重做。")
+            for resolved in resolved_paths:
                 evidence = (codex_bridge.visual_self_check(visual_self_check, resolved)
                             if visual_self_check is not None else None)
                 if any(resolved.is_relative_to(Path(p['path']).resolve()) for p in self.projects.summaries()):
@@ -1322,6 +1088,7 @@ class Library:
                 adjustment = None
                 if job.get('upload_source_id'):
                     provenance.update(upload_source_id=job['upload_source_id'], generated_original=str(resolved))
+                if job.get('upload_source_id') and kind not in {'大头照', '人物1x4'}:
                     category = asset_skill.recipe(kind)['category']
                     fitted = self.root / 'requests' / ident / str(index) / 'normalized' / (uid() + '.png')
                     adjustment = visual_asset_upload.crop_to_category(resolved, fitted, category,
@@ -1355,7 +1122,7 @@ class Library:
                 item['group'] = job['title']
                 item['name'] = job['title'] + '_' + step['name'] + '_' + item['id'][:6]
                 item['backup'] = {'status': 'pending'}
-                item['technical_check'] = asset_skill.technical_check(item['original'], ratio)
+                item['technical_check'] = asset_skill.technical_check(item['original'], None if kind == '人物1x4' else ratio)
                 if adjustment:
                     item['upload_crop'] = adjustment
                 self.save(item)
@@ -1668,8 +1435,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Cache-Control', 'no-store')
         self.send_header('Content-Security-Policy',
-                         "default-src 'self'; img-src 'self' blob:; style-src 'self' 'unsafe-inline'; "
-                         f"script-src 'self' 'sha256-{PREVIS_IMPORTMAP_SHA256}'; frame-ancestors 'none'")
+                         "default-src 'none'; frame-ancestors 'none'")
         self.end_headers()
         self.wfile.write(body)
 
@@ -1721,22 +1487,6 @@ class Handler(BaseHTTPRequestHandler):
                                    'token': self.server.token, 'root': str(self.server.library.root),
                                    'vault': str(self.server.library.vault / '资产库'),
                                    'dreamina_available': bool(shutil.which('dreamina'))})
-            if url.path == '/api/previs':
-                query = parse_qs(url.query)
-                project_id = query.get('project_id', [''])[0]
-                preview_id = query.get('preview_id', [''])[0]
-                result = (visual_asset_previs.detail(self.server.library, project_id, preview_id)
-                          if preview_id else visual_asset_previs.list_previews(self.server.library, project_id))
-                return self.reply(result)
-            if url.path.startswith('/previs-media/'):
-                parts = url.path.split('/')
-                if len(parts) != 5 or parts[-1] != 'preview.glb':
-                    raise ValueError('无效白模预览路径')
-                query = parse_qs(url.query, keep_blank_values=True)
-                data = visual_asset_previs.model_bytes(
-                    self.server.library, unquote(parts[2]), unquote(parts[3]),
-                    query.get('manifest_sha256', [None])[0])
-                return self.reply(data, content_type='model/gltf-binary')
             if url.path.startswith('/product-reference-media/'):
                 from visual_asset_product_usage import preview_path
                 _, _, project_id, asset_id = url.path.split('/')
@@ -1761,15 +1511,6 @@ class Handler(BaseHTTPRequestHandler):
                 if variant == 'original' and path.suffix.lower() in VIDEO_EXTS:
                     return self.reply_video(path)
                 return self.reply(path.read_bytes(), content_type=mimetypes.guess_type(path.name)[0] or 'application/octet-stream')
-            static = {'/': 'index.html', '/app.js': 'app.js', '/cyber.css': 'cyber.css', '/robot.js': 'robot.js', '/scenes.js': 'scenes.js', '/characters.js': 'characters.js', '/folders.js': 'folders.js', '/library-extensions.js': 'library-extensions.js', '/projects.js': 'projects.js', '/projects.css': 'projects.css', '/previs.js': 'previs.js', '/previs.css': 'previs.css'}
-            for name in ('three.module.js', 'three.core.js', 'addons/loaders/GLTFLoader.js',
-                         'addons/controls/OrbitControls.js', 'addons/utils/BufferGeometryUtils.js', 'LICENSE'):
-                static['/vendor/three/' + name] = 'vendor/three/' + name
-            if url.path in static:
-                path = ROOT / 'scripts' / 'visual_asset_ui' / static[url.path]
-                content_type = ('text/html' if url.path == '/' else 'text/css' if url.path.endswith('.css')
-                                else 'text/plain' if url.path.endswith('/LICENSE') else 'text/javascript')
-                return self.reply(path.read_bytes(), content_type=content_type + '; charset=utf-8')
             return self.reply({'error': '未找到'}, 404)
         except (ValueError, KeyError, OSError) as exc:
             return self.reply({'error': str(exc)}, 400)
@@ -1786,14 +1527,8 @@ class Handler(BaseHTTPRequestHandler):
             url = urlparse(self.path)
             raw = self.rfile.read(size)
             library = self.server.library
-            if url.path == '/api/upload':
-                raise ValueError('请刷新网页并使用“上传文件”入口')
             p = json.loads(raw)
             actions = {
-                '/api/upload-local': lambda: library.pick_upload(p),
-                '/api/upload-files': lambda: library.pick_files(p),
-                '/api/upload-prepare': lambda: library.prepare_upload(p),
-                '/api/video-local': lambda: library.pick_video(p),
                 '/api/project': lambda: library.projects.action(p),
                 '/api/product-references': lambda: __import__('visual_asset_product_usage').import_references(library, p),
                 '/api/folder': lambda: library.folder(p),
@@ -1830,7 +1565,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply({'error': str(exc)}, 400)
 
 
-def serve(library, port, open_browser=False):
+def serve(library, port):
     server = ThreadingHTTPServer(('127.0.0.1', port), Handler)
     server.library, server.token = library, secrets.token_urlsafe(32)
     def collect_trash():
@@ -1871,8 +1606,6 @@ def serve(library, port, open_browser=False):
             library.save(job, 'jobs')
     url = f'http://127.0.0.1:{server.server_port}'
     print(url, flush=True)
-    if open_browser:
-        webbrowser.open(url)
     server.serve_forever()
 
 
@@ -1890,7 +1623,6 @@ if __name__ == '__main__':
     subs = parser.add_subparsers(dest='command', required=True)
     run = subs.add_parser('serve')
     run.add_argument('--port', type=int, default=8766)
-    run.add_argument('--open', action='store_true')
     imp = subs.add_parser('import')
     imp.add_argument('--source', required=True)
     attach_parser = subs.add_parser('attach-result')
@@ -1907,11 +1639,32 @@ if __name__ == '__main__':
     chat.add_argument('--authorization-id', required=True)
     chat.add_argument('--confirmation-file', required=True, type=Path,
                       help='JSON with the exact quote, at, review_ref and approved outputs; outputs=[] resumes existing confirmed outputs')
+    delegated = subs.add_parser('apply-agent-review')
+    delegated.add_argument('--project-id', required=True)
+    delegated.add_argument('--authorization-id', required=True)
+    delegated.add_argument('--review-file', required=True, type=Path)
+    grant = subs.add_parser('authorize-asset-review')
+    grant.add_argument('--project', required=True, type=Path)
+    grant.add_argument('--authorization-id', required=True)
+    grant.add_argument('--authorization-ref', required=True)
+    usage = subs.add_parser('product-usage')
+    usage_project = usage.add_mutually_exclusive_group(required=True)
+    usage_project.add_argument('--project', type=Path)
+    usage_project.add_argument('--project-id')
+    usage_mode = usage.add_mutually_exclusive_group()
+    usage_mode.add_argument('--result-file', type=Path)
+    usage_mode.add_argument('--codex-cli', action='store_true')
     subs.add_parser('list')
     args = parser.parse_args()
+    if args.command == 'authorize-asset-review':
+        from core.agent_acceptance import register_asset_workflow_authorization
+        result = register_asset_workflow_authorization(args.project, authorization_id=args.authorization_id,
+                                                       authorization_ref=args.authorization_ref, delegated=True)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        sys.exit(0)
     lib = Library(args.library, vault=args.asset_vault)
     if args.command == 'serve':
-        serve(lib, args.port, args.open)
+        serve(lib, args.port)
     elif args.command == 'attach-result':
         print(json.dumps(lib.attach(args.job, args.view, args.file), ensure_ascii=False, indent=2))
     elif args.command == 'apply-website-review':
@@ -1925,5 +1678,24 @@ if __name__ == '__main__':
         result = apply_project_review(lib, lambda **options: lib.projects.apply_chat_confirmation(
             args.project_id, authorization_id=args.authorization_id, confirmation=confirmation, **options))
         print(json.dumps(result, ensure_ascii=False, indent=2))
+    elif args.command == 'apply-agent-review':
+        review = json.loads(args.review_file.read_text(encoding='utf-8-sig'))
+        result = apply_project_review(lib, lambda **options: lib.projects.apply_agent_review(
+            args.project_id, authorization_id=args.authorization_id, review=review, **options))
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    elif args.command == 'product-usage':
+        ident = args.project_id or lib.projects.bind(str(args.project))['id']
+        payload = {'action': 'product-usage', 'project_id': ident}
+        if args.result_file:
+            result_file = json.loads(args.result_file.read_text(encoding='utf-8-sig'))
+            if not isinstance(result_file, dict) or set(result_file) != {'signature', 'result'}:
+                raise ValueError('产品动作核对文件须包含 signature 和 result')
+            payload.update(result_file, mode='apply')
+        elif args.codex_cli:
+            payload['mode'] = 'codex-cli'
+        result = lib.projects.action(payload, background=False)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        if args.codex_cli and result.get('product_reference_check', {}).get('status') == 'error':
+            sys.exit(1)
     else:
         print(json.dumps(lib.import_tree(args.source) if args.command == 'import' else lib.items(), ensure_ascii=False, indent=2))

@@ -1,6 +1,9 @@
 import copy
 import json
+import os
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -10,7 +13,9 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import visual_asset_product_usage as usage
 from core import product_reference_pack
+from core.asset_refs import load_asset_list
 from core.io import sha256_file, write_json
+from core.project_state import new_project_state, write_project_state
 
 
 class ProductUsageTests(unittest.TestCase):
@@ -112,5 +117,115 @@ class ProductUsageTests(unittest.TestCase):
                                      (pack / ('stir.mp4' if scope == 'real_use' else 'box.png')).read_bytes())
                     with self.assertRaises(ValueError):
                         usage.preview_path(project, 'MONTAGE')
+
+    def test_executor_matches_real_pack_end_to_end_without_codex_cli(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            project = root / 'project'
+            manage = project / '00_项目管理'
+            pack = product_reference_pack.PACK_ROOT / 'creator-polishing-mask-2' / 'R04'
+            pack_path = pack / 'manifest.json'
+            manifest = json.loads(pack_path.read_text(encoding='utf-8'))
+            stir = next(ref for ref in manifest['references'] if ref['id'] == 'ACTION-06')
+            story = [
+                {'paragraph_id': 'STP-001', 'text': '女孩用面膜刷在碗里搅拌双剂，膏体开始起泡。'},
+                {'paragraph_id': 'STP-002', 'text': '女孩把碗里的面膜倒入漏斗。'},
+            ]
+            common = {
+                'narrative_purpose': '测试动作与参考对接', 'source_paragraph_ids': ['STP-001', 'STP-002'],
+                'identity_constraints': [], 'required_states': [], 'interactions': [], 'unknowns': [],
+            }
+            narrative_path = project / 'narrative.json'
+            write_json(narrative_path, {
+                'schema_version': '2.0', 'project_id': '产品动作匹配验收', 'revision': 'R01',
+                'status': 'confirmed', 'objective': '测试当前执行者对接实际产品参考',
+                'story_paragraphs': story, 'dialogues': [], 'locked_facts': [],
+                'change_summary': [], 'open_questions': [],
+                'asset_requirements': [
+                    {**common, 'asset_id': 'AST-MASK', 'category': 'REAL_PRODUCT',
+                     'name': manifest['product_name'], 'reference_paths': [str(pack_path)],
+                     'image_decision': '复用现有素材', 'image_reason': '已登记产品参考包'},
+                    {**common, 'asset_id': 'AST-GIRL', 'category': 'CHARACTER', 'entity_id': 'CHR-GIRL',
+                     'name': '女孩', 'reference_paths': [], 'image_decision': '无需独立图',
+                     'image_reason': '仅核对动作参考'},
+                ],
+            })
+            write_json(manage / 'artifact_manifest.json', {'schema_version': '1.0', 'artifacts': [
+                {'artifact_id': 'narrative-r01', 'logical_id': 'narrative.package',
+                 'type': 'narrative-package', 'revision': 'R01', 'status': 'current',
+                 'user_approved': True, 'path_or_url': 'narrative.json',
+                 'checksum': sha256_file(narrative_path)},
+            ]})
+            state = new_project_state(current_stage='asset-image-assistant')
+            state.update(current_artifacts=['narrative-r01'], user_confirmations=[
+                {'artifact_ids': ['narrative-r01'], 'at': '2026-01-01T00:00:00Z'},
+            ])
+            write_project_state(project, state)
+            write_json(manage / 'project_request.json', {'kickoff': {
+                'decision_ref': '产品动作匹配验收', 'product': {
+                    'mode': 'insert', 'product_id': manifest['product_id'], 'product_usage': 'real_use',
+                    'reference_pack_revision': 'R04', 'reference_pack_sha256': sha256_file(pack_path),
+                },
+            }})
+            empty_path = root / 'empty'
+            empty_path.mkdir()
+            env = {**os.environ, 'PATH': str(empty_path), 'APPDATA': str(empty_path)}
+            self.assertIsNone(shutil.which('codex', path=env['PATH']))
+            self.assertIsNone(shutil.which('codex.exe', path=env['PATH']))
+            command = [
+                sys.executable, str(Path(__file__).resolve().parents[1] / 'visual_asset_library.py'),
+                '--library', str(root / 'library'), '--asset-vault', str(root / 'vault'),
+                'product-usage', '--project', str(project),
+            ]
+            original = narrative_path.read_bytes()
+            prepared = subprocess.run(command, env=env, check=True, capture_output=True, encoding='utf-8')
+            task = json.loads(prepared.stdout)
+            self.assertEqual(task['status'], 'ready')
+            self.assertEqual(task['source_revision'], 'R01')
+            self.assertEqual(task['inputs']['story'], story)
+            keys = {ref['action_key'] for ref in task['inputs']['available_references']}
+            self.assertIn(stir['action_key'], keys)
+            self.assertNotIn('使用动作顺序合辑', keys)
+            result = {
+                'references': [
+                    {'product_ast_id': 'AST-MASK', 'action_key': key, 'paragraph_ids': [paragraph['paragraph_id']],
+                     'evidence': paragraph['text']}
+                    for key, paragraph in zip((stir['action_key'], '倒入漏斗'), story)
+                ],
+                'effects': [{'product_ast_id': 'AST-MASK', 'character_ast_id': 'AST-GIRL',
+                             'paragraph_ids': ['STP-001'], 'evidence': story[0]['text'],
+                             'state': '搅拌膏体', 'wardrobe_state': '', 'usage_kind': 'actual',
+                             'needs_reference': False, 'reference_need': '',
+                             'reference_reason': '故事只要求看清碗内搅拌动作，分动作视频足够'}],
+            }
+            envelope = {'signature': task['signature'], 'result': result}
+            result_path = root / 'result.json'
+            output = project / usage.FILE
+            wrong_quote = copy.deepcopy(envelope)
+            wrong_quote['result']['references'][0]['evidence'] = '凭空添加的动作原文。'
+            for invalid in ({**envelope, 'signature': '0' * 64}, wrong_quote):
+                with self.subTest(invalid=invalid):
+                    write_json(result_path, invalid)
+                    rejected = subprocess.run([*command, '--result-file', str(result_path)],
+                                              env=env, capture_output=True, encoding='utf-8')
+                    self.assertNotEqual(rejected.returncode, 0)
+                    self.assertFalse(output.exists())
+            write_json(result_path, envelope)
+            subprocess.run([*command, '--result-file', str(result_path)],
+                           env=env, check=True, capture_output=True, encoding='utf-8')
+
+            saved = json.loads(output.read_text(encoding='utf-8'))
+            self.assertEqual(narrative_path.read_bytes(), original)
+            matched, missing = saved['references']
+            self.assertEqual((matched['status'], matched['asset_id'], matched['sha256']),
+                             ('matched', stir['id'], stir['sha256']))
+            self.assertEqual(sha256_file(Path(matched['project_path'])), sha256_file(pack / stir['path']))
+            self.assertEqual((missing['status'], missing['project_path']), ('missing', None))
+            self.assertIsNone(saved['effects'][0]['generation_route'])
+            self.assertIsNone(saved['effects'][0]['image_path'])
+            assets = load_asset_list(project)
+            self.assertEqual(assets['product_usage'], saved)
+            product = next(item for item in assets['items'] if item['asset_id'] == 'AST-MASK')
+            self.assertEqual(product['action_references'], saved['references'])
 
 if __name__ == '__main__': unittest.main()

@@ -8,7 +8,7 @@
     },
     {
       "id": "CONTRACT-BOUNDARY",
-      "text": "职责、输入、输出与硬禁区明确，不承担资产新增、Blender、模型、生成分段或提示词"
+      "text": "职责、输入、输出与硬禁区明确，不承担资产新增、模型、生成分段或提示词"
     },
     {
       "id": "CONTRACT-REFERENCES",
@@ -58,11 +58,11 @@
     },
     {
       "id": "PLAN-BOUNDARY",
-      "text": "未自行新增资产需求，用户确认调整按项目规则核对；未决定 Blender、视频模型、生成分段、提示词或正式分镜图"
+      "text": "未自行新增资产需求，用户确认调整按项目规则核对；未决定视频模型、生成分段、提示词或正式分镜图"
     },
     {
       "id": "KB-COMPLIANCE",
-      "text": "产物命中对应知识：分镜方案须遵循 PROJECT_RULES、当前知识包、STORYBOARD-PLANNING-METHOD 全文快照与本地执行合同；景别/基础连续性剪辑属模型通用能力，不作动态知识包命中要求。只止于可执行导演合同，不越权写 Blender/模型/提示词。产出前已 prepare 并核对上述规范，非自行发挥"
+      "text": "产物命中对应知识：分镜方案须遵循 PROJECT_RULES、当前知识包、STORYBOARD-PLANNING-METHOD 全文快照与本地执行合同；景别/基础连续性剪辑属模型通用能力，不作动态知识包命中要求。只止于可执行导演合同，不越权决定模型或编写提示词。产出前已 prepare 并核对上述规范，非自行发挥"
     },
     {
       "id": "SERIAL-DELIVERY",

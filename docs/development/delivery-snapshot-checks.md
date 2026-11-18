@@ -18,6 +18,10 @@
 
 正式交付的冻结正文须逐字匹配已采用来源段正文。平台原生引用按独立实体核对，回读正文取编辑器的实际可提交文字，引用芯片单独采集。修订对白或其他正文应先修订来源稿，不能靠将已改文字同时写入冻结稿和编辑器通过比对。
 
+外置输入范围只从准确、现行且已采用的 `source_artifacts` 正文 `input_roots` 读取，沿源稿原字节绑定；冻结快照自行列出目录不能扩大输入范围。未声明的外置来源、相对路径越界和源字节变化仍拒绝。
+
+用户明确选择在指定项目以提示词控制场景变化、生成后验收时，沿现有 `project_state.accepted_issues` 保存准确原话、消息、项目/画布、源稿版本字节、片段镜号和场景实体范围。相应 draft 用 `prompt_state_control: {decision_id, sha256}` 引用该决定；仅免除该范围的静态状态图及逐镜原生控制要求，源状态判断、真实素材/产品、身份、时长和原生引用核对不变。回执标 `user_accepted_prompt_control` 与 `generated_state_verification: pending`，不得写为原生控制或生成像素已验证。缺决定、范围/字节变化或其他项目仍按默认规则拦截。
+
 逐 draft 增补本轮确有需要的声明，仍存在同一 JSON：
 
 - `duration_bounds: [min, max]`：来自本轮已核实的平台能力，单位秒。红帧正式交付须与已采用源稿 `selected_video_model` 的上下限一致。
@@ -137,6 +141,6 @@ manifest 的 `metadata.previous_quality_evidence_records` 保存已被替代的�
 
 ## 历史格式与等价副本
 
-T0 等价副本仍免重复人工审稿，但确认和采用时仍重查当前来源、参考文件字节和映射；等价复制不是来源有效性的豁免。JSON-only 导演包可以直接进入白模读取；保留 human_readable_path 的历史包继续核对原同修订正文。05/06 的 JSON 引用与显式产品标记也进入现有扫描，不因没有 MD 静默漏检。
+T0 等价副本仍免重复人工审稿，但确认和采用时仍重查当前来源、参考文件字节和映射；等价复制不是来源有效性的豁免。保留 human_readable_path 的历史包继续核对原同修订正文。05/06 的 JSON 引用与显式产品标记也进入现有扫描，不因没有 MD 静默漏检。
 
 validate-project.ps1 的通用图片路径检查复用现有 Python product_refs 命令的 --include-images，覆盖 JSON 正文与解码后的结构字段、MD/TXT。路径含空格或 JSON 转义反斜杠时按实际值解析，迁移仍使用明确 MSB_PROJECT_PATH_MAP。历史 Linux 验证覆盖 Python 命令及缺图负例，未运行 Windows 包装器。

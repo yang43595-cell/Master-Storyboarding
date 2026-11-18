@@ -40,7 +40,7 @@
     },
     {
       "if": {"properties": {"decision": {"const": "return_upstream"}}, "required": ["decision"]},
-      "then": {"properties": {"max_images": {"const": 0}, "status": {"const": "blocked"}, "return_upstream": {"properties": {"required": {"const": true}, "reason": {"minLength": 1}, "target": {"enum": ["creative-director", "storyboard-planner", "asset-image-assistant", "blender-previs"]}}}}}
+      "then": {"properties": {"max_images": {"const": 0}, "status": {"const": "blocked"}, "return_upstream": {"properties": {"required": {"const": true}, "reason": {"minLength": 1}, "target": {"enum": ["creative-director", "storyboard-planner", "asset-image-assistant"]}}}}}
     }
   ],
   "$defs": {
@@ -83,7 +83,7 @@
       "required": ["required", "target", "reason"],
       "properties": {
         "required": {"type": "boolean"},
-        "target": {"enum": ["none", "creative-director", "storyboard-planner", "asset-image-assistant", "blender-previs"]},
+        "target": {"enum": ["none", "creative-director", "storyboard-planner", "asset-image-assistant"]},
         "reason": {"type": "string"}
       }
     }

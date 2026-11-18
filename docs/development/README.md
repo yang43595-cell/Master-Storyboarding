@@ -27,15 +27,12 @@ python scripts/init_desktop_project.py --path "C:\Users\LIUYANG\Desktop\项目�
 |---|---|---|---|
 | 1 | `creative-director` 编导 | 编导稿 + 叙事包（故事/对白/资产需求） | 故事、人物、对白对不对 |
 | 2 | `storyboard-planner` 分镜 | 分镜方案 | 镜头、调度能不能拍 |
-| 3 | `blender-previs` 预演（可选） | 导演预演 | 空间/调度预演 |
-| 4 | `asset-image-assistant` 资产 | 人物/场景/道具/产品母版图 | 一致性、产品是否用真实参考 |
-| 5 | `voice-reference-manager` 声音（可选） | 声音参考库 | 声音来源授权 |
-| 6 | `storyboard-director` 画面补充（按需） | 正式分镜图 | 画面连续性 |
-| 7 | `voiceover-to-video-script` 视频脚本 | Seedance 执行脚本 + 成片 | 提示词、成片 |
+| 3 | `asset-image-assistant` 资产 | 人物/场景/道具/产品母版图 | 一致性、产品是否用真实参考 |
+| 4 | `voice-reference-manager` 声音（可选） | 声音参考库 | 声音来源授权 |
+| 5 | `storyboard-director` 画面补充（按需） | 正式分镜图 | 画面连续性 |
+| 6 | `voiceover-to-video-script` 视频脚本 | Seedance 执行脚本 + 成片 | 提示词、成片 |
 
 ## 三、每一步怎么跑
-
-选用白模后，可先让 AI 导出快速三维预览，再在已有资产网页“项目资产 → 白模预览”中查看机位、站位与运动并提出调整；支持自由观察、俯视和时间轴。正式参考仍按需渲染、检查和确认。具体入口见 [白模项目接入](../../skills/blender-previs/references/项目接入.md#同源网页快速预览)。
 
 **① 生成启动包**（告诉 AI 这步要干嘛、要用哪些知识、项目现状）：
 

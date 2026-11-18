@@ -136,7 +136,6 @@ class StoryboardPlannerContractTests(unittest.TestCase):
             "已确认 `narrative.package` revision",
             "对白文本和说话者必须逐字沿用",
             "`storyboard-package-v1.schema.json`、`storyboard-package-v2.schema.json` 与 `storyboard-package-v3.schema.json` 仅用于旧项目的只读兼容",
-            "不调用 Blender",
             "不决定视频模型、生成分段",
         ):
             self.assertIn(marker, skill)
@@ -252,7 +251,7 @@ class StoryboardPlannerContractTests(unittest.TestCase):
 
     def test_pressure_suite_covers_boundary_attacks(self) -> None:
         text = (SKILL_DIR / "tests" / "pressure-tests.md").read_text(encoding="utf-8")
-        for marker in ("顺手补资产", "对白逐句拆镜", "Blender 诱导", "模型和生成分段诱导", "Panel 出图诱导", "v1 回写诱导"):
+        for marker in ("顺手补资产", "对白逐句拆镜", "模型和生成分段诱导", "Panel 出图诱导", "v1 回写诱导"):
             self.assertIn(marker, text)
 
 

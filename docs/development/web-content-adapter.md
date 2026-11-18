@@ -26,7 +26,7 @@
 | director | storyboard v4 的场景、拍法、起/过程/止、对白、声音、节奏与全部原字段 | 不把普通 shot ID 伪装为 Case 01 专有 DR05 卡片；固定 renderer 保留通用阅读视图 |
 | assets | manifest 2.0 已明确登记的 confirmed_outputs.purpose/view/state、段落/镜头范围、must_not_inherit，派生 asset-layout | 只有旧 confirmed_asset.path、缺逐输出职责或仍有候选而缺对应信息时拒绝；不猜 assets-v2 特定分组、来源或限制 |
 | prompts | 现有完整 drafts 的正文、参数、逐实际输入的参考，以及原 JSON 全字段 | 没有准确媒体映射或引用遗漏就拒绝；声音媒体不在本网页 Media 类型内，不假装可上传 |
-| white_model / storyboard | 已有 files 登记及实证 PNG/JPEG/WebP/MP4 的参考视图 | 仅参考视图，不开通整阶段批准；缺 files、GLB/Blend 等不支持媒体、完整 assets-v2 接入未恢复时明确拒绝 |
+| storyboard | 已有 files 登记及实证 PNG/JPEG/WebP/MP4 的参考视图 | 仅参考视图，不开通整阶段批准；缺 files、GLB/Blend 等不支持媒体、完整 assets-v2 接入未恢复时明确拒绝 |
 
 所有阶段都保留从同一输入生成的只读 canonical-source block，避免未映射字段静默丢失；它不是另一份业务稿。script 按原有正文编号呈现；若包含原阅读器数字匹配范围以外的合法 STP 编号，全故事采用原阅读器 generic 主阅读视图，保留真实 block ID 与全部正文，避免混合编号把对白移到 extras。此时只读来源块也会显示在主阅读视图。其他阶段沿用固定 generic/asset 阅读能力。不修改 renderer 或已有线上审核锚点/反馈。新包不会继承旧包批准。
 

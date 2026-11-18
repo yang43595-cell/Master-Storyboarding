@@ -33,7 +33,7 @@ uv pip compile config/requirements-asr.in --universal --python-version 3.12 --ge
 
 步骤为：完整获取源码历史并补齐当前 runner 的本地 `main` 引用（供既有 `merge-base` 状态检查）、创建临时虚拟环境、按哈希安装 dev 锁、`pip check`、离线核对 `.in`、`npm ci --ignore-scripts --no-audit --no-fund`、从 Ubuntu 官方 apt 源安装 FFmpeg 并核对 ffmpeg/ffprobe、校验内置知识包与 CLI 入口、执行现有 Python 全回归和 Node 全回归。只补 runner 内的 Git 引用，不切换待测 revision、不推送远端。测试仅使用合成/临时资料和本地离线契约，不调用生成、业务网站或真实项目。下载依赖需要联网；测试名称中的 offline 不代表强制网络沙箱。
 
-官方 Actions 固定到完整 commit SHA；仓库 token 仅 `contents: read`，checkout 不保留 Git 凭据。不使用 `pull_request_target`、secret、自托管 runner、部署、artifact 上传、依赖缓存或定时任务。它不安装可选 ASR/Blender，不配置分支保护，不自动合并。
+官方 Actions 固定到完整 commit SHA；仓库 token 仅 `contents: read`，checkout 不保留 Git 凭据。不使用 `pull_request_target`、secret、自托管 runner、部署、artifact 上传、依赖缓存或定时任务。它不安装可选 ASR，不配置分支保护，不自动合并。
 
 pytest 显式收集 `scripts/tests` 与根目录 `tests`，不依赖从当前目录递归发现。`pytest -ra` 会列出当前明确的可选 ASR、Windows 与私有来源缺口；跳过不算通过。FFmpeg/ffprobe 缺失会直接使前置检查失败，而不是默默缩小预期覆盖。要让失败真正阻止 GitHub 合并，须在线上成功运行并获授权后另行设置 required check，不能仅凭 workflow 文件宣称已经强制保护 `main`。
 

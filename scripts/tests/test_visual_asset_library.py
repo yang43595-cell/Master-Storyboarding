@@ -24,23 +24,15 @@ spec.loader.exec_module(m)
 
 
 class LibraryTests(unittest.TestCase):
-    def test_file_upload_keeps_inputs_out_of_collection_and_normalizes_generated_output(self):
+    def test_legacy_upload_job_preserves_reference_and_generated_head(self):
         source = self.root / 'input-portrait.png'
         Image.new('RGB', (401, 399), 'red').save(source)
         original = source.read_bytes()
-        recognition = {'category': '大头照', 'confidence': '高', 'description': '穿粉白格纹上衣的人物',
-                       'asset_name': '人物面部', 'has_multiple_subjects': False}
-        with patch.object(m.visual_asset_upload, 'pick_local_files', return_value=[str(source)]), \
-             patch.object(m.visual_asset_upload, 'recognize', return_value=recognition), \
-             patch.object(self.lib, 'audit_prompt') as audit:
-            result = self.lib.pick_files({'multiple': True})['results'][0]
-            again = self.lib.pick_files({'multiple': True})['results'][0]
-        self.assertEqual(result['upload_processing']['status'], 'prepared')
-        self.assertNotIn('上衣', self.lib.get(result['job_id'], 'jobs')['must_inherit'])
-        self.assertIn('面部身份', self.lib.get(result['job_id'], 'jobs')['must_inherit'])
-        self.assertEqual(again['job_id'], result['job_id'])
-        audit.assert_called_once()
-        record = self.lib.get(result['id'])
+        record, _ = self.lib.import_file(source, project='上传参考', upload_reference=True,
+                                         provenance={'kind': 'uploaded_source'})
+        job = self.lib.create_job({'source_id': record['id'], 'kind': '大头照', 'subject': '人物面部'})
+        job['upload_source_id'] = record['id']
+        self.lib.save(job, 'jobs')
         self.assertTrue(record['reference_only'])
         self.assertEqual(Path(record['original']).read_bytes(), original)
         self.assertEqual(source.read_bytes(), original)
@@ -51,107 +43,46 @@ class LibraryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.lib.export([record['id']])
         with self.assertRaises(ValueError):
-            self.lib.submit_imagegen({'id': result['job_id'], 'index': 0, 'authorize': True})
+            self.lib.submit_imagegen({'id': job['id'], 'index': 0, 'authorize': True})
         output = self.root / 'generated.png'
-        Image.new('RGB', (401, 399), 'blue').save(output)
+        Image.new('RGB', (300, 400), 'blue').save(output)
         generated_bytes = output.read_bytes()
-        job = self.lib.attach(result['job_id'], 0, [output])
+        job = self.lib.attach(job['id'], 0, [output])
         candidate = self.lib.get(job['steps'][0]['outputs'][0])
         self.assertFalse(candidate['reference_only'])
-        self.assertEqual(candidate['width'] * 4, candidate['height'] * 3)
+        self.assertEqual((candidate['width'], candidate['height']), (300, 400))
+        self.assertEqual(Path(candidate['original']).read_bytes(), generated_bytes)
+        self.assertTrue(candidate['technical_check']['passed'])
         self.assertEqual(candidate['status'], 'unreviewed')
         self.assertEqual(candidate['provenance']['upload_source_id'], record['id'])
         self.assertEqual(source.read_bytes(), original)
         self.assertEqual(output.read_bytes(), generated_bytes)
 
-    def test_upload_ambiguity_and_recognition_failure_preserve_retryable_input(self):
-        source = self.root / 'multiple-people.png'
-        Image.new('RGB', (400, 400), 'orange').save(source)
-        recognition = {'category': '大头照', 'confidence': '高', 'description': '两个人物',
-                       'has_multiple_subjects': True}
-        with patch.object(m.visual_asset_upload, 'pick_local_files', return_value=[str(source)]), \
-             patch.object(m.visual_asset_upload, 'recognize', return_value=recognition), \
-             patch.object(self.lib, 'audit_prompt') as audit:
-            result = self.lib.pick_files({})['results'][0]
-            self.assertEqual(result['upload_processing']['status'], 'needs_choice')
-            self.assertEqual(self.lib.items('jobs'), [])
-            audit.assert_not_called()
-            chosen = self.lib.prepare_upload({'source_id': result['id'], 'kind': '服装', 'subject': '左侧外套'})
-            self.assertEqual(self.lib.get(chosen['job_id'], 'jobs')['kind'], '服装')
-            audit.side_effect = ValueError('准备队列已满')
-            retryable = self.lib.prepare_upload({'source_id': result['id'], 'kind': '大头照', 'subject': '右侧人物'})
-            self.assertEqual(self.lib.get(retryable['job_id'], 'jobs')['steps'][0]['audit']['status'], 'error')
-        with patch.object(m.visual_asset_upload, 'pick_local_files', return_value=[str(source)]), \
-             patch.object(m.visual_asset_upload, 'recognize', side_effect=ValueError('看图失败')):
-            failed = self.lib.pick_files({})['results'][0]
-        self.assertEqual(failed['id'], result['id'])
-        self.assertEqual(failed['upload_processing']['status'], 'error')
-        self.assertTrue(source.is_file())
-
-    def test_mixed_file_upload_samples_video_and_serves_input_previews(self):
-        if not shutil.which('ffmpeg') or not shutil.which('ffprobe'):
-            self.skipTest('ffmpeg/ffprobe unavailable')
-        video = self.root / 'uploaded.mp4'
-        subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=96x72:r=5',
-                        '-t', '1', '-pix_fmt', 'yuv420p', str(video)], check=True)
-        picture = self.root / 'uploaded.png'
-        Image.new('RGB', (80, 60), 'orange').save(picture)
-        original = video.read_bytes()
-        recognition = {'category': '服装三视图', 'confidence': '高', 'description': '同一件外套',
-                       'asset_name': '外套', 'has_multiple_subjects': False}
-        with patch.object(m.visual_asset_upload, 'pick_local_files', return_value=[str(picture), str(video)]), \
-             patch.object(m.visual_asset_upload, 'recognize', return_value=recognition) as recognize, \
-             patch.object(self.lib, 'audit_prompt'):
-            results = self.lib.pick_files({'multiple': True})['results']
-        self.assertEqual(len(results), 2)
-        self.assertTrue(all(r['upload_processing']['status'] == 'prepared' for r in results), results)
-        self.assertEqual(len(recognize.call_args_list[1].args[0]), 3)
-        request = self.lib.prepare(results[1]['job_id'], 0)
-        self.assertEqual(len(request['reference_paths']), 3)
-        self.assertTrue(all(Path(p).suffix == '.png' for p in request['reference_paths']))
-        self.assertEqual(video.read_bytes(), original)
-        server = m.ThreadingHTTPServer(('127.0.0.1', 0), m.Handler)
-        server.library, server.token = self.lib, 'test-token'
-        threading.Thread(target=server.serve_forever, daemon=True).start()
-        try:
-            base = f'http://127.0.0.1:{server.server_port}'
-            with urlopen(base + '/api/state') as response:
-                state = json.load(response)
-            self.assertEqual(len(state['assets']), 1)
-            self.assertEqual(len(state['references']), 5)
-            with urlopen(base + '/media/' + results[1]['id'] + '/thumbnail') as response:
-                self.assertEqual(response.status, 200)
-            frame = self.lib.get(results[1]['id'])['frame_ids'][0]
-            with urlopen(base + '/media/' + frame + '/original') as response:
-                self.assertEqual(response.status, 200)
-        finally:
-            server.shutdown()
-            server.server_close()
-
-    def test_rejected_local_upload_preserves_source(self):
-        source = self.root / 'oversized-canvas.png'
-        Image.new('RGB', (400, 400), 'red').save(source)
+    def test_legacy_upload_result_normalizes_dimensions_and_rejects_invalid_output(self):
+        job = self.lib.create_job({'source_id': self.asset['id'], 'kind': '物品', 'subject': '杯子'})
+        job['upload_source_id'] = self.asset['id']
+        self.lib.save(job, 'jobs')
+        source = self.root / 'legacy-generated.png'
+        Image.new('RGB', (401, 399), 'purple').save(source)
         original = source.read_bytes()
-        recognition = {'category': '大头照', 'confidence': '高'}
-        with patch.object(m.visual_asset_upload, 'recognize', return_value=recognition), \
-             patch.object(m.visual_asset_upload, 'crop_to_category', return_value={
-                 'status': 'skipped', 'reason': '画布过大'}):
-            result = self.lib.upload_local_file(source)
-        self.assertEqual(result['upload_processing']['status'], 'rejected')
-        self.assertFalse(result['upload_processing']['source_deleted'])
+        result = self.lib.attach(job['id'], 0, [source])
+        output = self.lib.get(result['steps'][0]['outputs'][0])
+        m.visual_asset_upload.validate_dimensions(output['original'], '物品')
+        self.assertEqual(output['upload_crop']['status'], 'padded')
+        self.assertEqual(output['provenance']['upload_source_id'], self.asset['id'])
         self.assertEqual(source.read_bytes(), original)
-        self.assertEqual(len(self.lib.items()), 1)
 
-    def test_duplicate_wrong_category_preserves_source_without_recognition(self):
-        source = self.root / 'wrong-category-copy.png'
-        source.write_bytes(self.original_bytes)
-        category = '场景' if self.asset['category'] != '场景' else '物品'
-        with patch.object(m.visual_asset_upload, 'recognize') as recognize:
-            result = self.lib.upload_local_file(source, category=category)
-        recognize.assert_not_called()
-        self.assertEqual(result['upload_processing']['status'], 'error')
-        self.assertFalse(result['upload_processing']['source_deleted'])
-        self.assertEqual(source.read_bytes(), self.original_bytes)
+        other = self.lib.create_job({'source_id': self.asset['id'], 'kind': '物品', 'subject': '另一个杯子'})
+        other['upload_source_id'] = self.asset['id']
+        self.lib.save(other, 'jobs')
+        count = len(self.lib.items())
+        with patch.object(m.visual_asset_upload, 'crop_to_category',
+                          return_value={'status': 'already_correct', 'ratio': '16:9'}):
+            with self.assertRaisesRegex(ValueError, '处理后的尺寸'):
+                self.lib.attach(other['id'], 0, [source])
+        self.assertEqual(len(self.lib.items()), count)
+        self.assertEqual(self.lib.get(other['id'], 'jobs')['steps'][0]['outputs'], [])
+        self.assertEqual(source.read_bytes(), original)
 
     def test_manual_product_category_survives_read_and_web_view_preserves_evidence(self):
         asset = self.lib.get(self.asset['id'])
@@ -230,7 +161,6 @@ class LibraryTests(unittest.TestCase):
     def test_all_native_cli_consumers_surface_runtime_failure_without_retry(self):
         fatal = 'Error: failed to initialize in-process app-server client: Read-only file system (os error 30)'
         bridge = m.codex_bridge
-        upload_bridge = m.visual_asset_upload.visual_asset_codex
         source = self.root / 'runtime-reference.png'
         Image.new('RGB', (80, 60), 'blue').save(source)
         def failed(command, **kwargs):
@@ -242,17 +172,14 @@ class LibraryTests(unittest.TestCase):
                 {'reference_paths': []}, '保持白模布局', '{}')),
             ('plan', bridge.subprocess, 'run', lambda folder: bridge.plan_assets('codex', folder,
                 {'reference_paths': [], 'rows': []}, '{}')),
-            ('recognition', upload_bridge, '_run_prompt_cli', lambda folder:
-                m.visual_asset_upload.recognize(source, folder)),
             ('generation', bridge.subprocess, 'run', lambda folder: bridge.generate_image('codex', folder,
                 {'reference_paths': [str(source)], 'prompt': '工程候选'})),
         ]
-        with patch.object(upload_bridge, 'executable', return_value='codex'):
-            for name, owner, attr, call in cases:
-                with self.subTest(consumer=name), patch.object(owner, attr, side_effect=failed) as run:
-                    with self.assertRaisesRegex(ValueError, '运行环境目录只读'):
-                        call(self.root / ('runtime-' + name))
-                    self.assertEqual(run.call_count, 1)
+        for name, owner, attr, call in cases:
+            with self.subTest(consumer=name), patch.object(owner, attr, side_effect=failed) as run:
+                with self.assertRaisesRegex(ValueError, '运行环境目录只读'):
+                    call(self.root / ('runtime-' + name))
+                self.assertEqual(run.call_count, 1)
 
     def test_complete_cli_message_does_not_wait_for_a_stalled_process_exit(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -276,27 +203,6 @@ class LibraryTests(unittest.TestCase):
                 m.codex_bridge._run_prompt_cli([sys.executable, '-c', script, str(output)],
                     completion_path=output, input='只读测试', capture_output=True, text=True, encoding='utf-8', timeout=2,
                     creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
-
-    def test_upload_recognition_accepts_complete_result_without_waiting_for_cli_cleanup(self):
-        picture = self.root / 'recognition-stall.png'
-        Image.new('RGB', (80, 80), 'blue').save(picture)
-        value = {'category': '大头照', 'confidence': '高', 'description': '单个人物',
-                 'asset_name': '人物', 'focus_x': .5, 'focus_y': .5,
-                 'critical_box': [.2, .1, .8, .9], 'has_multiple_subjects': False}
-        script = 'import sys,json,time,pathlib; sys.stdin.read(); pathlib.Path(sys.argv[1]).write_text(sys.argv[2],encoding="utf-8"); time.sleep(30)'
-        upload_bridge = m.visual_asset_upload.visual_asset_codex
-        actual_runner = upload_bridge._run_prompt_cli
-        def stalled_cli(command, **kwargs):
-            self.assertIn('has_multiple_subjects', kwargs['required_fields'])
-            return actual_runner([sys.executable, '-c', script, str(kwargs['completion_path']),
-                                  json.dumps(value)], **kwargs)
-        started = time.monotonic()
-        with patch.object(upload_bridge, 'executable', return_value='codex.exe'), \
-             patch.object(upload_bridge, '_run_prompt_cli', side_effect=stalled_cli):
-            result = m.visual_asset_upload.recognize(picture, self.root / 'stalled-recognition')
-        self.assertEqual(result, value)
-        self.assertLess(time.monotonic() - started, 10)
-        self.assertTrue(picture.is_file())
 
     def test_empty_optional_observations_do_not_fail_a_valid_luna_result(self):
         result = {'prompt': '香水瓶四视图。', 'passed': True, 'observations': [], 'uncertainties': [],
@@ -540,109 +446,6 @@ class LibraryTests(unittest.TestCase):
             m.management.manage(self.lib, [second['id']], 'purge', manual=True)
         self.assertTrue(Path(self.lib.get(second['id'])['original']).is_file())
 
-    def test_upload_classifies_and_keeps_only_adjusted_asset(self):
-        source = self.root / 'uploads' / 'new.png'
-        source.parent.mkdir()
-        Image.new('RGB', (400, 400), 'red').save(source)
-        original_bytes = source.read_bytes()
-        recognition = {'category': '大头照', 'confidence': '高', 'description': '人像',
-                       'asset_name': '黑发人物正面大头照',
-                       'focus_x': 0.5, 'focus_y': 0.5, 'critical_box': [0.2, 0.05, 0.8, 0.95]}
-        def recognize(_source, folder):
-            reference = folder / 'reference'
-            reference.mkdir(parents=True)
-            (reference / '1.png').write_bytes(original_bytes)
-            return recognition
-        with patch.object(m.visual_asset_upload, 'recognize', side_effect=recognize):
-            crop = self.lib.upload_file(source)
-        self.assertEqual(crop['category'], '大头照')
-        self.assertEqual((crop['width'], crop['height']), (300, 400))
-        self.assertEqual(crop['status'], 'unreviewed')
-        self.assertEqual(crop['name'], '黑发人物正面大头照')
-        self.assertEqual(self.lib.get(crop['id'])['name'], '黑发人物正面大头照')
-        self.assertEqual(crop['name_source'], 'codex_cli')
-        self.assertEqual(crop['name_history'], [source.stem])
-        self.assertEqual(source.read_bytes(), original_bytes)
-        self.assertEqual(crop['upload_processing']['status'], 'added')
-        self.assertEqual(len(self.lib.items()), 2)
-        self.assertEqual(crop['provenance']['kind'], 'upload_adjusted')
-        self.assertFalse(list((self.lib.root / 'requests' / 'uploads').rglob('*.png')))
-
-    def test_upload_mismatch_and_cli_failure_keep_uncropped_original(self):
-        source = self.root / 'uploads' / 'another.png'
-        source.parent.mkdir()
-        Image.new('RGB', (400, 400), 'green').save(source)
-        recognition = {'category': '场景', 'confidence': '高', 'description': '房间',
-                       'focus_x': 0.5, 'focus_y': 0.5, 'critical_box': [0, 0, 1, 1]}
-        with patch.object(m.visual_asset_upload, 'recognize', return_value=recognition):
-            item = self.lib.upload_file(source, category='大头照')
-        self.assertEqual(item['upload_processing']['status'], 'error')
-        self.assertEqual(len(self.lib.items()), 1)
-        failed_source = source.with_name('failed.png')
-        Image.new('RGB', (400, 400), 'blue').save(failed_source)
-        with patch.object(m.visual_asset_upload, 'recognize', side_effect=ValueError('识别失败')):
-            failed = self.lib.upload_file(failed_source)
-        self.assertEqual(failed['upload_processing']['status'], 'error')
-        self.assertIn('识别失败', failed['upload_processing']['message'])
-        explicit_source = source.with_name('explicit.png')
-        Image.new('RGB', (400, 400), 'blue').save(explicit_source)
-        with patch.object(m.visual_asset_upload, 'recognize', side_effect=ValueError('识别失败')):
-            explicit = self.lib.upload_file(explicit_source, category='大头照')
-        self.assertEqual(explicit['upload_processing']['status'], 'error')
-        self.assertEqual(len(self.lib.items()), 1)
-
-    def test_upload_pads_light_background_when_subject_would_be_cut(self):
-        source = self.root / 'uploads' / 'edge-portrait.png'
-        source.parent.mkdir()
-        Image.new('RGB', (400, 400), 'white').save(source)
-        recognition = {'category': '大头照', 'confidence': '高', 'description': '人像',
-                       'focus_x': 0.5, 'focus_y': 0.5, 'critical_box': [0, 0, 1, 1]}
-        with patch.object(m.visual_asset_upload, 'recognize', return_value=recognition):
-            candidate = self.lib.upload_file(source)
-        self.assertEqual(candidate['upload_crop']['status'], 'padded')
-        self.assertEqual(candidate['width'] * 4, candidate['height'] * 3)
-        self.assertEqual(candidate['status'], 'unreviewed')
-        self.assertEqual(len(self.lib.items()), 2)
-
-    def test_local_upload_preserves_source_after_verified_crop(self):
-        source = self.root / 'local-portrait.png'
-        Image.new('RGB', (400, 400), 'red').save(source)
-        recognition = {'category': '大头照', 'confidence': '高', 'description': '人像',
-                       'focus_x': 0.5, 'focus_y': 0.5, 'critical_box': [0.2, 0.1, 0.8, 0.9]}
-        with patch.object(m.visual_asset_upload, 'recognize', return_value=recognition):
-            result = self.lib.upload_local_file(source)
-        self.assertEqual(result['upload_processing']['status'], 'added')
-        self.assertFalse(result['upload_processing']['source_deleted'])
-        self.assertTrue(source.exists())
-        self.assertTrue(Path(result['original']).is_file())
-        self.assertEqual(len(self.lib.items()), 2)
-
-    def test_local_upload_skips_duplicate_and_preserves_selected_copy(self):
-        duplicate = self.root / 'duplicate.png'
-        duplicate.write_bytes(self.source.read_bytes())
-        with patch.object(m.visual_asset_upload, 'recognize') as model:
-            result = self.lib.upload_local_file(duplicate)
-        model.assert_not_called()
-        self.assertEqual(result['upload_processing']['status'], 'duplicate')
-        self.assertFalse(result['upload_processing']['source_deleted'])
-        self.assertTrue(duplicate.exists())
-        self.assertTrue(self.source.exists())
-        self.assertEqual(len(self.lib.items()), 1)
-
-    def test_local_upload_pads_dark_background_instead_of_rejecting(self):
-        source = self.root / 'unfixable.png'
-        Image.new('RGB', (400, 400), 'red').save(source)
-        recognition = {'category': '大头照', 'confidence': '高', 'description': '人像',
-                       'focus_x': 0.5, 'focus_y': 0.5, 'critical_box': [0, 0, 1, 1]}
-        with patch.object(m.visual_asset_upload, 'recognize', return_value=recognition):
-            result = self.lib.upload_local_file(source)
-        self.assertEqual(result['upload_processing']['status'], 'added')
-        self.assertEqual(result['upload_crop']['status'], 'padded')
-        self.assertFalse(result['upload_processing']['source_deleted'])
-        self.assertTrue(source.exists())
-        self.assertEqual(len(self.lib.items()), 2)
-        self.assertEqual(result['width'] * 4, result['height'] * 3)
-
     def test_upload_padding_preserves_all_views_and_transparency(self):
         source = self.root / 'multiview.png'
         image = Image.new('RGBA', (123, 119), (10, 40, 90, 100))
@@ -662,20 +465,6 @@ class LibraryTests(unittest.TestCase):
                     self.assertEqual(fitted.crop((x, y, x + width, y + height)).tobytes(), image.tobytes())
                     self.assertEqual(fitted.getpixel((0, 0))[3], 0)
 
-    def test_upload_final_size_gate_blocks_bad_processor_output(self):
-        source = self.root / 'bad-processor.png'
-        Image.new('RGB', (401, 399), 'purple').save(source)
-        recognition = {'category': '大头照', 'confidence': '高', 'description': '人像',
-                       'focus_x': .5, 'focus_y': .5, 'critical_box': [0, 0, 1, 1]}
-        with patch.object(m.visual_asset_upload, 'recognize', return_value=recognition), \
-             patch.object(m.visual_asset_upload, 'crop_to_category',
-                          return_value={'status': 'already_correct', 'ratio': '3:4'}):
-            result = self.lib.upload_local_file(source)
-        self.assertEqual(result['upload_processing']['status'], 'error')
-        self.assertIn('尺寸核对失败', result['upload_processing']['message'])
-        self.assertTrue(source.is_file())
-        self.assertEqual(len(self.lib.items()), 1)
-
     def test_upload_corrects_exif_orientation_before_size_gate(self):
         source, destination = self.root / 'rotated.jpg', self.root / 'upright.png'
         exif = Image.Exif()
@@ -686,36 +475,6 @@ class LibraryTests(unittest.TestCase):
         m.visual_asset_upload.validate_dimensions(destination, '大头照')
         with Image.open(destination) as image:
             self.assertEqual(image.size, (300, 400))
-
-    def test_local_upload_protects_existing_source_and_model_failure(self):
-        with self.assertRaisesRegex(ValueError, '引用'):
-            self.lib.upload_local_file(self.source)
-        self.assertTrue(self.source.exists())
-        fresh = self.root / 'failed-local.png'
-        Image.new('RGB', (400, 400), 'blue').save(fresh)
-        with patch.object(m.visual_asset_upload, 'recognize', side_effect=ValueError('失败')):
-            result = self.lib.upload_local_file(fresh)
-        self.assertEqual(result['upload_processing']['status'], 'error')
-        self.assertFalse(result['upload_processing']['source_deleted'])
-        self.assertTrue(fresh.exists())
-
-    def test_upload_recognition_uses_luna(self):
-        source = self.root / 'sample.png'
-        Image.new('RGB', (40, 40), 'red').save(source)
-        def cli(command, **kwargs):
-            self.assertEqual(command[command.index('--model') + 1], 'gpt-6-luna')
-            self.assertIn('has_multiple_subjects', kwargs['required_fields'])
-            output = Path(command[command.index('--output-last-message') + 1])
-            output.write_text(json.dumps({'category': '产品', 'confidence': '高', 'description': '瓶子',
-                                          'asset_name': '透明瓶子正面图',
-                                          'focus_x': 0.5, 'focus_y': 0.5,
-                                          'critical_box': [0.2, 0.1, 0.8, 0.9]}), encoding='utf-8')
-            return type('Result', (), {'returncode': 0, 'stdout': '', 'stderr': ''})()
-        with patch.object(m.visual_asset_upload.visual_asset_codex, 'executable', return_value='codex.exe'), \
-             patch.object(m.visual_asset_upload.visual_asset_codex, '_run_prompt_cli', side_effect=cli):
-            result = m.visual_asset_upload.recognize(source, self.root / 'recognition')
-        self.assertEqual(result['category'], '产品')
-        self.assertEqual(result['asset_name'], '透明瓶子正面图')
 
     def test_folder_membership_is_atomic_and_preserves_production_group(self):
         from PIL import Image
@@ -739,11 +498,16 @@ class LibraryTests(unittest.TestCase):
 
     def test_delete_job_hides_record_and_preserves_assets(self):
         job = self.lib.create_job({'source_id': self.asset['id'], 'subject': '旧任务', 'kind': '大头照'})
-        job = self.lib.attach(job['id'], 0, [self.source])
+        output = self.root / 'head.png'
+        Image.new('RGB', (300, 400), 'blue').save(output)
+        job = self.lib.attach(job['id'], 0, [output])
         before = self.lib.items()
         self.lib.delete_job(job['id'])
-        self.assertEqual(m.Library(self.lib.root, vault=self.lib.vault).items('jobs'), [])
         self.assertEqual(self.lib.items(), before)
+        reopened = m.Library(self.lib.root, vault=self.lib.vault)
+        self.assertEqual(reopened.items('jobs'), [])
+        candidate = reopened.get(job['steps'][0]['outputs'][0])
+        self.assertEqual(Path(candidate['original']).read_bytes(), output.read_bytes())
         self.assertTrue(self.source.exists())
         with self.assertRaisesRegex(ValueError, '已删除'):
             self.lib.prepare(job['id'], 0)
@@ -857,13 +621,16 @@ class LibraryTests(unittest.TestCase):
             self.lib.export([self.asset['id']])
         self.assertEqual(self.lib.get(self.asset['id'])['confirmation'], receipt)
 
-    def test_bad_generated_ratio_cannot_be_confirmed(self):
+    def test_bad_head_dimensions_block_import_before_any_candidate_is_added(self):
         job = self.lib.create_job({'source_id': self.asset['id'], 'subject': '脸', 'kind': '大头照'})
+        correct = self.root / 'portrait.png'
         wrong = self.root / 'square.png'
+        Image.new('RGB', (300, 400), 'blue').save(correct)
         Image.new('RGB', (300, 300), 'blue').save(wrong)
-        job = self.lib.attach(job['id'], 0, [wrong])
-        with self.assertRaisesRegex(ValueError, '技术检查'):
-            self.lib.confirm(job['steps'][0]['outputs'][0])
+        with self.assertRaisesRegex(ValueError, '大头照未入库：实测 300×300，要求 3:4'):
+            self.lib.attach(job['id'], 0, [correct, wrong], manual=True)
+        self.assertEqual(self.lib.get(job['id'], 'jobs')['steps'][0]['outputs'], [])
+        self.assertFalse(any(a['provenance'].get('job_id') == job['id'] for a in self.lib.items()))
 
     def test_rejected_result_can_be_restored_and_redone_without_generation(self):
         job = self.lib.create_job({'source_id': self.asset['id'], 'subject': '测试', 'kind': '大头照'})
@@ -948,7 +715,7 @@ class LibraryTests(unittest.TestCase):
                 self.lib.submit_imagegen({'id': ident, 'index': 0, 'authorize': True})
         step = self.lib.get(ident, 'jobs')['steps'][0]
         generated = self.root / 'generated.png'
-        Image.new('RGB', (320, 320), 'blue').save(generated)
+        Image.new('RGB', (300, 400), 'blue').save(generated)
         with patch.object(m.codex_bridge, 'generate_image', return_value=str(generated)):
             self.lib._imagegen_worker('codex', ident, 0, step['generation_run_id'], step['authorization']['request'])
         updated = self.lib.get(ident, 'jobs')['steps'][0]
@@ -1032,15 +799,15 @@ class LibraryTests(unittest.TestCase):
         self.assertFalse(result['approved'])
 
     def test_template_outputs_and_edited_prompt_survive_reload(self):
-        for kind, expected in [('大头照', '从头顶到锁骨的紧凑大头特写'), ('服装', '1×3 网格')]:
+        for kind, expected in [('大头照', '完整拍到头顶'), ('服装', '单行三格')]:
             job = self.lib.create_job({'source_id': self.asset['id'], 'subject': '照片中的对象', 'kind': kind})
             self.assertEqual(len(job['steps']), 1)
             request = self.lib.prepare(job['id'], 0)
             self.assertIn(expected, request['prompt'])
             self.assertEqual(request['ratio'], '3:4' if kind == '大头照' else '16:9')
             if kind == '大头照':
-                self.assertIn('画面内不出现任何衣服', request['prompt'])
-                self.assertIn('下边缘止于锁骨下缘', request['prompt'])
+                self.assertIn('画面内无衣物、领口或肩带', request['prompt'])
+                self.assertNotIn('锁骨', request['prompt'])
             self.assertNotIn('【', request['prompt'])
             self.lib.save_prompt({'id': job['id'], 'index': 0, 'prompt': '保留指定细节，蓝色背景', 'provider': 'dreamina', 'model': '5.0Pro'})
             request = m.Library(self.lib.root, vault=self.lib.vault).prepare(job['id'], 0)
@@ -1212,15 +979,7 @@ class LibraryTests(unittest.TestCase):
             self.assertIn('ASSET-OBJECT-METHOD', {method['id'] for method in evidence['methods']})
             job = self.lib.create_job({'source_id': self.asset['id'], 'kind': '大头照', 'subject': '人物甲'})
             job['steps'][0]['template_source'] = str(external)
-            self.assertEqual(self.lib.step_request(job, 0)['template_source'], str(bundled_root() / relative))
-
-    def test_local_upload_protects_the_actual_vault(self):
-        source = self.lib.vault / 'not-yet-indexed.png'
-        Image.new('RGB', (80, 60), 'orange').save(source)
-        original = source.read_bytes()
-        with self.assertRaisesRegex(ValueError, '知识库'):
-            self.lib.local_upload_source(source)
-        self.assertEqual(source.read_bytes(), original)
+            self.assertEqual(self.lib.step_request(job, 0)['template_source'], str(m.asset_skill.CHARACTER_PROMPT_PATH))
 
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -1519,33 +1278,6 @@ class LibraryTests(unittest.TestCase):
         finally:
             server.shutdown()
             server.server_close()
-
-    def test_http_local_upload_returns_one_asset_and_preserves_source(self):
-        server = m.ThreadingHTTPServer(('127.0.0.1', 0), m.Handler)
-        server.library, server.token = self.lib, 'test-token'
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        image = self.root / 'http-upload.png'
-        Image.new('RGB', (400, 400), 'purple').save(image)
-        recognition = {'category': '大头照', 'confidence': '高', 'description': '人像',
-                       'focus_x': 0.5, 'focus_y': 0.5, 'critical_box': [0.2, 0.1, 0.8, 0.9]}
-        try:
-            request = Request(f'http://127.0.0.1:{server.server_port}/api/upload-local',
-                              data=json.dumps({'multiple': False}).encode(),
-                              headers={'X-Library-Token': 'test-token'}, method='POST')
-            with patch.object(m.visual_asset_upload, 'recognize', return_value=recognition), \
-                 patch.object(m.visual_asset_upload, 'pick_local_files', return_value=[str(image)]):
-                with urlopen(request) as response:
-                    result = json.load(response)['results'][0]
-            self.assertEqual(result['upload_crop']['status'], 'cropped')
-            self.assertEqual(result['status'], 'unreviewed')
-            self.assertFalse(result['upload_processing']['source_deleted'])
-            self.assertTrue(image.exists())
-            self.assertEqual(len(self.lib.items()), 2)
-        finally:
-            server.shutdown()
-            server.server_close()
-
 
 if __name__ == '__main__':
     unittest.main()

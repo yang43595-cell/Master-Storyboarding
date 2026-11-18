@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime
 from pathlib import Path
 
 from .io import project_lock, utc_now
@@ -14,10 +15,7 @@ from .io import project_lock, utc_now
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = "review-to-canvas"
 SKILLS = {"creative-director", "storyboard-planner", "storyboard-director", "voiceover-to-video-script"}
-# The asset stage is deliberately absent from SKILLS: the authorize-workflow
-# CLI and agent self-check acceptance must never cover visual assets. A
-# dedicated registration below records asset-scope authorizations for the
-# chat-confirmation asset adoption path in visual_asset_projects instead.
+# Assets use a dedicated per-output review path and authorization.
 ASSET_ADOPTION_SKILL = "asset-image-assistant"
 AUTHORIZATION_SKILLS = SKILLS | {ASSET_ADOPTION_SKILL}
 CORE_CHECKS = {
@@ -74,7 +72,7 @@ def skill_for_artifact(entry):
     if kind == "visual-supplement-image" and _text(logical) and logical not in {
             "narrative.package", "storyboard.package", "video.prompt", "visual-asset-manifest"}:
         return "storyboard-director"
-    raise ValueError("该产物不允许 agent 自主采用；资产、白模及声音仍需原人工依据")
+    raise ValueError("该产物不允许 agent 自主采用；资产及声音仍需原人工依据")
 
 
 def require_workflow_authorization(project, authorization_id, skill, *, state=None):
@@ -100,11 +98,10 @@ def require_workflow_authorization(project, authorization_id, skill, *, state=No
     return authorization
 
 
-def require_asset_workflow_authorization(project, authorization_id, *, state=None):
+def require_asset_workflow_authorization(project, authorization_id, *, state=None, delegated=False):
     """Validate an active workflow authorization covering visual-asset adoption.
 
-    This only scopes the chat-confirmation asset path in visual_asset_projects;
-    it never turns an agent self-check into an asset confirmation.
+    This scopes the chat-confirmation and delegated image review paths.
     """
     from .candidate_test import require_production
     from .project_state import load_project_state
@@ -125,10 +122,43 @@ def require_asset_workflow_authorization(project, authorization_id, *, state=Non
             or not _text(authorization.get("created_at"))
             or not _valid_asset_skills(skills) or ASSET_ADOPTION_SKILL not in skills):
         raise ValueError("流程授权已撤回、项目不符或未覆盖资产采用范围")
+    if delegated and authorization.get("delegated_asset_review") is not True:
+        raise ValueError("资产授权未明确覆盖逐图代审")
     return authorization
 
 
-def register_asset_workflow_authorization(project, *, authorization_id, authorization_ref):
+def asset_authorization_digest(authorization):
+    return _json_digest(authorization)
+
+
+def validate_asset_review(project, review, *, state=None):
+    """Recheck the authority and source bytes of one recorded delegated image review."""
+    from .artifacts import project_path
+    authorization = require_asset_workflow_authorization(project, review.get("authorization_id"), state=state,
+                                                         delegated=True)
+    if review.get("authorization_sha256") != asset_authorization_digest(authorization):
+        raise ValueError("逐图代审授权已变化")
+    if (review.get("channel") != "agent_review" or review.get("result") != "pass"
+            or any(not _text(review.get(key)) for key in
+                   ("agent_id", "checked_at", "report_ref", "observation", "locator"))):
+        raise ValueError("逐图代审须有本图通过结论、实际观察、定位、审核者及时间")
+    if datetime.fromisoformat(review["checked_at"].replace("Z", "+00:00")).tzinfo is None:
+        raise ValueError("逐图代审时间须含时区")
+    source = review["source_narrative"]
+    if _digest(project_path(project, source["path"])) != source["sha256"]:
+        raise ValueError("逐图代审绑定的编导字节已变化")
+    check = review.get("product_check")
+    if check is None:
+        return
+    if (check.get("result") != "pass" or not _text(check.get("observation"))
+            or not _text(check.get("locator")) or not check.get("references")):
+        raise ValueError("真实产品须记录专项通过、具体观察和参考位置")
+    for reference in check["references"]:
+        if _digest(project_path(project, reference["path"])) != reference["sha256"]:
+            raise ValueError("逐图代审的产品参考字节已变化")
+
+
+def register_asset_workflow_authorization(project, *, authorization_id, authorization_ref, delegated=False):
     """Record an already-given user authorization scoped to visual-asset adoption.
 
     Separate from register_workflow_authorization on purpose: that entry only
@@ -150,6 +180,8 @@ def register_asset_workflow_authorization(project, *, authorization_id, authoriz
         record = {"id": authorization_id, "workflow": WORKFLOW,
                   "project_path": str(project), "authorization_ref": authorization_ref,
                   "skills": [ASSET_ADOPTION_SKILL], "status": "active", "created_at": utc_now()}
+        if delegated:
+            record["delegated_asset_review"] = True
         state.setdefault("workflow_authorizations", []).append(record)
         write_project_state(project, state)
         return record

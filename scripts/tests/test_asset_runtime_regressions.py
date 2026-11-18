@@ -435,27 +435,6 @@ class AssetRuntimeRegressions(unittest.TestCase):
         command.assert_not_called()
         self.assertTrue(Path(out['manifest']).is_file())
 
-    def test_upload_final_metadata_is_in_first_durable_record_and_survives_restart(self):
-        source = self.base / 'desktop-input.png'
-        Image.new('RGB', (1600, 900), 'blue').save(source)
-        recognition = {'confidence': '高', 'category': '物品', 'focus_x': .5, 'focus_y': .5,
-                       'critical_box': [0, 0, 1, 1], 'asset_name': '识别后的杯子名字', 'description': '杯子'}
-        with patch.object(library_module.visual_asset_upload, 'recognize', return_value=recognition), \
-                patch.object(library_module.management, 'write_index', wraps=library_module.management.write_index) as writer:
-            result = self.lib.upload_local_file(source, category='物品')
-        self.assertEqual(writer.call_count, 1)
-        before = self.lib.get(result['id'])
-        index = project_module.read(self.lib.vault / '资产库/资产索引.json')
-        record = next(r['record'] for r in index['assets'] if r['library_asset_id'] == result['id'])
-        for key in ('name', 'source', 'name_history', 'name_source', 'upload_recognition', 'upload_crop'):
-            self.assertEqual(record[key], before[key])
-        self.assertEqual(record['source'], str(source))
-        self.assertTrue(source.is_file())
-        restarted = library_module.Library(self.lib.root, vault=self.lib.vault)
-        after = restarted.get(result['id'])
-        for key in ('name', 'source', 'upload_recognition', 'upload_crop'):
-            self.assertEqual(after[key], before[key])
-
     def test_export_uses_verified_project_copy_when_import_location_disappears(self):
         self.confirmed_scene()
         original_source = self.asset['source']

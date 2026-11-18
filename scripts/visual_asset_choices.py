@@ -231,7 +231,7 @@ def save_choices(root, narrative, choices):
     def image_state(ast):
         return '已确认母版' if images.get(ast) else '未出图'
 
-    # 人物身高基准（cm）：预演白模比例、遮挡与景别判断的唯一来源。
+    # 人物身高基准（cm）用于核对角色比例。
     heights = {}
     height_path = path.parent / '人物身高基准.json'
     if height_path.is_file():

@@ -163,7 +163,7 @@ def test_test_selection_checks_exact_dependencies(tmp_path, mutation):
     with pytest.raises(ValueError): mode.resolve_inputs(project)
 
 
-@pytest.mark.parametrize('action', ['promote', 'confirm', 'commit', 'paid', 'submit'])
+@pytest.mark.parametrize('action', ['promote', 'confirm', 'commit', 'submit'])
 def test_production_exits_reject_even_after_mode_removed(tmp_path, action):
     project = setup(tmp_path)
     add(project, 'N', 'narrative.package', {'status': 'candidate', 'revision': 'R01'})
@@ -172,7 +172,6 @@ def test_production_exits_reject_even_after_mode_removed(tmp_path, action):
         'promote': lambda: artifacts.promote_candidate(project, 'narrative.package', 'N'),
         'confirm': lambda: revision_control.confirm_candidate(project, change_id='missing', approval_ref='fake'),
         'commit': lambda: revision_control.commit_change(project, change_id='missing'),
-        'paid': lambda: revision_control.record_paid_approval(project, change_id='missing', paid_action_id='P', approval_ref='fake', targets=['N'], quantity=1),
         'submit': lambda: validate_submission({}, project),
     }
     with pytest.raises(ValueError, match='unreviewed'): calls[action]()

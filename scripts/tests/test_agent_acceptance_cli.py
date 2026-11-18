@@ -86,7 +86,7 @@ def test_cli_accepts_registered_candidate_without_manufacturing_human_confirmati
 
 
 @pytest.mark.parametrize("skill", ["asset-image-assistant",
-                                  "voice-reference-manager", "blender-previs"])
+                                  "voice-reference-manager"])
 def test_cli_cannot_authorize_human_or_optional_stages(tmp_path, skill):
     write_project_state(tmp_path, new_project_state())
     state_path = tmp_path / "00_项目管理" / "project_state.json"
