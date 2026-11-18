@@ -355,6 +355,59 @@ def _interrupt_project_revision(project):
             }, reason='synthetic interrupted revision', fail_after=1)
 
 
+@pytest.mark.parametrize('decided', [False, True], ids=['aborted', 'committed'])
+def test_terminal_transaction_recovery_is_read_only_and_does_not_reopen_journal(tmp_path, monkeypatch, decided):
+    target = tmp_path / 'selected.json'
+    transaction_id = 'SYNTHETIC-TERMINAL'
+    if decided:
+        revision_control._commit_json_transaction_unlocked(tmp_path, {target: {'selected': True}},
+            reason='synthetic completed transaction', transaction_id=transaction_id)
+    else:
+        # Reproduce an interruption after preparation, before any commit decision.
+        original_write = revision_control.write_json
+        def interrupted_write(path, value):
+            if path.name == 'commit_intent.json':
+                raise RuntimeError('synthetic interruption before decision')
+            original_write(path, value)
+        with monkeypatch.context() as patcher:
+            patcher.setattr(revision_control, 'write_json', interrupted_write)
+            with pytest.raises(RuntimeError, match='before decision'):
+                revision_control._commit_json_transaction_unlocked(tmp_path, {target: {'selected': True}},
+                    reason='synthetic undecided transaction', transaction_id=transaction_id)
+        assert revision_control.recover_transactions(tmp_path) == [
+            {'transaction_id': transaction_id, 'state': 'aborted'}]
+        assert not target.exists()
+    tx_dir = tmp_path / revision_control.TRANSACTION_ROOT / transaction_id
+    original_result = (tx_dir / 'result.json').read_bytes()
+    reads = []
+    original_read = revision_control.read_json
+    def read_record(path):
+        reads.append(path.name)
+        return original_read(path)
+    monkeypatch.setattr(revision_control, 'read_json', read_record)
+    assert revision_control.recover_transactions(tmp_path) == []
+    assert reads == ['result.json']
+    assert (tx_dir / 'result.json').read_bytes() == original_result
+
+
+@pytest.mark.parametrize('result_state', ['missing', 'unknown', 'aborted', 'invalid_json'])
+def test_nonfinal_result_never_suppresses_pending_commit_intent(tmp_path, result_state):
+    _interrupt_project_revision(tmp_path)
+    tx_dir, = (tmp_path / revision_control.TRANSACTION_ROOT).iterdir()
+    result_path = tx_dir / 'result.json'
+    if result_state in {'unknown', 'aborted'}:
+        io.write_json(result_path, {'state': result_state})
+    elif result_state == 'invalid_json':
+        result_path.write_text('{')
+        before = (tmp_path / '00_项目管理/project_state.json').read_bytes()
+        with pytest.raises(ValueError):
+            revision_control.recover_transactions(tmp_path)
+        assert (tmp_path / '00_项目管理/project_state.json').read_bytes() == before
+        return
+    assert revision_control.recover_transactions(tmp_path)[0]['state'] == 'committed'
+    assert load_project_state(tmp_path)['next_stage'] == 'storyboard-planner'
+
+
 def test_pending_revision_recovery_cannot_erase_a_successful_registration(tmp_path):
     _interrupt_project_revision(tmp_path)
     artifacts.register_workspace_artifact(tmp_path, _candidate_record('C'))
