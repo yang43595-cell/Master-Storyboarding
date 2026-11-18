@@ -147,8 +147,8 @@ class CharacterRoutes(unittest.TestCase):
         self.confirm(j,first+'_wardrobe','服装三视图');self.confirm(j,second+'_wardrobe','服装三视图')
         j=self.lib.get(j['id'],'jobs')
         i=next(i for i,s in enumerate(j['steps']) if s['key']==second+'_final')
-        request = self.lib.projects.request(j,i)
-        self.assertEqual([r['category'] for r in request['reference_records'] if not r.get('layout_only')], ['服装三视图', '大头照'])
+        sources = self.lib.projects.dependencies(j, j['steps'][i])
+        self.assertEqual([source['category'] for source in sources], ['大头照', '服装三视图'])
         self.assertEqual(j['steps'][i]['status'],'waiting')
         self.confirm(j,first+'_final','人物1x4');self.confirm(j,second+'_final','人物1x4')
         j=self.lib.get(j['id'],'jobs')
@@ -191,73 +191,56 @@ class CharacterRoutes(unittest.TestCase):
         self.assertEqual(out['confirmed_asset']['candidate_id'],final['candidate_id'])
         self.assertEqual(len(out['confirmed_outputs']),3)
 
-    def test_ai_board_waits_for_both_inputs_and_requires_explicit_generation_authorization(self):
-        originals=[Path(a['original']).read_bytes() for a in [self.assets['大头照'],self.assets['服装三视图']]]
-        j=self.route('build');v=j['character_workflow']['outfits'][0]['id']
-        index=next(i for i,s in enumerate(j['steps']) if s['key']==v+'_final')
+    def test_new_board_import_requires_both_sources_and_cannot_enter_model_queue(self):
+        service = self.lib.projects
+        job = self.route('build')
+        outfit = job['character_workflow']['outfits'][0]['id']
+        index = next(index for index, step in enumerate(job['steps']) if step['kind'] == '人物1x4')
+        self.assertFalse(job['steps'][index]['generation_enabled'])
+        self.assertIsNone(job['steps'][index]['ratio'])
+        path = self.base / 'local-board.png'
+        composite = Image.new('RGB', (910, 360))
+        for kind, size, left in [('大头照', (270, 360), 0), ('服装三视图', (640, 360), 270)]:
+            with Image.open(self.assets[kind]['original']) as source:
+                composite.paste(source.resize(size), (left, 0))
+        composite.save(path)
+        self.confirm(job, 'shared_head', '大头照')
         with self.assertRaisesRegex(ValueError, '前置制作项'):
-            self.lib.projects.request(j,index)
-        self.confirm(j,v+'_wardrobe','服装三视图')
-        self.assertEqual(next(s for s in self.lib.get(j['id'],'jobs')['steps'] if s['key']==v+'_final')['status'],'waiting')
-        before = len(self.lib.items())
-        with patch.object(self.lib, 'submit_imagegen') as generate, patch.object(self.lib, 'submit') as dreamina:
-            self.confirm(j,'shared_head','大头照')
-        generate.assert_not_called();dreamina.assert_not_called()
-        self.assertEqual(len(self.lib.items()), before)
-        j=self.lib.get(j['id'],'jobs');final=next(s for s in j['steps'] if s['key']==v+'_final')
-        self.assertEqual(final['status'],'waiting');self.assertTrue(final['generation_enabled'])
-        self.assertEqual(final['outputs'], []);self.assertIsNone(final['project_confirmation'])
-        request = self.lib.projects.request(j,index)
-        self.assertEqual([r['category'] for r in request['reference_records'] if not r.get('layout_only')], ['服装三视图','大头照'])
-        self.assertRegex(request['prompt'], r'参考图 1 (?:提供|定)服装、鞋履和服装配饰')
-        self.assertRegex(request['prompt'], r'参考图 2 (?:提供人物身份|定脸)、肤色、发型和(?:实际)?头饰')
-        self.assertEqual(originals,[Path(a['original']).read_bytes() for a in [self.assets['大头照'],self.assets['服装三视图']]])
-        head_index=next(i for i,s in enumerate(j['steps']) if s['key']=='shared_head')
-        again=self.lib.projects.confirm({'job_id':j['id'],'index':head_index,'confirm':True})
-        self.assertFalse(next(s for s in again['rows'][0]['job']['steps'] if s['key']==v+'_final').get('selected'))
-        tasks = [{'job_id':j['id'],'index':index}]
-        with patch('visual_asset_projects.threading.Thread.start') as start:
-            self.lib.projects.batch({'project_id':self.project['id'],'mode':'prepare','tasks':tasks})
-            entry = self.lib.projects.get(self.project['id'])['batch']['entries'][0]
-            self.assertEqual(entry['operation'], 'write')
-            self.assertEqual(entry['request']['kind'], '人物1x4')
-            start.assert_called_once()
-        # Queue preparation alone is not authorization to submit image generation.
-        self.lib.projects.batch_running = False
-        j=self.lib.get(j['id'],'jobs');final=j['steps'][index]
-        final.update(prompt='四格人物资产候选', audit={'status':'passed','prompt':'四格人物资产候选',
-            'skill_execution':{'version':self.lib.projects.skill.profile()['version'],'mode':'project'}})
-        self.lib.save(j,'jobs')
-        tasks[0]['prompt']=final['prompt']
-        with patch('visual_asset_projects.threading.Thread.start') as start:
-            with self.assertRaisesRegex(ValueError, '额度消耗'):
-                self.lib.projects.batch({'project_id':self.project['id'],'mode':'generate','tasks':tasks})
-            start.assert_not_called()
-            self.lib.projects.batch({'project_id':self.project['id'],'mode':'generate','tasks':tasks,'authorize':True})
-            self.assertEqual(self.lib.projects.get(self.project['id'])['batch']['mode'],'generate')
-            start.assert_called_once()
+            self.lib.attach(job['id'], index, [path], manual=True)
+        self.confirm(job, outfit + '_wardrobe', '服装三视图')
 
-    def test_legacy_pending_composition_is_unblocked_without_images_or_confirmations(self):
-        j=self.route('build');v=j['character_workflow']['outfits'][0]['id']
-        self.confirm(j,'shared_head','大头照')
-        self.confirm(j,v+'_wardrobe','服装三视图')
-        j=self.lib.get(j['id'],'jobs');final=next(s for s in j['steps'] if s['key']==v+'_final')
-        sources=copy.deepcopy([s['project_confirmation'] for s in j['steps'] if s['kind']!='人物1x4'])
-        final.update(generation_enabled=False, composition_error=True, message='人物1×4自动合成未完成：disk unavailable')
-        self.lib.save(j,'jobs');before=self.lib.items()
-        row=self.lib.projects.detail(self.project['id'])['rows'][0]
-        j=row['job'];final=next(s for s in j['steps'] if s['key']==v+'_final')
-        self.assertTrue(final['generation_enabled']);self.assertNotIn('composition_error',final)
-        self.assertNotIn('message',final);self.assertEqual(final['status'],'waiting')
-        self.assertEqual(sources,[s['project_confirmation'] for s in j['steps'] if s['kind']!='人物1x4'])
-        self.assertFalse(final['project_confirmation']);self.assertEqual(final['outputs'],[])
-        final['generation_enabled']=False
-        self.lib.save(j,'jobs')
-        self.lib.projects.request(j,j['steps'].index(final))
-        self.assertTrue(self.lib.get(j['id'],'jobs')['steps'][j['steps'].index(final)]['generation_enabled'])
-        with self.assertRaisesRegex(ValueError, '已改为AI生成'):
-            self.lib.projects.compose_character({'job_id':j['id'],'index':j['steps'].index(final)})
-        self.assertEqual(self.lib.items(),before)
+        task = {'job_id': job['id'], 'index': index}
+        action = {'id': job['id'], 'index': index, 'authorize': True}
+        with patch('visual_asset_projects.threading.Thread.start') as start:
+            for mode in ('prepare', 'generate'):
+                with self.assertRaisesRegex(ValueError, '不再生图'):
+                    service.batch({'project_id': self.project['id'], 'mode': mode, 'tasks': [task], 'authorize': True})
+            for submit in (self.lib.submit, self.lib.submit_imagegen):
+                with self.assertRaisesRegex(ValueError, '不再生图'):
+                    submit(action)
+            start.assert_not_called()
+
+        imported = self.lib.attach(job['id'], index, [path], manual=True)['steps'][index]
+        self.assertEqual(imported['status'], 'awaiting_review')
+        self.assertIsNone(imported['project_confirmation'])
+        board = self.lib.get(imported['outputs'][0])
+        self.assertEqual(Path(board['original']).read_bytes(), path.read_bytes())
+        self.assertEqual((board['width'], board['height']), (910, 360))
+        service.select({**task, 'asset_id': board['id']})
+        confirmed = service.confirm({**task, 'confirm': True})['rows'][0]['job']['steps'][index]
+        self.assertEqual(len(confirmed['project_confirmation']['dependency_confirmations']), 2)
+
+    def test_legacy_board_hides_generation_without_rewriting_saved_task(self):
+        service = self.lib.projects
+        job = self.route('build')
+        index = next(index for index, step in enumerate(job['steps']) if step['kind'] == '人物1x4')
+        job['steps'][index].update(generation_enabled=True, prompt='旧任务提示词')
+        self.lib.save(job, 'jobs')
+        displayed = service.detail(self.project['id'])['rows'][0]['job']['steps'][index]
+        self.assertFalse(displayed['generation_enabled'])
+        with self.assertRaisesRegex(ValueError, '不再生图'):
+            self.lib.prepare(job['id'], index)
+        self.assertEqual(self.lib.get(job['id'], 'jobs'), job)
 
     def test_confirmed_legacy_composite_and_receipt_remain_unchanged(self):
         j=self.route('build');v=j['character_workflow']['outfits'][0]['id']

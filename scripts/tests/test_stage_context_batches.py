@@ -253,7 +253,7 @@ def test_eight_exact_targets_are_allowed_and_frozen(tmp_path, skill):
     assert basis["scope"]["image_targets"] == targets
     if skill == "asset-image-assistant":
         templates = basis["character_layout_references"]
-        assert set(templates) == {"大头照", "服装", "人物1x4"}
+        assert set(templates) == {"大头照", "服装"}
         assert templates["服装"] == character_layout_reference("服装三视图")
         assert all(row["layout_only"] and Path(row["original"]).is_file() for row in templates.values())
         record_batch_methods(args)
@@ -266,7 +266,7 @@ def test_eight_exact_targets_are_allowed_and_frozen(tmp_path, skill):
 
 @pytest.mark.parametrize("kinds,templates", [
     (["服装三视图", "场景"], {"服装"}),
-    (["场景", "道具"], set()),
+    (["场景", "人物1x4"], set()),
 ])
 def test_typed_asset_batches_only_load_their_character_templates(tmp_path, kinds, templates):
     targets = ["AST-ONE@view", "AST-TWO@view"]

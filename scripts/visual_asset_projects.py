@@ -18,10 +18,10 @@ from visual_asset_choices import (image_work_items, image_decision, retained_spe
                                   scene_state_coverage)
 import visual_asset_product_usage as product_usage
 from visual_asset_characters import (character_route, prepare_character, choose_character_route, upstream_outfits,
-                                     enable_character_ai_finals, character_final_ids, final_output_updates, retain_character_labels)
+                                     character_final_ids, final_output_updates, retain_character_labels)
 from core.character_assets import uses_wardrobe, production_kinds, character_type, final_output_problems, step_output_id
 from core.asset_refs import PROP_BUILD_VIEW, PROP_REUSE_VIEW, character_output_contract, legacy_prop_reuse_label
-from core.character_layout import character_layout_reference
+from core.character_layout import BOARD_IMPORT_ONLY, character_layout_reference
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -329,9 +329,9 @@ class Projects:
         for row in p['rows']:
             with self.lib.lock:
                 row['job'] = self.lib.get(row['job_id'], 'jobs') if row.get('job_id') else None
-                if row['job'] and enable_character_ai_finals(row['job']):
-                    self.lib.save(row['job'], 'jobs')
             for step in (row['job'] or {}).get('steps', []):
+                if step['kind'] == '人物1x4' and step['status'] == 'waiting':
+                    step['generation_enabled'] = False
                 if legacy_prop_reuse_label(step, step.get('project_confirmation') or {}):
                     set_prop_layout(step, build=False)
             row['uses_wardrobe'] = self.row_uses_wardrobe(row)
@@ -664,7 +664,8 @@ class Projects:
             for s in slots:
                 if s['key'] in seen or not re.fullmatch('[a-zA-Z0-9_-]{1,40}', s['key']):
                     raise ValueError('制作项编号无效或重复')
-                if s['kind'] not in self.row_kinds(row) or not re.fullmatch(r'[1-9][0-9]?:[1-9][0-9]?', s['ratio']):
+                if s['kind'] not in self.row_kinds(row) or (
+                        s['kind'] != '人物1x4' and not re.fullmatch(r'[1-9][0-9]?:[1-9][0-9]?', s['ratio'])):
                     raise ValueError('制作项类别或比例与 AST 不符')
                 if any(d not in seen for d in s['dependencies']):
                     raise ValueError('制作项前置关系必须按顺序、无环')
@@ -675,7 +676,7 @@ class Projects:
                 if s['kind'] == '角色外观':
                     s['view'] = '宠物三视图 · 正面、左侧、背面'
                     s['purpose'] += '；同一完整角色的正面、左侧、背面三视图，包含固定服饰与配件'
-                if s['kind'] in {'服装', '人物1x4', '角色外观'}:
+                if s['kind'] in {'服装', '角色外观'}:
                     s['ratio'] = '16:9'
                 seen.add(s['key'])
             scenes = [s for s in slots if s['kind'] == '环境']
@@ -699,9 +700,10 @@ class Projects:
             steps = []
             for s in slots:
                 recipe = self.skill.recipe(s['kind'])
-                generation_enabled = row.get('production_route') != 'reuse' and (
+                generation_enabled = s['kind'] != '人物1x4' and row.get('production_route') != 'reuse' and (
                     s['kind'] != '物品' or image_decision(req) == '需要制作')
                 step = {**s, 'name': ('产品主图' + (' · ' + s['state'] if s.get('state') else '')) if s['kind'] == '产品' else s['view'],
+                        'ratio': recipe['ratio'] if s['kind'] == '人物1x4' else s['ratio'],
                         'status': 'waiting', 'outputs': [], 'generation_enabled': generation_enabled,
                         'reference_ids': row['reference_ids'][:], 'project_confirmation': None,
                         'template_source': recipe.get('template') or '依据分类指南编写：' + recipe['guide']}
@@ -748,8 +750,6 @@ class Projects:
             raise ValueError('当前上游要求人物单图，请同步需求后重新选图')
         if required_kind == '人物1x4' and (not job.get('character_workflow') or step['kind'] == '人物单图'):
             raise ValueError('此人物已明确要求最终人物1×4，请在人物卡片准备身份与服装板')
-        if enable_character_ai_finals(job):
-            self.lib.save(job, 'jobs')
         if step['kind'] in {'人物1x4', '人物单图'}:
             ast_id = row['requirement']['asset_id']
             if required_finals is None:
@@ -954,6 +954,8 @@ class Projects:
 
     def request(self, job, index):
         p, row, step = self.context(job, index)
+        if step.get('kind') == '人物1x4':
+            raise ValueError(BOARD_IMPORT_ONLY)
         if image_decision(row['requirement']) != '需要制作':
             raise ValueError('此需求未列为需要制作；复用项只选图，需新制时先更新需求判断')
         if step.get('required') is False or step.get('generation_enabled') is False:
@@ -972,14 +974,6 @@ class Projects:
             raise ValueError('参考图片已删除')
         if not refs and row['requirement']['category'] in {'WARDROBE', 'REAL_PRODUCT'}:
             raise ValueError('此类资产须选择真实参考图，不能猜外观')
-        if step['kind'] == '人物1x4':
-            ordered = []
-            for category in ['服装三视图', '大头照']:
-                asset = next((a for a in refs if a['category'] == category and a['status'] == 'confirmed'), None)
-                if asset is None:
-                    raise ValueError('人物1×4需要已确认服装三视图和大头照，参考顺序为服装、脸')
-                ordered.append(asset)
-            refs = ordered
         reference_records = []
         prerequisite_keys = set(step.get('dependencies', []))
         if job.get('character_workflow') and step['kind'] == '服装':
@@ -1792,12 +1786,6 @@ class Projects:
                          digest(Path(project['source']['path'])))))
         return False
 
-    def compose_character(self, payload):
-        with self.lib.lock:
-            job = self.lib.get(payload['job_id'], 'jobs')
-            self.context(job, int(payload['index']), payload.get('project_id'))
-            raise ValueError('人物1×4已改为AI生成；请确认脸与服装后准备提示词，另行授权生成并确认成图')
-
     def reopen(self, payload):
         with self.lib.lock:
             job = self.lib.get(payload['job_id'], 'jobs')
@@ -1864,6 +1852,8 @@ class Projects:
                     raise ValueError('不能混用其他项目任务')
                 index = int(t['index'])
                 step = job['steps'][index]
+                if step['kind'] == '人物1x4':
+                    raise ValueError(BOARD_IMPORT_ONLY)
                 if step['status'] != 'waiting' or step.get('audit', {}).get('status') in {'drafting', 'reviewing'}:
                     raise ValueError('只可提交待制作且未在处理的项目')
                 direction = t.get('generation_direction', step.get('generation_direction', ''))
@@ -2481,7 +2471,6 @@ class Projects:
                    'sync': lambda: self.sync(payload['project_id']), 'references': lambda: self.references(payload),
                    'plan': lambda: self.plan(payload['project_id'], payload.get('ast_id')), 'select': lambda: self.select(payload),
                    'confirm': lambda: self.confirm(payload), 'reopen': lambda: self.reopen(payload),
-                   'compose-character': lambda: self.compose_character(payload),
                    'clear-references': lambda: self.clear_references(payload), 'resolve': lambda: self.resolve(payload),
                    'batch': lambda: self.batch(payload), 'export': lambda: self.export(payload),
                    'continue': lambda: self.continue_project(payload['project_id'])}

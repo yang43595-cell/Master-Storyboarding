@@ -534,62 +534,29 @@ class LibraryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '审查'):
             self.lib.save_prompt({'id': job['id'], 'index': 0, 'prompt': prompt, 'approve': True})
 
-    def test_skill_categories_and_confirmed_reference_roles(self):
+    def test_skill_categories_and_board_import_only(self):
         for kind in ['物品', '产品', '风格', '色卡']:
             job = self.lib.create_job({'source_id': self.asset['id'], 'subject': '测试', 'kind': kind})
             self.assertEqual(self.lib.prepare(job['id'], 0)['ratio'], m.asset_skill.recipe(kind)['ratio'])
-        with self.assertRaises(ValueError):
-            self.lib.create_job({'source_id': self.asset['id'], 'secondary_id': self.asset['id'], 'subject': '人物', 'kind': '人物1x4'})
-        clothing = self.lib.get(self.asset['id'])
-        clothing.update(category='服装三视图', status='confirmed')
-        self.lib.save(clothing)
-        face_path = self.root / 'face.png'
-        Image.new('RGB', (300, 400), 'blue').save(face_path)
-        face, _ = self.lib.import_file(face_path, category='大头照')
-        self.lib.confirm(face['id'])
-        job = self.lib.create_job({'source_id': clothing['id'], 'secondary_id': face['id'], 'subject': '人物', 'kind': '人物1x4'})
-        request = self.lib.prepare(job['id'], 0)
-        self.assertEqual(request['reference_paths'], [clothing['original'], face['original']])
-        self.assertIn('1×4', request['prompt'])
-        m.management.manage(self.lib, [face['id']], 'trash')
-        with self.assertRaises(ValueError):
-            self.lib.prepare(job['id'], 0)
+        with self.assertRaisesRegex(ValueError, '不再生图'):
+            self.lib.create_job({'source_id': self.asset['id'], 'subject': '人物', 'kind': '人物1x4'})
 
-    def test_identity_board_inputs_keep_roles_and_reject_old_board_extras(self):
-        clothing = self.lib.get(self.asset['id'])
-        clothing.update(category='服装三视图', status='confirmed')
-        self.lib.save(clothing)
-        face_path = self.root / 'clean-face.png'
-        Image.new('RGB', (300, 400), 'blue').save(face_path)
-        face, _ = self.lib.import_file(face_path, category='大头照')
-        self.lib.confirm(face['id'])
-        product_path = self.root / 'product.png'
-        Image.new('RGB', (300, 300), 'green').save(product_path)
-        product, _ = self.lib.import_file(product_path, category='物品')
-        self.lib.confirm(product['id'])
-        job = self.lib.create_job({'source_id': clothing['id'], 'secondary_id': face['id'],
-                                   'subject': '人物', 'kind': '人物1x4'})
-        job['extra_reference_ids'] = [product['id']]
-        request = self.lib.step_request(job, 0)
-        self.assertEqual(request['reference_paths'], [clothing['original'], face['original'], product['original']])
-        # A previously accepted board is valid downstream, but never a replacement
-        # for independent source images when making another identity board.
+    def test_submitted_legacy_board_can_still_attach_and_export_original_result(self):
+        job = self.lib.create_job({'source_id': self.asset['id'], 'subject': '旧板', 'kind': '服装'})
+        job.update(kind='人物1x4', provider='dreamina')
+        job['steps'][0].update(status='submitted', submit_id='old-submit', generation_run_id='old-run')
+        self.lib.save(job, 'jobs')
+        with self.assertRaisesRegex(ValueError, '不再生图'):
+            self.lib.step_request(job, 0)
         board_path = self.root / 'old-board.png'
         Image.new('RGB', (1600, 900), 'yellow').save(board_path)
-        board, _ = self.lib.import_file(board_path, category='人物1x4')
+        step = self.lib.attach(job['id'], 0, [board_path])['steps'][0]
+        self.assertEqual((step['status'], step['submit_id'], step['generation_run_id']),
+                         ('awaiting_review', 'old-submit', 'old-run'))
+        board = self.lib.get(step['outputs'][0])
+        self.assertEqual(Path(board['original']).read_bytes(), board_path.read_bytes())
         self.lib.confirm(board['id'])
-        job['extra_reference_ids'] = [board['id']]
-        with self.assertRaisesRegex(ValueError, '旧人物板'):
-            self.lib.step_request(job, 0)
-        self.assertEqual(self.lib.get(board['id'])['status'], 'confirmed')
         self.assertEqual(self.lib.export([board['id']])['count'], 1)
-        # Re-check actual roles, not just what was selected at job creation.
-        job['extra_reference_ids'] = []
-        face = self.lib.get(face['id'])
-        face['category'] = '人物1x4'
-        self.lib.save(face)
-        with self.assertRaisesRegex(ValueError, '独立大头照'):
-            self.lib.step_request(job, 0)
 
     def test_retries_keep_original_source_for_face_clothes_scene_and_prop(self):
         for number, kind in enumerate(['大头照', '服装', '环境', '物品']):

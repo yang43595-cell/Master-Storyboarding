@@ -31,6 +31,7 @@ if str(_SCRIPTS_DIR) not in sys.path:
 from core.runtime_deps import ensure_runtime_deps  # noqa: E402
 from core.artifacts import digest, verify_image_confirmation
 from core.character_assets import step_output_id
+from core.character_layout import BOARD_IMPORT_ONLY
 from core.project_kickoff import grant_covers_asset, load_kickoff
 
 RUNTIME_DEPS = ensure_runtime_deps(ROOT)
@@ -87,6 +88,8 @@ def external_generation_provenance(source, record):
 
 def template_prompt(kind, subject, notes, index=0, *, allow_unreferenced_design=False,
                     reference_records=(), has_references=True):
+    if kind == '人物1x4':
+        raise ValueError(BOARD_IMPORT_ONLY)
     recipe = asset_skill.recipe(kind)
     index = asset_skill.template_step(kind, index=index)
     source = (asset_skill.CHARACTER_PROMPT_PATH if reference_records and reference_records[-1].get('layout_only')
@@ -765,6 +768,8 @@ class Library:
         return {'folder': str(folder), 'manifest': str(folder / 'selection.json'), 'count': len(entries)}
 
     def create_job(self, p):
+        if p['kind'] == '人物1x4':
+            raise ValueError(BOARD_IMPORT_ONLY)
         source = self.get(p['source_id'], require_file=True)
         if source.get('media_type') == 'video':
             raise ValueError('视频参考不能直接用于照片转资产，请先选图片')
@@ -776,17 +781,10 @@ class Library:
         if not subject:
             raise ValueError('请写明照片中要提取的衣服或环境')
         names = asset_skill.recipe(p['kind'])['steps']
-        secondary = None
-        if p['kind'] == '人物1x4':
-            secondary = self.get(p.get('secondary_id', ''), require_file=True)
-            if (source['category'] != '服装三视图' or secondary['category'] != '大头照' or
-                    any(a['status'] != 'confirmed' or a.get('trashed_at') for a in [source, secondary])):
-                raise ValueError('人物1×4须选择已确认服装三视图及已确认大头照')
-        roles = [{'role': '已确认服装三视图，服装及无头身体来源'}, {'role': '已确认大头照，唯一面部身份来源'}] if secondary else ()
-        prompt, template = template_prompt(p['kind'], subject, str(p.get('notes', ''))[:3000], reference_records=roles)
+        prompt, template = template_prompt(p['kind'], subject, str(p.get('notes', ''))[:3000])
         job = dict(id=uid(), title=subject[:200], kind=p['kind'], source_id=source['id'],
                    provider=p.get('provider', 'imagegen'), model=p.get('model', '5.0'), created_at=now(), workflow_version=3,
-                   notes=str(p.get('notes', ''))[:3000], secondary_id=secondary['id'] if secondary else None,
+                   notes=str(p.get('notes', ''))[:3000], secondary_id=None,
                    must_inherit=str(p.get('must_inherit', ''))[:2000], must_not_inherit=str(p.get('must_not_inherit', ''))[:2000],
                    steps=[dict(name=n, status='waiting', outputs=[]) for n in names])
         job['steps'][0].update(prompt=prompt, template_source=template)
@@ -800,22 +798,13 @@ class Library:
             return self.projects.request(job, index)
         if not isinstance(index, int) or not 0 <= index < len(job['steps']):
             raise ValueError('无效视图序号')
+        if job['kind'] == '人物1x4':
+            raise ValueError(BOARD_IMPORT_ONLY)
         step = job['steps'][index]
         refs = [self.get(job['source_id'], require_file=True)]
-        extras = [self.get(ident, require_file=True) for ident in job.get('extra_reference_ids', [])]
-        if job['kind'] == '人物1x4':
-            face = self.get(job.get('secondary_id', ''), require_file=True)
-            if refs[0]['category'] != '服装三视图' or face['category'] != '大头照':
-                raise ValueError('人物1×4须回到独立服装三视图及独立大头照')
-            refs = [refs[0], face, *extras]
-            if any(a['category'] == '人物1x4' for a in refs):
-                raise ValueError('人物1×4重生不得输入旧人物板；请使用原独立大头照和服装')
-            if any(a['status'] != 'confirmed' or a.get('trashed_at') for a in refs):
-                raise ValueError('人物1×4参考必须保持已确认且未删除')
-        else:
-            refs.extend(extras)
-            if job.get('secondary_id'):
-                refs.append(self.get(job['secondary_id'], require_file=True))
+        refs.extend(self.get(ident, require_file=True) for ident in job.get('extra_reference_ids', []))
+        if job.get('secondary_id'):
+            refs.append(self.get(job['secondary_id'], require_file=True))
         if index:
             dependency = list(range(index)) if job.get('workflow_version', 0) >= 2 else (list(range(3)) if job['kind'] == '环境' and index == 3 else [0])
             refs = []
@@ -827,10 +816,6 @@ class Library:
         if any(a.get('trashed_at') for a in refs):
             raise ValueError('参考图片已在垃圾桶，请先恢复')
         records = [{k: a.get(k) for k in ('id', 'category', 'status', 'original')} for a in refs]
-        if job['kind'] == '人物1x4':
-            for i, record in enumerate(records):
-                record['role'] = ('已确认服装三视图，服装及无头身体来源' if i == 0 else
-                                  '已确认大头照，唯一面部身份来源' if i == 1 else '用户提供的补充参考，按可见内容采用')
         prompt = f"从参考图提取「{job['title']}」，制作{job['kind']}资产的{step['name']}独立图片。"
         if job['kind'] == '服装':
             prompt += '衣服使用同一中性无头人台展示，纯浅灰背景、均匀柔光，保留款式、剪裁、颜色、材质、图案与配饰关系。各视图比例一致。'
@@ -1054,7 +1039,7 @@ class Library:
                 raise ValueError('制作项正在处理，不能手动导入覆盖；请先核对原任务结果')
             if job['steps'][index]['status'] == 'confirmed':
                 raise ValueError('已确认视图保留原版本；请新建一组资产进行修改')
-            if not job.get('project_id'):
+            if not job.get('project_id') and job['kind'] != '人物1x4':
                 self.step_request(job, index)
             step = job['steps'][index]
             if visual_self_check is None:
@@ -1142,6 +1127,9 @@ class Library:
             return job
 
     def _check_project_generation(self, job, index):
+        kind = job['steps'][index].get('kind') if job.get('project_id') else job.get('kind')
+        if kind == '人物1x4':
+            raise ValueError(BOARD_IMPORT_ONLY)
         if not job.get('project_id'):
             return
         from core.candidate_test import require_production
@@ -1223,8 +1211,12 @@ class Library:
         with self.lock:
             job = self.operation_job(p['id'], p.get('project_id', _UNSCOPED_PROJECT))
             index = int(p['index'])
-            self.step_request(job, index)
             step = job['steps'][index]
+            kind = step['kind'] if job.get('project_id') else job['kind']
+            if kind != '人物1x4':
+                self.step_request(job, index)
+            elif job.get('project_id'):
+                self.projects.context(job, index)
             redo = p.get('redo') is True
             if step['status'] not in {'awaiting_review', 'discarded'}:
                 raise ValueError('只能处理尚未确认的生成结果；进行中或已确认的图片不能丢弃重做')

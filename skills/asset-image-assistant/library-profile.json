@@ -44,20 +44,14 @@
       "method_scope": "character"
     },
     "人物1x4": {
-      "label": "人物1×4 · 已确认脸部＋服装",
+      "label": "人物1×4 · 导入本地拼版",
       "category": "人物1x4",
-      "ratio": "16:9",
+      "ratio": null,
       "guide": "02-character-master-guide.md",
       "steps": [
         "人物1×4身份资产板"
       ],
-      "template": "1x4三视图模板提示词.md",
-      "blocks": [
-        3
-      ],
-      "description": "选择已确认服装图与大头照；左格唯一面部，后三格无头身体。",
-      "secondary_role": "已确认大头照",
-      "primary_role": "已确认服装三视图",
+      "description": "已确认大头照与对应服装三视图等比同高拼接；导入实际拼版，不提交生图。",
       "method_scope": "character"
     },
     "环境": {
