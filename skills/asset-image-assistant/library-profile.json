@@ -31,7 +31,7 @@
     "服装": {
       "label": "服装三视图 · 正侧背三格",
       "category": "服装三视图",
-      "ratio": "16:9",
+      "ratio": "4:3",
       "guide": "02-character-master-guide.md",
       "steps": [
         "服装三视图"
@@ -108,28 +108,6 @@
       ],
       "description": "广告产品及配套用具，以真实包装、结构和标签为准；未知信息必须报告。",
       "method_scope": "object"
-    },
-    "风格": {
-      "label": "风格 · 表现母版",
-      "category": "风格",
-      "ratio": "16:9",
-      "guide": "01-style-master-guide.md",
-      "steps": [
-        "风格母版"
-      ],
-      "description": "从参考图提取媒介、线条、光线、材质与配色，形成可复用表现参考。",
-      "method_scope": "style"
-    },
-    "色卡": {
-      "label": "风格色卡 · 13个色块",
-      "category": "风格",
-      "ratio": "16:9",
-      "guide": "01-style-master-guide.md",
-      "steps": [
-        "平面色卡"
-      ],
-      "description": "提取参考图主色、阴影与强调色，生成13个平面纯色色块、近似HEX与功能标签。",
-      "method_scope": "style"
     },
     "角色外观": {
       "label": "宠物三视图 · 动物与幻想伙伴",

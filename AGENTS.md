@@ -2,6 +2,7 @@
 
 进入项目后先读 `PROJECT_RULES.md`（总规则及按需细则入口）与所选 Skill 的 `SKILL.md`，然后按 Skill 做这一阶段的活。
 制作任务从本仓库启动，按所选 Skill 的三层入口读取仓库内资料及本次业务输入。知识维护和外部来源审计是单独任务。
+本项目及其工作树的界面操作由主对话直接执行，按[项目专用界面分工](docs/rules/execution.md#画布执行与交接的宿主边界)覆盖通用 Terra 模型与委派要求。
 跨阶段协调时用[审核到画布导航](docs/development/review-to-canvas-entry.md)定位本轮步骤。已知步骤时直接读取其操作小节，按 `PROJECT_RULES.md` 确定审核和交付范围。
 收到用户在项目对话中对准确版本的编导整稿通过后，协调方当轮按[编导对话确认入口](docs/development/artifact-adoption.md#编导对话确认)正式采用并继续已解锁工作。
 首次在新电脑或新 agent 使用，先按 [独立仓库启动](docs/development/standalone-repository.md) 核验依赖与内置方法；不依赖旧会话或 Mac 路径。

@@ -1892,8 +1892,8 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
            *[f"  - `{path}`" for path in rule_documents]] if rule_documents else []),
         "- 执行分工：遵守根规则的干净上下文启动规则；新一轮编导等创作生产或实质重跑由全新专属生产 agent 执行，不继承长主会话；本轮执行者读取、准备、产出并自查。其他任务按根规则执行。",
         "- 上下文边界：交接当前有效规则、原始素材、本轮约束与已确认决定及依据、现行版本、未决事项、范围和停止点；不得以摘要替代原片。已在本轮专属 agent 内的逐段推进和局部返修可继续；目标、来源或基线重大变化时新开，不按修订号机械重开。",
-        *([f"- 图片批次：`{_CONTEXT_ID.get()}`，本批冻结 {len(image_targets)} 个 image_targets；阶段负责人统筹整体方向、跨批连续性和正式交接，本批执行者读取真实参考、完成获准图片及实看自查，只回传准确路径与检查摘要。批次目录不构成已生成、已检查、人工确认或正式采用。"] if image_targets is not None else []),
-        *([f"- 红帧生图：读取 `{ROOT / _REDFRAME_IMAGE_STANDARDS[0]}#生图` 及同页连接入口。先上传素材卡并当场归位，再接线和核正文；配套上传与排版规则同批冻结。"]
+        *([f"- 图片批次：`{_CONTEXT_ID.get()}`，本批冻结 {len(image_targets)} 个 image_targets；阶段负责人统筹整体方向、跨批连续性和正式交接，本批执行者读取真实参考、完成获准图片及实看自查。委派时只回传准确路径与检查摘要。批次目录不构成已生成、已检查、人工确认或正式采用。"] if image_targets is not None else []),
+        *([f"- 红帧生图：读取 `{ROOT / _REDFRAME_IMAGE_STANDARDS[0]}#生图` 及同页连接入口。由主对话直接操作，先上传素材卡并当场归位，再接线和核正文；配套上传与排版规则同批冻结。"]
           if _redframe_image_batch(args.skill, request) else []),
         *(_asset_batch_delivery_lines(asset_batch) if asset_batch and not handoff_batch_bindings else []),
         *(["- 人物生图按输出类型读取 task_basis.json 的 character_prompt_templates 与 character_layout_references，使用对应模板正文，原参考在前、灰模在最后。按实际槽位绑定原生引用。"]
@@ -1996,9 +1996,9 @@ def _asset_batch_delivery_lines(batch):
     return [
         "", "## 本批交回", "", _asset_batch_binding_line(batch),
         "- 本批执行者跟到准确成图落盘和实看自查，或出现需交回的真实阻塞。提示词和提交清单是中间结果。",
-        "- 完成时更新上述现有实看回执，顶层沿用本卡的 `context_id` 和 `request_sha256` 来标明实际执行的请求。宿主完成通知只回批次、已完成目标、真实阻塞和回执路径。途中只通知可接续的新结果或需决策的阻塞。",
+        "- 完成时更新上述现有实看回执，顶层沿用本卡的 `context_id` 和 `request_sha256` 来标明实际执行的请求。委派批次的完成通知只回批次、已完成目标、真实阻塞和回执路径；途中只通知可接续的新结果或需决策的阻塞。",
         "- 无成图可实看且确实需交回的阻塞，沿原回执 `items` 写准确 `target`、`observer`、`status: blocked` 和简短 `blocking_issue`。",
-        "- 协调方依现有宿主完成通知续等。没有变化时沿用同一有界等待，不扫目录、拉日志或看截图。收到终态后用 `handoff --receive-batch` 核本批回执一次，有缺项交原执行者定向核对。",
+        "- 主对话直接制作时核对现有回执。委派批次由协调方按 `docs/rules/execution.md#等待与工具回传` 续等。超时不叠加 `read_thread`、`list_agents`、目录/日志查询或提前调用 `--receive-batch`；沿原等待渠道和游标续等；收到需核验的可接续新结果时只核受影响项。超过本轮已约定总等待期限仍无终态时，只读回查原任务一次，不重新提交。收到终态后用 `handoff --receive-batch` 验收准确回执一次，缺项交原执行者补核。",
         "- 回执只证明本批候选自查，网站或明确授权的对话确认继续走原入口。", "",
     ]
 

@@ -11,7 +11,7 @@ import sys
 import threading
 import time
 import uuid
-from visual_asset_source import (project_path, source_project, prompt_context, resolve_reference,
+from visual_asset_source import (asset_project_root, project_path, source_project, prompt_context, resolve_reference,
                                  local_reference_document, TEXT_REFERENCE_SUFFIXES)
 from core.artifacts import artifact_is_adopted, digest, verify_image_confirmation
 from visual_asset_choices import (image_work_items, image_decision, retained_specification,
@@ -45,7 +45,7 @@ from core.artifacts import (load_manifest, save_manifest, register_workspace_art
                             asset_output_impact)
 from core.io import project_lock
 from core.project_state import load_project_state, write_project_state
-from core.project_kickoff import grant_covers_asset, load_kickoff
+from core.project_kickoff import grant_covers_asset, load_kickoff, load_project_request, validate_kickoff
 from core.product_reference_pack import resolve_product_pack
 from core.agent_acceptance import (asset_authorization_digest, require_asset_workflow_authorization,
                                    validate_asset_review)
@@ -72,6 +72,11 @@ def write(path, data):
     temp.replace(path)
 
 
+def workbench_stamp(path):
+    info = path.stat()
+    return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns
+
+
 def safe(value):
     return re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', str(value)).strip(' .')[:36] or '资产'
 
@@ -90,11 +95,19 @@ def production_basis(narrative, ast_ids):
 
 
 BUSY = {'generating', 'submitting', 'submitted', 'querying'}
+ASSET_KICKOFF_REQUIRED = '新项目请先登记开工决定，再按项目选定的通道审核资产'
+
+
+def asset_review_workflow(root):
+    request = load_project_request(root)
+    if 'kickoff' in request:
+        return 'website', validate_kickoff(request['kickoff'])
+    return ('awaiting_kickoff' if request.get('project_mode') == 'new' else 'legacy'), None
 
 
 def reference_evidence(project, requirements, assets=()):
-    """Read project or repository briefs named directly or beside a selected local source."""
-    documents, unavailable, paths = [], [], []
+    """Resolve declared originals and briefs through the same project/repository route."""
+    documents, unavailable, paths, images = [], [], [], []
     root = Path(project)
     artifacts = load_manifest(root)['artifacts']
     state = load_project_state(root)
@@ -107,6 +120,8 @@ def reference_evidence(project, requirements, assets=()):
                 continue
             if path.suffix.lower() in TEXT_REFERENCE_SUFFIXES:
                 paths.append(path)
+            elif path.suffix.lower() in {'.png', '.jpg', '.jpeg', '.webp'}:
+                images.append(str(path))
     for asset in assets:
         parent = Path(asset['source']).parent
         if not local_reference_document(root, parent):
@@ -120,7 +135,8 @@ def reference_evidence(project, requirements, assets=()):
             unavailable.append(str(path) + '（正文过大，需要先在项目中整理直接参考）')
         else:
             documents.append({'path': str(path.resolve()), 'content': path.read_text(encoding='utf-8-sig')})
-    return {'reference_documents': documents, 'unavailable_references': unavailable}
+    return {'reference_documents': documents, 'unavailable_references': unavailable,
+            'reference_images': list(dict.fromkeys(images))}
 
 
 class Projects:
@@ -133,23 +149,27 @@ class Projects:
     def save(self, project):
         write(self.root / (project['id'] + '.json'), project)
 
-    def get(self, ident):
+    def _record_path(self, ident):
         if not re.fullmatch('[a-f0-9]{16}', ident):
             raise ValueError('无效项目编号')
-        return read(self.root / (ident + '.json'))
+        return self.root / (ident + '.json')
+
+    def get(self, ident):
+        return read(self._record_path(ident))
 
     def summaries(self):
         return [{k: p.get(k) for k in ('id', 'path', 'name', 'source', 'planning', 'export', 'batch')}
                 for p in (read(f) for f in self.root.glob('*.json'))]
 
     def bind(self, path):
-        if str(path or '').strip() and Path(path).expanduser().resolve().is_relative_to(self.lib.vault):
+        root = asset_project_root(path)
+        if root.is_relative_to(self.lib.vault):
             raise ValueError('生产项目请使用素材库之外的独立项目文件夹')
-        root, source, narrative = source_project(path)
         with self.lib.lock:
             previous = next((p for p in self.summaries() if Path(p['path']) == root), None)
             if previous:
                 return self.sync(previous['id'])
+            _, source, narrative = source_project(root)
             p = {'id': uid(), 'path': str(root), 'name': narrative['project_id'], 'source': source,
                  'narrative': narrative, 'rows': [{'requirement': r, 'reference_ids': [], 'job_id': None} for r in image_work_items(narrative)],
                  'created_at': now()}
@@ -318,9 +338,8 @@ class Projects:
         p = self.get(ident)
         try:
             self.fresh(p)
-            kickoff = load_kickoff(p['path'])
+            p['review_workflow'], kickoff = asset_review_workflow(p['path'])
             generation = kickoff.get('image_generation') if kickoff else None
-            p['review_workflow'] = 'website' if kickoff else 'legacy'
             p['kickoff_generation'] = ({key: generation[key] for key in ('provider', 'model', 'outputs', 'scope')
                                         if key in generation} if generation else None)
             p['source_error'] = ''
@@ -612,13 +631,10 @@ class Projects:
     def _plan_worker(self, exe, p, rows):
         folder = self.lib.root / 'requests' / p['id'] / ('plan-' + p['planning']['run_id'])
         try:
-            refs = []
+            evidence_inputs = reference_evidence(p['path'], [r['requirement'] for r in rows],
+                [self.lib.get(i) for r in rows for i in r['reference_ids']])
+            refs = evidence_inputs.pop('reference_images')
             for row in rows:
-                req = row['requirement']
-                for path in req.get('reference_paths', []):
-                    source = project_path(Path(p['path']), path)
-                    if source.is_file() and source.suffix.lower() in {'.png', '.jpg', '.jpeg', '.webp'}:
-                        refs.append(str(source))  # Project files stay in the project.
                 refs += [str(self.copy_to_project(p, self.lib.get(i))) for i in row['reference_ids']]
             request = {'mode': 'project', 'project_path': p['path'], 'source_narrative': p['source'],
                        'narrative': prompt_context(p['narrative'], [r['requirement']['asset_id'] for r in rows]),
@@ -626,8 +642,7 @@ class Projects:
                        'rows': [{**r, 'character_output_mode': self.row_character_mode(r)} for r in rows],
                        'inventory': [{k: a.get(k) for k in ('id', 'name', 'category', 'status', 'tags', 'project')}
                                                 for a in self.lib.items() if not a.get('trashed_at')]}
-            request.update(reference_evidence(p['path'], [r['requirement'] for r in rows],
-                                              [self.lib.get(i) for r in rows for i in r['reference_ids']]))
+            request.update(evidence_inputs)
             rules, evidence = self.skill.prepare(folder, request)
             result = self.bridge.plan_assets(exe, folder, request, rules)
             with self.lib.lock:
@@ -676,7 +691,9 @@ class Projects:
                 if s['kind'] == '角色外观':
                     s['view'] = '宠物三视图 · 正面、左侧、背面'
                     s['purpose'] += '；同一完整角色的正面、左侧、背面三视图，包含固定服饰与配件'
-                if s['kind'] in {'服装', '角色外观'}:
+                if s['kind'] == '服装':
+                    s['ratio'] = '4:3'
+                elif s['kind'] == '角色外观':
                     s['ratio'] = '16:9'
                 seen.add(s['key'])
             scenes = [s for s in slots if s['kind'] == '环境']
@@ -972,7 +989,9 @@ class Projects:
         refs += [self.lib.get(i) for i in step.get('reference_ids', []) if i not in {a['id'] for a in refs}]
         if any(a.get('trashed_at') for a in refs):
             raise ValueError('参考图片已删除')
-        if not refs and row['requirement']['category'] in {'WARDROBE', 'REAL_PRODUCT'}:
+        evidence_inputs = reference_evidence(p['path'], [row['requirement']], refs)
+        declared_images = evidence_inputs.pop('reference_images')
+        if not refs and not declared_images and row['requirement']['category'] in {'WARDROBE', 'REAL_PRODUCT'}:
             raise ValueError('此类资产须选择真实参考图，不能猜外观')
         reference_records = []
         prerequisite_keys = set(step.get('dependencies', []))
@@ -989,6 +1008,11 @@ class Projects:
                 'role': ('已确认大头照，唯一面部身份来源' if prior and prior['kind'] == '大头照' else
                          '已确认服装三视图，服装及无头身体来源' if prior and prior['kind'] == '服装' else
                          '本项目已确认前置图片' if prior else '用户提供的生成参考，按可见内容采用')})
+        existing_paths = {record['original'] for record in reference_records}
+        for original in declared_images:
+            if original not in existing_paths:
+                reference_records.append({'original': original, 'sha256': digest(Path(original)),
+                    'project_confirmed': False, 'role': '当前 AST 登记的原始参考，按可见内容与本次要求采用'})
         allow_design = (row['requirement']['category'] == 'PROP' or step['kind'] == '角色外观'
                         or (row['requirement']['category'] == 'CHARACTER' and step['kind'] in {'人物单图', '大头照', '服装'}))
         if layout := character_layout_reference(step['kind']):
@@ -996,17 +1020,18 @@ class Projects:
         recipe = self.skill.recipe(step['kind'])
         template = recipe.get('template') or '依据分类指南编写：' + recipe['guide']
         template_notes = '依据当前 AST 和分类指南，制作' + step['purpose'] + '；状态：' + step['state'] + '；视角：' + step['view']
-        if step['kind'] == '环境' and refs:
+        if step['kind'] == '环境' and (refs or declared_images):
             template_notes += '；输入参考可能是俯视、平视或其他视角，不代表目标视角；保留已展示的布局与固定陈设，按本步骤目标视角制作，未展示部分仅作待确认的设计补全。'
         seed = template_notes
-        if step['kind'] == '环境' and (not refs or step['view'] not in {'45°', '正面', '反面', '俯视'}
+        if step['kind'] == '环境' and (not (refs or declared_images) or step['view'] not in {'45°', '正面', '反面', '俯视'}
                 or len(step.get('dependencies', [])) != {'45°': 0, '正面': 1, '反面': 2, '俯视': 3}.get(step['view'], -1)):
             template = str(ROOT / 'skills/asset-image-assistant/references' / recipe['guide'])
         elif 'template' in recipe:
             # The seed and task-package template share the same executable rendering.
             view_index = {'45°': 0, '正面': 1, '反面': 2, '俯视': 3}.get(step['view'], 0) if step['kind'] == '环境' else 0
             seed, template = self.lib.project_template(step['kind'], job['title'], template_notes, view_index,
-                allow_unreferenced_design=allow_design, reference_records=reference_records, has_references=bool(refs))
+                allow_unreferenced_design=allow_design, reference_records=reference_records,
+                has_references=bool(refs or declared_images))
         return {'mode': 'project', 'project_path': p['path'], 'project_id': p['id'], 'ast_id': job['ast_id'],
                 'source_narrative': p['source'], 'narrative': prompt_context(p['narrative'], [job['ast_id']]), 'requirement': row['requirement'],
                 'job_id': job['id'], 'subject': job['title'], 'template_notes': template_notes,
@@ -1022,7 +1047,7 @@ class Projects:
                 'allow_unreferenced_design': allow_design,
                 'design_scope': '新制作所需的未锁定外观可作为设计候选；保留已确认身份与故事约束，明确要求还原真实外貌时仍须参考。',
                 'gap_resolution': job.get('resolved_blockers'),
-                **reference_evidence(p['path'], [row['requirement']], refs)}
+                **evidence_inputs}
 
     def select(self, payload):
         with self.lib.lock:
@@ -1202,8 +1227,12 @@ class Projects:
             return self.detail(p['id'])
 
     def _confirm_step(self, p, job, step, payload, *, website_review=None, chat_review=None):
-        if website_review is None and chat_review is None and load_kickoff(p['path']):
-            raise ValueError('本项目资产采用需要当前版审核站真实通过回执')
+        if website_review is None and chat_review is None:
+            workflow, _ = asset_review_workflow(p['path'])
+            if workflow == 'awaiting_kickoff':
+                raise ValueError(ASSET_KICKOFF_REQUIRED)
+            if workflow == 'website':
+                raise ValueError('本项目资产采用需要当前版审核站真实通过回执，或获准的对话确认、代审依据')
         self.dependencies(job, step)
         ident = payload.get('asset_id') or step.get('selected')
         if ident not in step['outputs'] or payload.get('confirm') is not True:
@@ -2009,7 +2038,10 @@ class Projects:
 
     def _export_locked(self, payload, *, website_package=None, chat_package=None, previous_asset_snapshot=None):
         with self.lib.lock:
+            record_path = self._record_path(payload['project_id'])
+            stamp = workbench_stamp(record_path)
             p = self.get(payload['project_id'])
+            current = p
             self.fresh(p)
             website = website_package is not None
             scoped = website or chat_package is not None
@@ -2020,12 +2052,16 @@ class Projects:
             if p.get('export'):
                 self.validate_export_basis(p)
                 return {'adopted': True, 'complete': True, 'export': p['export'], **result} if scoped else p['export']
-            if load_kickoff(p['path']) and not scoped:
-                if not p['rows'] and all(image_decision(req) != '待定' for req in p['narrative']['asset_requirements']):
-                    raise ValueError('本轮无资产图交付项，协调方可沿已授权流程继续')
-                raise ValueError('资产正式采用需要审核站真实通过回执，请使用回执采用入口')
-            if website_package is None and chat_package is None and payload.get('confirm') is not True:
-                raise ValueError('请确认整张需求表后交接')
+            if not scoped:
+                workflow, _ = asset_review_workflow(p['path'])
+                if workflow == 'awaiting_kickoff':
+                    raise ValueError(ASSET_KICKOFF_REQUIRED)
+                if workflow == 'website':
+                    if not p['rows'] and all(image_decision(req) != '待定' for req in p['narrative']['asset_requirements']):
+                        raise ValueError('本轮无资产图交付项，协调方可沿已授权流程继续')
+                    raise ValueError('资产正式采用需要审核站真实通过回执，或获准的对话确认、代审依据')
+                if payload.get('confirm') is not True:
+                    raise ValueError('兼容项目请确认整张需求表后交接')
             requirements = p['narrative']['asset_requirements']
             missing_outputs = any(image_decision(r) == '待定' for r in requirements)
             pending_backup_ids = set()
@@ -2072,7 +2108,10 @@ class Projects:
                             missing_outputs = True
                             continue
                         raise ValueError('尚未逐项确认：' + job['ast_id'] + ' / ' + step['name'])
-                    current = self._current_workbench(p)
+                    observed_stamp = workbench_stamp(record_path)
+                    if observed_stamp != stamp:
+                        current = self._current_workbench(p)
+                        stamp = observed_stamp
                     _, step = self._project_step(current, job, i, required_finals=required_finals)
                     self.dependencies(job, step)
                     asset = self.lib.get(step['selected'])
@@ -2383,7 +2422,7 @@ class Projects:
         p = self.get(ident)
         self.fresh(p)
         if not p.get('export'):
-            raise ValueError('请先完成整表确认和导出')
+            raise ValueError('请先完成必需图片的审核和导出')
         self.validate_export_basis(p)
         state = load_project_state(Path(p['path']))
         target = state.get('next_stage')

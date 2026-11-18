@@ -1,0 +1,2580 @@
+{
+  "schema_version": "1.0",
+  "artifact_type": "video.prompt",
+  "artifact_id": "VIDEO-PROMPT-R01",
+  "project_id": "普拉提vlog复刻-温泉酸版",
+  "revision": "R01",
+  "status": "candidate",
+  "production_blocked": true,
+  "generation_authorized": false,
+  "source_storyboard": {
+    "artifact_id": "DIR-R01",
+    "path": "03_导演/R01_storyboard-package.json",
+    "revision": "R01",
+    "sha256": "f999ebd54b95d8cdf41426bd14a83ed1a920a9c3d7aa183ae56511bf1e8638df"
+  },
+  "source_narrative": {
+    "artifact_id": "NARRATIVE-R01",
+    "path": "02_编导/R01_叙事包.json",
+    "revision": "R01",
+    "sha256": "bab87ecc03f945d1185bd0c7a7a2e9765dd4e8658caafcf913d777f852d748fd"
+  },
+  "asset_manifest": {
+    "path": "04_资产/母版/R01_25e47bb5b3894803/visual-asset-manifest.json",
+    "revision": "R01",
+    "sha256": "6363a0193da11667260934ccdd32706a27e7f5c8e4556fcfa656d8ae8a2b3327"
+  },
+  "product_reference_pack": {
+    "product_id": "creator-polishing-mask-2",
+    "revision": "R04",
+    "manifest_sha256": "a31467686c208dbc8cb1c02d06bed5449efabce5f78c78fea8adfe4ff5d476dd"
+  },
+  "platform": {
+    "platform": "redframe",
+    "model": "seedance2.5",
+    "model_label": "Seedance 2.5",
+    "aspect_ratio": "9:16",
+    "resolution": "480p"
+  },
+  "scope": {
+    "shot_count": 38,
+    "target_edit_duration_seconds": 229,
+    "all_shots_written": true,
+    "stop_at": "稿件与自查交回协调方验收复制"
+  },
+  "delivery_format_basis": "seedance-delivery-package.md 与 video-script-template.md 的 generation_segments 现行结构。该合同未固定 JSON schema 版本，schema_version 1.0 为本稿标识。",
+  "generation_segments": [
+    {
+      "segment_id": "V01",
+      "title": "拆新包与对镜比包",
+      "scene_id": "S01",
+      "source_shot_ids": [
+        "S01-001",
+        "S01-002"
+      ],
+      "source_paragraph_ids": [
+        "STP-001"
+      ],
+      "source_dialogue_ids": [],
+      "source_audio": [],
+      "generation_duration_seconds": 16,
+      "target_edit_duration_seconds": 16,
+      "parameters": {
+        "platform": "redframe",
+        "model": "seedance2.5",
+        "model_label": "Seedance 2.5",
+        "aspect_ratio": "9:16",
+        "resolution": "480p",
+        "duration_seconds": 16
+      },
+      "duration_basis": "按导演各镜 rhythm 预算逐项相加，非已测音视频或已核平台时长能力。",
+      "shot_durations": [
+        7,
+        9
+      ],
+      "materials": [
+        {
+          "asset_id": "AST-CHAR-01",
+          "output_id": "NV1-LOOK-01",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-CHAR-01/AST-CHAR-01_outfit_1f56e0f6_final_象牙白真丝吊带睡裙＋同系晨袍 · 人物1×4_R01.png",
+          "sha256": "1a3fe841775083ddb103340ee80ff980dada7084c293b0aa2cdd7b2427bc70cb",
+          "role": "identity",
+          "source_shot_ids": [
+            "S01-001",
+            "S01-002"
+          ],
+          "purpose": "左格头部特写锁定人物面容、长红棕发及两枚黑夹分列两侧，后三格提供象牙白睡裙晨袍的服装结构。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#ad6e2a8aab46469c",
+          "upload_status": "planned",
+          "reference": "@图片1"
+        },
+        {
+          "asset_id": "AST-PROP-01",
+          "output_id": "state1_view0",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-PROP-01/AST-PROP-01_state1_view0_正面、左侧、背面、俯视四视图_R01.png",
+          "sha256": "d473e2c50efc9e262f50bc4ea8574f37339dbbbcff2dd349af1b111ca3f1b793",
+          "role": "appearance",
+          "source_shot_ids": [
+            "S01-001",
+            "S01-002"
+          ],
+          "purpose": "同一焦糖棕皮质梯形手提包、双提带、小金属件；四视图只承担物件外观。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#2b9c5b4c71b24aee",
+          "upload_status": "planned",
+          "reference": "@图片2"
+        },
+        {
+          "asset_id": "AST-LOC-01",
+          "output_id": "state0_view0",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-LOC-01/AST-LOC-01_state0_view0_任意视角_R01.png",
+          "sha256": "d7852d359b96d8cabf611e0311507b877f2638b991fbacaa48f2979748630b4b",
+          "role": "layout",
+          "source_shot_ids": [
+            "S01-001",
+            "S01-002"
+          ],
+          "purpose": "梳妆区空间与光向，以图示窗、门洞、梳妆镜和台面的关系为准。场景图仅提供环境布局，台面物件及面部状态随本段动作推进。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#ef4cf88bf9a34ccc",
+          "upload_status": "planned",
+          "reference": "@图片3"
+        }
+      ],
+      "prompt": "@图片1用于左格头部特写锁定人物面容、长红棕发及两枚黑夹分列两侧，后三格提供象牙白睡裙晨袍的服装结构。\n@图片2用于同一焦糖棕皮质梯形手提包、双提带、小金属件；四视图只承担物件外观。\n@图片3用于梳妆区空间与光向，以图示窗、门洞、梳妆镜和台面的关系为准。场景图仅提供环境布局，台面物件及面部状态随本段动作推进。\n\n女一面部沿用人物板左格，长红棕发，两枚黑色发夹分列头部两侧。清晨暖中性窗侧柔光，空间与光向沿用场景图：图示右侧窗、梳妆台左侧门洞、台面后方梳妆镜。女一面向镜面，台面近侧为操作区，远侧为陈列区。\n清晨卧室梳妆台前，女一穿象牙白真丝吊带睡裙与同系晨袍，素颜坐定，双手扶着台面中央待拆的包裹。手持近景偏中景同时看清上半身、双手和台面，包裹占下半画幅，上方留后期文字空间。标准焦段保持包身形状自然，焦点落在包装与手，面部处在仍可辨认的次清晰层。随她拆开包裹小幅补构图，焦糖棕手提包完整取出时收稳，给包身露出的一拍后切向梳妆镜方向的中景。她仍坐着，拎包举到胸前对镜比了比，焦点照顾包与满意的表情，镜中像保持可读。她把包放到台面手边，随后起身向衣帽间走。手持随起身轻轻上抬再收稳，座位空出时结束，包仍留在台面手边。保留拆包装、纸面摩擦、包落台面与衣物的轻响。\n生成画面不添加画外字幕、片头片尾文字、说明字卡、时间码或其他叠加文字。正文中的秒数与切镜时间只控制动作和剪辑，不在画面显示。真实包装、商标和电视实体屏幕按参考及既定方案保留。不要生成背景音乐（BGM）。本段无对白、无旁白。",
+      "entry_state": "女一穿象牙白真丝吊带睡裙加同系晨袍（LOOK-01）坐在梳妆台前，包裹放在台面中央，她双手扶住包裹",
+      "exit_state": "包留在台面手边，座位空出，她已起身离座",
+      "production_notes": {
+        "segmentation_basis": "完整事件完成或导演原有换装/换场/明确时间省略，非按固定秒数或逐镜拆分。",
+        "postproduction_music": "后期全片单曲《Deja Vu (Sped Up Version)》持续铺底，末段定格收尾。",
+        "postproduction_text": [
+          {
+            "shot_id": "S01-001",
+            "texts": [
+              "grwm · pilates morning",
+              "晨间拆新包，好状态一整天"
+            ],
+            "timing_basis": "估时约7秒（STP-001 预算16秒内分配，未实测）；动作完整不加速，字幕随拆包过程出现",
+            "display_timing": "沿 take.process 出现顺序，限定对应镜内，阅读停留沿导演预算，未有精确时码则留剪辑核定。",
+            "status": "planned"
+          }
+        ],
+        "outgoing_cut": {
+          "entry": "承接上镜包已取出",
+          "exit": "她起身走出梳妆区后硬切镜区亮相镜",
+          "trigger": "起身动作完成、人物离座的一拍",
+          "information_handoff": "开场段落收束：包的去向（台面手边）交代清楚，人物动线指向下一场"
+        },
+        "review_status": "needs_review",
+        "open_questions": [],
+        "postproduction_unspecified_item_labels": [],
+        "exact_required_visuals_in_body": []
+      }
+    },
+    {
+      "segment_id": "V02",
+      "title": "普拉提套装亮相",
+      "scene_id": "S02",
+      "source_shot_ids": [
+        "S02-001"
+      ],
+      "source_paragraph_ids": [
+        "STP-002"
+      ],
+      "source_dialogue_ids": [],
+      "source_audio": [],
+      "generation_duration_seconds": 5,
+      "target_edit_duration_seconds": 5,
+      "parameters": {
+        "platform": "redframe",
+        "model": "seedance2.5",
+        "model_label": "Seedance 2.5",
+        "aspect_ratio": "9:16",
+        "resolution": "480p",
+        "duration_seconds": 5
+      },
+      "duration_basis": "按导演各镜 rhythm 预算逐项相加，非已测音视频或已核平台时长能力。",
+      "shot_durations": [
+        5
+      ],
+      "materials": [
+        {
+          "asset_id": "AST-CHAR-01",
+          "output_id": "NV1-LOOK-02",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-CHAR-01/AST-CHAR-01_outfit_39011c98_final_墨绿收腰运动上衣＋高腰喇叭长裤（普拉提套装） · 人物1×4_R01.png",
+          "sha256": "3b43b1f62ac618fb499c0773cf7f08ab26b96e12cef4dad8c253f94ee7bd5172",
+          "role": "identity",
+          "source_shot_ids": [
+            "S02-001"
+          ],
+          "purpose": "左格高清脸为唯一面部来源，右三格承担服装、比例与方向。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#2cbe72c95e5d4bc5",
+          "upload_status": "planned",
+          "reference": "@图片1"
+        },
+        {
+          "asset_id": "AST-LOC-02",
+          "output_id": "state0_view0",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-LOC-02/AST-LOC-02_state0_view0_任意视角_R01.png",
+          "sha256": "947e9b3ed2bdb2b47a0cdd18809b91efd85dd41eea647f6c74139ef7c8b0a5a0",
+          "role": "layout",
+          "source_shot_ids": [
+            "S02-001"
+          ],
+          "purpose": "本段场景布局与材质，按导演同侧机位拍摄。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#bd904b6003df47d8",
+          "upload_status": "planned",
+          "reference": "@图片2"
+        }
+      ],
+      "prompt": "@图片1用于左格高清脸为唯一面部来源，右三格承担服装、比例与方向。\n@图片2用于本段场景布局与材质，按导演同侧机位拍摄。\n\n女一面部沿用人物板左格，长红棕发，两枚黑色发夹分列头部两侧。镜区窗侧柔光与暖中性色保持，镜面正前站位与衣柜空间沿场景图。\n衣帽间全身镜前，女一已换墨绿色收腰运动上衣与同色高腰喇叭长裤，左手拎瑜伽包、右手持水杯。广角倾向容纳全身与镜面边框，焦点在从头到脚的造型。她先把杯并到拎包的左手同侧，杯身贴包侧、手指带住，再用右手举手机自拍，手机遮住脸。手持站定时轻微浮动，亮相定格一拍后她随即转身走向客厅，镜头小幅跟随转身，在转身完成处结束。衣物轻响与脚步声同步。\n生成画面不添加画外字幕、片头片尾文字、说明字卡、时间码或其他叠加文字。正文中的秒数与切镜时间只控制动作和剪辑，不在画面显示。真实包装、商标和电视实体屏幕按参考及既定方案保留。不要生成背景音乐（BGM）。本段无对白、无旁白。",
+      "entry_state": "女一已换上墨绿色收腰运动上衣与同色系高腰喇叭长裤（LOOK-02），左手拎着瑜伽包、右手拿着水杯，走到镜前站位",
+      "exit_state": "全身造型定格一拍，她随即转身走向客厅普拉提区",
+      "production_notes": {
+        "segmentation_basis": "完整事件完成或导演原有换装/换场/明确时间省略，非按固定秒数或逐镜拆分。",
+        "postproduction_music": "后期全片单曲《Deja Vu (Sped Up Version)》持续铺底，末段定格收尾。",
+        "postproduction_text": [
+          {
+            "shot_id": "S02-001",
+            "texts": [
+              "pilates, grown-up edition",
+              "今日份普拉提穿搭"
+            ],
+            "timing_basis": "估时约5秒（STP-002 预算5秒，未实测）；亮相只停留一拍，不拖",
+            "display_timing": "沿 take.process 出现顺序，限定对应镜内，阅读停留沿导演预算，未有精确时码则留剪辑核定。",
+            "status": "planned"
+          }
+        ],
+        "outgoing_cut": {
+          "entry": "承接 S01 她起身离座，硬切到镜前已换好装（换装过程省略）",
+          "exit": "她转身后硬切普拉提区晨练段",
+          "trigger": "转身动作触发换场",
+          "information_handoff": "造型与装备（瑜伽包、水杯）一次交代清楚，动线指向晨练场"
+        },
+        "review_status": "text_self_checked",
+        "open_questions": [],
+        "postproduction_unspecified_item_labels": [
+          {
+            "shot_id": "S02-001",
+            "instruction": "她把水杯并到拎包的左手同侧（杯身贴着包侧、手指带住），右手举起手机对镜拍下全身；画面出英文小字 pilates, grown-up edition，配中文小字单品标注「今日份普拉提穿搭」",
+            "status": "原稿未给具体单品小字正文，保留原指令待协调方收口，不臆造品牌色号"
+          }
+        ],
+        "exact_required_visuals_in_body": []
+      }
+    },
+    {
+      "segment_id": "V03",
+      "title": "客厅晨练完整事件",
+      "scene_id": "S03",
+      "source_shot_ids": [
+        "S03-001",
+        "S03-002",
+        "S03-003",
+        "S03-004",
+        "S03-005"
+      ],
+      "source_paragraph_ids": [
+        "STP-003"
+      ],
+      "source_dialogue_ids": [],
+      "source_audio": [],
+      "generation_duration_seconds": 27,
+      "target_edit_duration_seconds": 27,
+      "parameters": {
+        "platform": "redframe",
+        "model": "seedance2.5",
+        "model_label": "Seedance 2.5",
+        "aspect_ratio": "9:16",
+        "resolution": "480p",
+        "duration_seconds": 27
+      },
+      "duration_basis": "按导演各镜 rhythm 预算逐项相加，非已测音视频或已核平台时长能力。",
+      "shot_durations": [
+        9,
+        5,
+        5,
+        5,
+        3
+      ],
+      "materials": [
+        {
+          "asset_id": "AST-CHAR-01",
+          "output_id": "NV1-LOOK-02",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-CHAR-01/AST-CHAR-01_outfit_39011c98_final_墨绿收腰运动上衣＋高腰喇叭长裤（普拉提套装） · 人物1×4_R01.png",
+          "sha256": "3b43b1f62ac618fb499c0773cf7f08ab26b96e12cef4dad8c253f94ee7bd5172",
+          "role": "identity",
+          "source_shot_ids": [
+            "S03-001",
+            "S03-002",
+            "S03-003",
+            "S03-004",
+            "S03-005"
+          ],
+          "purpose": "左格高清脸为唯一面部来源，右三格承担服装、比例与方向。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#2cbe72c95e5d4bc5",
+          "upload_status": "planned",
+          "reference": "@图片1"
+        },
+        {
+          "asset_id": "AST-LOC-03",
+          "output_id": "state0_view0",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-LOC-03/AST-LOC-03_state0_view0_任意视角_R01.png",
+          "sha256": "ca05b087fef79b69e6ccbf2fcb7c24fedf8d74d988528a9aacec33ef6269c0e2",
+          "role": "layout",
+          "source_shot_ids": [
+            "S03-001",
+            "S03-002",
+            "S03-003",
+            "S03-004",
+            "S03-005"
+          ],
+          "purpose": "本段场景布局与材质，按导演同侧机位拍摄。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#02c19f4b651044b7",
+          "upload_status": "planned",
+          "reference": "@图片2"
+        }
+      ],
+      "prompt": "@图片1用于左格高清脸为唯一面部来源，右三格承担服装、比例与方向。\n@图片2用于本段场景布局与材质，按导演同侧机位拍摄。\n\n女一面部沿用人物板左格，长红棕发，两枚黑色发夹分列头部两侧。\n晨间客厅，女一穿墨绿运动套装在普拉提器械床上就位，电视在她正前方纵深处播放跟练课程，阻力圈与绑带在器械侧。机位在床的侧前方，特写始终沿同侧观看，动作沿器械长轴往复。客厅侧窗日光均匀照明，空间和器械细节可读。先固定广角全景，电视、器械全长和她全身同框，焦点建立人与器械的关系，她按课程节奏慢而稳地练习。一组动作做到位、缓一缓后切手部特写，标准焦段保持手与器械的接触比例自然，关键动作处控稳。她扶过器械，把阻力圈摆正，手离开器械回到练习姿势时切脚部特写，脚掌、喇叭裤脚与踏板同框，焦点在接触面，完整看见一次推压与回收，脚留在踏板上。踩压回收完成后切双手调绑带的特写偏中景，地面为猫留出位置，先对准扣合处，她调好松紧时普通家猫从器械旁探头，又安静趴下，小幅补构图让手与猫都可读。绑带调好、猫趴下后回到段首同机位逻辑的固定中景偏全景，她由最后一组躺姿收尾坐起，坐稳缓神、呼吸平复处结束。猫留在器械旁地面，练习区畅通。保留轻微器械滑动、阻力圈放定、踏板、绑带扣合声。电视仅保留轻微课程环境底声，不增可辨新增台词。\n生成画面不添加画外字幕、片头片尾文字、说明字卡、时间码或其他叠加文字。正文中的秒数与切镜时间只控制动作和剪辑，不在画面显示。真实包装、商标和电视实体屏幕按参考及既定方案保留。不要生成背景音乐（BGM）。本段无对白、无旁白。",
+      "entry_state": "女一穿 LOOK-02 在器械床上就位，电视上播放着跟练课程，器械与阻力圈在侧",
+      "exit_state": "她坐稳，晨练段落收住，准备回卧室梳妆（换场省略）",
+      "production_notes": {
+        "segmentation_basis": "完整事件完成或导演原有换装/换场/明确时间省略，非按固定秒数或逐镜拆分。",
+        "postproduction_music": "后期全片单曲《Deja Vu (Sped Up Version)》持续铺底，末段定格收尾。",
+        "postproduction_text": [
+          {
+            "shot_id": "S03-001",
+            "texts": [
+              "asmr pilates morning routine",
+              "跟练晨间普拉提"
+            ],
+            "timing_basis": "估时约9秒（STP-003 预算27秒内分配，未实测）；跟练按课程节奏不加速",
+            "display_timing": "沿 take.process 出现顺序，限定对应镜内，阅读停留沿导演预算，未有精确时码则留剪辑核定。",
+            "status": "planned"
+          }
+        ],
+        "outgoing_cut": {
+          "entry": "承接绑带特写拉回中景",
+          "exit": "硬切 S01 梳妆段（STP-004）",
+          "trigger": "她坐稳的一拍触发换场",
+          "information_handoff": "晨练以完整环境收束，与段首全景呼应"
+        },
+        "review_status": "text_self_checked",
+        "open_questions": [],
+        "postproduction_unspecified_item_labels": [],
+        "exact_required_visuals_in_body": []
+      }
+    },
+    {
+      "segment_id": "V04",
+      "title": "梳妆至唇妆完成",
+      "scene_id": "S01",
+      "source_shot_ids": [
+        "S01-003",
+        "S01-004",
+        "S01-005",
+        "S01-006",
+        "S01-007"
+      ],
+      "source_paragraph_ids": [
+        "STP-004",
+        "STP-005"
+      ],
+      "source_dialogue_ids": [],
+      "source_audio": [],
+      "generation_duration_seconds": 42,
+      "target_edit_duration_seconds": 42,
+      "parameters": {
+        "platform": "redframe",
+        "model": "seedance2.5",
+        "model_label": "Seedance 2.5",
+        "aspect_ratio": "9:16",
+        "resolution": "480p",
+        "duration_seconds": 42
+      },
+      "duration_basis": "按导演各镜 rhythm 预算逐项相加，非已测音视频或已核平台时长能力。",
+      "shot_durations": [
+        7,
+        7,
+        8,
+        11,
+        9
+      ],
+      "materials": [
+        {
+          "asset_id": "AST-CHAR-01",
+          "output_id": "NV1-LOOK-01",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-CHAR-01/AST-CHAR-01_outfit_1f56e0f6_final_象牙白真丝吊带睡裙＋同系晨袍 · 人物1×4_R01.png",
+          "sha256": "1a3fe841775083ddb103340ee80ff980dada7084c293b0aa2cdd7b2427bc70cb",
+          "role": "identity",
+          "source_shot_ids": [
+            "S01-003",
+            "S01-004",
+            "S01-005",
+            "S01-006",
+            "S01-007"
+          ],
+          "purpose": "左格头部特写锁定人物面容、长红棕发及两枚黑夹分列两侧，后三格提供象牙白睡裙晨袍的服装结构。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#ad6e2a8aab46469c",
+          "upload_status": "planned",
+          "reference": "@图片1"
+        },
+        {
+          "asset_id": "AST-LOC-01",
+          "output_id": "state0_view0",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-LOC-01/AST-LOC-01_state0_view0_任意视角_R01.png",
+          "sha256": "d7852d359b96d8cabf611e0311507b877f2638b991fbacaa48f2979748630b4b",
+          "role": "layout",
+          "source_shot_ids": [
+            "S01-003",
+            "S01-004",
+            "S01-005",
+            "S01-006",
+            "S01-007"
+          ],
+          "purpose": "梳妆区空间与光向，以图示窗、门洞、梳妆镜和台面的关系为准。场景图仅提供环境布局，台面物件及面部状态随本段动作推进。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#ef4cf88bf9a34ccc",
+          "upload_status": "planned",
+          "reference": "@图片2"
+        }
+      ],
+      "prompt": "@图片1用于左格头部特写锁定人物面容、长红棕发及两枚黑夹分列两侧，后三格提供象牙白睡裙晨袍的服装结构。\n@图片2用于梳妆区空间与光向，以图示窗、门洞、梳妆镜和台面的关系为准。场景图仅提供环境布局，台面物件及面部状态随本段动作推进。\n\n女一面部沿用人物板左格，长红棕发，两枚黑色发夹分列头部两侧。清晨暖中性窗侧柔光，空间与光向沿用场景图：图示右侧窗、梳妆台左侧门洞、台面后方梳妆镜。女一面向镜面，台面近侧为操作区，远侧为陈列区。\n女一穿象牙白真丝睡裙与晨袍，素颜坐回梳妆台前，香水与日常美妆用品摆在桌上。手持近景偏特写，面部和双手同框，防晒用品在下缘可见，焦点跟住面部清洁的涂抹区域，关键动作控稳。她取防晒涂脸，双手均匀推开，放下防晒拿起气垫时切下一特写，粉扑少量多次轻拍气垫、拍匀底妆，手持随动作小幅补构图，焦点在粉扑与皮肤接触处。拿起腮红刷时切近景偏中景，扫腮红时焦点跟到面颊，随后镜头完全收稳，她端详镜中自己约两秒，焦点落在眼睛，面部与镜中像同框。她放下刷、伸手取口红时切面部特写，唇与镜面同框，日常色口红管身可见，沿唇线仔细涂匀收边。中长焦倾向压平面部透视并分离背景，焦点在唇部边缘，涂抹时稳住唇部构图，按真实速度给足过程。唇色涂匀、微微抿唇的切点后接近景转中景，她继续检查边缘，满意后合盖放下口红并起身。手持随起身上抬，焦点由唇部与眼睛转到起身动势，座位空出、口红留台面时结束，淡妆在此完成。保留瓶盖、粉扑轻拍、刷具轻放、口红盖合和衣物轻响。\n生成画面不添加画外字幕、片头片尾文字、说明字卡、时间码或其他叠加文字。正文中的秒数与切镜时间只控制动作和剪辑，不在画面显示。真实包装、商标和电视实体屏幕按参考及既定方案保留。不要生成背景音乐（BGM）。本段无对白、无旁白。",
+      "entry_state": "女一仍穿 LOOK-01 坐回梳妆台前，面部素颜，台面摆着香水与日常美妆用品",
+      "exit_state": "座位空出，口红留在台面，淡妆完成态确定",
+      "production_notes": {
+        "segmentation_basis": "完整事件完成或导演原有换装/换场/明确时间省略，非按固定秒数或逐镜拆分。",
+        "postproduction_music": "后期全片单曲《Deja Vu (Sped Up Version)》持续铺底，末段定格收尾。",
+        "postproduction_text": [
+          {
+            "shot_id": "S01-003",
+            "texts": [
+              "soft makeup routine",
+              "防晒先行，轻熟妆开场"
+            ],
+            "timing_basis": "估时约7秒（STP-004 预算22秒内分配，未实测）",
+            "display_timing": "沿 take.process 出现顺序，限定对应镜内，阅读停留沿导演预算，未有精确时码则留剪辑核定。",
+            "status": "planned"
+          },
+          {
+            "shot_id": "S01-006",
+            "texts": [
+              "lip finish",
+              "最后一步：唇色"
+            ],
+            "timing_basis": "估时约11秒（STP-005 预算20秒内分配，未实测）；涂抹按真实速度，不加速",
+            "display_timing": "沿 take.process 出现顺序，限定对应镜内，阅读停留沿导演预算，未有精确时码则留剪辑核定。",
+            "status": "planned"
+          }
+        ],
+        "outgoing_cut": {
+          "entry": "承接上镜抿唇",
+          "exit": "她离座后硬切镜区换装段",
+          "trigger": "起身离座触发换场",
+          "information_handoff": "淡妆完成态（S01-ST-01）在此锁定，后续产品段净脸将回到素颜"
+        },
+        "review_status": "needs_review",
+        "open_questions": [],
+        "postproduction_unspecified_item_labels": [],
+        "exact_required_visuals_in_body": []
+      }
+    },
+    {
+      "segment_id": "V05",
+      "title": "通勤针织造型完整展示",
+      "scene_id": "S02",
+      "source_shot_ids": [
+        "S02-002",
+        "S02-003"
+      ],
+      "source_paragraph_ids": [
+        "STP-006"
+      ],
+      "source_dialogue_ids": [],
+      "source_audio": [],
+      "generation_duration_seconds": 15,
+      "target_edit_duration_seconds": 15,
+      "parameters": {
+        "platform": "redframe",
+        "model": "seedance2.5",
+        "model_label": "Seedance 2.5",
+        "aspect_ratio": "9:16",
+        "resolution": "480p",
+        "duration_seconds": 15
+      },
+      "duration_basis": "按导演各镜 rhythm 预算逐项相加，非已测音视频或已核平台时长能力。",
+      "shot_durations": [
+        9,
+        6
+      ],
+      "materials": [
+        {
+          "asset_id": "AST-CHAR-01",
+          "output_id": "NV1-LOOK-03",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-CHAR-01/AST-CHAR-01_outfit_e476d73a_final_米色针织套装裙＋裸色低跟鞋 · 人物1×4_R01.png",
+          "sha256": "cdc0e3b5590d9489f8279c14a633d3e4081eae7037a8006fa8d487d55babfc77",
+          "role": "identity",
+          "source_shot_ids": [
+            "S02-002",
+            "S02-003"
+          ],
+          "purpose": "左格高清脸为唯一面部来源，右三格承担服装、比例与方向。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#4137042a4a35429f",
+          "upload_status": "planned",
+          "reference": "@图片1"
+        },
+        {
+          "asset_id": "AST-LOC-02",
+          "output_id": "state0_view0",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-LOC-02/AST-LOC-02_state0_view0_任意视角_R01.png",
+          "sha256": "947e9b3ed2bdb2b47a0cdd18809b91efd85dd41eea647f6c74139ef7c8b0a5a0",
+          "role": "layout",
+          "source_shot_ids": [
+            "S02-002",
+            "S02-003"
+          ],
+          "purpose": "本段场景布局与材质，按导演同侧机位拍摄。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#bd904b6003df47d8",
+          "upload_status": "planned",
+          "reference": "@图片2"
+        }
+      ],
+      "prompt": "@图片1用于左格高清脸为唯一面部来源，右三格承担服装、比例与方向。\n@图片2用于本段场景布局与材质，按导演同侧机位拍摄。\n\n女一面部沿用人物板左格，长红棕发，两枚黑色发夹分列头部两侧。镜区窗侧柔光与暖中性色保持，镜面正前站位与衣柜空间沿场景图。\n女一已穿米色针织套装裙与裸色低跟鞋站到衣帽间镜前，延续淡妆。广角全身镜自拍包含鞋与镜边，焦点在整体轮廓和裙摆垂感，手持轻微浮动，站定后收稳。她举手机拍下全身，微调站姿，裙摆自然垂下。亮相完成、放低手机准备转身处切镜前中景偏全身，保留从上半身到裙摆的范围，侧身小半圈时手持小幅补构图，焦点读清针织纹理与裙摆垂线。她的手沿腰线轻理裙身，然后回正站住，第一套展示在此完成。保留衣物摩擦声。\n生成画面不添加画外字幕、片头片尾文字、说明字卡、时间码或其他叠加文字。正文中的秒数与切镜时间只控制动作和剪辑，不在画面显示。真实包装、商标和电视实体屏幕按参考及既定方案保留。不要生成背景音乐（BGM）。本段无对白、无旁白。",
+      "entry_state": "女一已换上米色针织套装裙与裸色低跟鞋（LOOK-03），站到镜前（换装过程以切镜省略）",
+      "exit_state": "她停住回到正面，准备换第二套（切镜省略换装）",
+      "production_notes": {
+        "segmentation_basis": "完整事件完成或导演原有换装/换场/明确时间省略，非按固定秒数或逐镜拆分。",
+        "postproduction_music": "后期全片单曲《Deja Vu (Sped Up Version)》持续铺底，末段定格收尾。",
+        "postproduction_text": [
+          {
+            "shot_id": "S02-002",
+            "texts": [
+              "LOOK 1 · 通勤针织套装裙"
+            ],
+            "timing_basis": "估时约9秒（STP-006 预算31秒内分配，未实测）",
+            "display_timing": "沿 take.process 出现顺序，限定对应镜内，阅读停留沿导演预算，未有精确时码则留剪辑核定。",
+            "status": "planned"
+          }
+        ],
+        "outgoing_cut": {
+          "entry": "承接上镜转身收紧",
+          "exit": "硬切第二套全身镜（换装省略）",
+          "trigger": "她停住的一拍触发换装切",
+          "information_handoff": "第一套阅读闭合：整体加细节都已给到"
+        },
+        "review_status": "text_self_checked",
+        "open_questions": [],
+        "postproduction_unspecified_item_labels": [
+          {
+            "shot_id": "S02-002",
+            "instruction": "她举手机对镜拍下全身，微微调整站姿让裙摆垂感呈现；画面出字幕「LOOK 1 · 通勤针织套装裙」，衣服上带中文小字单品标注",
+            "status": "原稿未给具体单品小字正文，保留原指令待协调方收口，不臆造品牌色号"
+          }
+        ],
+        "exact_required_visuals_in_body": []
+      }
+    },
+    {
+      "segment_id": "V06",
+      "title": "黑色西装连衣裙展示",
+      "scene_id": "S02",
+      "source_shot_ids": [
+        "S02-004",
+        "S02-005"
+      ],
+      "source_paragraph_ids": [
+        "STP-006"
+      ],
+      "source_dialogue_ids": [],
+      "source_audio": [],
+      "generation_duration_seconds": 16,
+      "target_edit_duration_seconds": 16,
+      "parameters": {
+        "platform": "redframe",
+        "model": "seedance2.5",
+        "model_label": "Seedance 2.5",
+        "aspect_ratio": "9:16",
+        "resolution": "480p",
+        "duration_seconds": 16
+      },
+      "duration_basis": "按导演各镜 rhythm 预算逐项相加，非已测音视频或已核平台时长能力。",
+      "shot_durations": [
+        9,
+        7
+      ],
+      "materials": [
+        {
+          "asset_id": "AST-CHAR-01",
+          "output_id": "NV1-LOOK-04",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-CHAR-01/AST-CHAR-01_outfit_266fdca5_final_黑色缎面吊带上衣＋高腰包臀半身裙＋黑丝＋细高跟 · 人物1×4_R01.png",
+          "sha256": "1c7d691b53c20a29d73502f649f11d3708016caf831f7ffcdaeae7226aaf7627",
+          "role": "identity",
+          "source_shot_ids": [
+            "S02-004",
+            "S02-005"
+          ],
+          "purpose": "左格高清脸为唯一面部来源，右三格承担服装、比例与方向。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#66822efe887544e9",
+          "upload_status": "planned",
+          "reference": "@图片1"
+        },
+        {
+          "asset_id": "AST-LOC-02",
+          "output_id": "state0_view0",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-LOC-02/AST-LOC-02_state0_view0_任意视角_R01.png",
+          "sha256": "947e9b3ed2bdb2b47a0cdd18809b91efd85dd41eea647f6c74139ef7c8b0a5a0",
+          "role": "layout",
+          "source_shot_ids": [
+            "S02-004",
+            "S02-005"
+          ],
+          "purpose": "本段场景布局与材质，按导演同侧机位拍摄。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#bd904b6003df47d8",
+          "upload_status": "planned",
+          "reference": "@图片2"
+        }
+      ],
+      "prompt": "@图片1用于左格高清脸为唯一面部来源，右三格承担服装、比例与方向。\n@图片2用于本段场景布局与材质，按导演同侧机位拍摄。\n\n女一面部沿用人物板左格，长红棕发，两枚黑色发夹分列头部两侧。镜区窗侧柔光与暖中性色保持，镜面正前站位与衣柜空间沿场景图。\n衣帽间镜前，女一换成黑色收腰西装连衣裙与黑色尖头高跟，长袖翻领、腰部细金属扣带与裙身直顺轮廓按服装图。广角倾向全身镜自拍容纳从头到鞋的完整造型，焦点在全身比例与裙身线条，站定后控稳。她举手机拍下全身，亮相后侧身准备看线条，在侧身动作触发点切镜前中景偏全身，裙摆与高跟同框。手持随侧身小幅补构图再收稳，焦点在裙摆垂线和腿部比例，她轻调站姿后停住，完成第二套展示。保留衣物轻响与高跟鞋轻踏声。\n生成画面不添加画外字幕、片头片尾文字、说明字卡、时间码或其他叠加文字。正文中的秒数与切镜时间只控制动作和剪辑，不在画面显示。真实包装、商标和电视实体屏幕按参考及既定方案保留。不要生成背景音乐（BGM）。本段无对白、无旁白。",
+      "entry_state": "女一穿黑色收腰西装连衣裙与黑色尖头高跟站到镜前。",
+      "exit_state": "女一仍穿黑色西装连衣裙，侧身展示后停住。",
+      "production_notes": {
+        "segmentation_basis": "完整事件完成或导演原有换装/换场/明确时间省略，非按固定秒数或逐镜拆分。",
+        "postproduction_music": "后期全片单曲《Deja Vu (Sped Up Version)》持续铺底，末段定格收尾。",
+        "postproduction_text": [
+          {
+            "shot_id": "S02-004",
+            "texts": [
+              "LOOK 2 · 黑丝 × 包臀裙"
+            ],
+            "timing_basis": "估时约9秒（STP-006 预算内分配，未实测）",
+            "display_timing": "沿 take.process 出现顺序，限定对应镜内，阅读停留沿导演预算，未有精确时码则留剪辑核定。",
+            "status": "requires_upstream_correction"
+          }
+        ],
+        "outgoing_cut": {
+          "entry": "承接上镜侧身",
+          "exit": "硬切配饰段第一身全身镜",
+          "trigger": "停住的一拍触发段落切换",
+          "information_handoff": "两套造型对照完成：稳重与利落，换装节奏对齐对标的连换结构"
+        },
+        "review_status": "needs_review",
+        "open_questions": [],
+        "postproduction_unspecified_item_labels": [],
+        "exact_required_visuals_in_body": []
+      },
+      "same_scene_split": {
+        "from_segment_id": "V05",
+        "reason": "event_complete",
+        "evidence": "导演已有事件完成与换装/时间省略切点，按原镜头连续承载。",
+        "source_boundary": {
+          "shot_id": "S02-004",
+          "field": "cut.entry",
+          "quote": "承接上镜换装切入"
+        }
+      },
+      "physical_continuity": {
+        "from_segment_id": "V05",
+        "permitted_change": "仅沿导演换装、省略时间或进入下一完整步骤；动作前后态由来源约束。",
+        "visibility": {
+          "status": "no_visual_needed",
+          "previous_state": "她停住回到正面，准备换第二套（切镜省略换装）",
+          "current_state": "女一已换上黑色缎面吊带上衣、高腰包臀半身裙、黑色丝袜与细高跟（LOOK-04），站到镜前",
+          "basis": "导演已有自然事件边界，文字候选承接；活动状态图不足另列未决，不声明原生状态控制。"
+        }
+      }
+    },
+    {
+      "segment_id": "V07",
+      "title": "焦糖搭配与配饰分享",
+      "scene_id": "S02",
+      "source_shot_ids": [
+        "S02-006",
+        "S02-007",
+        "S02-008"
+      ],
+      "source_paragraph_ids": [
+        "STP-007"
+      ],
+      "source_dialogue_ids": [],
+      "source_audio": [],
+      "generation_duration_seconds": 26,
+      "target_edit_duration_seconds": 26,
+      "parameters": {
+        "platform": "redframe",
+        "model": "seedance2.5",
+        "model_label": "Seedance 2.5",
+        "aspect_ratio": "9:16",
+        "resolution": "480p",
+        "duration_seconds": 26
+      },
+      "duration_basis": "按导演各镜 rhythm 预算逐项相加，非已测音视频或已核平台时长能力。",
+      "shot_durations": [
+        11,
+        8,
+        7
+      ],
+      "materials": [
+        {
+          "asset_id": "AST-CHAR-01",
+          "output_id": "NV1-LOOK-05",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-CHAR-01/AST-CHAR-01_outfit_885e6157_final_焦糖色针织开衫＋灰褐阔腿长裤 · 人物1×4_R01.png",
+          "sha256": "23bef04d0e2897bc4c3a62e0071ee9d2fdcad16680b333056371d6658aaaf406",
+          "role": "identity",
+          "source_shot_ids": [
+            "S02-006",
+            "S02-007",
+            "S02-008"
+          ],
+          "purpose": "左格高清脸为唯一面部来源，右三格承担服装、比例与方向。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#80ac04146f894ffc",
+          "upload_status": "planned",
+          "reference": "@图片1"
+        },
+        {
+          "asset_id": "AST-LOC-02",
+          "output_id": "state0_view0",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-LOC-02/AST-LOC-02_state0_view0_任意视角_R01.png",
+          "sha256": "947e9b3ed2bdb2b47a0cdd18809b91efd85dd41eea647f6c74139ef7c8b0a5a0",
+          "role": "layout",
+          "source_shot_ids": [
+            "S02-006",
+            "S02-007",
+            "S02-008"
+          ],
+          "purpose": "本段场景布局与材质，按导演同侧机位拍摄。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#bd904b6003df47d8",
+          "upload_status": "planned",
+          "reference": "@图片2"
+        },
+        {
+          "asset_id": "AST-PROP-01",
+          "output_id": "state1_view0",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-PROP-01/AST-PROP-01_state1_view0_正面、左侧、背面、俯视四视图_R01.png",
+          "sha256": "d473e2c50efc9e262f50bc4ea8574f37339dbbbcff2dd349af1b111ca3f1b793",
+          "role": "appearance",
+          "source_shot_ids": [
+            "S02-006",
+            "S02-007",
+            "S02-008"
+          ],
+          "purpose": "同一焦糖棕皮质梯形手提包、双提带、小金属件；四视图只承担物件外观。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#2b9c5b4c71b24aee",
+          "upload_status": "planned",
+          "reference": "@图片3"
+        }
+      ],
+      "prompt": "@图片1用于左格高清脸为唯一面部来源，右三格承担服装、比例与方向。\n@图片2用于本段场景布局与材质，按导演同侧机位拍摄。\n@图片3用于同一焦糖棕皮质梯形手提包、双提带、小金属件；四视图只承担物件外观。\n\n女一面部沿用人物板左格，长红棕发，两枚黑色发夹分列头部两侧。镜区窗侧柔光与暖中性色保持，镜面正前站位与衣柜空间沿场景图。\n女一已换焦糖针织开衫与灰褐阔腿长裤，拎着先前拆出的同一只焦糖棕手提包站在衣帽间镜前。广角全身自拍让包与全身同框，焦点在搭配色系和手提包，拎包展示时收稳，给足包形与提带的识别停留。全身展示结束，她把包换到臂弯，腾出手抬腕靠近镜面，在抬腕处切手腕特写。标准焦段保持腕部比例自然，镜面虚化，镜头随手腕靠近小幅后退补构图，转腕时控稳，焦点落在日常细水晶手链的链身与手腕，链身随轻转反光。展示完成她放下手，转向耳饰，抬手向耳侧时切镜前近景偏中景，手持转为稳定的近身旁观视角，面部侧面、手部佩戴动作与镜中像均可读。焦点在耳侧动作和确认表情，她对镜试戴耳饰，戴好后侧头看效果，随后转身，配饰事件结束。包在臂弯的状态沿用至画幅外，不加放包事件。保留衣物与提带轻响。\n生成画面不添加画外字幕、片头片尾文字、说明字卡、时间码或其他叠加文字。正文中的秒数与切镜时间只控制动作和剪辑，不在画面显示。真实包装、商标和电视实体屏幕按参考及既定方案保留。不要生成背景音乐（BGM）。本段无对白、无旁白。",
+      "entry_state": "女一已换上焦糖色针织开衫与灰褐色阔腿长裤（LOOK-05），手里拎着开场拆出的同一只焦糖棕手提包，站到镜前",
+      "exit_state": "耳饰戴好，她转身去换最后一身晚间造型（切镜省略换装）",
+      "production_notes": {
+        "segmentation_basis": "完整事件完成或导演原有换装/换场/明确时间省略，非按固定秒数或逐镜拆分。",
+        "postproduction_music": "后期全片单曲《Deja Vu (Sped Up Version)》持续铺底，末段定格收尾。",
+        "postproduction_text": [
+          {
+            "shot_id": "S02-006",
+            "texts": [
+              "焦糖色系 · 度假感的秋日滤镜"
+            ],
+            "timing_basis": "估时约11秒（STP-007 预算35秒内分配，未实测）；包的识别停留给足",
+            "display_timing": "沿 take.process 出现顺序，限定对应镜内，阅读停留沿导演预算，未有精确时码则留剪辑核定。",
+            "status": "planned"
+          }
+        ],
+        "outgoing_cut": {
+          "entry": "承接上镜她抬手向耳侧",
+          "exit": "硬切晚间造型全身镜",
+          "trigger": "她转身触发换装切",
+          "information_handoff": "配饰小件展示完成，段落向晚间造型收束"
+        },
+        "review_status": "text_self_checked",
+        "open_questions": [],
+        "postproduction_unspecified_item_labels": [
+          {
+            "shot_id": "S02-007",
+            "instruction": "她把手腕凑近镜面展示手链，轻轻转腕让链身反光；画面只作单品小字标注",
+            "status": "原稿未给具体单品小字正文，保留原指令待协调方收口，不臆造品牌色号"
+          },
+          {
+            "shot_id": "S02-008",
+            "instruction": "她对着镜子试戴耳饰，戴好后侧头看了看效果；画面只作单品小字标注",
+            "status": "原稿未给具体单品小字正文，保留原指令待协调方收口，不臆造品牌色号"
+          }
+        ],
+        "exact_required_visuals_in_body": []
+      },
+      "same_scene_split": {
+        "from_segment_id": "V06",
+        "reason": "event_complete",
+        "evidence": "导演已有事件完成与换装/时间省略切点，按原镜头连续承载。",
+        "source_boundary": {
+          "shot_id": "S02-006",
+          "field": "cut.entry",
+          "quote": "配饰段首镜，由换装段硬切到镜前已换装并拎包（换装省略）"
+        }
+      },
+      "physical_continuity": {
+        "from_segment_id": "V06",
+        "permitted_change": "仅沿导演换装、省略时间或进入下一完整步骤；动作前后态由来源约束。",
+        "visibility": {
+          "status": "no_visual_needed",
+          "previous_state": "女一仍穿黑色西装连衣裙，侧身展示后停住。",
+          "current_state": "女一已换上焦糖色针织开衫与灰褐色阔腿长裤（LOOK-05），手里拎着开场拆出的同一只焦糖棕手提包，站到镜前",
+          "basis": "导演已有自然事件边界，文字候选承接；活动状态图不足另列未决，不声明原生状态控制。"
+        }
+      }
+    },
+    {
+      "segment_id": "V08",
+      "title": "缎面晚间造型亮相",
+      "scene_id": "S02",
+      "source_shot_ids": [
+        "S02-009"
+      ],
+      "source_paragraph_ids": [
+        "STP-007"
+      ],
+      "source_dialogue_ids": [],
+      "source_audio": [],
+      "generation_duration_seconds": 9,
+      "target_edit_duration_seconds": 9,
+      "parameters": {
+        "platform": "redframe",
+        "model": "seedance2.5",
+        "model_label": "Seedance 2.5",
+        "aspect_ratio": "9:16",
+        "resolution": "480p",
+        "duration_seconds": 9
+      },
+      "duration_basis": "按导演各镜 rhythm 预算逐项相加，非已测音视频或已核平台时长能力。",
+      "shot_durations": [
+        9
+      ],
+      "materials": [
+        {
+          "asset_id": "AST-CHAR-01",
+          "output_id": "NV1-LOOK-06",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-CHAR-01/AST-CHAR-01_outfit_2cf2cfe7_final_深色缎面吊带长裙＋细带高跟（收尾加薄针织开衫） · 人物1×4_R01.png",
+          "sha256": "0bfa8320b0dda6ec652bc7f40811fa56ffd0e9e54179eb80814d8cc710035101",
+          "role": "identity",
+          "source_shot_ids": [
+            "S02-009"
+          ],
+          "purpose": "左格高清脸为唯一面部来源，右三格承担服装、比例与方向。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#aab67697697e485c",
+          "upload_status": "planned",
+          "reference": "@图片1"
+        },
+        {
+          "asset_id": "AST-LOC-02",
+          "output_id": "state0_view0",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-LOC-02/AST-LOC-02_state0_view0_任意视角_R01.png",
+          "sha256": "947e9b3ed2bdb2b47a0cdd18809b91efd85dd41eea647f6c74139ef7c8b0a5a0",
+          "role": "layout",
+          "source_shot_ids": [
+            "S02-009"
+          ],
+          "purpose": "本段场景布局与材质，按导演同侧机位拍摄。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#bd904b6003df47d8",
+          "upload_status": "planned",
+          "reference": "@图片2"
+        }
+      ],
+      "prompt": "@图片1用于左格高清脸为唯一面部来源，右三格承担服装、比例与方向。\n@图片2用于本段场景布局与材质，按导演同侧机位拍摄。\n\n女一面部沿用人物板左格，长红棕发，两枚黑色发夹分列头部两侧。镜区窗侧柔光与暖中性色保持，镜面正前站位与衣柜空间沿场景图。\n女一已换深蓝黑色缎面吊带长裙与细带高跟站回衣帽间镜前。广角全身镜自拍保留全身、细带高跟和镜边，焦点在轮廓与缎面垂感。她举手机拍下全身，轻轻转身使裙摆流动一下，手持轻微浮动，站定后完全收稳并停留，晚间造型定格时结束。保留衣物轻响与鞋跟轻踏声。\n生成画面不添加画外字幕、片头片尾文字、说明字卡、时间码或其他叠加文字。正文中的秒数与切镜时间只控制动作和剪辑，不在画面显示。真实包装、商标和电视实体屏幕按参考及既定方案保留。不要生成背景音乐（BGM）。本段无对白、无旁白。",
+      "entry_state": "女一已换上深色缎面吊带长裙与细带高跟（LOOK-06），站到镜前",
+      "exit_state": "晚间造型定格，配饰段收住；故事切回梳妆区护理段（其间她回房换护理睡衣，省略）",
+      "production_notes": {
+        "segmentation_basis": "完整事件完成或导演原有换装/换场/明确时间省略，非按固定秒数或逐镜拆分。",
+        "postproduction_music": "后期全片单曲《Deja Vu (Sped Up Version)》持续铺底，末段定格收尾。",
+        "postproduction_text": [],
+        "outgoing_cut": {
+          "entry": "承接上镜换装切入",
+          "exit": "硬切 S01 护理段（STP-008）",
+          "trigger": "定格停留后触发段落切换",
+          "information_handoff": "本造型将在片尾 STP-012 原样复现，先在此把识别点种足"
+        },
+        "review_status": "text_self_checked",
+        "open_questions": [],
+        "postproduction_unspecified_item_labels": [],
+        "exact_required_visuals_in_body": []
+      },
+      "same_scene_split": {
+        "from_segment_id": "V07",
+        "reason": "time_ellipsis",
+        "evidence": "导演已有事件完成与换装/时间省略切点，按原镜头连续承载。",
+        "source_boundary": {
+          "shot_id": "S02-009",
+          "field": "cut.entry",
+          "quote": "承接上镜换装切入"
+        }
+      },
+      "physical_continuity": {
+        "from_segment_id": "V07",
+        "permitted_change": "仅沿导演换装、省略时间或进入下一完整步骤；动作前后态由来源约束。",
+        "visibility": {
+          "status": "no_visual_needed",
+          "previous_state": "耳饰戴好，她转身去换最后一身晚间造型（切镜省略换装）",
+          "current_state": "女一已换上深色缎面吊带长裙与细带高跟（LOOK-06），站到镜前",
+          "basis": "导演已有自然事件边界，文字候选承接；活动状态图不足另列未决，不声明原生状态控制。"
+        }
+      }
+    },
+    {
+      "segment_id": "V09",
+      "title": "礼盒亮相及活动口播",
+      "scene_id": "S01",
+      "source_shot_ids": [
+        "S01-008",
+        "S01-009"
+      ],
+      "source_paragraph_ids": [
+        "STP-008"
+      ],
+      "source_dialogue_ids": [
+        "DLG-001"
+      ],
+      "source_audio": [
+        {
+          "dialogue_id": "DLG-001",
+          "speaker_id": "NV1",
+          "text": "买正装送正装，连调膜碗刷也是送给你的",
+          "presentation": "SYNC",
+          "delivery": "对着支架手机简单自然地说，像日常分享，不叫卖；语速平稳，一句说完，同步字幕呈现",
+          "shot_id": "S01-009"
+        }
+      ],
+      "generation_duration_seconds": 12,
+      "target_edit_duration_seconds": 12,
+      "parameters": {
+        "platform": "redframe",
+        "model": "seedance2.5",
+        "model_label": "Seedance 2.5",
+        "aspect_ratio": "9:16",
+        "resolution": "480p",
+        "duration_seconds": 12
+      },
+      "duration_basis": "按导演各镜 rhythm 预算逐项相加，非已测音视频或已核平台时长能力。",
+      "shot_durations": [
+        6,
+        6
+      ],
+      "materials": [
+        {
+          "asset_id": "AST-CHAR-01",
+          "output_id": "NV1-LOOK-07",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-CHAR-01/AST-CHAR-01_outfit_a0d9f1aa_final_雾蓝条纹衬衫式睡衣套装 · 人物1×4_R01.png",
+          "sha256": "baeb57398fd0dd3539aef3420a16fc6de3a346dc1b6aceb805e71fc666f5a906",
+          "role": "identity",
+          "source_shot_ids": [
+            "S01-008",
+            "S01-009"
+          ],
+          "purpose": "左格高清脸为唯一面部来源，右三格承担服装、比例与方向。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#89e6afd8af3f439e",
+          "upload_status": "planned",
+          "reference": "@图片1"
+        },
+        {
+          "asset_id": "AST-PROD-01",
+          "output_id": "state0_view0",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-PROD-01/AST-PROD-01_state0_view0_主图_R01.png",
+          "sha256": "5068c644d0e9adb0e67e689767988491276f4031602f23d561048202bc89713b",
+          "role": "appearance",
+          "source_shot_ids": [
+            "S01-008",
+            "S01-009"
+          ],
+          "purpose": "礼盒正面品牌大字、中央金徽与盒体真实外观。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#27d7c94ff8d04c5b",
+          "upload_status": "planned",
+          "reference": "@图片2"
+        },
+        {
+          "asset_id": "AST-PROD-01",
+          "output_id": "state1_view0",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-PROD-01/AST-PROD-01_state1_view0_主图_R01.png",
+          "sha256": "cada2ea9093aff8ba3f884d9ba7c89c4f04f72b50aaccb346274846cf2ccb807",
+          "role": "appearance",
+          "source_shot_ids": [
+            "S01-008",
+            "S01-009"
+          ],
+          "purpose": "白A、金B软管包装外观与正面印刷。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#7cfb08dc71f7438a",
+          "upload_status": "planned",
+          "reference": "@图片3"
+        },
+        {
+          "asset_id": "AST-PROD-01",
+          "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/01_开盒.mp4",
+          "sha256": "00ad6324e477d1f390560bfb46e3e4caad9643738f52e51b44ced10ea8e69a86",
+          "role": "action",
+          "source_shot_ids": [
+            "S01-008"
+          ],
+          "action_references": [
+            {
+              "shot_id": "S01-008",
+              "action_key": "开盒"
+            }
+          ],
+          "purpose": "仅参考该步骤的接触、方向与动作范围。人物、服装、背景与音轨均由本段声画安排控制。",
+          "reference_pack": {
+            "product_id": "creator-polishing-mask-2",
+            "revision": "R04"
+          },
+          "upload_status": "planned",
+          "reference": "@视频4",
+          "kind": "video"
+        },
+        {
+          "asset_id": "AST-LOC-01",
+          "output_id": "state1_view0",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-LOC-01/AST-LOC-01_state1_view0_任意视角_R01.png",
+          "sha256": "d7852d359b96d8cabf611e0311507b877f2638b991fbacaa48f2979748630b4b",
+          "role": "layout",
+          "source_shot_ids": [
+            "S01-008",
+            "S01-009"
+          ],
+          "purpose": "梳妆区空间与光向，以图示窗、门洞、梳妆镜和台面的关系为准。场景图仅提供环境布局，台面物件及面部状态随本段动作推进。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#712db047c3f246fe",
+          "upload_status": "planned",
+          "reference": "@图片5"
+        }
+      ],
+      "prompt": "@图片1用于左格高清脸为唯一面部来源，右三格承担服装、比例与方向。\n@图片2用于礼盒正面品牌大字、中央金徽与盒体真实外观。\n@图片3用于白A、金B软管包装外观与正面印刷。\n@视频4用于仅参考该步骤的接触、方向与动作范围。人物、服装、背景与音轨均由本段声画安排控制。\n@图片5用于梳妆区空间与光向，以图示窗、门洞、梳妆镜和台面的关系为准。场景图仅提供环境布局，台面物件及面部状态随本段动作推进。\n\n女一面部沿人物板左格，长红棕发，两枚黑色发夹分列头部两侧。清晨暖中性窗侧柔光，空间与光向沿用场景图：图示右侧窗、梳妆台左侧门洞、台面后方梳妆镜。女一面向镜面，台面近侧为操作区，远侧为陈列区。\n护理时段，女一穿雾蓝细条纹衬衫睡衣，淡妆坐在梳妆台前，礼盒闭合放在中央，支架手机在台面右前方。标准焦段保持包装几何自然，手持中景偏特写让礼盒居中，双手与上半身入画。稳住盒身，给正面品牌与金徽约两秒识别，焦点随开盒由正面转到盒内，小幅下压补构图。\n礼盒正面大字「造物者 CREATOR」与中央椭圆金徽完整可读，开盒后上排白A七支、下排香槟金B七支排列可见\n盒盖完全打开、双剂排列读清后切近景，面部与上半身朝台面右前方支架手机，开盒礼盒留在画面下缘。模拟稳定的支架手机视角，焦点在脸与口型。女一坐正，以平稳自然的日常分享语气说：“买正装送正装，连调膜碗刷也是送给你的”。原句只说一次，约四至五秒，前后留气口。说完她垂手转向礼盒，仍未取管，在这里结束。保留盒盖开启轻响。\n生成画面不添加画外字幕、片头片尾文字、说明字卡、时间码或其他叠加文字。正文中的秒数与切镜时间只控制动作和剪辑，不在画面显示。真实包装、商标和电视实体屏幕按参考及既定方案保留。不要生成背景音乐（BGM）。",
+      "entry_state": "女一已换雾蓝条纹衬衫睡衣（LOOK-07）、淡妆状态，坐在梳妆台前，礼盒放在台面中央尚未打开",
+      "exit_state": "话说完，她垂手转向礼盒，准备动手备膜",
+      "production_notes": {
+        "segmentation_basis": "完整事件完成或导演原有换装/换场/明确时间省略，非按固定秒数或逐镜拆分。",
+        "postproduction_music": "后期全片单曲《Deja Vu (Sped Up Version)》持续铺底，末段定格收尾。",
+        "postproduction_text": [
+          {
+            "shot_id": "S01-009",
+            "texts": [
+              "买正装送正装，连调膜碗刷也是送给你的"
+            ],
+            "timing_basis": "估时约6秒（STP-008 预算余下，未实测）；原句18字按日常分享语速约4–5秒，留前后气口",
+            "display_timing": "沿 take.process 出现顺序，限定对应镜内，阅读停留沿导演预算，未有精确时码则留剪辑核定。",
+            "status": "planned"
+          }
+        ],
+        "outgoing_cut": {
+          "entry": "承接上镜开盒完成",
+          "exit": "她伸手向礼盒取管切备膜段（先经净脸镜）",
+          "trigger": "口播结束、动作转向产品触发",
+          "information_handoff": "活动信息以口播加字幕双通道交代清楚；此后全片回到无口播沉浸式"
+        },
+        "review_status": "needs_review",
+        "open_questions": [],
+        "postproduction_unspecified_item_labels": [],
+        "exact_required_visuals_in_body": [
+          {
+            "shot_id": "S01-008",
+            "prompt_clause": "礼盒正面大字「造物者 CREATOR」与中央椭圆金徽完整可读，开盒后上排白A七支、下排香槟金B七支排列可见"
+          }
+        ]
+      }
+    },
+    {
+      "segment_id": "V10",
+      "title": "净脸与双剂备膜",
+      "scene_id": "S01",
+      "source_shot_ids": [
+        "S01-010",
+        "S01-011",
+        "S01-012",
+        "S01-013",
+        "S01-014"
+      ],
+      "source_paragraph_ids": [
+        "STP-009"
+      ],
+      "source_dialogue_ids": [],
+      "source_audio": [],
+      "generation_duration_seconds": 16,
+      "target_edit_duration_seconds": 16,
+      "parameters": {
+        "platform": "redframe",
+        "model": "seedance2.5",
+        "model_label": "Seedance 2.5",
+        "aspect_ratio": "9:16",
+        "resolution": "480p",
+        "duration_seconds": 16
+      },
+      "duration_basis": "按导演各镜 rhythm 预算逐项相加，非已测音视频或已核平台时长能力。",
+      "shot_durations": [
+        3,
+        4,
+        4,
+        3,
+        2
+      ],
+      "materials": [
+        {
+          "asset_id": "AST-CHAR-01",
+          "output_id": "NV1-LOOK-07",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-CHAR-01/AST-CHAR-01_outfit_a0d9f1aa_final_雾蓝条纹衬衫式睡衣套装 · 人物1×4_R01.png",
+          "sha256": "baeb57398fd0dd3539aef3420a16fc6de3a346dc1b6aceb805e71fc666f5a906",
+          "role": "identity",
+          "source_shot_ids": [
+            "S01-010",
+            "S01-011",
+            "S01-012",
+            "S01-013",
+            "S01-014"
+          ],
+          "purpose": "左格高清脸为唯一面部来源，右三格承担服装、比例与方向。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#89e6afd8af3f439e",
+          "upload_status": "planned",
+          "reference": "@图片1"
+        },
+        {
+          "asset_id": "AST-PROD-01",
+          "output_id": "state1_view0",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-PROD-01/AST-PROD-01_state1_view0_主图_R01.png",
+          "sha256": "cada2ea9093aff8ba3f884d9ba7c89c4f04f72b50aaccb346274846cf2ccb807",
+          "role": "appearance",
+          "source_shot_ids": [
+            "S01-010",
+            "S01-011",
+            "S01-012",
+            "S01-013",
+            "S01-014"
+          ],
+          "purpose": "白A、金B软管包装外观与正面印刷。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#7cfb08dc71f7438a",
+          "upload_status": "planned",
+          "reference": "@图片2"
+        },
+        {
+          "asset_id": "AST-PROD-01",
+          "output_id": "state2_view0",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-PROD-01/AST-PROD-01_state2_view0_主图_R01.png",
+          "sha256": "6074e2f1ed5113cf8cbbb6755d545330fe9afa9ed4f5b3551dea1e000763b4ac",
+          "role": "appearance",
+          "source_shot_ids": [
+            "S01-010",
+            "S01-011",
+            "S01-012",
+            "S01-013",
+            "S01-014"
+          ],
+          "purpose": "同一横纹透明半球碗外观，不承担已挤料或台面状态。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#1bb56647df854edf",
+          "upload_status": "planned",
+          "reference": "@图片3"
+        },
+        {
+          "asset_id": "AST-PROD-01",
+          "output_id": "state3_view0",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-PROD-01/AST-PROD-01_state3_view0_主图_R01.png",
+          "sha256": "fbc347d4ce569c267d142d84bbe8576fa205db8c55bb713aa912eb1fc6e3a429",
+          "role": "appearance",
+          "source_shot_ids": [
+            "S01-010",
+            "S01-011",
+            "S01-012",
+            "S01-013",
+            "S01-014"
+          ],
+          "purpose": "象牙白扇形刷、暖白刷颈和透明细长柄外观，不承担搅拌完成态。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#d9f30d39fc8e4c0a",
+          "upload_status": "planned",
+          "reference": "@图片4"
+        },
+        {
+          "asset_id": "AST-PROD-01",
+          "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/02_掰白管.mp4",
+          "sha256": "82da3699b49203579edc5540f8d0e393584b242ca64c1d8770c533915147e658",
+          "role": "action",
+          "source_shot_ids": [
+            "S01-011"
+          ],
+          "action_references": [
+            {
+              "shot_id": "S01-011",
+              "action_key": "掰白管"
+            }
+          ],
+          "purpose": "仅参考该步骤的接触、方向与动作范围。人物、服装、背景与音轨均由本段声画安排控制。",
+          "reference_pack": {
+            "product_id": "creator-polishing-mask-2",
+            "revision": "R04"
+          },
+          "upload_status": "planned",
+          "reference": "@视频5",
+          "kind": "video"
+        },
+        {
+          "asset_id": "AST-PROD-01",
+          "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/03_挤白管.mp4",
+          "sha256": "818cea984d849ae88a87a222d5cdc3406d074da64f2c8e35cebacc5ba48c57a0",
+          "role": "action",
+          "source_shot_ids": [
+            "S01-011"
+          ],
+          "action_references": [
+            {
+              "shot_id": "S01-011",
+              "action_key": "挤白管"
+            }
+          ],
+          "purpose": "仅参考该步骤的接触、方向与动作范围。人物、服装、背景与音轨均由本段声画安排控制。",
+          "reference_pack": {
+            "product_id": "creator-polishing-mask-2",
+            "revision": "R04"
+          },
+          "upload_status": "planned",
+          "reference": "@视频6",
+          "kind": "video"
+        },
+        {
+          "asset_id": "AST-PROD-01",
+          "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/04_掰金管.mp4",
+          "sha256": "9968e61750a90dc40c06ca9fef547d800de75acc830a6174888ee952d6170ae2",
+          "role": "action",
+          "source_shot_ids": [
+            "S01-012"
+          ],
+          "action_references": [
+            {
+              "shot_id": "S01-012",
+              "action_key": "掰金管"
+            }
+          ],
+          "purpose": "仅参考该步骤的接触、方向与动作范围。人物、服装、背景与音轨均由本段声画安排控制。",
+          "reference_pack": {
+            "product_id": "creator-polishing-mask-2",
+            "revision": "R04"
+          },
+          "upload_status": "planned",
+          "reference": "@视频7",
+          "kind": "video"
+        },
+        {
+          "asset_id": "AST-PROD-01",
+          "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/05_挤金管.mp4",
+          "sha256": "c733ce002e72d9e2a011281bf50a8fad8a2d25f70c98f512ae00bccbd1b58479",
+          "role": "action",
+          "source_shot_ids": [
+            "S01-012"
+          ],
+          "action_references": [
+            {
+              "shot_id": "S01-012",
+              "action_key": "挤金管"
+            }
+          ],
+          "purpose": "仅参考该步骤的接触、方向与动作范围。人物、服装、背景与音轨均由本段声画安排控制。",
+          "reference_pack": {
+            "product_id": "creator-polishing-mask-2",
+            "revision": "R04"
+          },
+          "upload_status": "planned",
+          "reference": "@视频8",
+          "kind": "video"
+        },
+        {
+          "asset_id": "AST-PROD-01",
+          "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/06A_起手搅拌两色混合.mp4",
+          "sha256": "983377199097a463b6eab3a3cf46847150838ac0e8c938db3358288c0b8d0a44",
+          "role": "action",
+          "source_shot_ids": [
+            "S01-013"
+          ],
+          "action_references": [
+            {
+              "shot_id": "S01-013",
+              "action_key": "起手搅拌两色混合"
+            }
+          ],
+          "purpose": "仅参考该步骤的接触、方向与动作范围。人物、服装、背景与音轨均由本段声画安排控制。",
+          "reference_pack": {
+            "product_id": "creator-polishing-mask-2",
+            "revision": "R04"
+          },
+          "upload_status": "planned",
+          "reference": "@视频9",
+          "kind": "video"
+        },
+        {
+          "asset_id": "AST-PROD-01",
+          "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/06B_完全起泡后提刷.mp4",
+          "sha256": "a7ca41b572c4e525b0370dea556bb59efd0ae244f8969157d78fc743e860e2e4",
+          "role": "action",
+          "source_shot_ids": [
+            "S01-014"
+          ],
+          "action_references": [
+            {
+              "shot_id": "S01-014",
+              "action_key": "完全起泡后提刷"
+            }
+          ],
+          "purpose": "仅参考该步骤的接触、方向与动作范围。人物、服装、背景与音轨均由本段声画安排控制。",
+          "reference_pack": {
+            "product_id": "creator-polishing-mask-2",
+            "revision": "R04"
+          },
+          "upload_status": "planned",
+          "reference": "@视频10",
+          "kind": "video"
+        },
+        {
+          "asset_id": "AST-LOC-01",
+          "output_id": "state1_view0",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-LOC-01/AST-LOC-01_state1_view0_任意视角_R01.png",
+          "sha256": "d7852d359b96d8cabf611e0311507b877f2638b991fbacaa48f2979748630b4b",
+          "role": "layout",
+          "source_shot_ids": [
+            "S01-010",
+            "S01-011",
+            "S01-012",
+            "S01-013",
+            "S01-014"
+          ],
+          "purpose": "梳妆区空间与光向，以图示窗、门洞、梳妆镜和台面的关系为准。场景图仅提供环境布局，台面物件及面部状态随本段动作推进。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#712db047c3f246fe",
+          "upload_status": "planned",
+          "reference": "@图片11"
+        }
+      ],
+      "prompt": "@图片1用于左格高清脸为唯一面部来源，右三格承担服装、比例与方向。\n@图片2用于白A、金B软管包装外观与正面印刷。\n@图片3用于同一横纹透明半球碗外观，不承担已挤料或台面状态。\n@图片4用于象牙白扇形刷、暖白刷颈和透明细长柄外观，不承担搅拌完成态。\n@视频5用于仅参考该步骤的接触、方向与动作范围。人物、服装、背景与音轨均由本段声画安排控制。\n@视频6用于仅参考该步骤的接触、方向与动作范围。人物、服装、背景与音轨均由本段声画安排控制。\n@视频7用于仅参考该步骤的接触、方向与动作范围。人物、服装、背景与音轨均由本段声画安排控制。\n@视频8用于仅参考该步骤的接触、方向与动作范围。人物、服装、背景与音轨均由本段声画安排控制。\n@视频9用于仅参考该步骤的接触、方向与动作范围。人物、服装、背景与音轨均由本段声画安排控制。\n@视频10用于仅参考该步骤的接触、方向与动作范围。人物、服装、背景与音轨均由本段声画安排控制。\n@图片11用于梳妆区空间与光向，以图示窗、门洞、梳妆镜和台面的关系为准。场景图仅提供环境布局，台面物件及面部状态随本段动作推进。\n\n女一面部沿人物板左格，长红棕发，两枚黑色发夹分列头部两侧。清晨暖中性窗侧柔光，空间与光向沿用场景图：图示右侧窗、梳妆台左侧门洞、台面后方梳妆镜。女一面向镜面，台面近侧为操作区，远侧为陈列区。\n女一穿雾蓝细条纹衬衫睡衣，仍为淡妆坐在梳妆台前，台面礼盒已打开。手持近景稳定看见面部和双手，焦点在清洁区，简洁交代先净脸、洗手、擦干后坐定，不展开洗漱过程。\n净脸后素颜干净、无残妆，作为刷涂起手状态\n手碰到白A时切手部特写，标准焦段使双手、软管与空透明碗比例自然。取出一支白A，掰头瞬间控稳看清折断线。\n白A沿折断线侧向掰约90°取下断头，断头放稳\n断头放好后才挤料，轻跟管口到碗口，读清乳白料体落进碗内。\n整支不透明乳白料体全部挤入同一透明碗，管身保持正常形状\n白A空管宽面平躺在台面、标签朝上，断头在旁。手伸向金B、换管触发切到同侧手部特写，碗里保留已经挤入的A剂。\n金B沿折断线侧向掰约90°取下断头，断头放稳\n先放稳金B断头，再挤入B剂，管壳为香槟金，挤出料体为半透明白色。焦点由管口移到碗内分界。\n半透明B剂全部挤入已有A剂的同一只碗，混合前两剂各自可辨\n金B空管也宽面平躺回台面、标签朝上。取刷处切偏俯特写，一手扶同一碗，一手持刷，碗口居中，焦点在刷头与料体交界，镜头小幅补构图让绕圈路径可见。\n象牙白扇形刷在同一碗内顺时针搅拌，两色料体逐渐卷入混匀\n方向持续一致，在搅拌动作中切到故事内累计40秒、已成细腻奶泡的时刻，再控稳跟提刷，焦点落在奶泡质地。\n提刷带起细腻奶泡，质地均匀绵密可见\n刷停在碗上方，料体均匀绵密，她转向镜面准备上脸。掰头、放头、挤料均依次可读，时间省略只发生在搅拌两镜之间。保留轻微水声、擦干、管头折断、软管挤压与搅动料体声。\n生成画面不添加画外字幕、片头片尾文字、说明字卡、时间码或其他叠加文字。正文中的秒数与切镜时间只控制动作和剪辑，不在画面显示。真实包装、商标和电视实体屏幕按参考及既定方案保留。不要生成背景音乐（BGM）。本段无对白、无旁白。",
+      "entry_state": "女一面部为淡妆完成态，坐在梳妆台前，礼盒已开盒在台面",
+      "exit_state": "刷停在碗上方，奶泡均匀绵密，备膜完成，她转身正对镜面准备上脸",
+      "production_notes": {
+        "segmentation_basis": "完整事件完成或导演原有换装/换场/明确时间省略，非按固定秒数或逐镜拆分。",
+        "postproduction_music": "后期全片单曲《Deja Vu (Sped Up Version)》持续铺底，末段定格收尾。",
+        "postproduction_text": [
+          {
+            "shot_id": "S01-013",
+            "texts": [
+              "白A＋金B，双剂合一"
+            ],
+            "timing_basis": "估时约3秒（STP-009 预算内分配，未实测）",
+            "display_timing": "沿 take.process 出现顺序，限定对应镜内，阅读停留沿导演预算，未有精确时码则留剪辑核定。",
+            "status": "planned"
+          },
+          {
+            "shot_id": "S01-014",
+            "texts": [
+              "顺时针搅拌40秒，搅到细腻奶泡"
+            ],
+            "timing_basis": "估时约2秒（STP-009 预算余下，未实测）；提拉停留给足质地阅读",
+            "display_timing": "沿 take.process 出现顺序，限定对应镜内，阅读停留沿导演预算，未有精确时码则留剪辑核定。",
+            "status": "planned"
+          }
+        ],
+        "outgoing_cut": {
+          "entry": "承接上镜搅拌动作中切",
+          "exit": "她蘸料转向脸部切刷涂段",
+          "trigger": "提刷完成触发换观看对象",
+          "information_handoff": "备膜结果状态（细腻奶泡）确认，搅拌故事内40秒交代完毕"
+        },
+        "review_status": "needs_review",
+        "open_questions": [],
+        "postproduction_unspecified_item_labels": [],
+        "exact_required_visuals_in_body": [
+          {
+            "shot_id": "S01-010",
+            "prompt_clause": "净脸后素颜干净、无残妆，作为刷涂起手状态"
+          },
+          {
+            "shot_id": "S01-011",
+            "prompt_clause": "白A沿折断线侧向掰约90°取下断头，断头放稳"
+          },
+          {
+            "shot_id": "S01-011",
+            "prompt_clause": "整支不透明乳白料体全部挤入同一透明碗，管身保持正常形状"
+          },
+          {
+            "shot_id": "S01-012",
+            "prompt_clause": "金B沿折断线侧向掰约90°取下断头，断头放稳"
+          },
+          {
+            "shot_id": "S01-012",
+            "prompt_clause": "半透明B剂全部挤入已有A剂的同一只碗，混合前两剂各自可辨"
+          },
+          {
+            "shot_id": "S01-013",
+            "prompt_clause": "象牙白扇形刷在同一碗内顺时针搅拌，两色料体逐渐卷入混匀"
+          },
+          {
+            "shot_id": "S01-014",
+            "prompt_clause": "提刷带起细腻奶泡，质地均匀绵密可见"
+          }
+        ]
+      },
+      "same_scene_split": {
+        "from_segment_id": "V09",
+        "reason": "event_complete",
+        "evidence": "导演已有事件完成与换装/时间省略切点，按原镜头连续承载。",
+        "source_boundary": {
+          "shot_id": "S01-010",
+          "field": "cut.entry",
+          "quote": "备膜段首镜，承接口播镜后她转向礼盒（净脸在台前以洁面动作简洁交代，不另设洗手间场景）"
+        }
+      },
+      "physical_continuity": {
+        "from_segment_id": "V09",
+        "permitted_change": "仅沿导演换装、省略时间或进入下一完整步骤；动作前后态由来源约束。",
+        "visibility": {
+          "status": "no_visual_needed",
+          "previous_state": "话说完，她垂手转向礼盒，准备动手备膜",
+          "current_state": "女一面部为淡妆完成态，坐在梳妆台前，礼盒已开盒在台面",
+          "basis": "导演已有自然事件边界，文字候选承接；活动状态图不足另列未决，不声明原生状态控制。"
+        }
+      }
+    },
+    {
+      "segment_id": "V11",
+      "title": "分区薄涂至完整膜态",
+      "scene_id": "S01",
+      "source_shot_ids": [
+        "S01-015",
+        "S01-016",
+        "S01-017",
+        "S01-018"
+      ],
+      "source_paragraph_ids": [
+        "STP-010"
+      ],
+      "source_dialogue_ids": [],
+      "source_audio": [],
+      "generation_duration_seconds": 16,
+      "target_edit_duration_seconds": 16,
+      "parameters": {
+        "platform": "redframe",
+        "model": "seedance2.5",
+        "model_label": "Seedance 2.5",
+        "aspect_ratio": "9:16",
+        "resolution": "480p",
+        "duration_seconds": 16
+      },
+      "duration_basis": "按导演各镜 rhythm 预算逐项相加，非已测音视频或已核平台时长能力。",
+      "shot_durations": [
+        4,
+        5,
+        4,
+        3
+      ],
+      "materials": [
+        {
+          "asset_id": "AST-CHAR-01",
+          "output_id": "NV1-LOOK-07",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-CHAR-01/AST-CHAR-01_outfit_a0d9f1aa_final_雾蓝条纹衬衫式睡衣套装 · 人物1×4_R01.png",
+          "sha256": "baeb57398fd0dd3539aef3420a16fc6de3a346dc1b6aceb805e71fc666f5a906",
+          "role": "identity",
+          "source_shot_ids": [
+            "S01-015",
+            "S01-016",
+            "S01-017",
+            "S01-018"
+          ],
+          "purpose": "左格高清脸为唯一面部来源，右三格承担服装、比例与方向。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#89e6afd8af3f439e",
+          "upload_status": "planned",
+          "reference": "@图片1"
+        },
+        {
+          "asset_id": "AST-PROD-01",
+          "output_id": "state2_view0",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-PROD-01/AST-PROD-01_state2_view0_主图_R01.png",
+          "sha256": "6074e2f1ed5113cf8cbbb6755d545330fe9afa9ed4f5b3551dea1e000763b4ac",
+          "role": "appearance",
+          "source_shot_ids": [
+            "S01-015",
+            "S01-016",
+            "S01-017",
+            "S01-018"
+          ],
+          "purpose": "同一横纹透明半球碗外观，不承担已挤料或台面状态。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#1bb56647df854edf",
+          "upload_status": "planned",
+          "reference": "@图片2"
+        },
+        {
+          "asset_id": "AST-PROD-01",
+          "output_id": "state3_view0",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-PROD-01/AST-PROD-01_state3_view0_主图_R01.png",
+          "sha256": "fbc347d4ce569c267d142d84bbe8576fa205db8c55bb713aa912eb1fc6e3a429",
+          "role": "appearance",
+          "source_shot_ids": [
+            "S01-015",
+            "S01-016",
+            "S01-017",
+            "S01-018"
+          ],
+          "purpose": "象牙白扇形刷、暖白刷颈和透明细长柄外观，不承担搅拌完成态。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#d9f30d39fc8e4c0a",
+          "upload_status": "planned",
+          "reference": "@图片3"
+        },
+        {
+          "asset_id": "AST-OTHER-01",
+          "output_id": "state0_view0",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-OTHER-01/AST-OTHER-01_state0_view0_正面、左侧、背面、俯视四视图_R01.png",
+          "sha256": "fcfd5bfc711b90fff59716f3d506cd02827855d7a56629b3947d17e52d120b57",
+          "role": "appearance",
+          "source_shot_ids": [
+            "S01-015",
+            "S01-016",
+            "S01-017",
+            "S01-018"
+          ],
+          "purpose": "女一本人全脸薄膜质地与覆盖。用于涂后目标、等待保持和擦前/未擦区；刷涂开场仍净脸，擦净区恢复原肤色。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#62ac54e7ca9b4171",
+          "upload_status": "planned",
+          "reference": "@图片4"
+        },
+        {
+          "asset_id": "AST-PROD-01",
+          "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/07_净脸第一颊起手.mp4",
+          "sha256": "29813b30c032d501a1f0ee5c6c3690c5b2bb3c846d6fa0e30e090e82ce9b4049",
+          "role": "action",
+          "source_shot_ids": [
+            "S01-015"
+          ],
+          "action_references": [
+            {
+              "shot_id": "S01-015",
+              "action_key": "净脸第一颊起手"
+            }
+          ],
+          "purpose": "仅参考该步骤的接触、方向与动作范围。人物、服装、背景与音轨均由本段声画安排控制。",
+          "reference_pack": {
+            "product_id": "creator-polishing-mask-2",
+            "revision": "R04"
+          },
+          "upload_status": "planned",
+          "reference": "@视频5",
+          "kind": "video"
+        },
+        {
+          "asset_id": "AST-PROD-01",
+          "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/08_另一颊开始刷涂.mp4",
+          "sha256": "8f10beffb61565f76fbf3d219d62bb402f9dbaa031838aec8d96832ebb4dbb4b",
+          "role": "action",
+          "source_shot_ids": [
+            "S01-016"
+          ],
+          "action_references": [
+            {
+              "shot_id": "S01-016",
+              "action_key": "另一颊开始刷涂"
+            }
+          ],
+          "purpose": "仅参考该步骤的接触、方向与动作范围。人物、服装、背景与音轨均由本段声画安排控制。",
+          "reference_pack": {
+            "product_id": "creator-polishing-mask-2",
+            "revision": "R04"
+          },
+          "upload_status": "planned",
+          "reference": "@视频6",
+          "kind": "video"
+        },
+        {
+          "asset_id": "AST-PROD-01",
+          "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/09_额头铺开.mp4",
+          "sha256": "6fa5603ca913153879c60be695f7b7d40361e04b8279b33f2f3a62de4cfcf2f9",
+          "role": "action",
+          "source_shot_ids": [
+            "S01-016"
+          ],
+          "action_references": [
+            {
+              "shot_id": "S01-016",
+              "action_key": "额头铺开"
+            }
+          ],
+          "purpose": "仅参考该步骤的接触、方向与动作范围。人物、服装、背景与音轨均由本段声画安排控制。",
+          "reference_pack": {
+            "product_id": "creator-polishing-mask-2",
+            "revision": "R04"
+          },
+          "upload_status": "planned",
+          "reference": "@视频7",
+          "kind": "video"
+        },
+        {
+          "asset_id": "AST-PROD-01",
+          "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/10_下巴铺开.mp4",
+          "sha256": "19d695108da199db32d49d0fa2645f9134e3c71f1480b5c3a06b1ef75a981c95",
+          "role": "action",
+          "source_shot_ids": [
+            "S01-017"
+          ],
+          "action_references": [
+            {
+              "shot_id": "S01-017",
+              "action_key": "下巴铺开"
+            }
+          ],
+          "purpose": "仅参考该步骤的接触、方向与动作范围。人物、服装、背景与音轨均由本段声画安排控制。",
+          "reference_pack": {
+            "product_id": "creator-polishing-mask-2",
+            "revision": "R04"
+          },
+          "upload_status": "planned",
+          "reference": "@视频8",
+          "kind": "video"
+        },
+        {
+          "asset_id": "AST-PROD-01",
+          "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/11_鼻周轻刷.mp4",
+          "sha256": "38efad11d709a73fd313e532e738c78f37feb50e2677a7d385ffbe4eb26fefd3",
+          "role": "action",
+          "source_shot_ids": [
+            "S01-017"
+          ],
+          "action_references": [
+            {
+              "shot_id": "S01-017",
+              "action_key": "鼻周轻刷"
+            }
+          ],
+          "purpose": "仅参考该步骤的接触、方向与动作范围。人物、服装、背景与音轨均由本段声画安排控制。",
+          "reference_pack": {
+            "product_id": "creator-polishing-mask-2",
+            "revision": "R04"
+          },
+          "upload_status": "planned",
+          "reference": "@视频9",
+          "kind": "video"
+        },
+        {
+          "asset_id": "AST-PROD-01",
+          "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/12_补涂并展示全脸薄膜.mp4",
+          "sha256": "4526a1f39b8515b524750f340ecea05bd22cc8aaf4c01d94fd469228b3594e4e",
+          "role": "action",
+          "source_shot_ids": [
+            "S01-018"
+          ],
+          "action_references": [
+            {
+              "shot_id": "S01-018",
+              "action_key": "补涂并展示全脸薄膜"
+            }
+          ],
+          "purpose": "仅参考该步骤的接触、方向与动作范围。人物、服装、背景与音轨均由本段声画安排控制。",
+          "reference_pack": {
+            "product_id": "creator-polishing-mask-2",
+            "revision": "R04"
+          },
+          "upload_status": "planned",
+          "reference": "@视频10",
+          "kind": "video"
+        },
+        {
+          "asset_id": "AST-LOC-01",
+          "output_id": "state1_view0",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-LOC-01/AST-LOC-01_state1_view0_任意视角_R01.png",
+          "sha256": "d7852d359b96d8cabf611e0311507b877f2638b991fbacaa48f2979748630b4b",
+          "role": "layout",
+          "source_shot_ids": [
+            "S01-015",
+            "S01-016",
+            "S01-017",
+            "S01-018"
+          ],
+          "purpose": "梳妆区空间与光向，以图示窗、门洞、梳妆镜和台面的关系为准。场景图仅提供环境布局，台面物件及面部状态随本段动作推进。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#712db047c3f246fe",
+          "upload_status": "planned",
+          "reference": "@图片11"
+        }
+      ],
+      "prompt": "@图片1用于左格高清脸为唯一面部来源，右三格承担服装、比例与方向。\n@图片2用于同一横纹透明半球碗外观，不承担已挤料或台面状态。\n@图片3用于象牙白扇形刷、暖白刷颈和透明细长柄外观，不承担搅拌完成态。\n@图片4用于女一本人全脸薄膜质地与覆盖。用于涂后目标、等待保持和擦前/未擦区；刷涂开场仍净脸，擦净区恢复原肤色。\n@视频5用于仅参考该步骤的接触、方向与动作范围。人物、服装、背景与音轨均由本段声画安排控制。\n@视频6用于仅参考该步骤的接触、方向与动作范围。人物、服装、背景与音轨均由本段声画安排控制。\n@视频7用于仅参考该步骤的接触、方向与动作范围。人物、服装、背景与音轨均由本段声画安排控制。\n@视频8用于仅参考该步骤的接触、方向与动作范围。人物、服装、背景与音轨均由本段声画安排控制。\n@视频9用于仅参考该步骤的接触、方向与动作范围。人物、服装、背景与音轨均由本段声画安排控制。\n@视频10用于仅参考该步骤的接触、方向与动作范围。人物、服装、背景与音轨均由本段声画安排控制。\n@图片11用于梳妆区空间与光向，以图示窗、门洞、梳妆镜和台面的关系为准。场景图仅提供环境布局，台面物件及面部状态随本段动作推进。\n\n女一面部沿人物板左格，长红棕发，两枚黑色发夹分列头部两侧。清晨暖中性窗侧柔光，空间与光向沿用场景图：图示右侧窗、梳妆台左侧门洞、台面后方梳妆镜。女一面向镜面，台面近侧为操作区，远侧为陈列区。\n女一穿雾蓝细条纹衬衫睡衣，净脸素颜正对梳妆镜，刷头已经蘸起同一碗细腻奶泡。近景特写让第一颊、刷头和下缘可及的碗同框，中长焦倾向压平面部透视、分离背景，焦点在刷头与皮肤接触面，接触瞬间收稳，离肤后小幅回收。\n刷头带料轻贴一侧脸颊、短刷铺薄后离肤，第一块薄膜形成，眼周留空\n第一颊形成薄膜后，刷头回碗蘸料，按第一次离肤触发的切点进入另一颊近景。已涂区保持湿润膜层，焦点跟随当前接触位置。\n另一侧脸颊开始铺开，一侧已见薄膜、刷头转向另一颊\n手持在另一颊与额头之间小幅摇移，接触、铺薄、离肤依次发生。\n刷头接触额头并铺开额心膜层，发际留边\n双颊与额头成膜后回碗蘸料，在区域完成的切点进入下巴鼻周近景，镜头先小幅下移。\n刷头在下巴分次铺开，下巴膜层形成\n再小幅上移，焦点落在鼻翼两侧的轻刷区域。\n刷头轻刷鼻周，唇周留空不碰唇\n全程少量多次薄铺，已涂区逐步累积，眼周和唇始终留空。最后区域完成，她放下刷，在此触发切正对镜面的全脸近景，完整读到眼唇留空与膜层，镜头完全收稳，安静停约三秒，保留至少约两秒清晰可读。\n全脸均匀半透明湿润薄膜，眼周和唇留空，保留自然皮肤肌理\n画面结束于稳定的全脸薄膜完成态。只保留刷头轻触皮肤的细微动作声。\n生成画面不添加画外字幕、片头片尾文字、说明字卡、时间码或其他叠加文字。正文中的秒数与切镜时间只控制动作和剪辑，不在画面显示。真实包装、商标和电视实体屏幕按参考及既定方案保留。不要生成背景音乐（BGM）。本段无对白、无旁白。",
+      "entry_state": "女一素颜干净，刷头已蘸起碗里的奶泡，她正对镜面",
+      "exit_state": "膜态稳定成立（状态链 S01-ST-03），进入等待段",
+      "production_notes": {
+        "segmentation_basis": "完整事件完成或导演原有换装/换场/明确时间省略，非按固定秒数或逐镜拆分。",
+        "postproduction_music": "后期全片单曲《Deja Vu (Sped Up Version)》持续铺底，末段定格收尾。",
+        "postproduction_text": [
+          {
+            "shot_id": "S01-015",
+            "texts": [
+              "少量多次，薄薄涂匀"
+            ],
+            "timing_basis": "估时约4秒（STP-010 预算16秒内分配，未实测）；接触与离肤完整留时",
+            "display_timing": "沿 take.process 出现顺序，限定对应镜内，阅读停留沿导演预算，未有精确时码则留剪辑核定。",
+            "status": "planned"
+          },
+          {
+            "shot_id": "S01-017",
+            "texts": [
+              "眼周和唇边留空"
+            ],
+            "timing_basis": "估时约4秒（STP-010 预算内分配，未实测）",
+            "display_timing": "沿 take.process 出现顺序，限定对应镜内，阅读停留沿导演预算，未有精确时码则留剪辑核定。",
+            "status": "planned"
+          }
+        ],
+        "outgoing_cut": {
+          "entry": "承接上镜放下刷",
+          "exit": "停留结束硬切等待段生活动作",
+          "trigger": "膜态可读后触发时间推进",
+          "information_handoff": "本镜画面即敷膜状态基准：后续等待保持、擦除按区递减都以此为起点"
+        },
+        "review_status": "needs_review",
+        "open_questions": [],
+        "postproduction_unspecified_item_labels": [],
+        "exact_required_visuals_in_body": [
+          {
+            "shot_id": "S01-015",
+            "prompt_clause": "刷头带料轻贴一侧脸颊、短刷铺薄后离肤，第一块薄膜形成，眼周留空"
+          },
+          {
+            "shot_id": "S01-016",
+            "prompt_clause": "另一侧脸颊开始铺开，一侧已见薄膜、刷头转向另一颊"
+          },
+          {
+            "shot_id": "S01-016",
+            "prompt_clause": "刷头接触额头并铺开额心膜层，发际留边"
+          },
+          {
+            "shot_id": "S01-017",
+            "prompt_clause": "刷头在下巴分次铺开，下巴膜层形成"
+          },
+          {
+            "shot_id": "S01-017",
+            "prompt_clause": "刷头轻刷鼻周，唇周留空不碰唇"
+          },
+          {
+            "shot_id": "S01-018",
+            "prompt_clause": "全脸均匀半透明湿润薄膜，眼周和唇留空，保留自然皮肤肌理"
+          }
+        ]
+      },
+      "same_scene_split": {
+        "from_segment_id": "V10",
+        "reason": "event_complete",
+        "evidence": "导演已有事件完成与换装/时间省略切点，按原镜头连续承载。",
+        "source_boundary": {
+          "shot_id": "S01-015",
+          "field": "cut.entry",
+          "quote": "刷涂段首镜，由备膜完成硬切到上脸（状态由净脸素颜承接）"
+        }
+      },
+      "physical_continuity": {
+        "from_segment_id": "V10",
+        "permitted_change": "仅沿导演换装、省略时间或进入下一完整步骤；动作前后态由来源约束。",
+        "visibility": {
+          "status": "no_visual_needed",
+          "previous_state": "刷停在碗上方，奶泡均匀绵密，备膜完成，她转身正对镜面准备上脸",
+          "current_state": "女一素颜干净，刷头已蘸起碗里的奶泡，她正对镜面",
+          "basis": "导演已有自然事件边界，文字候选承接；活动状态图不足另列未决，不声明原生状态控制。"
+        }
+      }
+    },
+    {
+      "segment_id": "V12",
+      "title": "敷膜等待与收纳翻书",
+      "scene_id": "S01",
+      "source_shot_ids": [
+        "S01-019"
+      ],
+      "source_paragraph_ids": [
+        "STP-011"
+      ],
+      "source_dialogue_ids": [],
+      "source_audio": [],
+      "generation_duration_seconds": 4,
+      "target_edit_duration_seconds": 4,
+      "parameters": {
+        "platform": "redframe",
+        "model": "seedance2.5",
+        "model_label": "Seedance 2.5",
+        "aspect_ratio": "9:16",
+        "resolution": "480p",
+        "duration_seconds": 4
+      },
+      "duration_basis": "按导演各镜 rhythm 预算逐项相加，非已测音视频或已核平台时长能力。",
+      "shot_durations": [
+        4
+      ],
+      "materials": [
+        {
+          "asset_id": "AST-CHAR-01",
+          "output_id": "NV1-LOOK-07",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-CHAR-01/AST-CHAR-01_outfit_a0d9f1aa_final_雾蓝条纹衬衫式睡衣套装 · 人物1×4_R01.png",
+          "sha256": "baeb57398fd0dd3539aef3420a16fc6de3a346dc1b6aceb805e71fc666f5a906",
+          "role": "identity",
+          "source_shot_ids": [
+            "S01-019"
+          ],
+          "purpose": "左格高清脸为唯一面部来源，右三格承担服装、比例与方向。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#89e6afd8af3f439e",
+          "upload_status": "planned",
+          "reference": "@图片1"
+        },
+        {
+          "asset_id": "AST-OTHER-01",
+          "output_id": "state0_view0",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-OTHER-01/AST-OTHER-01_state0_view0_正面、左侧、背面、俯视四视图_R01.png",
+          "sha256": "fcfd5bfc711b90fff59716f3d506cd02827855d7a56629b3947d17e52d120b57",
+          "role": "state_reference",
+          "source_shot_ids": [
+            "S01-019"
+          ],
+          "purpose": "女一本人全脸薄膜质地与覆盖。用于涂后目标、等待保持和擦前/未擦区；刷涂开场仍净脸，擦净区恢复原肤色。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#62ac54e7ca9b4171",
+          "upload_status": "planned",
+          "reference": "@图片2",
+          "state_id": "S01-ST-03",
+          "entity_ids": [
+            "CHR-NV1"
+          ]
+        },
+        {
+          "asset_id": "AST-LOC-01",
+          "output_id": "state1_view0",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-LOC-01/AST-LOC-01_state1_view0_任意视角_R01.png",
+          "sha256": "d7852d359b96d8cabf611e0311507b877f2638b991fbacaa48f2979748630b4b",
+          "role": "layout",
+          "source_shot_ids": [
+            "S01-019"
+          ],
+          "purpose": "梳妆区空间与光向，以图示窗、门洞、梳妆镜和台面的关系为准。场景图仅提供环境布局，台面物件及面部状态随本段动作推进。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#712db047c3f246fe",
+          "upload_status": "planned",
+          "reference": "@图片3"
+        }
+      ],
+      "prompt": "@图片1用于左格高清脸为唯一面部来源，右三格承担服装、比例与方向。\n@图片2用于女一本人全脸薄膜质地与覆盖。用于涂后目标、等待保持和擦前/未擦区；刷涂开场仍净脸，擦净区恢复原肤色。\n@图片3用于梳妆区空间与光向，以图示窗、门洞、梳妆镜和台面的关系为准。场景图仅提供环境布局，台面物件及面部状态随本段动作推进。\n\n女一面部沿人物板左格，长红棕发，两枚黑色发夹分列头部两侧。清晨暖中性窗侧柔光，空间与光向沿用场景图：图示右侧窗、梳妆台左侧门洞、台面后方梳妆镜。女一面向镜面，台面近侧为操作区，远侧为陈列区。\n女一穿雾蓝细条纹衬衫睡衣，敷着完整的湿润半透明薄膜，眼周和唇留空，操作区仍有开盒、空管、断头与碗刷。标准焦段中景保留人与台面关系，手持轻跟收纳动作，焦点在她与手中物，膜态在次清晰层仍可辨。\n敷膜完成态在等待中保持不变，故事内约15分钟以收纳与翻书动作加时间省略交代\n她把礼盒和碗刷收好，拿起书翻几页，翻书时收稳。生活动作之间采用原定硬切省略时间，故事内累计敷约15分钟，薄膜保持同样外观。她放下书，手伸向白色洁面巾，取巾动作触发段末。保留书页与收纳轻响。\n生成画面不添加画外字幕、片头片尾文字、说明字卡、时间码或其他叠加文字。正文中的秒数与切镜时间只控制动作和剪辑，不在画面显示。真实包装、商标和电视实体屏幕按参考及既定方案保留。不要生成背景音乐（BGM）。本段无对白、无旁白。",
+      "entry_state": "她敷着完整的脸膜，礼盒、空管与碗刷还在台面操作区",
+      "exit_state": "台面收整，她放下书，手伸向白色洁面巾，膜态与敷完时一致",
+      "production_notes": {
+        "segmentation_basis": "完整事件完成或导演原有换装/换场/明确时间省略，非按固定秒数或逐镜拆分。",
+        "postproduction_music": "后期全片单曲《Deja Vu (Sped Up Version)》持续铺底，末段定格收尾。",
+        "postproduction_text": [
+          {
+            "shot_id": "S01-019",
+            "texts": [
+              "敷15分钟"
+            ],
+            "timing_basis": "估时约4秒（STP-011 预算12秒内分配，未实测）",
+            "display_timing": "沿 take.process 出现顺序，限定对应镜内，阅读停留沿导演预算，未有精确时码则留剪辑核定。",
+            "status": "planned"
+          }
+        ],
+        "outgoing_cut": {
+          "entry": "等待段首镜，由膜态停留镜硬切入生活动作（时间省略在此发生）",
+          "exit": "她拿起洁面巾切擦除镜",
+          "trigger": "取巾动作触发收紧景别",
+          "information_handoff": "故事内15分钟以动作蒙太奇交代，不实时等待；膜态不因时间流逝自行变化"
+        },
+        "review_status": "needs_review",
+        "open_questions": [],
+        "postproduction_unspecified_item_labels": [],
+        "exact_required_visuals_in_body": [
+          {
+            "shot_id": "S01-019",
+            "prompt_clause": "敷膜完成态在等待中保持不变，故事内约15分钟以收纳与翻书动作加时间省略交代"
+          }
+        ]
+      },
+      "same_scene_split": {
+        "from_segment_id": "V11",
+        "reason": "time_ellipsis",
+        "evidence": "导演已有事件完成与换装/时间省略切点，按原镜头连续承载。",
+        "source_boundary": {
+          "shot_id": "S01-019",
+          "field": "cut.entry",
+          "quote": "等待段首镜，由膜态停留镜硬切入生活动作（时间省略在此发生）"
+        }
+      },
+      "physical_continuity": {
+        "from_segment_id": "V11",
+        "permitted_change": "仅沿导演换装、省略时间或进入下一完整步骤；动作前后态由来源约束。",
+        "visibility": {
+          "status": "no_visual_needed",
+          "previous_state": "膜态稳定成立（状态链 S01-ST-03），进入等待段",
+          "current_state": "她敷着完整的脸膜，礼盒、空管与碗刷还在台面操作区",
+          "basis": "导演已有自然事件边界，文字候选承接；活动状态图不足另列未决，不声明原生状态控制。"
+        }
+      }
+    },
+    {
+      "segment_id": "V13",
+      "title": "分区湿擦与干净收尾",
+      "scene_id": "S01",
+      "source_shot_ids": [
+        "S01-020",
+        "S01-021",
+        "S01-022"
+      ],
+      "source_paragraph_ids": [
+        "STP-011"
+      ],
+      "source_dialogue_ids": [],
+      "source_audio": [],
+      "generation_duration_seconds": 8,
+      "target_edit_duration_seconds": 8,
+      "parameters": {
+        "platform": "redframe",
+        "model": "seedance2.5",
+        "model_label": "Seedance 2.5",
+        "aspect_ratio": "9:16",
+        "resolution": "480p",
+        "duration_seconds": 8
+      },
+      "duration_basis": "按导演各镜 rhythm 预算逐项相加，非已测音视频或已核平台时长能力。",
+      "shot_durations": [
+        4,
+        2,
+        2
+      ],
+      "materials": [
+        {
+          "asset_id": "AST-CHAR-01",
+          "output_id": "NV1-LOOK-07",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-CHAR-01/AST-CHAR-01_outfit_a0d9f1aa_final_雾蓝条纹衬衫式睡衣套装 · 人物1×4_R01.png",
+          "sha256": "baeb57398fd0dd3539aef3420a16fc6de3a346dc1b6aceb805e71fc666f5a906",
+          "role": "identity",
+          "source_shot_ids": [
+            "S01-020",
+            "S01-021",
+            "S01-022"
+          ],
+          "purpose": "左格高清脸为唯一面部来源，右三格承担服装、比例与方向。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#89e6afd8af3f439e",
+          "upload_status": "planned",
+          "reference": "@图片1"
+        },
+        {
+          "asset_id": "AST-OTHER-01",
+          "output_id": "state0_view0",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-OTHER-01/AST-OTHER-01_state0_view0_正面、左侧、背面、俯视四视图_R01.png",
+          "sha256": "fcfd5bfc711b90fff59716f3d506cd02827855d7a56629b3947d17e52d120b57",
+          "role": "appearance",
+          "source_shot_ids": [
+            "S01-020",
+            "S01-021"
+          ],
+          "purpose": "女一本人全脸薄膜质地与覆盖。用于涂后目标、等待保持和擦前/未擦区；刷涂开场仍净脸，擦净区恢复原肤色。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#62ac54e7ca9b4171",
+          "upload_status": "planned",
+          "reference": "@图片2"
+        },
+        {
+          "asset_id": "AST-PROD-01",
+          "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/13_纸巾从鼻侧向外擦过一侧脸颊.mp4",
+          "sha256": "17bbf19b9b5fe6873e6289ff550b7e1389d43258131f8b3218485b4410ab654c",
+          "role": "action",
+          "source_shot_ids": [
+            "S01-020"
+          ],
+          "action_references": [
+            {
+              "shot_id": "S01-020",
+              "action_key": "纸巾从鼻侧向外擦过一侧脸颊"
+            }
+          ],
+          "purpose": "仅参考该步骤的接触、方向与动作范围。人物、服装、背景与音轨均由本段声画安排控制。",
+          "reference_pack": {
+            "product_id": "creator-polishing-mask-2",
+            "revision": "R04"
+          },
+          "upload_status": "planned",
+          "reference": "@视频3",
+          "kind": "video"
+        },
+        {
+          "asset_id": "AST-LOC-01",
+          "output_id": "state1_view0",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-LOC-01/AST-LOC-01_state1_view0_任意视角_R01.png",
+          "sha256": "d7852d359b96d8cabf611e0311507b877f2638b991fbacaa48f2979748630b4b",
+          "role": "layout",
+          "source_shot_ids": [
+            "S01-020",
+            "S01-021",
+            "S01-022"
+          ],
+          "purpose": "梳妆区空间与光向，以图示窗、门洞、梳妆镜和台面的关系为准。场景图仅提供环境布局，台面物件及面部状态随本段动作推进。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#712db047c3f246fe",
+          "upload_status": "planned",
+          "reference": "@图片4"
+        }
+      ],
+      "prompt": "@图片1用于左格高清脸为唯一面部来源，右三格承担服装、比例与方向。\n@图片2用于女一本人全脸薄膜质地与覆盖。用于涂后目标、等待保持和擦前/未擦区；刷涂开场仍净脸，擦净区恢复原肤色。\n@视频3用于仅参考该步骤的接触、方向与动作范围。人物、服装、背景与音轨均由本段声画安排控制。\n@图片4用于梳妆区空间与光向，以图示窗、门洞、梳妆镜和台面的关系为准。场景图仅提供环境布局，台面物件及面部状态随本段动作推进。\n\n女一面部沿人物板左格，长红棕发，两枚黑色发夹分列头部两侧。清晨暖中性窗侧柔光，空间与光向沿用场景图：图示右侧窗、梳妆台左侧门洞、台面后方梳妆镜。女一面向镜面，台面近侧为操作区，远侧为陈列区。\n女一仍穿雾蓝细条纹衬衫睡衣，等待结束，全脸保持完整湿润薄膜，手里是湿白洁面巾。中长焦倾向压平面部透视、分离背景，近景特写容纳鼻侧起点、耳侧终点与洁面巾接触带，镜头控稳跟住接触全程，方向依据人物自身身体锚点。\n湿洁面巾从鼻侧贴肤、向外带过一侧脸颊后离肤，擦过区域干净、未擦区域仍留膜\n第一次离肤触发切换面续擦近景，镜头照顾脸外侧的换面动作，再回到当前接触区。额头、另一颊、下巴和鼻周按原定顺序续擦，每区贴肤、带过、离肤，已擦区可对照，未擦区在擦到之前保留薄膜。\n洁面巾先离肤再换干净面，按分区续擦额头、下巴与另一颊，已擦区保持干净不复膜\n全区擦过后，巾离肤切到正对镜面的全脸近景，镜头收稳，焦点在全脸皮肤。洁面巾完整离开脸庞，发际线与鼻翼无可见白边，全脸无残膜，肤色和肌理保持原样，她对镜摸摸脸颊后放下洁面巾，以护理结束态收住。保留细微贴肤擦拭声。\n生成画面不添加画外字幕、片头片尾文字、说明字卡、时间码或其他叠加文字。正文中的秒数与切镜时间只控制动作和剪辑，不在画面显示。真实包装、商标和电视实体屏幕按参考及既定方案保留。不要生成背景音乐（BGM）。本段无对白、无旁白。",
+      "entry_state": "她手持湿洁面巾，全脸仍为完整薄膜态",
+      "exit_state": "护理段落收住（状态链 S01-ST-04），她放下洁面巾，故事转入镜区收尾段",
+      "production_notes": {
+        "segmentation_basis": "完整事件完成或导演原有换装/换场/明确时间省略，非按固定秒数或逐镜拆分。",
+        "postproduction_music": "后期全片单曲《Deja Vu (Sped Up Version)》持续铺底，末段定格收尾。",
+        "postproduction_text": [
+          {
+            "shot_id": "S01-022",
+            "texts": [
+              "敷15分钟，湿巾轻轻擦去"
+            ],
+            "timing_basis": "估时约2秒（STP-011 预算余下，未实测）",
+            "display_timing": "沿 take.process 出现顺序，限定对应镜内，阅读停留沿导演预算，未有精确时码则留剪辑核定。",
+            "status": "planned"
+          }
+        ],
+        "outgoing_cut": {
+          "entry": "承接上镜离肤",
+          "exit": "她放下洁面巾后硬切镜区收尾段",
+          "trigger": "收尾确认完成触发换场",
+          "information_handoff": "产品段闭环：擦除结束即收尾，清水洗净不入画（手册口径）"
+        },
+        "review_status": "needs_review",
+        "open_questions": [],
+        "postproduction_unspecified_item_labels": [],
+        "exact_required_visuals_in_body": [
+          {
+            "shot_id": "S01-020",
+            "prompt_clause": "湿洁面巾从鼻侧贴肤、向外带过一侧脸颊后离肤，擦过区域干净、未擦区域仍留膜"
+          },
+          {
+            "shot_id": "S01-021",
+            "prompt_clause": "洁面巾先离肤再换干净面，按分区续擦额头、下巴与另一颊，已擦区保持干净不复膜"
+          }
+        ]
+      },
+      "same_scene_split": {
+        "from_segment_id": "V12",
+        "reason": "event_complete",
+        "evidence": "导演已有事件完成与换装/时间省略切点，按原镜头连续承载。",
+        "source_boundary": {
+          "shot_id": "S01-020",
+          "field": "cut.entry",
+          "quote": "承接上镜取巾收紧为特写"
+        }
+      },
+      "physical_continuity": {
+        "from_segment_id": "V12",
+        "permitted_change": "仅沿导演换装、省略时间或进入下一完整步骤；动作前后态由来源约束。",
+        "visibility": {
+          "status": "no_visual_needed",
+          "previous_state": "台面收整，她放下书，手伸向白色洁面巾，膜态与敷完时一致",
+          "current_state": "她手持湿洁面巾，全脸仍为完整薄膜态",
+          "basis": "导演已有自然事件边界，文字候选承接；活动状态图不足另列未决，不声明原生状态控制。"
+        }
+      }
+    },
+    {
+      "segment_id": "V14",
+      "title": "居家抱枕自拍",
+      "scene_id": "S02",
+      "source_shot_ids": [
+        "S02-010"
+      ],
+      "source_paragraph_ids": [
+        "STP-012"
+      ],
+      "source_dialogue_ids": [],
+      "source_audio": [],
+      "generation_duration_seconds": 8,
+      "target_edit_duration_seconds": 8,
+      "parameters": {
+        "platform": "redframe",
+        "model": "seedance2.5",
+        "model_label": "Seedance 2.5",
+        "aspect_ratio": "9:16",
+        "resolution": "480p",
+        "duration_seconds": 8
+      },
+      "duration_basis": "按导演各镜 rhythm 预算逐项相加，非已测音视频或已核平台时长能力。",
+      "shot_durations": [
+        8
+      ],
+      "materials": [
+        {
+          "asset_id": "AST-CHAR-01",
+          "output_id": "NV1-LOOK-07",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-CHAR-01/AST-CHAR-01_outfit_a0d9f1aa_final_雾蓝条纹衬衫式睡衣套装 · 人物1×4_R01.png",
+          "sha256": "baeb57398fd0dd3539aef3420a16fc6de3a346dc1b6aceb805e71fc666f5a906",
+          "role": "identity",
+          "source_shot_ids": [
+            "S02-010"
+          ],
+          "purpose": "左格高清脸为唯一面部来源，右三格承担服装、比例与方向。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#89e6afd8af3f439e",
+          "upload_status": "planned",
+          "reference": "@图片1"
+        },
+        {
+          "asset_id": "AST-LOC-02",
+          "output_id": "state0_view0",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-LOC-02/AST-LOC-02_state0_view0_任意视角_R01.png",
+          "sha256": "947e9b3ed2bdb2b47a0cdd18809b91efd85dd41eea647f6c74139ef7c8b0a5a0",
+          "role": "layout",
+          "source_shot_ids": [
+            "S02-010"
+          ],
+          "purpose": "本段场景布局与材质，按导演同侧机位拍摄。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#bd904b6003df47d8",
+          "upload_status": "planned",
+          "reference": "@图片2"
+        }
+      ],
+      "prompt": "@图片1用于左格高清脸为唯一面部来源，右三格承担服装、比例与方向。\n@图片2用于本段场景布局与材质，按导演同侧机位拍摄。\n\n女一面部沿用人物板左格，长红棕发，两枚黑色发夹分列头部两侧。镜区窗侧柔光与暖中性色保持，镜面正前站位与衣柜空间沿场景图。\n护理结束，女一素颜干净，仍穿雾蓝细条纹衬衫睡衣套装，抱毛绒抱枕来到衣帽间镜前。广角全身镜自拍容纳蹲姿全身、抱枕与镜框，焦点在她和抱枕整体姿态。她蹲下拍一张，自拍手持随下蹲小幅下移补构图再收稳，拍完起身放下抱枕，去换收尾造型，在起身完成的换装切点结束。保留衣物轻响。\n生成画面不添加画外字幕、片头片尾文字、说明字卡、时间码或其他叠加文字。正文中的秒数与切镜时间只控制动作和剪辑，不在画面显示。真实包装、商标和电视实体屏幕按参考及既定方案保留。不要生成背景音乐（BGM）。本段无对白、无旁白。",
+      "entry_state": "护理已结束，女一仍穿雾蓝条纹衬衫睡衣套装（LOOK-07），抱着一只毛绒抱枕来到镜前",
+      "exit_state": "蹲姿自拍完成，她起身放下抱枕去换收尾造型",
+      "production_notes": {
+        "segmentation_basis": "完整事件完成或导演原有换装/换场/明确时间省略，非按固定秒数或逐镜拆分。",
+        "postproduction_music": "后期全片单曲《Deja Vu (Sped Up Version)》持续铺底，末段定格收尾。",
+        "postproduction_text": [],
+        "outgoing_cut": {
+          "entry": "收尾段首镜，由 S01 护理结束硬切回镜区",
+          "exit": "她起身切收尾造型镜",
+          "trigger": "起身动作触发换装切",
+          "information_handoff": "居家状态与护理段服装连续（同一套 LOOK-07），段落气口松弛"
+        },
+        "review_status": "text_self_checked",
+        "open_questions": [],
+        "postproduction_unspecified_item_labels": [
+          {
+            "shot_id": "S02-010",
+            "instruction": "她在全身镜前蹲下，抱着抱枕拍了一张；衣服上带中文小字单品标注",
+            "status": "原稿未给具体单品小字正文，保留原指令待协调方收口，不臆造品牌色号"
+          }
+        ],
+        "exact_required_visuals_in_body": []
+      }
+    },
+    {
+      "segment_id": "V15",
+      "title": "缎面与针织回环收尾",
+      "scene_id": "S02",
+      "source_shot_ids": [
+        "S02-011"
+      ],
+      "source_paragraph_ids": [
+        "STP-012"
+      ],
+      "source_dialogue_ids": [],
+      "source_audio": [],
+      "generation_duration_seconds": 9,
+      "target_edit_duration_seconds": 9,
+      "parameters": {
+        "platform": "redframe",
+        "model": "seedance2.5",
+        "model_label": "Seedance 2.5",
+        "aspect_ratio": "9:16",
+        "resolution": "480p",
+        "duration_seconds": 9
+      },
+      "duration_basis": "按导演各镜 rhythm 预算逐项相加，非已测音视频或已核平台时长能力。",
+      "shot_durations": [
+        9
+      ],
+      "materials": [
+        {
+          "asset_id": "AST-CHAR-01",
+          "output_id": "NV1-LOOK-06",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-CHAR-01/AST-CHAR-01_outfit_2cf2cfe7_final_深色缎面吊带长裙＋细带高跟（收尾加薄针织开衫） · 人物1×4_R01.png",
+          "sha256": "0bfa8320b0dda6ec652bc7f40811fa56ffd0e9e54179eb80814d8cc710035101",
+          "role": "identity",
+          "source_shot_ids": [
+            "S02-011"
+          ],
+          "purpose": "左格高清脸为唯一面部来源，右三格承担服装、比例与方向。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#aab67697697e485c",
+          "upload_status": "planned",
+          "reference": "@图片1"
+        },
+        {
+          "asset_id": "AST-LOC-02",
+          "output_id": "state0_view0",
+          "path": "04_资产/母版/R01_25e47bb5b3894803/AST-LOC-02/AST-LOC-02_state0_view0_任意视角_R01.png",
+          "sha256": "947e9b3ed2bdb2b47a0cdd18809b91efd85dd41eea647f6c74139ef7c8b0a5a0",
+          "role": "layout",
+          "source_shot_ids": [
+            "S02-011"
+          ],
+          "purpose": "本段场景布局与材质，按导演同侧机位拍摄。",
+          "confirmation_ref": "/Users/liuyang/Desktop/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json#bd904b6003df47d8",
+          "upload_status": "planned",
+          "reference": "@图片2"
+        }
+      ],
+      "prompt": "@图片1用于左格高清脸为唯一面部来源，右三格承担服装、比例与方向。\n@图片2用于本段场景布局与材质，按导演同侧机位拍摄。\n\n女一面部沿用人物板左格，长红棕发，两枚黑色发夹分列头部两侧。镜区窗侧柔光与暖中性色保持，镜面正前站位与衣柜空间沿场景图。\n女一已穿前面出现过的同一条深蓝黑色缎面吊带长裙，外搭薄针织开衫站回衣帽间镜前。广角全身镜自拍容纳全身、镜框与裙鞋，开衫和缎面裙层次可读，焦点在整体造型。她举手机拍下收尾一身，手持轻微浮动后完全收稳，造型定格处保持停留直至段末，画面在镜前这身造型上结束。保留衣物轻响。\n生成画面不添加画外字幕、片头片尾文字、说明字卡、时间码或其他叠加文字。正文中的秒数与切镜时间只控制动作和剪辑，不在画面显示。真实包装、商标和电视实体屏幕按参考及既定方案保留。不要生成背景音乐（BGM）。本段无对白、无旁白。",
+      "entry_state": "女一已换上配饰段那条深色缎面吊带长裙（LOOK-06），外搭一件薄针织开衫，站回镜前",
+      "exit_state": "画面在镜前造型上结束，全片完，无片尾卡、无关注引导",
+      "production_notes": {
+        "segmentation_basis": "完整事件完成或导演原有换装/换场/明确时间省略，非按固定秒数或逐镜拆分。",
+        "postproduction_music": "后期全片单曲《Deja Vu (Sped Up Version)》持续铺底，末段定格收尾。",
+        "postproduction_text": [
+          {
+            "shot_id": "S02-011",
+            "texts": [
+              "last look · satin & knit"
+            ],
+            "timing_basis": "估时约9秒（STP-012 预算余下，未实测）；结尾停留随 BGM 尾音",
+            "display_timing": "沿 take.process 出现顺序，限定对应镜内，阅读停留沿导演预算，未有精确时码则留剪辑核定。",
+            "status": "planned"
+          }
+        ],
+        "outgoing_cut": {
+          "entry": "承接上镜换装切入",
+          "exit": "全片结束，不再出镜",
+          "trigger": "BGM 收尾与造型定格同时完成",
+          "information_handoff": "收尾造型与 STP-007 的 LOOK-06 严格同装加开衫，回环关系明确"
+        },
+        "review_status": "text_self_checked",
+        "open_questions": [],
+        "postproduction_unspecified_item_labels": [],
+        "exact_required_visuals_in_body": []
+      },
+      "same_scene_split": {
+        "from_segment_id": "V14",
+        "reason": "time_ellipsis",
+        "evidence": "导演已有事件完成与换装/时间省略切点，按原镜头连续承载。",
+        "source_boundary": {
+          "shot_id": "S02-011",
+          "field": "cut.entry",
+          "quote": "承接上镜换装切入"
+        }
+      },
+      "physical_continuity": {
+        "from_segment_id": "V14",
+        "permitted_change": "仅沿导演换装、省略时间或进入下一完整步骤；动作前后态由来源约束。",
+        "visibility": {
+          "status": "no_visual_needed",
+          "previous_state": "蹲姿自拍完成，她起身放下抱枕去换收尾造型",
+          "current_state": "女一已换上配饰段那条深色缎面吊带长裙（LOOK-06），外搭一件薄针织开衫，站回镜前",
+          "basis": "导演已有自然事件边界，文字候选承接；活动状态图不足另列未决，不声明原生状态控制。"
+        }
+      }
+    }
+  ],
+  "creative_sections": [
+    {
+      "section_id": "CS01",
+      "title": "拆新包与对镜比包",
+      "generation_segments": [
+        "V01"
+      ],
+      "source_shot_ids": [
+        "S01-001",
+        "S01-002"
+      ]
+    },
+    {
+      "section_id": "CS02",
+      "title": "普拉提套装亮相",
+      "generation_segments": [
+        "V02"
+      ],
+      "source_shot_ids": [
+        "S02-001"
+      ]
+    },
+    {
+      "section_id": "CS03",
+      "title": "客厅晨练完整事件",
+      "generation_segments": [
+        "V03"
+      ],
+      "source_shot_ids": [
+        "S03-001",
+        "S03-002",
+        "S03-003",
+        "S03-004",
+        "S03-005"
+      ]
+    },
+    {
+      "section_id": "CS04",
+      "title": "梳妆至唇妆完成",
+      "generation_segments": [
+        "V04"
+      ],
+      "source_shot_ids": [
+        "S01-003",
+        "S01-004",
+        "S01-005",
+        "S01-006",
+        "S01-007"
+      ]
+    },
+    {
+      "section_id": "CS05",
+      "title": "通勤针织造型完整展示",
+      "generation_segments": [
+        "V05"
+      ],
+      "source_shot_ids": [
+        "S02-002",
+        "S02-003"
+      ]
+    },
+    {
+      "section_id": "CS06",
+      "title": "黑色西装连衣裙展示",
+      "generation_segments": [
+        "V06"
+      ],
+      "source_shot_ids": [
+        "S02-004",
+        "S02-005"
+      ]
+    },
+    {
+      "section_id": "CS07",
+      "title": "焦糖搭配与配饰分享",
+      "generation_segments": [
+        "V07"
+      ],
+      "source_shot_ids": [
+        "S02-006",
+        "S02-007",
+        "S02-008"
+      ]
+    },
+    {
+      "section_id": "CS08",
+      "title": "缎面晚间造型亮相",
+      "generation_segments": [
+        "V08"
+      ],
+      "source_shot_ids": [
+        "S02-009"
+      ]
+    },
+    {
+      "section_id": "CS09",
+      "title": "礼盒亮相及活动口播",
+      "generation_segments": [
+        "V09"
+      ],
+      "source_shot_ids": [
+        "S01-008",
+        "S01-009"
+      ]
+    },
+    {
+      "section_id": "CS10",
+      "title": "净脸与双剂备膜",
+      "generation_segments": [
+        "V10"
+      ],
+      "source_shot_ids": [
+        "S01-010",
+        "S01-011",
+        "S01-012",
+        "S01-013",
+        "S01-014"
+      ]
+    },
+    {
+      "section_id": "CS11",
+      "title": "分区薄涂至完整膜态",
+      "generation_segments": [
+        "V11"
+      ],
+      "source_shot_ids": [
+        "S01-015",
+        "S01-016",
+        "S01-017",
+        "S01-018"
+      ]
+    },
+    {
+      "section_id": "CS12",
+      "title": "敷膜等待与收纳翻书",
+      "generation_segments": [
+        "V12"
+      ],
+      "source_shot_ids": [
+        "S01-019"
+      ]
+    },
+    {
+      "section_id": "CS13",
+      "title": "分区湿擦与干净收尾",
+      "generation_segments": [
+        "V13"
+      ],
+      "source_shot_ids": [
+        "S01-020",
+        "S01-021",
+        "S01-022"
+      ]
+    },
+    {
+      "section_id": "CS14",
+      "title": "居家抱枕自拍",
+      "generation_segments": [
+        "V14"
+      ],
+      "source_shot_ids": [
+        "S02-010"
+      ]
+    },
+    {
+      "section_id": "CS15",
+      "title": "缎面与针织回环收尾",
+      "generation_segments": [
+        "V15"
+      ],
+      "source_shot_ids": [
+        "S02-011"
+      ]
+    }
+  ],
+  "open_questions": [
+    {
+      "id": "VP-GAP-01",
+      "affected_segments": [
+        "V01",
+        "V04"
+      ],
+      "issue": "任务指定的母版 AST-CHAR-01 目录中无 LOOK-01 单张全身图。另发现 04_资产/AST-CHAR-01_女一身份全身.png，实看可作穿着候选，但不在所交 confirmed_outputs 内，未冒充已确认图入素材。",
+      "required_resolution": "协调方提供准确确认输出或确认该候选的当前用途。",
+      "located_candidate": {
+        "path": "04_资产/AST-CHAR-01_女一身份全身.png",
+        "sha256": "ff72a17944a4d98e69a29d03f2c54ce1c39326937b72d88852cee7bb509040a7",
+        "observation": "女一穿象牙白蕾丝边睡裙、同系系带晨袍和拖鞋，真实全身到脚入画；当前确认母版中无此output。"
+      }
+    },
+    {
+      "id": "VP-GAP-02",
+      "affected_segments": [
+        "V01",
+        "V04",
+        "V09",
+        "V10",
+        "V11",
+        "V12",
+        "V13"
+      ],
+      "issue": "两张梳妆区母图均为画面右侧窗、左侧门，与导演左窗右后门相反。冲突图退出本稿活动输入，保留源 manifest。",
+      "required_resolution": "上游统一空间方位后提供适用图或准确导演修订。",
+      "status": "closed",
+      "resolution": "已按协调方裁定关闭：场景图为空间权威、正文方位已对齐图片",
+      "resolution_basis": "返修单1.md 协调方裁定：同一组图供全部S01段使用可保持片内空间自洽，方位左右不是剧情事实；退出场景图会使22镜背景逐段漂移。原issue与required_resolution保留为初稿问题及原处置需求历史。"
+    },
+    {
+      "id": "VP-GAP-03",
+      "affected_segments": [
+        "V06"
+      ],
+      "issue": "LOOK-04衣装已依确认图修正为黑色收腰西装连衣裙＋黑色尖头高跟。源字幕仍为 LOOK 2 · 黑丝 × 包臀裙，后期原文保留并标待上游修正，未擅改字幕。",
+      "required_resolution": "协调方收口服装相关旧字幕。"
+    },
+    {
+      "id": "VP-GAP-04",
+      "affected_segments": [
+        "V04",
+        "V10",
+        "V11",
+        "V12",
+        "V13"
+      ],
+      "issue": "导演声明的淡妆完成、净脸、完整膜态、擦净及备膜台面状态范围与段内动作变化并存，当前没有逐镜原生控制证据。既有膜态图只覆盖完整膜态外观，未覆盖变化前后整段控制。护理场景母图实际为空日常台面，不能承担已布置备膜台面新态。",
+      "required_resolution": "协调方按真实事件与平台能力补状态用途/控制证据，或由上游调整分段适用范围。"
+    },
+    {
+      "id": "VP-GAP-05",
+      "affected_segments": [
+        "V13"
+      ],
+      "issue": "S01-021仅预算2秒，含先离肤换面及额头、另一颊、下巴、鼻周连续接触—移动—离肤四区，无法确认真实节拍容纳。S01-022起态仍有小残膜而过程只写巾离肤、无最后清除动作，擦净因果未闭合。候选照完整意图写出，原2秒预算保留，动作时长自查未通过。",
+      "required_resolution": "导演明确清除末残膜过程与可承载预算，再同步全片229秒分配。"
+    },
+    {
+      "id": "VP-GAP-06",
+      "affected_segments": [
+        "V01",
+        "V02",
+        "V03",
+        "V04",
+        "V05",
+        "V06",
+        "V07",
+        "V08",
+        "V09",
+        "V10",
+        "V11",
+        "V12",
+        "V13",
+        "V14",
+        "V15"
+      ],
+      "issue": "本轮未操作平台，Seedance 2.5红帧的单次时长上限、参考输入数量与控制模式未核。段时长为原导演事件播放预算，最长42秒，当前不能声称逐段可直接提交。",
+      "required_resolution": "协调方在平台交付阶段取得原生能力证据，按本稿事件边界处理承载。"
+    },
+    {
+      "id": "VP-GAP-07",
+      "affected_segments": [
+        "V09"
+      ],
+      "issue": "AST-PROD-01 state1_view0命名为开盒见双剂排列，实际图仅两管产品外观。已将它限定为双剂外观，开盒结构与上下七支排列引用R04 ACTION-01动作片段，不将错误命名当观察事实。",
+      "required_resolution": "本稿职责已纠正，协调方核上游状态标签。"
+    },
+    {
+      "id": "VP-GAP-08",
+      "affected_segments": [
+        "V02",
+        "V05",
+        "V07",
+        "V14"
+      ],
+      "issue": "部分中文单品小字上游仅给泛指，没有逐字内容。已逐镜保存原指令，未编造名称、品牌或色号。",
+      "required_resolution": "后期由协调方给准确标注内容。"
+    },
+    {
+      "id": "VP-CHECK-ORDER",
+      "affected_segments": [
+        "V01",
+        "V02",
+        "V03",
+        "V04",
+        "V05",
+        "V06",
+        "V07",
+        "V08",
+        "V09",
+        "V10",
+        "V11",
+        "V12",
+        "V13",
+        "V14",
+        "V15"
+      ],
+      "issue": "generation_boundaries依scenes数组展开的场景存储顺序要求镜号单调，实际导演cut/audiovisual_flow及STP明确跨场交错，本稿遵循成片顺序，因此命令报生成段来源顺序与导演顺序冲突。",
+      "required_resolution": "协调方按真实播放顺序处理检查器接线；本轮保留导演原文件与真实成片顺序。"
+    },
+    {
+      "id": "VP-CHECK-ACTION-ROOT",
+      "affected_segments": [
+        "V09",
+        "V10",
+        "V11",
+        "V13"
+      ],
+      "issue": "required_visuals的动作参考局部校验仅允许项目根文件，拒绝实际已核、非空且SHA-256匹配的仓库R04外置动作文件。首条报action_reference: S01-008 缺实际可用的开盒动作参考（AST-PROD-01）。实际动作文件存在且已抽帧；路径根限制为接线缺口。",
+      "required_resolution": "协调方按已选R04包处理动作消费者的允许根或在获准的业务复制环节补项目引用。当前不改消费者、不伪造本地路径。"
+    }
+  ],
+  "self_check": {
+    "scope": "全部38镜、15个连续事件候选、229秒预算。",
+    "shot_coverage": "38镜各一次，按STP-001至STP-012以及导演跨场cut/flow恢复成片先后。",
+    "dialogue": "只在V09/S01-009发声一次，与编导DLG-001原文及说话人一致。",
+    "product_chain": "先净脸，白A后金B各一支掰头全挤同碗、顺时针故事内40秒至奶泡、分区薄涂眼唇留空、等待15分钟、分区湿擦；末段时长及清尾因果待上游修订。",
+    "parameters": "15段统一Seedance 2.5、9:16、480p。时长为导演预算。",
+    "overall_status": "needs_review",
+    "limitations": "候选写作完成，整体自查尚未通过。未宣称确认、采用、平台写入或生成效果。",
+    "scene_state_plan": {
+      "scope": "declared plan only; native control and visual observations not checked",
+      "segments": [
+        {
+          "segment_id": "V04",
+          "status": "needs_review",
+          "issue": "scene_state: 同段含变化前后镜号，文字用途范围不等于原生逐镜控制；先核真实起终控制或合法叙事分段",
+          "resolution": "保留needs_review。逐段动作已写明起终态；缺口涉及原导演状态范围、台面新态或原生逐镜控制，当前权限内无法改上游，阻止相关提交。"
+        },
+        {
+          "segment_id": "V10",
+          "status": "needs_review",
+          "issue": "scene_state: 同段含变化前后镜号，文字用途范围不等于原生逐镜控制；先核真实起终控制或合法叙事分段",
+          "resolution": "保留needs_review。逐段动作已写明起终态；缺口涉及原导演状态范围、台面新态或原生逐镜控制，当前权限内无法改上游，阻止相关提交。"
+        },
+        {
+          "segment_id": "V11",
+          "status": "needs_review",
+          "issue": "scene_state: 同段含变化前后镜号，文字用途范围不等于原生逐镜控制；先核真实起终控制或合法叙事分段",
+          "resolution": "保留needs_review。逐段动作已写明起终态；缺口涉及原导演状态范围、台面新态或原生逐镜控制，当前权限内无法改上游，阻止相关提交。"
+        },
+        {
+          "segment_id": "V12",
+          "status": "covered",
+          "resolution": "V12已将本人完整膜态确认图绑定为S01-ST-03状态参考，计划覆盖通过。"
+        },
+        {
+          "segment_id": "V13",
+          "status": "needs_review",
+          "issue": "scene_state: 同段含变化前后镜号，文字用途范围不等于原生逐镜控制；先核真实起终控制或合法叙事分段",
+          "resolution": "保留needs_review。逐段动作已写明起终态；缺口涉及原导演状态范围、台面新态或原生逐镜控制，当前权限内无法改上游，阻止相关提交。"
+        }
+      ]
+    },
+    "required_visuals_local_check": {
+      "status": "blocked_by_external_reference_root",
+      "result": "action_reference: S01-008 缺实际可用的开盒动作参考（AST-PROD-01）",
+      "scope": "逐字画面指令与最低时长已在正文核对，局部动作路径门禁未通过。"
+    }
+  }
+}

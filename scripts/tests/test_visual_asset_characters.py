@@ -29,7 +29,7 @@ class CharacterRoutes(unittest.TestCase):
         update_narrative_checksum(path.parent)
         self.lib.projects.sync(self.project['id'])
         self.assets = {}
-        for kind, size in [('大头照', (300,400)), ('服装三视图',(160,90)), ('人物1x4',(160,90))]:
+        for kind, size in [('大头照', (300,400)), ('服装三视图',(160,120)), ('人物1x4',(160,90))]:
             p=self.base/(kind+'.png');Image.new('RGB',size,'blue').save(p)
             self.assets[kind] = self.lib.import_file(p, category=kind)[0]
     def tearDown(self):
@@ -199,8 +199,8 @@ class CharacterRoutes(unittest.TestCase):
         self.assertFalse(job['steps'][index]['generation_enabled'])
         self.assertIsNone(job['steps'][index]['ratio'])
         path = self.base / 'local-board.png'
-        composite = Image.new('RGB', (910, 360))
-        for kind, size, left in [('大头照', (270, 360), 0), ('服装三视图', (640, 360), 270)]:
+        composite = Image.new('RGB', (750, 360))
+        for kind, size, left in [('大头照', (270, 360), 0), ('服装三视图', (480, 360), 270)]:
             with Image.open(self.assets[kind]['original']) as source:
                 composite.paste(source.resize(size), (left, 0))
         composite.save(path)
@@ -225,7 +225,7 @@ class CharacterRoutes(unittest.TestCase):
         self.assertIsNone(imported['project_confirmation'])
         board = self.lib.get(imported['outputs'][0])
         self.assertEqual(Path(board['original']).read_bytes(), path.read_bytes())
-        self.assertEqual((board['width'], board['height']), (910, 360))
+        self.assertEqual((board['width'], board['height']), (750, 360))
         service.select({**task, 'asset_id': board['id']})
         confirmed = service.confirm({**task, 'confirm': True})['rows'][0]['job']['steps'][index]
         self.assertEqual(len(confirmed['project_confirmation']['dependency_confirmations']), 2)
@@ -280,6 +280,28 @@ class CharacterRoutes(unittest.TestCase):
         self.assertIn('参考图 2 是服装灰模，只参考', request['prompt'])
         self.assertIn('不把身份参考中的服装当作本次服装设计', request['prompt'])
         self.assertIn('[逐件填写款式、颜色、材质和叠穿方式]', request['prompt'])
+
+    def test_declared_original_keeps_wardrobe_slots_separate_from_head_and_layout(self):
+        original = self.base / 'user-original.png'
+        Image.new('RGB', (400, 300), 'green').save(original)
+        story = Path(self.project['path']) / 'narrative.json'
+        narrative = json.loads(story.read_text(encoding='utf8'))
+        narrative['asset_requirements'][0]['reference_paths'] = [str(original)]
+        story.write_text(json.dumps(narrative, ensure_ascii=False), encoding='utf8')
+        update_narrative_checksum(story.parent)
+        self.lib.projects.sync(self.project['id'])
+        job = self.route('build', name='日常装', evidence='日常装')
+        self.confirm(job, 'shared_head', '大头照')
+        job = self.lib.get(job['id'], 'jobs')
+        index = next(i for i, step in enumerate(job['steps']) if step['kind'] == '服装')
+        request = self.lib.projects.request(job, index)
+        self.assertEqual(request['ratio'], '4:3')
+        self.assertEqual(request['reference_paths'][1], str(original))
+        self.assertTrue(request['reference_records'][0]['project_confirmed'])
+        self.assertTrue(request['reference_records'][2]['layout_only'])
+        self.assertIn('用参考图 2 制作同一套服装', request['prompt'])
+        self.assertIn('参考图 3 是服装灰模，只参考', request['prompt'])
+        self.assertNotIn('[逐件填写款式、颜色、材质和叠穿方式]', request['prompt'])
 
     def test_character_template_fields_block_review_and_existing_approval(self):
         skill = self.lib.projects.skill
