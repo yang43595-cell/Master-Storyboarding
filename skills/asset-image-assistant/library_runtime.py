@@ -4,7 +4,7 @@ import hashlib
 import re
 import sys
 from core.character_assets import production_kinds
-from core.character_layout import CHARACTER_PROMPT_PATH, render_character_prompt, unfilled_character_prompt_fields
+from core.character_layout import BOARD_IMPORT_ONLY, CHARACTER_PROMPT_PATH, render_character_prompt, unfilled_character_prompt_fields
 from core.image_technical import technical_check
 from core.knowledge_runtime import resolve_knowledge_root, verify_selected_file
 from pathlib import Path
@@ -207,6 +207,8 @@ def _template_excerpt(raw, kind, view='', index=None):
 def executable_template(kind, subject='', notes='', *, raw='', view='', index=None,
                         allow_unreferenced_design=False, reference_records=(), has_references=True):
     """Render the same bounded template for the seed and the model's task package."""
+    if kind == '人物1x4':
+        raise ValueError(BOARD_IMPORT_ONLY)
     if reference_records and reference_records[-1].get('layout_only'):
         if raw and Path(raw).resolve() != CHARACTER_PROMPT_PATH:
             raise ValueError('人物灰模的提示词须使用项目已确认模板')

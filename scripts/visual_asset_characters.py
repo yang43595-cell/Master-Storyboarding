@@ -10,27 +10,6 @@ from core.character_assets import board_outfit_ids, step_output_id, uses_wardrob
 from visual_asset_choices import read_choices, production_spec
 
 
-def enable_character_ai_finals(job):
-    """Unblock pending legacy boards; preserve confirmed outputs and active runs."""
-    build_outfits = {v['id'] for v in job.get('character_workflow', {}).get('outfits', []) if v['route'] == 'build'}
-    changed = False
-    for step in job['steps']:
-        if step.get('kind') != '人物1x4' or step.get('outfit_id') not in build_outfits:
-            continue
-        if step['status'] in {'confirmed', 'generating', 'submitting', 'submitted', 'querying'} or step.get('project_confirmation'):
-            continue
-        if step.get('generation_enabled') is not True:
-            step['generation_enabled'] = True
-            changed = True
-        if 'composition_error' in step:
-            step.pop('composition_error')
-            changed = True
-        if step.get('message', '').startswith('人物1×4自动合成未完成：'):
-            step.pop('message')
-            changed = True
-    return changed
-
-
 def upstream_outfits(req):
     """Read explicit clothing transitions, never emotion/skin-state transitions."""
     # Explicit production states separate continuity from the visual design.
@@ -213,7 +192,7 @@ def prepare_character(service, payload):
 
 def choose_character_route(service, payload):
     if payload.get('name') or payload.get('evidence') or not payload.get('outfit_id'):
-        raise ValueError('服装套数与名称由上游需求确定，网页仅选择复用或生成')
+        raise ValueError('服装套数与名称由上游需求确定，网页仅选择复用或新制作')
     prepare_character(service, payload)
     return character_route(service, payload)
 
@@ -243,7 +222,7 @@ def character_route(service, payload):
                    'created_at': now, 'project_id': p['id'], 'project_name': p['name'], 'ast_id': req['asset_id'],
                    'source_narrative': p['source'], 'requirement': copy.deepcopy(req), 'steps': [],
                    'planning_evidence': {'mode': 'project', 'method': 'user-selected-character-route'},
-                   'plan_rationale': '按用户选择复用最终1×4，或共用大头照、逐套服装与1×4制作；生成仍执行项目Skill。',
+                   'plan_rationale': '按用户选择复用最终1×4，或用共用大头照与逐套确认的服装三视图本地拼版后导入。',
                    'blockers': [], 'character_workflow': {'outfits': []}}
         outfits = job['character_workflow']['outfits']
         final_ids = character_final_ids(p, req, job=job)
@@ -302,7 +281,7 @@ def character_route(service, payload):
                 'state': state, 'ratio': recipe['ratio'], 'dependencies': dependencies, 'required': True,
                 'outfit_id': outfit, 'status': 'waiting', 'outputs': [], 'reference_ids': row['reference_ids'][:],
                 'project_confirmation': None, 'template_source': recipe.get('template') or recipe['guide'],
-                'rationale': '来自当前人物AST及用户选择的制作路径；具体生成按资产Skill编写并审查。',
+                'rationale': '来自当前人物AST及用户选择的制作路径。',
                 'must_not_inherit': ['临时表情、剧情布光、污损或镜头构图']})
         if route == 'build':
             add('shared_head', '大头照', '共用大头照', '固定人物身份；供本人物各套服装共用', '人物身份', [])
@@ -314,8 +293,8 @@ def character_route(service, payload):
             for s in job['steps']:
                 if s['key'] == v['id'] + '_final':
                     s['dependencies'] = ['shared_head', v['id'] + '_wardrobe'] if v['route'] == 'build' else []
-                    if s['status'] != 'confirmed' and not s.get('project_confirmation'):
-                        s['generation_enabled'] = v['route'] == 'build'
+                    if s['status'] == 'waiting':
+                        s['generation_enabled'] = False
                 if s['key'] == v['id'] + '_wardrobe':
                     s['required'] = v['route'] == 'build'
         for s in job['steps']:

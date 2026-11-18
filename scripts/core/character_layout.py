@@ -7,12 +7,12 @@ from pathlib import Path
 _DIRECTORY = Path(__file__).resolve().parents[2] / "assets" / "character-layout-templates"
 CHARACTER_PROMPT_PATH = (_DIRECTORY.parents[1] / "skills" / "asset-image-assistant"
                          / "references" / "character-layout-prompts.md")
+BOARD_IMPORT_ONLY = "人物1×4不再生图；请将已确认大头照与对应服装三视图本地拼版后导入成图"
 _FILES = {
     "大头照": "大头照_通用灰模_3x4_R01.png",
     "服装": "服装三视图_通用灰模_16x9_R01.png",
-    "人物1x4": "人物1x4_通用灰模_留发饰空间_R02.png",
 }
-_ALIASES = {"服装三视图": "服装", "人物1×4": "人物1x4"}
+_ALIASES = {"服装三视图": "服装"}
 _DESIGN_TEMPLATES = {"大头照": "大头照（无对标）", "服装": "服装（无对标）"}
 _ROLE = "灰模仅参考主体的位置与大小。人物身份、发型、头饰、服装款式、材质和颜色以原参考及本次要求为准"
 
@@ -58,8 +58,6 @@ def render_character_prompt(kind, references):
     """Adapt slot numbers and permit planned designs without identity/wardrobe photos."""
     templates = character_prompt_templates()
     body = templates[kind]
-    if kind == "人物1x4":
-        return body
     has_layout = bool(references and references[-1].get("layout_only"))
     original_refs = references[:-1] if has_layout else references
     source = next((index for index, ref in enumerate(original_refs, 1)

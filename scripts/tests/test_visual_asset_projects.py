@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import visual_asset_library as m
 import visual_asset_projects as pmod
 from core.artifacts import load_manifest
-from core.character_layout import character_layout_reference, character_prompt_templates
+from core.character_layout import character_layout_reference
 from core.project_state import new_project_state, write_project_state, load_project_state
 
 
@@ -710,7 +710,7 @@ class ProjectTests(unittest.TestCase):
 
     def test_prepare_has_one_input_with_template_and_dynamic_rules(self):
         request = self.lib.step_request(self.job(1), 0)
-        request['kind'] = '人物1x4'
+        request['kind'] = '服装'
         request['asset_method_scopes'] = ['character']
         request.pop('template_source', None)
         startup = Path(request['project_path']) / '00_项目管理/执行上下文/stage_startup.md'
@@ -725,8 +725,7 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(before, {p: p.read_bytes() for p in Path(request['project_path']).rglob('*') if p.is_file()})
         self.assertEqual(evidence['attestation'], 'input_assembled_not_agent_reading')
         self.assertEqual({m['id'] for m in package['professional_methods']}, {'ASSET-CHARACTER-METHOD'})
-        self.assertTrue(package['production_item']['template']['content'])
-        self.assertEqual(package['production_item']['template']['block_index'], 3)
+        self.assertIn('无头隐形人台', package['production_item']['template']['content'])
         self.assertTrue(Path(evidence['task_package']['path']).is_file())
 
     def test_check_current_prompt_does_not_replay_old_observations(self):
@@ -1393,15 +1392,12 @@ class ProjectTests(unittest.TestCase):
         self.assertTrue(service.apply_website_review(ident, wardrobe_publication, client)['waiting_for_remaining_outputs'])
         wardrobe_confirmation = saved_step(job, wardrobe)['project_confirmation']
         self.assertEqual(saved_step(job, head)['project_confirmation'], head_confirmation)
-        final_request = service.request(self.lib.get(job['id'], 'jobs'), final)
-        layout = character_layout_reference('人物1x4')
-        self.assertEqual(final_request['reference_paths'], [str(wardrobe_image), str(head_image), layout['original']])
-        self.assertEqual(final_request['reference_records'][-1], layout)
-        self.assertEqual(self.lib.prepare(job['id'], final)['prompt'], character_prompt_templates()['人物1x4'])
-        self.assertEqual(final_request['output_id'], 'HOME-FINAL')
-        self.assertNotEqual(job['steps'][final]['key'], final_request['output_id'])
+        with self.assertRaisesRegex(ValueError, '不再生图'):
+            self.lib.prepare(job['id'], final)
+        self.assertEqual(pmod.step_output_id(job['steps'][final]), 'HOME-FINAL')
+        self.assertNotEqual(job['steps'][final]['key'], 'HOME-FINAL')
 
-        final_image = select(job, final, 'board', '人物1x4', (160, 90), 'blue')
+        final_image = select(job, final, 'board', '人物1x4', (910, 360), 'blue')
         current_version = 'd' * 64
         final_publication = publish('board', final_image, current_version, job, final, ['head', 'wardrobe'])
         self.assertTrue(service.apply_website_review(ident, final_publication, client)['waiting_for_remaining_outputs'])

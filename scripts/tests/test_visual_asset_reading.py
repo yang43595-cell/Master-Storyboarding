@@ -151,6 +151,10 @@ class WebReadingTests(unittest.TestCase):
             for kind, recipe in recipes.items():
                 with self.subTest(mode=mode, kind=kind):
                     folder = self.root / (mode + kind)
+                    if kind == '人物1x4':
+                        with self.assertRaisesRegex(ValueError, '不再生图'):
+                            asset.prepare(folder, self.request(kind, mode))
+                        continue
                     text, evidence = asset.prepare(folder, self.request(kind, mode))
                     package = json.loads(text)
                     methods = package['professional_methods']
@@ -378,8 +382,7 @@ class WebReadingTests(unittest.TestCase):
 
         head = {"original": "head.png", "category": "大头照"}
         wardrobe = {"original": "wardrobe.png", "category": "服装三视图"}
-        for kind, originals in (("大头照", [head]), ("服装", [wardrobe]),
-                                ("人物1x4", [wardrobe, head])):
+        for kind, originals in (("大头照", [head]), ("服装", [wardrobe])):
             with self.subTest(kind=kind):
                 records = [*originals, character_layout_reference(kind)]
                 seed, path = library.template_prompt(kind, "测试人物", "", reference_records=records)
