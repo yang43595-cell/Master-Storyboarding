@@ -443,6 +443,13 @@ class ProjectTests(unittest.TestCase):
             self.lib.projects.sync(self.p['id'])
         save.assert_not_called()
 
+    def test_rebinding_existing_project_reuses_sync_source_check(self):
+        service = self.lib.projects
+        with patch.object(pmod, 'source_project', wraps=pmod.source_project) as load_source:
+            result = service.bind(self.p['path'])
+        self.assertEqual(result['id'], self.p['id'])
+        self.assertLessEqual(load_source.call_count, 2)
+
     def test_backup_lock_failure_then_retry_trash_and_restore(self):
         self.select_confirm(self.job(), 0)
         self.lib.vault = self.base / 'vault'
@@ -935,6 +942,21 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual([e['status'] for e in batch['entries']], ['error', 'done'])
         self.assertEqual(len(calls), 2)
         self.assertFalse(self.lib.projects.batch_running)
+
+    def test_new_project_without_kickoff_cannot_fall_back_to_legacy_review(self):
+        service = self.lib.projects
+        job = self.job()
+        root = Path(self.p['path'])
+        pmod.write(root / '00_项目管理/project_request.json', {'project_mode': 'new'})
+        selected = service.select({'job_id': job['id'], 'index': 0, 'asset_id': self.asset['id']})
+        before = self.lib.get(job['id'], 'jobs')
+        self.assertEqual(selected['review_workflow'], 'awaiting_kickoff')
+        with self.assertRaisesRegex(ValueError, '先登记开工决定'):
+            service.confirm({'job_id': job['id'], 'index': 0, 'confirm': True})
+        with self.assertRaisesRegex(ValueError, '先登记开工决定'):
+            service.export({'project_id': self.p['id'], 'confirm': True})
+        self.assertEqual(self.lib.get(job['id'], 'jobs'), before)
+        self.assertFalse(service.get(self.p['id']).get('export'))
 
     def test_project_kickoff_reuses_only_scoped_generation_and_requires_website_review(self):
         job = self.job()

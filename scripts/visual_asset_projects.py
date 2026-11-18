@@ -11,7 +11,7 @@ import sys
 import threading
 import time
 import uuid
-from visual_asset_source import (project_path, source_project, prompt_context, resolve_reference,
+from visual_asset_source import (asset_project_root, project_path, source_project, prompt_context, resolve_reference,
                                  local_reference_document, TEXT_REFERENCE_SUFFIXES)
 from core.artifacts import artifact_is_adopted, digest, verify_image_confirmation
 from visual_asset_choices import (image_work_items, image_decision, retained_specification,
@@ -45,7 +45,7 @@ from core.artifacts import (load_manifest, save_manifest, register_workspace_art
                             asset_output_impact)
 from core.io import project_lock
 from core.project_state import load_project_state, write_project_state
-from core.project_kickoff import grant_covers_asset, load_kickoff
+from core.project_kickoff import grant_covers_asset, load_kickoff, load_project_request, validate_kickoff
 from core.product_reference_pack import resolve_product_pack
 from core.agent_acceptance import (asset_authorization_digest, require_asset_workflow_authorization,
                                    validate_asset_review)
@@ -90,6 +90,14 @@ def production_basis(narrative, ast_ids):
 
 
 BUSY = {'generating', 'submitting', 'submitted', 'querying'}
+ASSET_KICKOFF_REQUIRED = '新项目请先登记开工决定，再按项目选定的通道审核资产'
+
+
+def asset_review_workflow(root):
+    request = load_project_request(root)
+    if 'kickoff' in request:
+        return 'website', validate_kickoff(request['kickoff'])
+    return ('awaiting_kickoff' if request.get('project_mode') == 'new' else 'legacy'), None
 
 
 def reference_evidence(project, requirements, assets=()):
@@ -143,13 +151,14 @@ class Projects:
                 for p in (read(f) for f in self.root.glob('*.json'))]
 
     def bind(self, path):
-        if str(path or '').strip() and Path(path).expanduser().resolve().is_relative_to(self.lib.vault):
+        root = asset_project_root(path)
+        if root.is_relative_to(self.lib.vault):
             raise ValueError('生产项目请使用素材库之外的独立项目文件夹')
-        root, source, narrative = source_project(path)
         with self.lib.lock:
             previous = next((p for p in self.summaries() if Path(p['path']) == root), None)
             if previous:
                 return self.sync(previous['id'])
+            _, source, narrative = source_project(root)
             p = {'id': uid(), 'path': str(root), 'name': narrative['project_id'], 'source': source,
                  'narrative': narrative, 'rows': [{'requirement': r, 'reference_ids': [], 'job_id': None} for r in image_work_items(narrative)],
                  'created_at': now()}
@@ -318,9 +327,8 @@ class Projects:
         p = self.get(ident)
         try:
             self.fresh(p)
-            kickoff = load_kickoff(p['path'])
+            p['review_workflow'], kickoff = asset_review_workflow(p['path'])
             generation = kickoff.get('image_generation') if kickoff else None
-            p['review_workflow'] = 'website' if kickoff else 'legacy'
             p['kickoff_generation'] = ({key: generation[key] for key in ('provider', 'model', 'outputs', 'scope')
                                         if key in generation} if generation else None)
             p['source_error'] = ''
@@ -1202,8 +1210,12 @@ class Projects:
             return self.detail(p['id'])
 
     def _confirm_step(self, p, job, step, payload, *, website_review=None, chat_review=None):
-        if website_review is None and chat_review is None and load_kickoff(p['path']):
-            raise ValueError('本项目资产采用需要当前版审核站真实通过回执')
+        if website_review is None and chat_review is None:
+            workflow, _ = asset_review_workflow(p['path'])
+            if workflow == 'awaiting_kickoff':
+                raise ValueError(ASSET_KICKOFF_REQUIRED)
+            if workflow == 'website':
+                raise ValueError('本项目资产采用需要当前版审核站真实通过回执，或获准的对话确认、代审依据')
         self.dependencies(job, step)
         ident = payload.get('asset_id') or step.get('selected')
         if ident not in step['outputs'] or payload.get('confirm') is not True:
@@ -2020,12 +2032,16 @@ class Projects:
             if p.get('export'):
                 self.validate_export_basis(p)
                 return {'adopted': True, 'complete': True, 'export': p['export'], **result} if scoped else p['export']
-            if load_kickoff(p['path']) and not scoped:
-                if not p['rows'] and all(image_decision(req) != '待定' for req in p['narrative']['asset_requirements']):
-                    raise ValueError('本轮无资产图交付项，协调方可沿已授权流程继续')
-                raise ValueError('资产正式采用需要审核站真实通过回执，请使用回执采用入口')
-            if website_package is None and chat_package is None and payload.get('confirm') is not True:
-                raise ValueError('请确认整张需求表后交接')
+            if not scoped:
+                workflow, _ = asset_review_workflow(p['path'])
+                if workflow == 'awaiting_kickoff':
+                    raise ValueError(ASSET_KICKOFF_REQUIRED)
+                if workflow == 'website':
+                    if not p['rows'] and all(image_decision(req) != '待定' for req in p['narrative']['asset_requirements']):
+                        raise ValueError('本轮无资产图交付项，协调方可沿已授权流程继续')
+                    raise ValueError('资产正式采用需要审核站真实通过回执，或获准的对话确认、代审依据')
+                if payload.get('confirm') is not True:
+                    raise ValueError('兼容项目请确认整张需求表后交接')
             requirements = p['narrative']['asset_requirements']
             missing_outputs = any(image_decision(r) == '待定' for r in requirements)
             pending_backup_ids = set()
@@ -2383,7 +2399,7 @@ class Projects:
         p = self.get(ident)
         self.fresh(p)
         if not p.get('export'):
-            raise ValueError('请先完成整表确认和导出')
+            raise ValueError('请先完成必需图片的审核和导出')
         self.validate_export_basis(p)
         state = load_project_state(Path(p['path']))
         target = state.get('next_stage')
