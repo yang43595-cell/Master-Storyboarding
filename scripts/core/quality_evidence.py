@@ -748,28 +748,6 @@ def validate_required_visuals(rows, requirements, *, shot_order=(), project=None
                                  f"（{action['product_ast_id']}）")
 
 
-def validate_prompt_timeline(row, parameters):
-    """Use the submitted body's ranges at both the source and canvas boundary."""
-    identity = row.get('segment_id') or row.get('node_id')
-    validate_shot_durations(row, parameters)
-    number = r'\d+(?:\.\d+)?'
-    ranges = re.findall(rf'(?<![\d.])({number})\s*(?:秒|s)?\s*[-–—~～至到]\s*({number})\s*(?:秒|s)(?![a-z])',
-                        submitted_prompt_body(row), flags=re.IGNORECASE)
-    shots = row['shot_durations']
-    if not ranges or len(ranges) != len(shots):
-        raise ValueError(f'{identity}: prompt timeline needs one explicit seconds range per shot')
-    cursor = 0.0
-    for (start, end), seconds in zip(ranges, shots):
-        start, end = float(start), float(end)
-        if (end <= start or not math.isclose(start, cursor, abs_tol=0.01)
-                or not math.isclose(end - start, seconds, abs_tol=0.01)):
-            raise ValueError(f'{identity}: prompt timeline conflicts with shot_durations')
-        cursor = end
-    durations = generation_duration_values(row, parameters)
-    if not durations or not math.isclose(cursor, durations[0], abs_tol=0.01):
-        raise ValueError(f'{identity}: prompt end conflicts with total duration')
-
-
 def scene_state_requirements(payload):
     """Read persistent changes from the existing director JSON; no NLP/vision.
 

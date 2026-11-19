@@ -53,7 +53,7 @@ def record_batch_methods(args):
     ("storyboard-director", "VS-S01-OPEN"),
 ])
 def test_redframe_image_batch_freezes_sop_from_project_kickoff(tmp_path, skill, target):
-    args, _ = make_batch_context(tmp_path, skill=skill, targets=[target])
+    args, batch_request = make_batch_context(tmp_path, skill=skill, targets=[target])
     args.vault = None
     kickoff_path = Path(args.project) / cli.REQUEST_PATH
     kickoff_path.write_text(json.dumps({"kickoff": {
@@ -66,6 +66,39 @@ def test_redframe_image_batch_freezes_sop_from_project_kickoff(tmp_path, skill, 
             "authorization_ref": "synthetic grant", "scope": "required_assets_and_supplements",
         },
     }}), encoding="utf-8")
+    if skill == 'storyboard-director':
+        from test_visual_supplement_request import request
+        with pytest.raises(cli.StageContextError, match='supplement_request_paths'):
+            cli.prepare(args)
+        decision_path = batch_request.with_name('supplement.json')
+        batch_request.write_text(json.dumps({'image_targets': [target],
+                                             'supplement_request_paths': [str(decision_path)]}))
+        reuse = {**request(), 'request_id': target}
+        decision_path.write_text(json.dumps(reuse))
+        with pytest.raises(cli.StageContextError, match='复用或退回上游'):
+            cli.prepare(args)
+        supplement = {**reuse, 'status': 'ready', 'decision': 'request_supplement', 'max_images': 1,
+                      'gap': {'type': 'space', 'observed_evidence': 'synthetic missing state',
+                              'why_existing_is_insufficient': 'no common positions',
+                              'downstream_consequence': 'unresolved'}}
+        decision_path.write_text(json.dumps(supplement))
+        with pytest.raises(cli.StageContextError, match='不是本轮选定的准确已采用版'):
+            cli.prepare(args)
+        from scripts.core import artifacts
+        from test_agent_artifact_adoption import pending, report
+        project = Path(args.project)
+        _, entry = pending(project)
+        artifacts.adopt_initial_agent_artifact(project, entry['artifact_id'], report(project, entry))
+        board = json.loads((project / entry['path_or_url']).read_text())
+        supplement.update(project_id=board['project_id'], source_storyboard={
+            'artifact_id': entry['artifact_id'], 'logical_id': 'storyboard.package', 'revision': entry['revision'],
+            'path': entry['path_or_url'], 'status': 'agent_accepted',
+        })
+        decision_path.write_text(json.dumps(supplement))
+        with pytest.raises(cli.StageContextError, match='项目或镜号'):
+            cli.prepare(args)
+        supplement['source_shot_ids'] = [board['scenes'][0]['shots'][0]['shot_id']]
+        decision_path.write_text(json.dumps(supplement))
     prepared = cli.prepare(args)
     folder = batch_folder(args)
     startup = Path(prepared["path"]).read_text(encoding="utf-8")
@@ -76,6 +109,10 @@ def test_redframe_image_batch_freezes_sop_from_project_kickoff(tmp_path, skill, 
     assert "seedance-delivery-package.md" not in paths
     record_batch_methods(args)
     assert cli.ensure_prepared(args)["ok"]
+    if skill == 'storyboard-director':
+        decision_path.write_text(json.dumps(reuse))
+        with pytest.raises(cli.StageContextError, match='当前来源'):
+            cli.ensure_prepared(args)
 
 
 def test_two_concurrent_batches_keep_worker_inputs_receipts_and_cache_separate(tmp_path):
@@ -428,7 +465,7 @@ def test_review_and_handoff_use_batch_context_without_changing_project_stage(tmp
 
 
 @pytest.mark.parametrize("entry", ["prepare", "handoff"])
-def test_asset_worker_receipt_is_bound_and_received_without_changing_project_stage(tmp_path, entry):
+def test_asset_worker_receipt_is_bound_and_received_without_changing_project_stage(tmp_path, entry, capsys):
     target = "AST-SYNTHETIC@view-a"
     args, request = make_batch_context(tmp_path, skill="asset-image-assistant", targets=[target])
     project = Path(args.project)
@@ -473,11 +510,14 @@ def test_asset_worker_receipt_is_bound_and_received_without_changing_project_sta
         "candidate_id": "SYNTHETIC-C1", "output_path": image.name, "sha256": cli.digest(image),
         "review_actor": "worker-a", "review_result": "pass", "observations": "SYNTHETIC OBSERVATION"}]}),
         encoding="utf-8")
-    received = cli.handoff(receive)
+    capsys.readouterr()
+    assert cli.main(batch_args + ["--receive-batch"]) == 0
+    received = json.loads(capsys.readouterr().out)
     assert received["context_id"] == args.context_id
     assert received["status"] == "ready_for_review"
     assert received["items"][0]["path"] == str(image)
-    assert set(received["items"][0]) == {"target", "status", "candidate_id", "path", "sha256", "observer", "visual_status"}
+    assert set(received["items"][0]) == {"target", "status", "candidate_id", "path", "sha256", "observer", "visual_status", "observation_summary"}
+    assert received["items"][0]["observation_summary"] == "SYNTHETIC OBSERVATION"
     assert state_path.read_bytes() == state_before
     assert manifest_path.read_bytes() == manifest_before
     assert "PRIVATE LOG" not in json.dumps(received)

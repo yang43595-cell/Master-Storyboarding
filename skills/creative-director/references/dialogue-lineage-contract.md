@@ -30,7 +30,7 @@
 
 原片改字走上述 `authorized_revision` + `editorial_proposal`。删除/换序只在同一记录可选 `source_changes[]` 留精确映射：`action: delete` + `dialogue_id`，或 `action: reorder` + 完整剩余原片 `dialogue_ids` 顺序；每项带真实授权 `reference`、`scope`、`reason`，不删除原始证据。缺授权不通过，空引用/布尔“已授权”不通过；引用真实性仍须执行者核对。
 
-完整稿以 `dialogue_evidence_path` 和 `dialogue_evidence_sha256` 绑定审核记录，审核表、叙事包及正文的对白、说话人、段落和顺序须一致。候选整稿走[编导送审入口](../SKILL.md#本轮执行-sop)。除上述待审定措辞，用户明确要求以硬字幕为准时，可在开工记录 `creation.dialogue_review_basis` 登记 `hard_subtitle_with_whole_script_review`。原片对白须逐字绑定有指针的硬字幕来源，分页按有序证据拼接；无冲突且有具体候选说话人的条目可标明待核、随准确整稿首次送审。送审阅读稿列出待核对白 ID，审稿时同时核对白和归属。无来源、来源冲突、归属不明或虚构精确时码仍阻塞。不把送审或整稿批准写成逐句听核；硬字幕仍待核时，正式采用须有准确版本的整稿人工通过，候选试跑不得使用该入口。
+完整稿以 `dialogue_evidence_path` 和 `dialogue_evidence_sha256` 绑定审核记录，审核表、叙事包及正文的对白、说话人、段落和顺序须一致。候选整稿走[编导送审入口](../SKILL.md#本轮执行-sop)。原片对白须逐字绑定有指针的硬字幕来源，分页按有序证据拼接。无冲突且有具体候选说话人的条目可在阅读稿列准确对白 ID 随整稿送审，审稿时同时核对白和归属。网站审核沿既有 `creation.dialogue_review_basis: hard_subtitle_with_whole_script_review` 开工决定办理。对话审核可沿[本版审阅稿和整稿通过回执](../../../docs/development/artifact-adoption.md#编导对话确认)直接办理，无须再补开工决定。无来源、来源冲突、归属不明或虚构精确时码仍阻塞。整稿批准保留原审核方式，硬字幕未人工听核的事实如实记录。正式采用须有准确版本的整稿人工通过，候选试跑不得使用该入口。
 
 仅做对白先行核对或诊断某份审核记录时，可运行 `python -m scripts.core.story_sources --project <项目> --dialogue-review <审核记录>`。完整叙事包校验已包含审核记录的校验。
 

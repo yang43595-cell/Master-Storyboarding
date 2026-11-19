@@ -164,7 +164,7 @@ def exact_narrative_approval(receipt: Any, entry: dict[str, Any], sha256: str) -
 
 
 def narrative_has_exact_approval(project_root: Path, source_path: Path, narrative: dict[str, Any],
-                                 *, delegated=False) -> bool:
+                                 *, delegated=False, chat_subtitle_review_ids=()) -> bool:
     """Recognize the requested adoption basis for these exact narrative bytes."""
     root = Path(project_root).resolve()
     source_path = project_path(root, source_path)
@@ -191,7 +191,11 @@ def narrative_has_exact_approval(project_root: Path, source_path: Path, narrativ
                 except (ValueError, OSError, KeyError, TypeError):
                     return False
         elif artifact_is_confirmed(entry, state, root) and any(
-                exact_narrative_approval(receipt, entry, sha256) for receipt in state.get("user_confirmations", [])):
+                exact_narrative_approval(receipt, entry, sha256)
+                and (not chat_subtitle_review_ids or (receipt.get('channel') == 'chat_confirmation'
+                    and receipt.get('subtitle_review_ids') == list(chat_subtitle_review_ids)
+                    and isinstance(receipt.get('review_markdown'), dict)))
+                for receipt in state.get("user_confirmations", [])):
             return True
     return False
 
@@ -255,10 +259,13 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
             raise ValueError("正式 narrative.package 必须包含 story_paragraphs 来源对账")
         from .story_sources import validate_story_sources
         delegated = bool(entry.get("agent_acceptance") and _delegated_dialogue_passed(root, entry, state))
+        exact = exact_narrative_approval(approval_receipt, entry, candidate_sha256)
         validate_story_sources(payload, project_root=root, narrative_path=path, require_dialogue_evidence=True,
                                require_character_output=not reading_existing,
                                require_promotion_dialogue=not reading_existing,
-                               exact_human_approval=exact_narrative_approval(approval_receipt, entry, candidate_sha256),
+                               exact_human_approval=exact,
+                               chat_subtitle_review_ids=(approval_receipt.get('subtitle_review_ids', ())
+                                   if exact and approval_receipt.get('channel') == 'chat_confirmation' else ()),
                                delegated_creative_approval=delegated)
     elif logical_id == "storyboard.package":
         if payload.get("schema_version") != "4.0":
@@ -479,7 +486,8 @@ def validate_agent_submission(project_root: Path, entry: dict[str, Any], manifes
     return digest(path)
 
 
-def adopt_initial_agent_artifact(project_root: Path, artifact_id: str, report_path: str) -> dict[str, Any]:
+def adopt_initial_agent_artifact(project_root: Path, artifact_id: str, report_path: str,
+                                 *, expected_checksum: str | None = None) -> dict[str, Any]:
     """Adopt authorized downstream work without minting a human confirmation."""
     from .candidate_test import require_production
     from .agent_acceptance import build_agent_acceptance, validate_agent_acceptance, skill_for_artifact
@@ -502,6 +510,8 @@ def adopt_initial_agent_artifact(project_root: Path, artifact_id: str, report_pa
         actual = digest(path)
         if entry.get("checksum") and entry["checksum"] != actual:
             raise ValueError("自主采用候选已偏离登记 hash")
+        if expected_checksum is not None and expected_checksum != actual:
+            raise ValueError("自主采用候选实际字节与单段预检来源的 sha256 不符")
         entry["checksum"] = actual
         state = load_project_state(root)
         entry["agent_acceptance"] = build_agent_acceptance(root, entry, report_path, state=state)

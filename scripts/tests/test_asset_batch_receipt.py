@@ -43,6 +43,7 @@ def test_exact_requested_output_uses_historical_fields_without_transport_details
             'target': TARGET, 'status': 'ready_for_review', 'candidate_id': 'C01',
             'path': str(tmp_path / 'C01.png'), 'sha256': passed['sha256'],
             'observer': '/root/producer', 'visual_status': 'passed',
+            'observation_summary': 'framing: 脚部完整',
         }],
     }
 
@@ -57,6 +58,24 @@ def test_a_received_candidate_does_not_mark_a_partial_batch_complete(tmp_path):
     assert [(item['target'], item['status']) for item in summary['items']] == [
         (SECOND, 'pending'), (TARGET, 'ready_for_review'),
     ]
+
+
+@pytest.mark.parametrize('observation', ['具体观察' * 10000, 'data:image/png;base64,' + 'A' * 100000])
+def test_large_observations_stay_local_and_do_not_expand_coordinator_result(tmp_path, observation):
+    row = _passed_row(tmp_path)
+    row['observed'] = observation
+    row['logs'] = 'PRIVATE LOG' * 10000
+    receipt = _save(tmp_path, row)
+    before = receipt.read_bytes()
+
+    summary = summarize_asset_batch_receipt(tmp_path, receipt, [TARGET])
+
+    assert summary['status'] == 'ready_for_review'
+    assert len(summary['items'][0]['observation_summary']) <= 240
+    assert len(json.dumps(summary)) < 2500
+    assert 'data:image' not in json.dumps(summary)
+    assert 'PRIVATE LOG' not in json.dumps(summary)
+    assert receipt.read_bytes() == before
 
 
 def test_wardrobe_check_uses_receipt_observer_and_exact_per_item_status(tmp_path):
@@ -77,6 +96,7 @@ def test_wardrobe_check_uses_receipt_observer_and_exact_per_item_status(tmp_path
     assert summary['items'][1] == {
         'target': SECOND, 'status': 'blocked', 'candidate_id': 'C02',
         'observer': '/root/wardrobe', 'visual_status': 'failed', 'issue': '服装外观通过，三视图构图待处理',
+        'observation_summary': 'framing: 脚部完整',
     }
 
 

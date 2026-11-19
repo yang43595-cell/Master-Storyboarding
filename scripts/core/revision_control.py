@@ -1059,6 +1059,9 @@ def commit_change(project: Path, *, change_id: str, website_approval=None, chat_
             item["artifact_id"]: candidate_id for item in change["targets"]
             if item["logical_id"] == candidate.get("logical_id")
         })
+        # Committing this exact candidate explicitly selects it, even when an
+        # upstream revision already removed its stale baseline from task state.
+        state["current_artifacts"] = list(dict.fromkeys([*state["current_artifacts"], candidate_id]))
         completed = dict(change)
         completed["status"] = "completed"
         completed["committed_at"] = utc_now()

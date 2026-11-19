@@ -216,7 +216,7 @@ class ImportedVisualCheckTests(unittest.TestCase):
         job, request, output = self.pending('normalization-change')
         job['upload_source_id'] = self.source['id']
         self.lib.save(job, 'jobs')
-        Image.new('RGB', (160, 120), 'blue').save(output)
+        # pending() provides 160×90. The wardrobe contract is 4:3, so import must normalize it.
         evidence = observations(output, request['prompt'])
         with patch.object(m.codex_bridge, 'generate_image', return_value={
                 'output_path': str(output), 'visual_self_check': evidence}):

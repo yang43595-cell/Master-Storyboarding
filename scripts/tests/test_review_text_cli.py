@@ -396,6 +396,59 @@ def test_chat_approval_rejects_partial_scope_and_same_revision_byte_drift(tmp_pa
     assert not artifacts.load_project_state(tmp_path)["user_confirmations"]
 
 
+def test_chat_whole_script_consumes_disclosed_hard_subtitles_without_a_second_decision(
+    tmp_path, kickoff_review_site, monkeypatch, capsys,
+):
+    import sys
+    from scripts.core import story_sources
+    from test_dialogue_origins import bind, fixture
+
+    record = fixture(tmp_path, isolated=False)
+    record['dialogues'].pop(1)
+    package = bind(tmp_path, record)
+    package['open_questions'] = []
+    source = tmp_path / 'R01.json'
+    write_json(source, package)
+    args = chat_args(tmp_path, source)
+    kickoff = (tmp_path / REQUEST_PATH).read_bytes()
+    with pytest.raises(ValueError, match='未核对白证据'):
+        stage_cli.confirm_script_in_chat(args)
+
+    reading = tmp_path / 'R01.md'
+    monkeypatch.setattr(sys, 'argv', ['story_sources', '--project', str(tmp_path), '--narrative', str(source),
+                                      '--review-ready', '--chat-review', '--export-markdown', str(reading)])
+    story_sources.main()
+    review = json.loads(capsys.readouterr().out.splitlines()[0])
+    ids = review['awaiting_subtitle_approval_ids']
+    assert ids == ['DLG-01', 'DLG-02']
+    expected = reading.read_text()
+    message = Path(args.confirmation_json)
+    approval = json.loads(message.read_text())
+
+    def bind_reading(text):
+        reading.write_text(text, encoding='utf-8')
+        write_json(message, {**approval, 'review_markdown': {'path': reading.name,
+                                                            'sha256': artifacts.digest(reading)}})
+
+    bind_reading(expected.replace('甲句。', '改了原文。', 1))
+    with pytest.raises(ValueError, match='阅读正文'):
+        stage_cli.confirm_script_in_chat(args)
+    bind_reading(expected.replace('DLG-01、DLG-02', 'DLG-01'))
+    with pytest.raises(ValueError, match='未核对白证据.*DLG-02'):
+        stage_cli.confirm_script_in_chat(args)
+    assert not artifacts.load_project_state(tmp_path)['user_confirmations']
+    # The historical export kept an environment table between story and technical appendix.
+    bind_reading(expected.replace('## 完整结构化来源', '## 环境资产需求\n\n| 样例环境 |\n\n## 完整结构化来源'))
+    adopted = stage_cli.confirm_script_in_chat(args)
+    assert adopted['confirmation']['subtitle_review_ids'] == ids
+    assert adopted['confirmation']['review_markdown']['sha256'] == artifacts.digest(reading)
+    assert (tmp_path / REQUEST_PATH).read_bytes() == kickoff
+    assert story_sources.validate_dialogue_review(record, tmp_path)['unresolved_ids'] == ids
+    story_sources.validate_story_sources(package, project_root=tmp_path, narrative_path=source,
+                                         require_dialogue_evidence=True)
+    assert stage_cli.confirm_script_in_chat(args)['already_current']
+
+
 @pytest.fixture
 def asset_review_site(tmp_path, kickoff_review_site, monkeypatch):
     script_request = cli.AgentReviewClient._request

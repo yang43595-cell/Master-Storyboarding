@@ -263,11 +263,105 @@ def authorize_workflow(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def accept_artifact(args: argparse.Namespace) -> dict[str, Any]:
-    """Adopt one registered candidate using its exact agent self-check evidence."""
+    """Adopt/select one exact artifact and optionally preflight its saved segment."""
+    try:
+        from .core import artifacts as artifact_api, revision_control as revision_api
+        from .core.agent_acceptance import validate_agent_acceptance
+    except ImportError:  # direct CLI execution
+        from core import artifacts as artifact_api, revision_control as revision_api
+        from core.agent_acceptance import validate_agent_acceptance
     project = Path(args.project).expanduser().resolve()
-    adoption = adopt_initial_agent_artifact(
-        project, args.artifact_id, project_path(project, args.self_check_json),
-    )
+    report_path = project_path(project, args.self_check_json)
+    change_id = getattr(args, 'change_id', None)
+    frozen_path = getattr(args, 'preflight_json', None)
+    with project_lock(project):
+        require_production(project)
+        manifest = load_manifest(project)
+        matches = [item for item in manifest['artifacts'] if item['artifact_id'] == args.artifact_id]
+        if len(matches) != 1:
+            raise StageContextError('采用须指定唯一已登记产物 ID')
+        entry = matches[0]
+        frozen = None
+        expected_checksum = None
+        if frozen_path:
+            frozen = _read_json(project_path(project, frozen_path), default=None)
+            drafts = frozen.get('drafts') if isinstance(frozen, dict) else None
+            sources = frozen.get('source_artifacts') if isinstance(frozen, dict) else None
+            if not isinstance(drafts, list) or len(drafts) != 1 or not isinstance(sources, list):
+                raise StageContextError('单段预检须有一个草稿及本次采用产物的准确来源')
+            bound_sources = [ref for ref in sources if isinstance(ref, dict)
+                             and ref.get('artifact_id') == entry['artifact_id']
+                             and ref.get('revision') == entry.get('revision')]
+            expected_checksum = entry.get('checksum')
+            if (not expected_checksum and entry.get('status') == 'candidate'
+                    and not change_id and len(bound_sources) == 1):
+                # First adoption checks this against the actual bytes before pinning the hash.
+                expected_checksum = bound_sources[0].get('sha256')
+            if (not isinstance(expected_checksum, str) or not re.fullmatch(r'[0-9a-f]{64}', expected_checksum)
+                    or not any(ref.get('sha256') == expected_checksum for ref in bound_sources)):
+                raise StageContextError('单段预检须有本次采用产物的准确 ID、revision、sha256 来源')
+        if entry.get('status') == 'current':
+            # Resuming is an explicit selection of this ID, never a blanket sync
+            # of all manifest-current entries or a new approval.
+            pointer = entry.get('agent_acceptance') or {}
+            if entry.get('user_approved') is not False or project_path(project, pointer.get('report_path', '')) != report_path:
+                raise StageContextError('已采用产物的自查报告与本次输入不同')
+            if change_id:
+                history = revision_api.show_change(project)['history']
+                if not any(change.get('change_id') == change_id and change.get('status') == 'completed'
+                           and (change.get('candidate_receipt') or {}).get('artifact_id') == entry['artifact_id']
+                           for change in history):
+                    raise StageContextError('续作变更案与该已采用产物不匹配')
+            state = load_project_state(project)
+            checked = validate_agent_acceptance(project, entry, state=state)
+            artifact_api.validate_agent_submission(project, entry, manifest, checked)
+            transaction = None
+            if entry['artifact_id'] not in state['current_artifacts']:
+                state['current_artifacts'].append(entry['artifact_id'])
+                transaction = revision_api._commit_json_transaction_unlocked(project, {
+                    project / '00_项目管理/project_state.json': state,
+                }, reason='select exact previously agent-adopted artifact')
+            adoption = {'artifact': entry, 'resumed': True, 'transaction': transaction}
+        elif change_id:
+            change = revision_api.show_change(project)['active_change']
+            if not change or change['change_id'] != change_id or (change.get('candidate_receipt') or {}).get('artifact_id') != entry['artifact_id']:
+                raise StageContextError('修订采用须匹配原活动变更案及准确候选 ID')
+            if change['status'] != 'commit_ready':
+                revision_api.confirm_agent_candidate(project, change_id=change_id, report_path=str(report_path))
+            else:
+                acceptance = change.get('candidate_acceptance')
+                stored_report = acceptance.get('report_path') if isinstance(acceptance, dict) else None
+                if not isinstance(stored_report, str) or not stored_report.strip():
+                    raise StageContextError('待提交修订缺少自主验收报告；人工确认请沿原入口提交')
+                if project_path(project, stored_report) != report_path:
+                    raise StageContextError('待提交修订的自查报告与本次输入不同')
+            transaction = revision_api.commit_change(project, change_id=change_id)
+            adoption = {'artifact': next(item for item in load_manifest(project)['artifacts']
+                                        if item['artifact_id'] == args.artifact_id), 'transaction': transaction}
+        else:
+            adoption = adopt_initial_agent_artifact(
+                project, args.artifact_id, report_path, expected_checksum=expected_checksum,
+            )
+        selected = load_project_state(project)
+        adopted = next(item for item in load_manifest(project)['artifacts'] if item['artifact_id'] == args.artifact_id)
+        if adopted['artifact_id'] not in selected['current_artifacts'] or not artifact_is_adopted(adopted, selected, project):
+            raise StageContextError('采用后 manifest/state 准确回读未通过，不得进入下游')
+        if frozen is not None:
+            try:
+                from .canvas_readback import validate_submission
+            except ImportError:
+                from canvas_readback import validate_submission
+            try:
+                preflight = validate_submission(frozen, project, formal_delivery=True, preflight=True)
+            except (ValueError, OSError, KeyError, TypeError, RuntimeError) as exc:
+                return {'ok': False, 'adoption_completed': True, 'artifact_id': adopted['artifact_id'],
+                        'transaction': adoption.get('transaction'), 'preflight': {'ok': False, 'error': str(exc)},
+                        'notice': '采用及状态登记已完成；修正原单段计划后续用同一命令，不重新采用或生成'}
+            adoption['preflight'] = {key: preflight[key] for key in (
+                'ok', 'mode', 'revision', 'frozen_sha256', 'source_segment_ids',
+                'target_url', 'target_project_id', 'upload_mapping_pending_nodes', 'face_source_card_slots',
+                'native_refresh_binding', 'generation_authorization', 'production_ready',
+            ) if key in preflight}
     return {"ok": True, **adoption,
             "notice": "已按流程授权及准确自查采用；未新增逐稿人审，未上传、生成、发布或自动流转"}
 
@@ -1218,6 +1312,51 @@ def _redframe_image_batch(skill: str, request: dict[str, Any]) -> bool:
     return grant.get("provider") == "redframe"
 
 
+def _validate_redframe_supplement_targets(project, request, snapshot):
+    try:
+        from .core.schema_contracts import require_schema
+    except ImportError:
+        from core.schema_contracts import require_schema
+
+    targets = request['image_targets']
+    paths = request.get('supplement_request_paths')
+    if (not isinstance(paths, list) or len(paths) != len(targets)
+            or any(not isinstance(path, str) or not path.strip() for path in paths)):
+        raise StageContextError('红帧补图批次须通过 supplement_request_paths 逐目标指向现有补图请求')
+    source_digests = {item['path']: item['sha256'] for item in snapshot['sources']}
+    directors = {item['record']['artifact_id']: item for item in snapshot['artifacts']
+                 if item['record'].get('logical_id') == 'storyboard.package'}
+    directors_by_path = {}
+    for target, path in zip(targets, paths):
+        source = project_path(project, path)
+        if not source.is_relative_to(project):
+            raise StageContextError('补图请求须位于当前项目内')
+        decision, sha256 = _request_snapshot(source)
+        if source_digests.get(str(source)) != sha256:
+            raise StageContextError(f'{target} 的补图请求在准备期间变化；请重新 prepare')
+        require_schema(decision, 'visual-supplement-request.schema.json', label='视觉补充请求')
+        if (decision['request_id'] != target or decision['decision'] != 'request_supplement'
+                or decision['status'] != 'ready'):
+            raise StageContextError(f'{target} 须对应 ready 的实际缺图请求；复用或退回上游的条目不进入生图批次')
+        reference = decision['source_storyboard']
+        director = directors.get(reference['artifact_id'])
+        if (director is None or director['record']['revision'] != reference['revision']
+                or Path(director['file']['path']) != project_path(project, reference['path'])
+                or reference['status'] != ('confirmed' if director['record'].get('user_approved') is True
+                                          else 'agent_accepted')):
+            raise StageContextError(f'{target} 的补图请求所引导演稿不是本轮选定的准确已采用版')
+        director_path = Path(director['file']['path'])
+        if director_path not in directors_by_path:
+            board, board_sha256 = _request_snapshot(director_path)
+            if board_sha256 != director['file']['sha256']:
+                raise StageContextError('导演稿在准备期间变化；请重新 prepare')
+            directors_by_path[director_path] = (board['project_id'], {shot['shot_id'] for scene in board['scenes']
+                                                                     for shot in scene['shots']})
+        project_id, available_shots = directors_by_path[director_path]
+        if decision['project_id'] != project_id or not set(decision['source_shot_ids']) <= available_shots:
+            raise StageContextError(f'{target} 的项目或镜号与已采用导演稿不一致')
+
+
 def _registered_read_path(reference: str) -> Path | None:
     """Resolve a registry target. Missing target file fails closed when the
     target Skill exists in this repository; a repository that does not carry
@@ -1469,6 +1608,9 @@ def _validate_current_inputs(project: Path, basis: dict[str, Any], *, adopted_ca
         if output_requirements != basis.get("character_output_requirements", {}):
             raise StageContextError("本批人物最终输出规格已变化；请重新 prepare 并核对受影响范围。")
     inputs = basis["input_versions"]
+    if skill == 'storyboard-director' and _redframe_image_batch(skill, frozen_request) and not snapshot.get('candidate_test'):
+        if 'supplement_request_paths' not in inputs:
+            raise StageContextError('旧红帧补图批次缺少逐目标请求依据；请重新 prepare。')
     if "sources" in basis.get("task_request", {}):
         # Old preparations omitted this alias entirely. Reopen the declaration
         # at consumption too, so their empty snapshots cannot remain valid.
@@ -1694,7 +1836,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         raise StageContextError("候选测试只允许 plan/prompt，不允许生成提交")
     input_versions = _normalize_source_alias({
         key: value for key, value in request.items()
-        if key.startswith("source_") or key in {"sources", "inputs", "material_output_ids"}
+        if key.startswith("source_") or key in {"sources", "inputs", "material_output_ids", "supplement_request_paths"}
     })
     if product_pack:
         input_versions["product_reference_files"] = [product_pack["manifest_path"],
@@ -1702,6 +1844,8 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     raw_state = _state(project)
     summary = _state_summary(raw_state)
     snapshot = _input_snapshot(project, input_versions, raw_state)
+    if args.skill == 'storyboard-director' and _redframe_image_batch(args.skill, request) and not testing:
+        _validate_redframe_supplement_targets(project, request, snapshot)
     handoff_text = _current_handoff_text(project, args.skill, snapshot)
     handoff_scope = _handoff_scope(handoff_text)
     handoff_batch_bindings = _asset_batch_binding_entries(handoff_text)
@@ -1886,9 +2030,12 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
            *[f"  - `{path}`" for path in rule_documents]] if rule_documents else []),
         "- 执行分工：遵守根规则的干净上下文启动规则；新一轮编导等创作生产或实质重跑由全新专属生产 agent 执行，不继承长主会话；本轮执行者读取、准备、产出并自查。其他任务按根规则执行。",
         "- 上下文边界：交接当前有效规则、原始素材、本轮约束与已确认决定及依据、现行版本、未决事项、范围和停止点；不得以摘要替代原片。已在本轮专属 agent 内的逐段推进和局部返修可继续；目标、来源或基线重大变化时新开，不按修订号机械重开。",
+        f"- 等待及接收：执行前实读 `{ROOT / 'docs/rules/execution.md'}#等待与工具回传` 的宿主参数；沿原任务续等，完成后只交本轮身份、结论、差异及证据路径。原图由执行者实看，协调方按争议定向取图，不整份回传 JSON、日志或图组。",
         *([f"- 图片批次：`{_CONTEXT_ID.get()}`，本批冻结 {len(image_targets)} 个 image_targets；阶段负责人统筹整体方向、跨批连续性和正式交接，本批执行者读取真实参考、完成获准图片及实看自查。委派时只回传准确路径与检查摘要。批次目录不构成已生成、已检查、人工确认或正式采用。"] if image_targets is not None else []),
         *([f"- 红帧生图：读取 `{ROOT / _REDFRAME_IMAGE_STANDARDS[0]}#生图` 及同页连接入口。由主对话直接操作，先上传素材卡并当场归位，再接线和核正文；配套上传与排版规则同批冻结。"]
           if _redframe_image_batch(args.skill, request) else []),
+        *(["- 导演写稿和返修：先实看影响拍法的原片连续窗，核关键对白指向、起幅、镜内轨迹、落幅与实际切出后的反应；然后才核逐镜字段和下游影响。沿现有自查记录写准确时间窗和镜号。"]
+          if args.skill == 'storyboard-planner' else []),
         *(_asset_batch_delivery_lines(asset_batch) if asset_batch and not handoff_batch_bindings else []),
         *(["- 人物生图按输出类型读取 task_basis.json 的 character_prompt_templates 与 character_layout_references，使用对应模板正文，原参考在前、灰模在最后。按实际槽位绑定原生引用。"]
           if task_basis.get("character_layout_references") else []),
@@ -2128,8 +2275,11 @@ def _write_handoff(args, project, target_skill, from_skill, authorization_id, *,
         "- 原始证据：从以上准确产物的 source_artifacts / 来源引用按需实读，不用交接摘要替代。",
         f"- 决定及授权：实读 `{project / REQUEST_PATH}` 的本轮需求、kickoff 和 `{project / '00_项目管理/project_state.json'}` 的确认及 workflow_authorizations；缺文件或范围保留未决。",
         "- 未决项：核以上当前产物的未决字段、现有 review_report 与 accepted_issues，已接受问题只覆盖原记录的准确范围。",
-        "- 停止点：完成本职目标和自查后交回准确版本、检查结果、未完成项与证据路径；画布仅保存刷新核验草稿，生成另核授权。",
+        "- 停止点：完成本职目标和自查后交回准确版本、检查结果、未完成项与证据路径。",
+        *([f"- 视频默认交已保存并回读的草稿。若本轮包含已明确授权的生成，按 `{ROOT / 'skills/voiceover-to-video-script/references/seedance-delivery-package.md'}#已授权生成的取证` 接续，复用有效授权。"]
+          if not testing and target_skill == "voiceover-to-video-script" else []),
         f"- 工具报错：沿 `{ROOT / 'docs/rules/execution.md'}#工具报错与原处续作`，在现有任务记录交回原操作、失败位置、最后可信结果和待恢复步骤。",
+        f"- 等待及接收：执行前实读 `{ROOT / 'docs/rules/execution.md'}#等待与工具回传` 的宿主参数；沿原任务续等，完成后只交本轮身份、结论、差异及证据路径。原图由执行者实看，协调方按争议定向取图，不整份回传 JSON、日志或图组。",
         "", "## 接收约束", "",
         *([f"- 从 `{project / REQUEST_PATH}` 直接读取本轮 `kickoff`；已有决定随项目沿用，缺项只影响依赖它的动作。"] if not testing and load_kickoff(project) else []),
         ("- 仅按独立测试授权继续候选试写；保留所有未核对事实和素材阻塞。视频 Skill 仍直接读取，不重建准备包。" if testing else startup_requirement),
@@ -2612,6 +2762,8 @@ def parser() -> argparse.ArgumentParser:
     acceptance.add_argument("--project", required=True)
     acceptance.add_argument("--artifact-id", required=True)
     acceptance.add_argument("--self-check-json", required=True, help="项目内自查 JSON 的相对路径或绝对路径")
+    acceptance.add_argument("--change-id", help="自主修订的原活动变更案；与候选准确匹配后验收并提交")
+    acceptance.add_argument("--preflight-json", help="采用回读后只读预检的单段 frozen JSON；失败时沿同一入口续作")
     adopt = commands.add_parser("adopt-package", help="登记并确认初次平台无关正式稿件；不上传或发布")
     adopt.add_argument("--project", required=True)
     adopt.add_argument("--artifact-id", required=True)

@@ -22,14 +22,17 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.mark.parametrize('duration_key', ['duration', 'duration_seconds'])
-def test_canvas_timeline_accepts_existing_duration_aliases(duration_key):
+def test_canvas_checks_duration_aliases_independent_of_prompt(duration_key):
     row = dict(node_id='synthetic-draft', ordered_media=[], reference_checks=[],
-               edges=[], source_nodes=[], prompt='0–1秒：起手。1–4秒：完成动作。',
+               edges=[], source_nodes=[], prompt='人物抬手，接着按下按钮。',
                shot_durations=[1, 3], parameters={duration_key: 4})
     validate_canvas_inputs(row)
     row['parameters'][duration_key] = 5
-    with pytest.raises(ValueError, match='逐镜合计|total duration'):
+    with pytest.raises(ValueError, match='逐镜合计'):
         validate_canvas_inputs(row)
+    row['parameters'][duration_key] = 4
+    row['prompt'] = '0–1秒：人物抬手。\n2–4秒：按下按钮。'
+    validate_canvas_inputs(row)
 
 
 def run_cli(module, *args):
@@ -51,7 +54,7 @@ def redframe_fixture(root):
     return frozen, observed
 
 
-def bind_redframe_production_sources(root, frozen, observed):
+def bind_redframe_production_sources(root, frozen, observed, *, product_assets=()):
     manifest = artifacts.load_manifest(root)
     state = load_project_state(root)
 
@@ -69,7 +72,8 @@ def bind_redframe_production_sources(root, frozen, observed):
                                                approval_ref='synthetic only'))
         return dict(artifact_id=ident, revision='R01', sha256=sha)
 
-    narrative = register('NARRATIVE', 'narrative.package', 'narrative.json', {'fixture': 'narrative'})
+    narrative = register('NARRATIVE', 'narrative.package', 'narrative.json',
+                         {'fixture': 'narrative', 'asset_requirements': list(product_assets)})
     capability = root / 'synthetic-duration-capability.json'
     model_name = frozen['drafts'][0]['parameters']['model']
     write_json(capability, {'model': {'type': 'video', 'providerId': 'fixture',
@@ -145,8 +149,72 @@ def test_redframe_full_cli_and_saved_graph_readback(tmp_path):
     assert canvas_cli(tmp_path, frozen, observed).returncode != 0
 
 
+@pytest.mark.parametrize('kind,suffix', [('image', '.png'), ('video', '.mp4')])
+def test_redframe_product_pack_accepts_face_source_cards(tmp_path, monkeypatch, kind, suffix):
+    from scripts.canvas_readback import compare, validate_submission
+    from scripts.core import product_reference_pack
+
+    frozen, observed = redframe_fixture(tmp_path)
+    frozen['drafts'] = frozen['drafts'][:1]
+    pack_root = tmp_path / 'packs' / 'synthetic' / 'R01'
+    pack_root.mkdir(parents=True)
+    monkeypatch.setattr(product_reference_pack, 'PACK_ROOT', pack_root.parents[1])
+    source = pack_root / ('state' + suffix)
+    source.write_bytes((tmp_path / 'frame.png').read_bytes() if kind == 'image' else b'synthetic video identity')
+    sha256 = artifacts.digest(source)
+    pack_manifest = pack_root / 'manifest.json'
+    write_json(pack_manifest, {'product_id': 'synthetic', 'revision': 'R01', 'product_name': 'Synthetic',
+        'references': [dict(id='state', role='state', usages=['real_use'], path=source.name,
+                            sha256=sha256, source='fixture', coverage='fixture')]})
+    request = json.loads((tmp_path / REQUEST_PATH).read_text())
+    request['kickoff']['product'] = dict(mode='replace', product_id='synthetic', product_usage='real_use',
+        reference_pack_revision='R01', reference_pack_sha256=artifacts.digest(pack_manifest))
+    write_json(tmp_path / REQUEST_PATH, request)
+    row = frozen['drafts'][0]
+    row.update(realistic_face_slots=[1], required_reference_roles={'ACTOR': ['appearance']})
+    row['reference_checks'] = [dict(kind=kind, role='appearance', entity_ids=['ACTOR'], asset_id='AST-PRODUCT',
+        product_reference_id='state', path=str(source), sha256=sha256,
+        canvas_binding=dict(mode='edge', source_port=kind, target_port='in', purpose='fixture', prompt_reference=True))]
+    row['edges'], row['source_nodes'] = [], []
+    # Register source bytes before constructing observed graph data.
+    saved_media = dict(node_id='face-card', media_id='actual-slot', sha256=sha256)
+    row['ordered_media'] = [saved_media]
+    bind_redframe_production_sources(tmp_path, frozen, observed,
+        product_assets=[dict(asset_id='AST-PRODUCT', category='REAL_PRODUCT', reference_paths=[str(pack_manifest)])])
+    frozen['source_artifacts'].append(dict(artifact_id='NARRATIVE', revision='R01',
+        sha256=artifacts.digest(tmp_path / 'narrative.json')))
+    row.pop('ordered_media')
+    bind_synthetic_quality(tmp_path, frozen)
+    result = validate_submission(frozen, tmp_path, formal_delivery=True, preflight=True)
+    assert result['face_source_card_slots'] == {'one': [1]}
+
+    row.update(ordered_media=[saved_media],
+        edges=[dict(source_node_id='face-card', source_port=kind, target_node_id='one', target_port='in', slot=1)],
+        source_nodes=[dict(node_id='face-card', port=kind, sha256=sha256)])
+    bind_synthetic_quality(tmp_path, frozen)
+    observed = copy.deepcopy(frozen)
+    observed.update(phase='after_refresh', frozen_sha256=digest(frozen))
+    observed['drafts'][0]['native_mentions'] = [dict(saved_media, entity_type='fixture-chip', native_noneditable_entity=True)]
+    missing = compare(frozen, observed, tmp_path, formal_delivery=True)
+    assert not missing['ok'] and missing['face_certification_checks'] == {'one': {'1': 'missing'}}
+    source_url = f'assets/face-card{suffix}'
+    native_cert = dict(assetId='synthetic-cert', sourceUrl=source_url)
+    native_cert['imageDigest' if kind == 'image' else 'videoDigest'] = sha256
+    observed['drafts'][0]['face_certifications'] = {'1': dict(
+        node_id='face-card', source_url=source_url, faceCertification=native_cert)}
+    valid = compare(frozen, observed, tmp_path, formal_delivery=True)
+    assert valid['ok'] and valid['face_certification_checks'] == {'one': {'1': 'passed'}}
+    stale = copy.deepcopy(observed)
+    stale['drafts'][0]['face_certifications']['1']['faceCertification']['sourceUrl'] = 'assets/old-file'
+    assert not compare(frozen, stale, tmp_path, formal_delivery=True)['ok']
+    row['ordered_media'][0]['sha256'] = '0' * 64
+    bind_synthetic_quality(tmp_path, frozen)
+    with pytest.raises(ValueError, match='产品包认证源卡须回读实际字节'):
+        validate_submission(frozen, tmp_path, formal_delivery=True, preflight=True)
+
+
 @pytest.mark.parametrize('mutation', ['missing_binding', 'missing_edge', 'wrong_port', 'wrong_source', 'extra_edge_on_direct',
-                                     'duplicate_slot', 'unmentioned', 'timeline_end', 'timeline_gap'])
+                                     'duplicate_slot', 'unmentioned', 'duration_budget'])
 def test_redframe_preflight_rejects_declared_conflicts(tmp_path, mutation):
     frozen, observed = redframe_fixture(tmp_path)
     row = frozen['drafts'][0]
@@ -167,17 +235,15 @@ def test_redframe_preflight_rejects_declared_conflicts(tmp_path, mutation):
         row['reference_checks'] *= 2
     elif mutation == 'unmentioned':
         row['reference_checks'][0]['canvas_binding']['prompt_reference'] = False
-    elif mutation == 'timeline_end':
-        row['prompt'] = row['prompt'].replace('1–4秒', '1–3秒')
-    else:
-        row['prompt'] = row['prompt'].replace('1–4秒', '2–5秒')
-    if mutation.startswith('timeline_') or mutation == 'duplicate_slot':
+    elif mutation == 'duration_budget':
+        row['shot_durations'] = [1, 2]
+    if mutation in ('duration_budget', 'duplicate_slot'):
         bind_redframe_production_sources(tmp_path, frozen, observed)
     else:
         bind_synthetic_quality(tmp_path, frozen)
     result = canvas_cli(tmp_path, frozen)
     assert result.returncode != 0
-    expected = 'timeline' if mutation.startswith('timeline_') else 'canvas'
+    expected = '逐镜合计' if mutation == 'duration_budget' else 'canvas'
     assert expected in json.loads(result.stdout)['error']
 
 
@@ -209,6 +275,7 @@ def test_money_tree_rush_uses_formal_redframe_write_preflight(tmp_path):
     for row in frozen['drafts']:
         row['parameters']['model'] = 'Seedance 2.5'
         row['edges'], row['source_nodes'] = [], []
+        row['realistic_face_slots'] = []  # The fixture references are solid-color images.
         row['required_reference_roles'] = {'ACTOR': ['identity']}
         row['continuity'] = dict(event_id=row['node_id'])
         ref = row['reference_checks'][0]
@@ -219,6 +286,7 @@ def test_money_tree_rush_uses_formal_redframe_write_preflight(tmp_path):
     bind_redframe_production_sources(tmp_path, frozen, observed)
     for row in frozen['drafts']:
         row.pop('ordered_media')
+        row['realistic_face_slots'] = []
     bind_synthetic_quality(tmp_path, frozen)
 
     state = load_project_state(tmp_path)
@@ -249,7 +317,24 @@ def test_money_tree_rush_uses_formal_redframe_write_preflight(tmp_path):
     assert report['target_project_id'] == frozen['target_project_id']
     assert report['frozen_sha256'] == digest(first)
     assert report['upload_mapping_pending_nodes'] == ['one']
+    assert report['face_source_card_slots'] == {}
     assert report['native_refresh_binding'] == 'not_checked'
+    face_plan = copy.deepcopy(first)
+    face_row = face_plan['drafts'][0]
+    del face_row['realistic_face_slots']
+    bind_synthetic_quality(tmp_path, face_plan)
+    result = canvas_cli(tmp_path, face_plan)
+    assert result.returncode == 2 and 'realistic_face_slots' in result.stdout
+    face_row['realistic_face_slots'] = [1]
+    bind_synthetic_quality(tmp_path, face_plan)
+    result = canvas_cli(tmp_path, face_plan)
+    assert result.returncode == 2 and '上传前改用认证源卡' in result.stdout
+    face_row['reference_checks'][0]['canvas_binding'].update(mode='edge', source_port='image', target_port='in')
+    bind_synthetic_quality(tmp_path, face_plan)
+    result = canvas_cli(tmp_path, face_plan)
+    assert result.returncode == 0, result.stdout
+    assert json.loads(result.stdout)['face_source_card_slots'] == {'one': [1]}
+    bind_synthetic_quality(tmp_path, frozen)
     result = canvas_cli(tmp_path, first, observed)
     assert result.returncode == 2 and '实际 ordered_media' in result.stdout
 
@@ -270,6 +355,23 @@ def test_money_tree_rush_uses_formal_redframe_write_preflight(tmp_path):
     result = canvas_cli(tmp_path, stored, reopened)
     assert result.returncode == 0, result.stdout
     assert json.loads(result.stdout)['native_reference_checks']['one'] == 'passed'
+
+    # The combined adoption response must feed the real finalize CLI directly.
+    native = reopened['drafts'][0]
+    native['node_id'] = 'created-node'
+    native['ordered_media'][0].update(node_id='created-node', sha256=stored_row['reference_checks'][0]['sha256'])
+    native['native_mentions'][0].update(node_id='created-node')
+    write_json(tmp_path / 'plan.json', first)
+    write_json(tmp_path / 'combined.json', {'ok': True, 'preflight': report})
+    write_json(tmp_path / 'segment-nodes.json', {'one': 'created-node'})
+    write_json(tmp_path / 'refresh.json', reopened)
+    outcome = run_cli('scripts.redframe_draft', 'finalize-new', '--project', tmp_path,
+                      '--plan', tmp_path / 'plan.json', '--preflight', tmp_path / 'combined.json',
+                      '--segment-nodes', tmp_path / 'segment-nodes.json', '--readback', tmp_path / 'refresh.json',
+                      '--output-dir', tmp_path / 'finalized')
+    assert outcome.returncode == 0, outcome.stdout
+    assert json.loads((tmp_path / 'finalized/formal_readback.json').read_text())['native_reference_checks'] == {
+        'created-node': 'passed'}
 
 
 @pytest.mark.parametrize('field', ['edges', 'source_nodes', 'native_mentions', 'prompt', 'parameters', 'ordered_media'])

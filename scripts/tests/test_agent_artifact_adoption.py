@@ -118,7 +118,7 @@ def test_initial_rejected_agent_reports_do_not_change_adoption_facts(tmp_path, f
     assert load_project_state(tmp_path) == before
 
 
-def ready_revision(root):
+def ready_revision(root, *, confirm=True):
     narrative, entry = pending(root)
     artifacts.adopt_initial_agent_artifact(root, "B", str(report(root, entry)))
     human = copy.deepcopy(load_project_state(root)["user_confirmations"])
@@ -131,7 +131,8 @@ def ready_revision(root):
                         artifact_type="storyboard.package", candidate_path=path.name, revision="R02")
     candidate = artifacts.load_manifest(root)["artifacts"][-1]
     self_check = report(root, candidate, name="self-check-R02.json")
-    rc.confirm_agent_candidate(root, change_id="SYNTHETIC-REV", report_path=str(self_check))
+    if confirm:
+        rc.confirm_agent_candidate(root, change_id="SYNTHETIC-REV", report_path=str(self_check))
     return self_check, human
 
 
@@ -147,6 +148,170 @@ def test_authorized_agent_revision_commits_without_human_receipts(tmp_path):
     assert state["user_confirmations"] == before and state["current_artifacts"] == ["N", "B2"]
     assert artifacts.artifact_is_adopted(adopted, state, tmp_path)
     assert "candidate_confirmation" not in rc.show_change(tmp_path)["history"][-1]
+
+
+def test_revision_selects_new_candidate_when_baseline_was_removed_from_task_state(tmp_path):
+    _, human = ready_revision(tmp_path)
+    state = load_project_state(tmp_path)
+    state['current_artifacts'].remove('B')
+    write_project_state(tmp_path, state)
+
+    rc.commit_change(tmp_path, change_id='SYNTHETIC-REV')
+
+    state = load_project_state(tmp_path)
+    assert state['current_artifacts'] == ['N', 'B2']
+    assert state['user_confirmations'] == human
+    assert artifacts.load_manifest(tmp_path)['artifacts'][-1]['status'] == 'current'
+
+
+@pytest.mark.parametrize(('bad_plan', 'missing_checksum'), [
+    (None, False), ('timing', False), ('symlink', False), (None, True),
+])
+def test_accept_cli_adopts_and_preflights_then_resumes_exact_selection(tmp_path, capsys, bad_plan, missing_checksum):
+    from scripts import stage_context_cli as cli
+    from scripts.tests.test_delivery_preflight import delivery
+    _, entry = pending(tmp_path)
+    saved_manifest = artifacts.load_manifest(tmp_path)
+    saved_state = load_project_state(tmp_path)
+    frozen, _ = delivery(tmp_path)
+    manifest = artifacts.load_manifest(tmp_path)
+    manifest['artifacts'].extend(saved_manifest['artifacts'])
+    if missing_checksum:
+        candidate = next(item for item in manifest['artifacts'] if item['artifact_id'] == 'B')
+        candidate.pop('checksum')
+    state = load_project_state(tmp_path)
+    state['current_artifacts'].extend(saved_state['current_artifacts'])
+    state['user_confirmations'].extend(saved_state['user_confirmations'])
+    state['workflow_authorizations'] = saved_state['workflow_authorizations']
+    write_json(tmp_path / artifacts.MANIFEST_PATH, manifest)
+    write_project_state(tmp_path, state)
+    frozen['drafts'] = frozen['drafts'][:1]
+    frozen['source_artifacts'].append(dict(artifact_id='B', revision='R01', sha256=entry['checksum']))
+    write_json(tmp_path / 'segment.json', frozen)
+    checked = report(tmp_path, entry)
+    args = ['accept-artifact', '--project', str(tmp_path), '--artifact-id', 'B',
+            '--self-check-json', str(checked), '--preflight-json', 'segment.json']
+    if missing_checksum:
+        broken = copy.deepcopy(frozen)
+        broken['source_artifacts'][-1]['sha256'] = '0' * 64
+        write_json(tmp_path / 'segment.json', broken)
+        with pytest.raises(ValueError, match='实际字节与单段预检来源'):
+            cli.main(args)
+        assert artifacts.load_manifest(tmp_path) == manifest
+        assert load_project_state(tmp_path)['current_artifacts'] == state['current_artifacts']
+        write_json(tmp_path / 'segment.json', frozen)
+    if bad_plan:
+        if bad_plan == 'symlink':
+            director = tmp_path / 'director.json'
+            original = director.read_bytes()
+            director.unlink()
+            try:
+                director.symlink_to(director.name)
+            except (OSError, NotImplementedError):
+                pytest.skip('Local symlink creation is unavailable')
+        else:
+            broken = copy.deepcopy(frozen)
+            broken['drafts'][0]['shot_durations'] = [999]
+            write_json(tmp_path / 'segment.json', broken)
+        assert cli.main(args) == 2
+        failed = json.loads(capsys.readouterr().out)
+        assert failed['adoption_completed'] and not failed['preflight']['ok']
+        assert 'B' in load_project_state(tmp_path)['current_artifacts']
+        if bad_plan == 'symlink':
+            assert director.name in failed['preflight']['error']
+            director.unlink()
+            director.write_bytes(original)
+        write_json(tmp_path / 'segment.json', frozen)
+    assert cli.main(args) == 0
+    first = json.loads(capsys.readouterr().out)
+    assert first['preflight']['ok'] and first['preflight']['native_refresh_binding'] == 'not_checked'
+    assert first['artifact']['checksum'] == entry['checksum']
+    state = load_project_state(tmp_path)
+    state['current_artifacts'].remove('B')
+    write_project_state(tmp_path, state)
+    original_manifest = (tmp_path / artifacts.MANIFEST_PATH).read_bytes()
+    human = copy.deepcopy(state['user_confirmations'])
+    assert cli.main(args) == 0
+    resumed = json.loads(capsys.readouterr().out)
+    assert resumed['resumed'] and resumed['preflight']['ok']
+    assert load_project_state(tmp_path)['current_artifacts'][-1] == 'B'
+    assert load_project_state(tmp_path)['user_confirmations'] == human
+    assert (tmp_path / artifacts.MANIFEST_PATH).read_bytes() == original_manifest
+    before = {p: p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}
+    assert cli.main(args) == 0
+    assert json.loads(capsys.readouterr().out)['transaction'] is None
+    assert {p: p.read_bytes() for p in before} == before
+    import subprocess
+    import sys
+    direct = subprocess.run([sys.executable, str(Path(cli.__file__).resolve()), *args],
+                            cwd=tmp_path, capture_output=True, text=True)
+    assert direct.returncode == 0, direct.stderr
+    assert json.loads(direct.stdout)['preflight']['ok']
+    # Another process updates the existing lock owner's PID, not business state.
+    assert {p: p.read_bytes() for p in before if p.name != '.revision-control.lock'} == {
+        p: value for p, value in before.items() if p.name != '.revision-control.lock'}
+
+
+def test_accept_cli_does_not_commit_human_ready_revision(tmp_path):
+    from scripts import stage_context_cli as cli
+    narrative, _ = pending(tmp_path)
+    artifacts.adopt_initial_package(tmp_path, 'B', 'synthetic approval')
+    change = 'HUMAN-ONLY'
+    rc.open_change(tmp_path, change_id=change, tier='T1', logical_ids=['storyboard.package'], reason='fixture')
+    rc.confirm_impact(tmp_path, change_id=change, approval_ref='synthetic impact')
+    write_json(tmp_path / 'B2.json', board_candidate(tmp_path, narrative, revision='R02'))
+    rc.record_candidate(tmp_path, change_id=change, artifact_id='B2', logical_id='storyboard.package',
+                        artifact_type='storyboard.package', candidate_path='B2.json', revision='R02')
+    rc.record_review(tmp_path, change_id=change, verdict='approved', report_ref='synthetic review')
+    rc.confirm_candidate(tmp_path, change_id=change, approval_ref='synthetic user confirmation')
+    before = load_project_state(tmp_path)
+    with pytest.raises(ValueError, match='缺少自主验收报告'):
+        cli.main(['accept-artifact', '--project', str(tmp_path), '--artifact-id', 'B2',
+                  '--self-check-json', '.', '--change-id', change])
+    assert rc.show_change(tmp_path)['active_change']['status'] == 'commit_ready'
+    assert load_project_state(tmp_path) == before
+    rc.commit_change(tmp_path, change_id=change)
+    assert load_project_state(tmp_path)['current_artifacts'] == ['N', 'B2']
+
+
+@pytest.mark.parametrize('confirmed', [False, True])
+def test_accept_cli_commits_original_revision_without_separate_state_write(tmp_path, capsys, confirmed):
+    from scripts import stage_context_cli as cli
+    checked, human = ready_revision(tmp_path, confirm=confirmed)
+    state = load_project_state(tmp_path)
+    state['current_artifacts'].remove('B')
+    write_project_state(tmp_path, state)
+    assert cli.main(['accept-artifact', '--project', str(tmp_path), '--artifact-id', 'B2',
+                     '--self-check-json', str(checked), '--change-id', 'SYNTHETIC-REV']) == 0
+    assert json.loads(capsys.readouterr().out)['artifact']['status'] == 'current'
+    assert load_project_state(tmp_path)['current_artifacts'] == ['N', 'B2']
+    assert load_project_state(tmp_path)['user_confirmations'] == human
+    assert cli.main(['accept-artifact', '--project', str(tmp_path), '--artifact-id', 'B2',
+                     '--self-check-json', str(checked), '--change-id', 'SYNTHETIC-REV']) == 0
+    assert json.loads(capsys.readouterr().out)['resumed']
+
+
+@pytest.mark.parametrize('failure', ['report', 'authorization', 'bytes', 'wrong_change'])
+def test_accept_cli_cannot_reselect_current_on_invalid_original_evidence(tmp_path, failure):
+    from scripts import stage_context_cli as cli
+    _, entry = pending(tmp_path)
+    checked = report(tmp_path, entry)
+    artifacts.adopt_initial_agent_artifact(tmp_path, 'B', str(checked))
+    state = load_project_state(tmp_path)
+    state['current_artifacts'].remove('B')
+    if failure == 'authorization':
+        state['workflow_authorizations'][0]['status'] = 'revoked'
+    write_project_state(tmp_path, state)
+    if failure in {'report', 'bytes'}:
+        path = checked if failure == 'report' else tmp_path / 'B.json'
+        path.write_text(path.read_text() + '\n')
+    args = ['accept-artifact', '--project', str(tmp_path), '--artifact-id', 'B', '--self-check-json', str(checked)]
+    if failure == 'wrong_change':
+        args += ['--change-id', 'UNRELATED']
+    before = {p: p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}
+    with pytest.raises(ValueError):
+        cli.main(args)
+    assert {p: p.read_bytes() for p in before} == before
 
 
 @pytest.mark.parametrize("failure", ["report_drift", "revoked_authorization", "candidate_drift"])

@@ -17,6 +17,8 @@ python scripts/stage_context_cli.py confirm-script-in-chat \
 
 依据 JSON 使用 `scope: "artifact"`、`quote`（用户原话）、`at`（发送时间，含时区）、`review_ref`（能定位实际消息的对话引用）。只从真实用户消息填写；一条消息涉及多个项目、版本或仅确认某段时，只按可明确匹配的整稿范围办理。首次采用可登记准确候选；已有正式版本的返修附加 `--change-id`，指向已登记该候选的活动变更案。确认与采用在同一事务提交，真实确认渠道写为 `chat_confirmation`。重复办理同一消息时复用原回执。文件与审阅时的字节有变化时，先交回准确新稿。
 
+使用原片硬字幕并请用户随整稿核对白及说话人时，交稿前用 `python -m scripts.core.story_sources --project <项目> --narrative <叙事包> --review-ready --chat-review --export-markdown <阅读稿>` 导出实际披露范围。用户明确通过该版整稿后，在同一个确认依据 JSON 增加 `review_markdown: {"path": "<审阅稿>", "sha256": "<审阅时登记的 SHA-256>"}`。入口核对审阅稿正文、附录及披露的对白 ID，只沿这次整稿回执采用本版可核条目。来源冲突或说话人未定位的条目仍须解决，硬字幕依据仍标明未人工听核、未核时码。
+
 回读确认版本和 `current` 后，按[编导通过后接导演](#编导通过后接导演)继续导演，并按已定通道继续已获授权的资产工作。临时改走工作台时，资产发布仍依赖同版编导的网站通过。有新一版编导时复查受影响的导演和资产依赖。
 
 ## 编导通过后接导演
@@ -66,6 +68,21 @@ python scripts/stage_context_cli.py accept-artifact \
 
 ## 自主修订
 
-自主返修使用既有 `scripts.core.revision_control` 的 Python API：`open_change(..., authorization_id=<已登记流程授权ID>)` 保留原目标、依赖冻结及失效传播；`record_candidate(...)` 登记新修订和准确依赖后，调用 `confirm_agent_candidate(project, change_id=..., report_path=...)` 核本版完整自查，再调用 `commit_change(project, change_id=...)`。报告须针对新候选重新绑定；提交前会再次核授权、报告、来源和实际字节。该分支不调用 `confirm_impact`／`confirm_candidate` 生成逐稿人审；既有人审变更仍沿原 API。它没有新增命令行返修子命令，也不绕过原有生成段增删、重排、覆盖与正文替换对账。
+自主返修仍用 `scripts.core.revision_control` 的 `open_change(..., authorization_id=<已登记流程授权ID>)` 保留原目标、依赖冻结及失效传播，用 `record_candidate(...)` 登记新修订和准确依赖。之后使用现有 `accept-artifact` 附加 `--change-id`，在同一次调用中验收本版自查、提交原变更案并回读采用状态；底层继续复用 `confirm_agent_candidate` 和 `commit_change`。报告须针对新候选重新绑定；提交前仍核授权、报告、来源和实际字节。该分支不调用 `confirm_impact`／`confirm_candidate` 生成逐稿人审；既有人审变更仍沿原 API，也不绕过原有生成段增删、重排、覆盖与正文替换对账。
+
+### 单段采用与写前预检
+
+首次采用和自主修订都可在同一命令追加 `--preflight-json`，消费已落盘的准确单段 frozen JSON：
+
+```sh
+python scripts/stage_context_cli.py accept-artifact \
+  --project '<业务项目绝对路径>' --artifact-id '<准确候选 ID>' \
+  --self-check-json '<本版自查 JSON>' --change-id '<原活动变更案 ID>' \
+  --preflight-json '<单段 frozen JSON>'
+```
+
+首次采用省略 `--change-id`。该入口先核单段计划包含本次产物的准确 ID、revision、sha256 来源，再办理采用与任务选择登记，回读 manifest 和 project_state 后，调用现有正式 `validate_submission(..., formal_delivery=True, preflight=True)`。修订提交在原事务内选中新候选，即使旧 ID 已被上游失效同步移出任务状态，也不再手动补 state；不把 manifest 中其他 current 项自动选进来。
+
+单段预检失败时返回非零及 `adoption_completed: true`，保留已经成立的采用事实，修正原单段计划后沿同一命令续作。对准确已采用的自主验收产物，入口核原自查、授权、字节和上游，必要时只补选该 ID；已有完整登记时不再写事务，不重造人审或重复采用。不同报告、失效依据和不匹配变更案不能借此恢复。独立 `canvas_readback.py --preflight` 仍只读，不隐式补状态。预检通过不代表远端保存、刷新、人脸认证或生成授权，保存后真实回读及结果未知先查原任务的控制继续有效。
 
 导演返修提交时，程序对照新旧导演稿与已采用补图的明确镜号。前序场景、该图所用场景与共享导演条件一致时，继续使用原补图和原自查回执。镜号或场景变化、共享条件变化、依据缺失时，按现有依赖复核受影响产物。

@@ -65,7 +65,7 @@ def bind_synthetic_quality(root, frozen):
     for row in frozen['drafts']:
         row.setdefault('source_shot_ids', ['SYNTHETIC-SHOT'])
         for ref in row['reference_checks']:
-            if ref.get('kind') != 'image':
+            if ref.get('kind') != 'image' or 'product_reference_id' in ref:
                 continue
             item = next(a for a in manifest['artifacts'] if a['artifact_id'] == ref['artifact_id'])
             if item['artifact_id'] not in images:
@@ -85,15 +85,9 @@ def bind_synthetic_quality(root, frozen):
 
 
 def bind_synthetic_canvas(root, frozen, observed):
-    """Add declared graph/timing fixture data, never a real platform receipt."""
+    """Add declared graph fixtures, never a real platform receipt."""
     for row in frozen['drafts']:
-        cursor = 0
-        lines = ['时间仅用于控制动作与切镜，不显示为文字。']
         row['edges'], row['source_nodes'] = [], []
-        for duration in row['shot_durations']:
-            lines.append(f'{cursor:g}–{cursor + duration:g}秒 合成画面。')
-            cursor += duration
-        row['prompt'] = '\n'.join(lines)
         for slot, (media, ref) in enumerate(zip(row['ordered_media'], row['reference_checks']), 1):
             ref['canvas_binding'] = dict(mode='edge', purpose='synthetic boundary', prompt_reference=True,
                                          source_port='image', target_port=f'input-{slot}')
@@ -399,7 +393,11 @@ def test_normal_draft_reading_links_exact_checks_and_keeps_optional_modes_separa
     assert 'seedance-delivery-package.md)' not in save_step
 
     persistence = _doc_section(contract, '草稿身份与回读')
-    assert all(term in persistence for term in ('真实刷新', 'ordered_media', 'native_mentions'))
+    # Check the current persistence contract, not a synonym for refresh.
+    # A user decision to skip refresh must retain the unverified scope.
+    assert all(term in persistence for term in ('保存后', '用户决定', '刷新', '未实际刷新', '未核范围'))
+    assert all(term in persistence for term in ('ordered_media', 'native_mentions'))
+    assert '不足以证明绑定或持久化' in persistence
     assert 'RHTV' not in persistence
 
     checklist = _doc_section(contract, '正式草稿写前检查')

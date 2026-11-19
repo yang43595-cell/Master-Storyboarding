@@ -13,4 +13,5 @@
 | <a id="网站往返"></a>查退回意见与附件 | [网站往返](review-workbench-operations.md#网站往返) | 按受影响范围返修新版本 |
 | <a id="本地流程授权与自主采用"></a>完成导演、按需分镜或视频稿 | [导演](../../skills/storyboard-planner/SKILL.md)、[按需分镜](../../skills/storyboard-director/SKILL.md)、[视频提示词](../../skills/voiceover-to-video-script/SKILL.md) | 全稿自查后按[首次采用](artifact-adoption.md#首次自主采用)或[自主修订](artifact-adoption.md#自主修订)办理 |
 | 写入并回读视频草稿 | 红帧走[成批写入与回读](../../skills/_shared/redframe-operations.md#成批写入和整节点回读)，小云雀看[平台交付](../../skills/voiceover-to-video-script/references/seedance-delivery-package.md#小云雀网页草稿)和[排版](../../skills/voiceover-to-video-script/references/seedance-delivery-package.md#画布紧凑排版) | 保存后刷新，核原生正文、素材对应、参数与布局截图；交可由用户点击生成的草稿 |
+| 提交已明确授权的视频生成 | [已授权生成的取证](../../skills/voiceover-to-video-script/references/seedance-delivery-package.md#已授权生成的取证) | 复用覆盖本次范围的有效授权，按准确节点提交并保留原任务身份。结果未知时先只读查原任务 |
 | <a id="agent-审核-api"></a><a id="接线现状与开发交接"></a>接入、换站或核对接口限制 | [项目送审接口合同](review-api-contract.md)，现网差异见[现有工作台适配](review-api-contract.md#现有工作台适配) | 开发联调沿对应接口和验收用例 |

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from html.parser import HTMLParser
 import json
 import re
@@ -229,6 +230,49 @@ class RedframeWorkspace:
                 attempts[-1]['error'] = 'invalid_canvas'
             raise RedframeWorkspaceError('canvas read', attempts)
         return graph
+
+    def read_video_submission(self, submission, *, budget_ms=None):
+        """Find the task on the original video node in the existing page session."""
+        if not isinstance(submission, dict):
+            raise ValueError('须提供原提交记录')
+        node_id = submission.get('node_id')
+        task_id = submission.get('task_id')
+        previous_task_id = submission.get('previous_task_id')
+        if (not isinstance(node_id, str) or not _ID.fullmatch(node_id)
+                or any(value is not None and (not isinstance(value, str) or not _ID.fullmatch(value))
+                       for value in (task_id, previous_task_id))):
+            raise ValueError('须提供准确的红帧视频节点和已知任务 ID')
+        if task_id is not None and task_id == previous_task_id:
+            raise ValueError('本次任务 ID 不能与提交前任务相同')
+        unknown = {'node_id': node_id, 'phase': 'submission_unknown'}
+        click_ms = None
+        if task_id is None:
+            if 'previous_task_id' not in submission or not isinstance(submission.get('click_intent_at'), str):
+                return {**unknown, 'reason': 'missing_submission_baseline'}
+            clicked_at = datetime.fromisoformat(submission['click_intent_at'])
+            if clicked_at.utcoffset() is None or clicked_at.timestamp() <= 0:
+                raise ValueError('提交前时间须包含时区')
+            click_ms = clicked_at.timestamp() * 1000
+
+        graph = self.read_canvas(budget_ms=budget_ms)
+        nodes = [node for node in graph['nodes'] if node.get('id') == node_id]
+        if not nodes:
+            return {**unknown, 'reason': 'node_missing'}
+        if (len(nodes) != 1 or nodes[0].get('type') != 'remote-videoGenerationNode'
+                or not isinstance(nodes[0].get('data'), dict)):
+            raise ValueError(f'视频节点身份不符：{node_id}')
+        task = nodes[0]['data'].get('videoTask')
+        observed = task.get('id') if isinstance(task, dict) else None
+        if not isinstance(observed, str) or not _ID.fullmatch(observed):
+            return {**unknown, 'reason': 'task_missing'}
+        if task_id is not None:
+            if task_id != observed:
+                return {**unknown, 'reason': 'task_id_mismatch'}
+        else:
+            started_at = task.get('startedAt')
+            if observed == previous_task_id or type(started_at) is not int or started_at < click_ms:
+                return {**unknown, 'reason': 'task_not_new'}
+        return {'node_id': node_id, 'phase': 'task_observed', 'task_id': observed}
 
     def _wait_for_image_node(self, node_id, ready, timeout, message):
         if not isinstance(node_id, str) or not _ID.fullmatch(node_id) or not 0 <= timeout <= 300:

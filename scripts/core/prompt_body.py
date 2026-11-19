@@ -78,18 +78,4 @@ def generated_overlay_issues(body: str) -> list[str]:
                          and re.search(device_screen + r'$', prefix))
             if not device_ui and not negated_action(prefix):
                 issues.append('生成正文含画面显示文字指令；只生成底画面，文字交后期')
-    timed = re.search(r'(?:\d+(?:\.\d+)?|[零一二三四五六七八九十百两半]+)\s*(?:秒|s\b)|(?<!\d)\d{2}:\d{2}(?::\d{2})?(?!\d)', visible, re.I)
-    # A timing-only declaration may put its no-text instruction after a comma.
-    # Do not cross sentence/contrast boundaries or accept unrelated negatives.
-    timing = r'(?:秒数|时间标记|切镜时间|时间指令|时间码|时间)'
-    guard = re.search(
-        timing + r'[^。！？\n但却；;]{0,70}?' + negative + modifiers +
-        r'(?:显示|渲染|出现)(?:为)?(?:文字)?(?:[。！？；;，,\n]|$)', visible)
-    guard = guard or re.search(
-        timing + r'(?:仅|只)(?:用于|用来|控制)[^。！？\n但却；;]{0,35}' +
-        r'(?:动作|切镜|剪辑)[^。！？\n但却；;]{0,20}[，,]\s*' + negative +
-        modifiers + r'(?:生成|显示|渲染|出现)' + modifiers +
-        r'(?:文字|字幕|时间字|时间码)(?:[。！？；;，,\n]|$)', visible)
-    if timed and not guard:
-        issues.append('正文含秒数或时间码，须明确仅控制动作/切镜，不在画面显示')
     return list(dict.fromkeys(issues))

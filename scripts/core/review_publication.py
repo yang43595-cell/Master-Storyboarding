@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import tempfile
 from dataclasses import InitVar, dataclass
 from datetime import datetime
@@ -142,6 +143,9 @@ class ChatScriptApproval:
     quote: str
     user_confirmed_at: str
     approval_ref: str
+    review_markdown_path: str | None = None
+    review_markdown_sha256: str | None = None
+    subtitle_review_ids: tuple[str, ...] = ()
 
     @classmethod
     def from_message(cls, project, *, artifact_id, path, revision, sha256, message):
@@ -152,12 +156,46 @@ class ChatScriptApproval:
             raise ValueError("对话确认须提供用户原话、时间和对话消息位置")
         if datetime.fromisoformat(at).utcoffset() is None:
             raise ValueError("对话确认时间须含时区")
-        return cls(project, artifact_id, str(project_file(project, path)), revision, sha256, quote, at, reference)
+        source = project_file(project, path)
+        proof = message.get('review_markdown')
+        if proof is None:
+            return cls(project, artifact_id, str(source), revision, sha256, quote, at, reference)
+        if (not isinstance(proof, dict) or not isinstance(proof.get('path'), str)
+                or not proof['path'].strip() or not isinstance(proof.get('sha256'), str)):
+            raise ValueError('对话审阅稿须提供审阅时记录的路径和 SHA-256')
+        reading = project_file(project, proof['path'])
+        raw = reading.read_bytes()
+        source_raw = source.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != proof['sha256'] or hashlib.sha256(source_raw).hexdigest() != sha256:
+            raise ValueError('编导稿或对话审阅稿已偏离审阅时的文件字节')
+        from .story_sources import SUBTITLE_REVIEW_DISCLOSURE, render_markdown
+        actual = raw.decode('utf-8-sig').replace('\r\n', '\n')
+        match = re.search(r'^' + re.escape(SUBTITLE_REVIEW_DISCLOSURE) + r'\n\n([^\n]+)\n\n', actual, re.M)
+        ids = tuple(match[1].split('、')) if match else ()
+        if not ids or len(set(ids)) != len(ids) or any(not re.fullmatch(r'DLG-[A-Z0-9-]+', ident) for ident in ids):
+            raise ValueError('对话审阅稿缺硬字幕披露或准确对白 ID')
+        package = json.loads(source_raw.decode('utf-8-sig'))
+        expected = render_markdown(package, subtitle_review_ids=ids)
+        annex = '## 完整结构化来源（只读技术附录）\n'
+        body, _, source_appendix = expected.rpartition(annex)
+        # Some exports add the environment table after the canonical reading body.
+        actual_body, _, actual_appendix = actual.rpartition(annex)
+        extra = actual_body.removeprefix(body).lstrip('\n')
+        env_heading = '## 环境资产需求\n\n'
+        extra_env = extra.startswith(env_heading) and '\n## ' not in extra[len(env_heading):]
+        if actual != expected and not (actual_body.startswith(body) and extra_env and actual_appendix == source_appendix):
+            raise ValueError('对话审阅稿与本版 JSON 的阅读正文或技术附录不一致')
+        return cls(project, artifact_id, str(source), revision, sha256, quote, at, reference,
+                   reading.relative_to(project).as_posix(), proof['sha256'], ids)
 
     def receipt_fields(self):
-        return {"channel": "chat_confirmation", "quote": self.quote,
+        receipt = {"channel": "chat_confirmation", "quote": self.quote,
                 "user_confirmed_at": self.user_confirmed_at, "review_ref": self.approval_ref,
                 "path": Path(self.path).relative_to(self.project).as_posix()}
+        if self.subtitle_review_ids:
+            receipt.update(review_markdown={"path": self.review_markdown_path, "sha256": self.review_markdown_sha256},
+                           subtitle_review_ids=list(self.subtitle_review_ids))
+        return receipt
 
 
 def require_script_approval(project, entry, approval_ref, website_approval, *, chat_approval=None):

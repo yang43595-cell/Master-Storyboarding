@@ -137,7 +137,10 @@ def native_draft(graph, node, slots, models):
 
 def finalize_new_drafts(project, plan, preflight, segment_nodes, observed):
     """Bind real IDs to a passed direct-upload plan and compare a fresh native readback."""
-    if preflight.get('ok') is not True or preflight.get('frozen_sha256') != digest(plan):
+    # accept-artifact bundles the same preflight under its adoption result.
+    report = preflight.get('preflight', preflight)
+    if (preflight.get('ok') is not True or not isinstance(report, dict) or report.get('ok') is not True
+            or report.get('frozen_sha256') != digest(plan)):
         raise ValueError('写前预检未通过，或快照与通过的预检不一致')
     if observed.get('revision') != plan['revision']:
         raise ValueError('刷新回读修订与写前计划不一致')
@@ -152,6 +155,8 @@ def finalize_new_drafts(project, plan, preflight, segment_nodes, observed):
     for draft in drafts:
         segment = draft['source_segment_id']
         node_id = segment_nodes[segment]
+        if draft.get('realistic_face_slots'):
+            raise ValueError(f'{segment} 含认证源卡槽，须走整节点连线回读')
         if (draft.get('edges') != [] or draft.get('source_nodes') != []
                 or draft.get('ordered_media', []) != [] or node_id == draft['node_id']):
             raise ValueError(f'{segment} 须使用首次直传计划和新建的实际节点 ID')

@@ -6,6 +6,7 @@ from pathlib import Path
 from .artifacts import project_path
 from .io import read_json, sha256_file
 from .media_types import MEDIA_EXTENSIONS
+from .visual_context_budget import assert_payload_free, VisualContextBudgetError
 
 
 _REVIEW_STATUS = {
@@ -66,6 +67,22 @@ def _compact_issue(value, fallback='实看未通过，见原回执'):
     return value
 
 
+def _observation_summary(observations):
+    # Full observations stay in receipt_path; never transport arbitrary row fields.
+    for value in observations:
+        if isinstance(value, dict):
+            value = '；'.join(f'{key}: {item}' for key, item in value.items()
+                             if isinstance(item, str) and item.strip())
+        if isinstance(value, str) and value.strip():
+            try:
+                assert_payload_free(value)
+            except VisualContextBudgetError:
+                continue
+            text = ' '.join(value.split())
+            return text if len(text) <= 240 else text[:239] + '…'
+    return '观察摘要见原回执'
+
+
 def _reviewed_row(project, target, row, batch_observer):
     review_results = [row[key] for key in ('visual_status', 'review_result') if row.get(key) is not None]
     observations = [row.get('observed'), row.get('observations')]
@@ -91,7 +108,8 @@ def _reviewed_row(project, target, row, batch_observer):
     has_observation = any(_observation(value) for value in observations)
     if not has_observation and not (state == 'failed' and isinstance(problem, str) and problem.strip()):
         return _pending(target, '缺实际视觉观察记录')
-    checked = {'target': target, 'candidate_id': candidate, 'observer': observer, 'visual_status': state}
+    checked = {'target': target, 'candidate_id': candidate, 'observer': observer, 'visual_status': state,
+               'observation_summary': _observation_summary(observations)}
     if state == 'failed':
         return {**checked, 'status': 'blocked', 'issue': _compact_issue(problem)}
 

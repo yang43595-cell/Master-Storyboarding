@@ -15,7 +15,7 @@ from pathlib import Path
 
 from .quality_evidence import (generation_duration_values, required_visuals, reference_shot_ids, scene_state_requirements,
                                source_shot_ids, validate_required_visuals,
-                               validate_scene_state_coverage, validate_shot_durations, validate_prompt_timeline)
+                               validate_scene_state_coverage, validate_shot_durations)
 from .prompt_body import submitted_prompt_body
 from .project_kickoff import load_kickoff
 
@@ -445,10 +445,8 @@ def _validate(payload, storyboard, root, *, require_physical, delivery_platform,
             _need(isinstance(parameters, dict), "交付/源参数结构无效")
             _check_target_edit_duration(row, capability[2], platform=selected_model["platform"])
             _check_generation_duration(row, parameters, capability)
-        if "shot_durations" in row:
+        if "shot_durations" in row or (check_cross_scene and capability is not None):
             validate_shot_durations(row, parameters)
-        if check_cross_scene and capability is not None:
-            validate_prompt_timeline(row, parameters)
     covered = {shot for ids in mapped for shot in ids}
     if scope_type == "full_local_authored" and not local_review:
         _need(covered == set(shots), "全片稿生成段未完整覆盖准确导演镜号")

@@ -297,8 +297,6 @@ def _writing_rules(ref, content, single_item):
     }.get(ref, set()) if single_item else set()
     if ref == 'skills/storyboard-director/references/image-continuity-hard-rules.md':
         omitted = {'按任务读取'}
-    elif ref == 'docs/rules/execution.md':
-        omitted = {'等待与工具回传'}
     if not omitted:
         return content
     parts = re.split(r'(?m)(?=^## )', content)

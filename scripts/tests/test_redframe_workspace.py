@@ -27,6 +27,40 @@ def native_node(node_id, filenames):
     ]}}}
 
 
+@pytest.mark.parametrize(('task', 'known_task_id', 'phase', 'reason'), [
+    ({'id': 'new-task', 'startedAt': 1762387201000, 'input': {'prompt': 'fixture'}}, None,
+     'task_observed', None),
+    ({'id': 'old-task', 'startedAt': 1762387201000}, None, 'submission_unknown', 'task_not_new'),
+    ({'id': 'new-task', 'startedAt': 1762387199999}, None, 'submission_unknown', 'task_not_new'),
+    ({'id': 'new-task'}, None, 'submission_unknown', 'task_not_new'),
+    ({'id': 'new-task'}, 'new-task', 'task_observed', None),
+    ({'id': 'other-task'}, 'new-task', 'submission_unknown', 'task_id_mismatch'),
+    (None, None, 'submission_unknown', 'task_missing'),
+])
+def test_video_submission_resumes_original_workspace_node(task, known_task_id, phase, reason):
+    nodes = [{'id': 'other-node', 'type': 'remote-videoGenerationNode',
+              'data': {'videoTask': {'id': 'new-task', 'startedAt': 1762387201000}}},
+             {'id': 'target-node', 'type': 'remote-videoGenerationNode',
+              'data': {'videoTask': task, 'outputs': {'video': {'value': {'url': 'old-result.mp4'}}}}}]
+    page = PageReplies({'results': [{'status': 200, 'error': None,
+        'graph': {'toonflowCanvas': True, 'nodes': nodes, 'edges': []}}]})
+    receipt = {'node_id': 'target-node', 'previous_task_id': 'old-task',
+               'click_intent_at': '2025-11-06T00:00:00+00:00', 'task_id': known_task_id}
+    result = RedframeWorkspace(page, 'project').read_video_submission(receipt)
+    expected = {'node_id': 'target-node', 'phase': phase}
+    expected.update({'reason': reason} if reason else {'task_id': 'new-task'})
+    assert result == expected
+    assert [call['operation'] for call in page.calls] == ['canvas']
+
+
+def test_video_submission_without_known_id_or_before_click_baseline_remains_unknown():
+    page = PageReplies()
+    result = RedframeWorkspace(page, 'project').read_video_submission({'node_id': 'target-node'})
+    assert result == {'node_id': 'target-node', 'phase': 'submission_unknown',
+                      'reason': 'missing_submission_baseline'}
+    assert not page.calls
+
+
 def test_image_wait_requires_a_saved_body_native_references_and_fresh_result(monkeypatch):
     monkeypatch.setattr('scripts.core.redframe_workspace.time.sleep', lambda _delay: None)
     expected = {'model': 'seedream-fixture', 'size': '1K', 'ratio': '3:4', 'count': 1}

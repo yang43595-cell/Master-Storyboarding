@@ -489,6 +489,8 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
                            review_ready: bool = False,
                            narrative_path: Path | None = None,
                            exact_human_approval: bool = False,
+                           chat_subtitle_review_ids=(),
+                           prepare_chat_review: bool = False,
                            delegated_creative_approval: bool = False) -> dict | None:
     """Validate sources, separating readiness for review from human approval.
 
@@ -562,8 +564,22 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
         kickoff = load_kickoff(project_root) if not candidate_test and report['subtitle_review_eligible_ids'] else None
         creation = (kickoff or {}).get('creation') or {}
         subtitle_approval = (report['subtitle_review_eligible_ids']
-                             if creation.get('dialogue_review_basis') == 'hard_subtitle_with_whole_script_review'
+                             if (creation.get('dialogue_review_basis') == 'hard_subtitle_with_whole_script_review'
+                                 or (review_ready and prepare_chat_review))
                              else [])
+        subtitle_eligible = report['subtitle_review_eligible_ids']
+        reused_chat_approval = False
+        if chat_subtitle_review_ids:
+            if not exact_human_approval or not set(chat_subtitle_review_ids) <= set(subtitle_eligible):
+                raise ValueError('对话审阅稿的硬字幕范围与本版可核条目不符')
+            subtitle_approval = set(subtitle_approval) | set(chat_subtitle_review_ids)
+        elif (not review_ready and not candidate_test and narrative_path is not None and subtitle_eligible
+              and not subtitle_approval):
+            from .artifacts import narrative_has_exact_approval
+            reused_chat_approval = narrative_has_exact_approval(project_root, narrative_path, narrative,
+                                                               chat_subtitle_review_ids=subtitle_eligible)
+            if reused_chat_approval:
+                subtitle_approval = subtitle_eligible
         eligible = set(awaiting_approval) | set(subtitle_approval)
         unresolved = report['unresolved_ids']
         if review_ready:
@@ -573,7 +589,7 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
                                  source_fidelity_checked=report['source_fidelity_checked'])
         elif eligible and not candidate_test:
             from .artifacts import narrative_has_exact_approval
-            if exact_human_approval or (narrative_path is not None
+            if exact_human_approval or reused_chat_approval or (narrative_path is not None
                                         and narrative_has_exact_approval(project_root, narrative_path, narrative)):
                 unresolved = [ident for ident in unresolved if ident not in eligible]
             elif awaiting_approval and (delegated_creative_approval or (
@@ -912,8 +928,11 @@ def reading_supplement(narrative: dict, project_root: Path, *, narrative_path: P
             'narrative': result}
 
 
-def export_markdown(package: dict, destination: Path, *, subtitle_review_ids=()) -> None:
-    """Explicit reading export; exclusive create protects existing confirmed files."""
+SUBTITLE_REVIEW_DISCLOSURE = ("**硬字幕对白待整稿审核。** 以下台词按原片硬字幕整理，说话人归属请随本版整稿核对；"
+                              "没有人工听核或已核时码。")
+
+
+def render_markdown(package: dict, *, subtitle_review_ids=()) -> str:
     schema = ('narrative-package.schema.json' if 'story_paragraphs' in package
               else 'storyboard-package.schema.json')
     require_schema(package, schema, label='导出源')
@@ -945,14 +964,18 @@ def export_markdown(package: dict, destination: Path, *, subtitle_review_ids=())
     # Fenced JSON retains every field without a second editable business model.
     payload = json.dumps(package, ensure_ascii=False, indent=2)
     fence = '`' * max(3, max((len(m[0]) + 1 for m in re.finditer(r'`+', payload)), default=3))
-    text = (f"# {package['project_id']} · {package['revision']}\n\n"
+    return (f"# {package['project_id']} · {package['revision']}\n\n"
             "本文件是 JSON 的只读阅读导出；修改业务内容请另建 JSON 修订并重新审核确认。\n\n"
-            + (("**硬字幕对白待整稿审核。** 以下台词按原片硬字幕整理，说话人归属请随本版整稿核对；"
-                "没有人工听核或已核时码。\n\n" + "、".join(subtitle_review_ids) + "\n\n")
+            + ((SUBTITLE_REVIEW_DISCLOSURE + "\n\n" + "、".join(subtitle_review_ids) + "\n\n")
                if subtitle_review_ids else "")
             + '\n\n'.join(reading) + '\n\n'
             + '## 完整结构化来源（只读技术附录）\n\n'
             + f"{fence}json\n{payload}\n{fence}\n")
+
+
+def export_markdown(package: dict, destination: Path, *, subtitle_review_ids=()) -> None:
+    """Explicit reading export; exclusive create protects existing confirmed files."""
+    text = render_markdown(package, subtitle_review_ids=subtitle_review_ids)
     destination.parent.mkdir(parents=True, exist_ok=True)
     with destination.open('x', encoding='utf-8') as output:
         output.write(text)
@@ -969,6 +992,7 @@ def main():
     parser.add_argument('--review-ready', action='store_true',
                         help='编导整稿送审检查：有来源与明确人物的创作对白可以等待整稿审核')
     parser.add_argument('--dialogue-baseline', type=Path)
+    parser.add_argument('--chat-review', action='store_true', help='导出对话审阅稿并披露合格硬字幕的待审范围')
     parser.add_argument('--check-asset-decisions', action='store_true', help='检查新稿资产表是否填写判断，不重复语义审查')
     parser.add_argument('--reading-supplement', action='store_true',
                         help='完整校验后只返回 JSON 独有字段及引用，不重复打印 Markdown 原文')
@@ -983,6 +1007,8 @@ def main():
     args = parser.parse_args()
     if args.review_ready and (not args.narrative or args.storyboard or args.candidate_test or args.reading_supplement):
         parser.error('--review-ready 仅用于完整编导 --narrative 送审检查')
+    if args.chat_review and not (args.review_ready and args.export_markdown):
+        parser.error('--chat-review 须与 --review-ready 和 --export-markdown 一起使用')
     if args.candidate_source_evidence is not None and (
             not args.candidate_test or not args.narrative or args.dialogue_review
             or args.markdown or args.shot_plan or args.reading_supplement or args.dialogue_baseline):
@@ -1022,11 +1048,13 @@ def main():
     report = validate_story_sources(narrative, storyboard, project_root=args.project, candidate_test=args.candidate_test,
                                     candidate_paragraph_ids=args.candidate_paragraph_id,
                                     candidate_source_evidence=args.candidate_source_evidence,
-                                    review_ready=args.review_ready, narrative_path=args.narrative.resolve())
+                                    review_ready=args.review_ready, narrative_path=args.narrative.resolve(),
+                                    prepare_chat_review=args.chat_review)
     if report is not None:
         print(json.dumps(report, ensure_ascii=False))
     if args.export_markdown:
-        export_markdown(storyboard or narrative, args.export_markdown)
+        export_markdown(storyboard or narrative, args.export_markdown,
+                        subtitle_review_ids=report['awaiting_subtitle_approval_ids'] if args.chat_review else ())
     if args.candidate_paragraph_id is not None:
         print('本轮候选范围的来源检查通过；全片未核，跨段语义仍须自查，不可据此正式采用。')
     else:

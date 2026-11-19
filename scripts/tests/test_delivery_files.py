@@ -92,6 +92,36 @@ def test_historical_prompt_observation_does_not_select_old_media(tmp_path):
     assert not discover_dependencies(tmp_path, payload=evidence)['ok']
 
 
+def test_segment_reconciliation_checks_prior_prompt_without_selecting_its_inputs(tmp_path):
+    prompt = tmp_path / 'old.json'
+    write_json(prompt, {'kind': 'video.prompt', 'source_image': 'retired.png'})
+    artifact_id = 'VIDEO-OLD'
+    checksum = artifacts.digest(prompt)
+    write_json(tmp_path / '00_项目管理/artifact_manifest.json', {
+        'artifacts': [{'artifact_id': artifact_id, 'logical_id': 'video.prompt',
+                       'type': 'video.prompt', 'status': 'superseded',
+                       'path_or_url': prompt.name, 'checksum': checksum,
+                       'depends_on': ['image.retired']}],
+    })
+    baseline = {'artifact_id': artifact_id, 'sha256': checksum}
+    revised = {'kind': 'video.prompt', 'segment_reconciliation': {'baseline': baseline}}
+    assert discover_dependencies(tmp_path, payload=revised, verify_hashes=True)['ok']
+    external = tmp_path.parent / (tmp_path.name + '-source')
+    write_json(external / artifacts.MANIFEST_PATH, {'artifacts': []})
+    incoming = external / 'incoming.json'
+    write_json(incoming, revised)
+    cross_project = discover_dependencies(tmp_path, files=[incoming], input_roots=[external], verify_hashes=True)
+    assert cross_project['ok'], cross_project
+    assert str(prompt.resolve()) in cross_project['checked_files']
+    assert not discover_dependencies(tmp_path, payload={
+        'kind': 'video.prompt', 'source_artifact_id': artifact_id,
+        'segment_reconciliation': {'baseline': baseline},
+    })['ok']
+    prompt.write_text('{}')
+    assert not discover_dependencies(tmp_path, payload=revised)['ok']
+    assert not discover_dependencies(tmp_path, files=[incoming], input_roots=[external])['ok']
+
+
 def test_legacy_transcript_sibling_and_agent_review_route(tmp_path):
     transcript = tmp_path / 'originals' / 'asr.json'
     media = transcript.with_name('original.mp4')

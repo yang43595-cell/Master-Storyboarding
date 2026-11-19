@@ -306,6 +306,7 @@ def test_formal_handoff_records_authorized_next_stage_without_a_revision_file(tm
     assert status["next_allowed_stage"] == "storyboard-planner" and status["production_allowed"]
     card = cli._current_handoff_text(project, "storyboard-planner")
     assert f"path：`{path.as_posix()}`" in card
+    assert "execution.md#等待与工具回传" in card
     assert cli.handoff(args) == report
     monkeypatch.setitem(cli.LIMITS, "handoff", report["bytes"] - 1)
     assert cli.handoff(args)["valid"]
@@ -420,6 +421,7 @@ def test_identical_preparation_reuses_files_but_changed_objective_is_saved(tmp_p
                               request_json=None, vault=str(vault), actor_id='test-agent', task_id='test-method-binding')
     cli.prepare(args)
     _record_methods(project, args.skill, vault)
+    assert "execution.md#等待与工具回传" in (project / cli.CONTEXT_DIR / 'stage_startup.md').read_text(encoding='utf-8')
     paths = [p for p in (project / cli.CONTEXT_DIR).iterdir() if p.is_file()]
     for p in paths:
         os.utime(p, ns=(1_000_000_000, 1_000_000_000))

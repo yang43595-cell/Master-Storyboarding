@@ -65,6 +65,15 @@ def validate_canvas_inputs(row: dict, *, redframe: bool = False, before_upload: 
     if not isinstance(refs, list) or (not before_upload and (
             not isinstance(media, list) or len(media) != len(refs))):
         raise ValueError('canvas inputs require one reference check per actual slot')
+    face_slots = row.get('realistic_face_slots')
+    visual_slots = {slot for slot, ref in enumerate(refs, 1) if ref.get('kind') in {'image', 'video'}}
+    if redframe and ('realistic_face_slots' in row or (before_upload and visual_slots)):
+        if (not isinstance(face_slots, list)
+                or any(type(slot) is not int or slot not in visual_slots for slot in face_slots)
+                or len(set(face_slots)) != len(face_slots)):
+            raise ValueError('红帧上传前须实看视觉参考并列出写实人脸槽 realistic_face_slots；没有则填 []')
+    else:
+        face_slots = []
     expected_edges, expected_sources, uses = [], {}, set()
     for slot, ref in enumerate(refs, 1):
         binding = ref.get('canvas_binding')
@@ -79,18 +88,25 @@ def validate_canvas_inputs(row: dict, *, redframe: bool = False, before_upload: 
         if not binding['prompt_reference'] and (not isinstance(binding.get('unmentioned_reason'), str)
                                                 or not binding['unmentioned_reason'].strip()):
             raise ValueError(f'canvas slot {slot}: unmentioned input needs its actual purpose/reason')
+        if slot in face_slots:
+            if binding['mode'] != 'edge':
+                raise ValueError(f'红帧第 {slot} 槽含写实人脸，上传前改用认证源卡')
+            if ref.get('kind') == 'image' and (binding.get('source_port'), binding.get('target_port')) != ('image', 'in'):
+                raise ValueError(f'红帧第 {slot} 槽含写实人脸，上传前改用认证源卡 image → in')
         if binding['mode'] == 'direct':
             if not redframe and (ref.get('product_reference') or 'action' in ref.get('roles', [ref.get('role')])):
                 raise ValueError('canvas product/action reference requires an independent source node and edge')
             if 'source_port' in binding or 'target_port' in binding:
                 raise ValueError('direct input cannot declare graph ports')
             continue
-        if before_upload:
-            raise ValueError('RedFrame before-upload preflight requires direct reference slots')
-        native = media[slot - 1]
         if any(not isinstance(binding.get(key), str) or not binding[key].strip()
                for key in ('source_port', 'target_port')):
             raise ValueError(f'canvas slot {slot}: exact source and target ports required')
+        if before_upload:
+            if slot not in face_slots:
+                raise ValueError('红帧未上传计划的连线槽须列入 realistic_face_slots')
+            continue
+        native = media[slot - 1]
         if native.get('reference_port', binding['source_port']) != binding['source_port']:
             raise ValueError('canvas source port differs from native reference port')
         if native.get('node_id') == row['node_id']:
@@ -108,10 +124,10 @@ def validate_canvas_inputs(row: dict, *, redframe: bool = False, before_upload: 
         if not isinstance(actual, list) or sorted(map(digest, actual)) != sorted(map(digest, expected)):
             raise ValueError(f'canvas {field}: missing, extra or conflicting source/edge')
     try:
-        from .core.quality_evidence import validate_prompt_timeline
+        from .core.quality_evidence import validate_shot_durations
     except ImportError:
-        from core.quality_evidence import validate_prompt_timeline
-    validate_prompt_timeline(row, row.get('parameters', {}))
+        from core.quality_evidence import validate_shot_durations
+    validate_shot_durations(row, row.get('parameters', {}))
 
 
 def compare_baseline(baseline: dict, current: dict) -> dict:
@@ -811,7 +827,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             row_authority = lambda ref: prior_authority(ref)[0]
         endpoint_mode = row.get('native_identity_mode') == 'first_last_frame_download'
         if before_upload and (endpoint_mode or 'native_binding' in row):
-            raise ValueError('红帧写前直传计划不能声明已采集平台绑定或首尾帧回执')
+            raise ValueError('红帧上传前计划不能声明已采集平台绑定或首尾帧回执')
         if not endpoint_mode:
             if 'state_control' in row:
                 raise ValueError('endpoint state_control requires its explicit verified identity mode')
@@ -837,9 +853,10 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             raise ValueError('duration outside explicitly selected platform bounds')
         if 'timing_scope' in row and (not private_preview or row['timing_scope'] != 'segment_total_only'):
             raise ValueError('only private preview may explicitly declare segment-total timing without a shot schedule')
-        validate_shot_durations(row, row['parameters'])
         if redframe or 'edges' in row or 'source_nodes' in row:
             validate_canvas_inputs(row, redframe=redframe, before_upload=before_upload)
+        else:
+            validate_shot_durations(row, row['parameters'])
         media, refs = row.get('ordered_media'), row.get('reference_checks')
         if before_upload:
             media = [None] * len(refs)
@@ -861,6 +878,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         for slot, (media_item, ref) in enumerate(zip(media, refs), 1):
             output = asset_outputs.get(f"{ref.get('asset_id', '')}@{ref.get('output_id', '')}")
             packed = formal_redframe and 'product_reference_id' in ref
+            face_slot = formal_redframe and slot in (row.get('realistic_face_slots') or [])
             direct_slot = (formal_redframe and not before_upload and identity_mode == 'media_id'
                            and ref.get('canvas_binding', {}).get('mode') == 'direct'
                            and 'sha256' in media_item)
@@ -868,8 +886,13 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                                 or media_item['sha256'] != ref.get('sha256')):
                 raise ValueError('direct upload slot does not match the exact draft node and source bytes')
             if packed:
-                if output is not None or ref.get('canvas_binding', {}).get('mode') != 'direct' or not (before_upload or direct_slot):
-                    raise ValueError('产品包装与动作参考须以直传槽对应准确原件，回读时提供实际文件字节')
+                if output is not None:
+                    raise ValueError('产品包参考须使用唯一的产品包原件身份')
+                if face_slot:
+                    if not before_upload and media_item.get('sha256') != ref.get('sha256'):
+                        raise ValueError('产品包认证源卡须回读实际字节并匹配准确原件')
+                elif ref.get('canvas_binding', {}).get('mode') != 'direct' or not (before_upload or direct_slot):
+                    raise ValueError('未走认证源卡的产品包参考须使用直传，回读时提供实际文件字节')
                 path = resolve_pack_media(project, product_pack, ref, product_requirements)
                 if 'product_reference' in ref:
                     product = ref['product_reference']
@@ -885,7 +908,10 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                 if (ref.get('sha256') != output['sha256'] or ref.get('kind') != 'image'
                         or (ref.get('path') is not None and project_path(project, ref['path']).resolve() != path.resolve())):
                     raise ValueError('direct image differs from the confirmed asset output')
-                if ref.get('canvas_binding', {}).get('mode') != 'direct' or not (before_upload or direct_slot):
+                if face_slot:
+                    if not before_upload and media_item.get('sha256') != output['sha256']:
+                        raise ValueError('认证源卡槽须回读其实际文件字节并匹配已确认资产输出')
+                elif ref.get('canvas_binding', {}).get('mode') != 'direct' or not (before_upload or direct_slot):
                     raise ValueError('confirmed asset output requires a direct slot with downloaded bytes')
                 item = {}
             else:
@@ -1076,12 +1102,17 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         elif continuity.get('previous_node_id'):
             raise ValueError('event root predecessor is unknown, cyclic or belongs to another event')
         event_last[event] = row, frames
+    face_source_card_slots = {row['source_segment_id']: row['realistic_face_slots']
+                              for row in drafts.values() if formal_redframe and row.get('realistic_face_slots')}
     return {'ok': True, 'mode': 'private_candidate_preview' if private_preview else 'formal_delivery',
             **({'status': 'candidate', 'review_status': 'unreviewed', 'production_blocked': True} if private_preview else {}),
             'revision': frozen['revision'], 'frozen_sha256': digest(frozen),
             **({'target_url': frozen['target_url'], 'target_project_id': platform_project_id,
                 'source_segment_ids': [row['source_segment_id'] for row in frozen['drafts']],
-                'upload_mapping_pending_nodes': sorted(planned_ids)} if formal_redframe and preflight else {}),
+                'upload_mapping_pending_nodes': sorted(planned_ids)}
+               if formal_redframe and preflight else {}),
+            **({'face_source_card_slots': face_source_card_slots}
+               if face_source_card_slots or (formal_redframe and preflight) else {}),
             'dependency_checks': dependencies,
             'endpoint_control_checks': endpoint_control_checks,
             **({'prompt_state_control_checks': prompt_state_control_checks}
@@ -1099,6 +1130,27 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             'limitations': 'Declaration consistency only, not proof of user consent or a browser sandbox. Requires actual visual inspection of roles/states and current platform bounds; does not verify pixels, remote provenance or generation authorization; action-video and Xiaoyunque video durations are locally probed only.'}
 
 
+def _face_certification_status(row, got, slot):
+    records = got.get('face_certifications')
+    record = records.get(str(slot)) if isinstance(records, dict) else None
+    if not isinstance(record, dict):
+        return 'missing'
+    ref = row['reference_checks'][slot - 1]
+    media = row['ordered_media'][slot - 1]
+    cert = record.get('faceCertification')
+    source_url = record.get('source_url')
+    if (record.get('node_id') != media['node_id'] or media.get('sha256') != ref['sha256']
+            or not isinstance(source_url, str) or not source_url.strip()
+            or not isinstance(cert, dict) or cert.get('sourceUrl') != source_url
+            or not isinstance(cert.get('assetId'), str) or not cert['assetId'].strip()):
+        return 'failed'
+    if ref['kind'] == 'image' and cert.get('imageDigest') != ref['sha256']:
+        return 'failed'
+    if ref['kind'] == 'video' and 'videoDigest' in cert and cert['videoDigest'] != ref['sha256']:
+        return 'failed'
+    return 'passed'
+
+
 def compare(frozen: dict, observed: dict, project: Path | None = None, *, private_preview: bool = False,
             formal_delivery: bool = False) -> dict:
     """Report only selected full-field readback; metadata is not remote proof."""
@@ -1111,6 +1163,7 @@ def compare(frozen: dict, observed: dict, project: Path | None = None, *, privat
         raise ValueError('download identity modes require --project and original slot evidence')
     submission = validate_submission(frozen, project, private_preview=private_preview,
                                      formal_delivery=formal_delivery) if project is not None else None
+    face_slots_by_segment = (submission or {}).get('face_source_card_slots', {})
     platform_project_id = _declared_project_id(frozen)
     if ((platform_project_id is not None or port_mode or private_preview)
             and observed.get('target_project_id') != platform_project_id):
@@ -1133,6 +1186,7 @@ def compare(frozen: dict, observed: dict, project: Path | None = None, *, privat
     native_reference_checks = {}
     canvas_input_checks = {}
     endpoint_control_checks = {}
+    face_certification_checks = {}
     if set(actual) != set(expected):
         differences.append({'field': 'node_ids', 'missing': sorted(set(expected)-set(actual)),
                             'extra': sorted(set(actual)-set(expected))})
@@ -1163,6 +1217,16 @@ def compare(frozen: dict, observed: dict, project: Path | None = None, *, privat
                                         'observed_sha256': digest(observed_graph)})
         if project is not None and 'edges' in row:
             canvas_input_checks[node_id] = 'passed'
+        face_slots = face_slots_by_segment.get(row.get('source_segment_id'), [])
+        if face_slots:
+            checks = {}
+            for slot in face_slots:
+                status = _face_certification_status(row, got, slot)
+                checks[str(slot)] = status
+                if status != 'passed':
+                    differences.append({'node_id': node_id, 'field': 'face_certifications', 'slot': slot,
+                                        'status': status})
+            face_certification_checks[node_id] = checks
         # Native rich-text entities are distinct evidence from plain prompt text
         # and media edges. Opt in per draft so historical/plain-text clients keep
         # their original comparison scope without claiming entity verification.
@@ -1205,6 +1269,7 @@ def compare(frozen: dict, observed: dict, project: Path | None = None, *, privat
             'native_reference_checks': native_reference_checks,
             'canvas_input_checks': canvas_input_checks,
             'endpoint_control_checks': endpoint_control_checks,
+            **({'face_certification_checks': face_certification_checks} if face_certification_checks else {}),
             'limitations': 'Evidence collector must actually refresh and read native editor values. '
                            'Native entity checks only cover explicitly requested drafts. '
                            'This comparison cannot establish remote provenance, pixel quality, generation status or generation authorization.'}

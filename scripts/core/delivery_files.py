@@ -267,6 +267,7 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
                 hash_checked.add(str(path))
 
     def walk(value, location, *, registered=False):
+        nonlocal document_project
         if isinstance(value, list):
             for i, child in enumerate(value):
                 walk(child, f'{location}/{i}')
@@ -304,6 +305,30 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
                     # A structured JSON change locator is not a filesystem path.
                     # before/after still recurse, including their real file refs.
                     continue
+                elif (key == 'segment_reconciliation' and value.get('kind') == 'video.prompt'
+                      and isinstance(child, dict) and 'baseline' in child):
+                    # The previous prompt is byte-bound comparison evidence.
+                    # Its retired refs are not inputs to the revised prompt.
+                    baseline = child['baseline']
+                    where = f'{here}/baseline'
+                    if not isinstance(baseline, dict) or not isinstance(baseline.get('artifact_id'), str):
+                        error(where, 'segment reconciliation requires an exact prior prompt artifact')
+                    else:
+                        matches = [entry for entry in entries()
+                                   if entry.get('artifact_id') == baseline['artifact_id']]
+                        if (len(matches) != 1 or matches[0].get('logical_id') != 'video.prompt'
+                                or matches[0].get('type') != 'video.prompt'
+                                or not matches[0].get('checksum')
+                                or matches[0]['checksum'] != baseline.get('sha256')):
+                            error(where, 'segment reconciliation baseline does not match its registration')
+                        else:
+                            previous_project = document_project
+                            document_project = project  # Resolve paths in the manifest that supplied the ID.
+                            try:
+                                evidence_file(matches[0].get('path_or_url'), baseline['sha256'], where)
+                            finally:
+                                document_project = previous_project
+                    walk({name: item for name, item in child.items() if name != 'baseline'}, here)
                 elif key in {'artifact_id', 'source_artifact_id'}:
                     artifact(child, here)
                 elif key in {'artifact_ids', 'source_artifact_ids'}:

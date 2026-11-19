@@ -255,19 +255,23 @@ def test_redframe_duration_matches_exact_native_options_and_resolution(tmp_path)
             validate_delivery_parameters([actual], payload, tmp_path, platform='redframe')
 
 
-@pytest.mark.parametrize('prompt,issue', [
-    ('Synthetic action without timeline.', 'one explicit seconds range'),
-    ('0–2秒 A. 3–6秒 B.', 'conflicts with shot_durations'),
-    ('0–2秒 A. 2–5秒 B.', 'conflicts with shot_durations'),
-    ('0–6秒 A.', 'one explicit seconds range'),
-    ('0–2秒 A. 2–6秒 B.', None),
+@pytest.mark.parametrize('prompt,shot_durations,issue', [
+    ('Alice stops, then turns.', [2, 4], None),
+    ('Alice stops, then turns.', [2, 3], '逐镜合计'),
+    ('Alice stops, then turns.', None, '逐镜时长必须是非空正数数组'),
+    ('瑶瑶停留约1–2秒后转身。', [2, 4], None),
+    ('0–2秒：瑶瑶停下。\n2–6秒：她转身。', [2, 4], None),
+    ('镜头一（0–2秒）：瑶瑶停下。\n3–6秒：她转身。', [2, 4], None),
 ])
-def test_redframe_source_checks_submitted_timeline_before_canvas(tmp_path, prompt, issue):
+def test_redframe_source_checks_duration_budget_independent_of_prompt(tmp_path, prompt, shot_durations, issue):
     payload, board = fixture(tmp_path, maximum=30)
     bind_redframe_capability(tmp_path, payload, list(range(4, 31)))
-    payload['generation_segments'] = [dict(segment_id='MERGED', prompt=prompt,
+    row = dict(segment_id='MERGED', prompt=prompt,
         source_shot_ids=['S1', 'S2'], target_edit_duration_seconds=6,
-        shot_durations=[2, 4], parameters=dict(payload['platform'], duration=6))]
+        parameters=dict(payload['platform'], duration=6))
+    if shot_durations is not None:
+        row['shot_durations'] = shot_durations
+    payload['generation_segments'] = [row]
     if issue:
         with pytest.raises(ValueError, match=issue):
             validate_generation_boundaries(payload, board, tmp_path)
@@ -276,7 +280,7 @@ def test_redframe_source_checks_submitted_timeline_before_canvas(tmp_path, promp
 
 
 @pytest.mark.parametrize('with_timeline', [False, True])
-def test_formal_redframe_adoption_checks_timeline_before_becoming_current(tmp_path, with_timeline):
+def test_formal_redframe_adoption_accepts_prompts_with_or_without_timeline(tmp_path, with_timeline):
     from scripts.core import artifacts
     from scripts.tests.test_formal_package_submission import video_project, register
     payload = video_project(tmp_path, current_prompt=False)
@@ -285,22 +289,16 @@ def test_formal_redframe_adoption_checks_timeline_before_becoming_current(tmp_pa
     bind_redframe_capability(tmp_path, payload, list(range(4, 31)))
     rows = payload['generation_segments']
     payload['generation_segments'] = [dict(segment_id='MERGED',
-        prompt=('0–3秒 Alice stops. 3–6秒 Alice turns. 时间标记仅用于动作控制，不渲染文字。'
+        prompt=('镜头一（0–3秒）：Alice stops. 4–6秒：Alice turns.'
                 if with_timeline else 'Alice stops, then turns.'),
         source_shot_ids=[s for row in rows for s in row['source_shot_ids']],
         source_audio=[audio for row in rows for audio in row['source_audio']],
         target_edit_duration_seconds=6, shot_durations=[3, 3],
         parameters=dict(payload['platform'], duration=6))]
     entry = register(tmp_path, 'P-RED-FORMAL', 'video.prompt', payload, ['storyboard.package'])
-    if with_timeline:
-        artifacts.adopt_initial_package(tmp_path, entry['artifact_id'], 'synthetic exact approval')
-        assert next(a for a in artifacts.load_manifest(tmp_path)['artifacts']
-                    if a['artifact_id'] == entry['artifact_id'])['status'] == 'current'
-    else:
-        with pytest.raises(ValueError, match='one explicit seconds range'):
-            artifacts.adopt_initial_package(tmp_path, entry['artifact_id'], 'synthetic exact approval')
-        assert next(a for a in artifacts.load_manifest(tmp_path)['artifacts']
-                    if a['artifact_id'] == entry['artifact_id'])['status'] == 'candidate'
+    artifacts.adopt_initial_package(tmp_path, entry['artifact_id'], 'synthetic exact approval')
+    assert next(a for a in artifacts.load_manifest(tmp_path)['artifacts']
+                if a['artifact_id'] == entry['artifact_id'])['status'] == 'current'
 
 
 @pytest.mark.parametrize('declare_root', [False, True])

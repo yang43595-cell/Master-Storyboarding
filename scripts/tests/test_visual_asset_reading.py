@@ -26,7 +26,6 @@ class WebReadingTests(unittest.TestCase):
             'docs/rules/visual-production.md': {'导演稿之后的生产顺序'},
             'skills/asset-image-assistant/SKILL.md': {'后续交接'},
             CONTINUITY: {'按任务读取'},
-            'docs/rules/execution.md': {'等待与工具回传'},
         }.items():
             import re
             original = (ROOT / ref).read_text(encoding='utf-8')
@@ -37,8 +36,8 @@ class WebReadingTests(unittest.TestCase):
                     self.assertIn(section, projected)
             self.assertLess(len(projected), len(original))
             self.assertEqual(asset._writing_rules(ref, original, False),
-                             projected if ref in {CONTINUITY, 'docs/rules/execution.md'} else original)
-        for ref in ['PROJECT_RULES.md',
+                             projected if ref == CONTINUITY else original)
+        for ref in ['docs/rules/execution.md', 'PROJECT_RULES.md',
                     'skills/_shared/product-reference.md',
                     'skills/voiceover-to-video-script/references/prompt-language-hard-rules.md']:
             original = (ROOT / ref).read_text(encoding='utf-8')
@@ -54,7 +53,7 @@ class WebReadingTests(unittest.TestCase):
             execution = 'docs/rules/execution.md'
             self.assertEqual(rules[execution],
                              asset._writing_rules(execution, (ROOT / execution).read_text(), True))
-            self.assertNotIn('## 等待与工具回传', rules[execution])
+            self.assertIn('## 等待与工具回传', rules[execution])
             self.assertIn('用户调整资产图需求', rules['docs/rules/visual-production.md'])
             self.assertNotIn('## 导演稿之后的生产顺序', rules['docs/rules/visual-production.md'])
             self.assertNotIn('docs/rules/experiments.md', rules)
@@ -79,7 +78,7 @@ class WebReadingTests(unittest.TestCase):
                     request['rows'] = [{'requirement': {'category': 'PROP', 'source_event_ids': []}}]
                 rules = asset.build_task_package(request)['rules']
                 self.assertEqual(expected, rules[ref])
-                self.assertNotIn('## 等待与工具回传', rules['docs/rules/execution.md'])
+                self.assertIn('## 等待与工具回传', rules['docs/rules/execution.md'])
 
         for title in required:
             with self.subTest(missing_section=title):
