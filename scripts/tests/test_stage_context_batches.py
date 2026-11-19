@@ -358,13 +358,26 @@ def test_same_batch_target_change_invalidates_old_reading_receipt(tmp_path):
     assert cli.ensure_prepared(args)["ok"] is False
 
 
-def test_context_cli_show_basis_and_default_context_compatibility(tmp_path, capsys):
+def test_context_cli_show_basis_and_default_context_compatibility(tmp_path, capsys, monkeypatch):
     args, _ = make_batch_context(tmp_path)
     cli.prepare(args)
     record_batch_methods(args)
-    assert cli.main(["ensure-prepared", "--project", args.project, "--skill", args.skill,
-        "--context-id", args.context_id, "--actor-id", args.actor_id, "--task-id", args.task_id,
-        "--show-task-basis"]) == 0
+    basis = batch_folder(args) / "task_basis.json"
+    receipt = batch_folder(args) / "method_reading_evidence.json"
+    reads = []
+    read_text = Path.read_text
+
+    def track_read(path, *args, **kwargs):
+        if path in (basis, receipt):
+            reads.append(path)
+        return read_text(path, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "read_text", track_read)
+        assert cli.main(["ensure-prepared", "--project", args.project, "--skill", args.skill,
+            "--context-id", args.context_id, "--actor-id", args.actor_id, "--task-id", args.task_id,
+            "--show-task-basis"]) == 0
+    assert reads == [basis, receipt]
     assert json.loads(capsys.readouterr().out)["task_basis"]["context_id"] == args.context_id
     default = argparse.Namespace(**vars(args))
     default.context_id = None

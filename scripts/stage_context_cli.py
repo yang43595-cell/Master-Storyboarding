@@ -963,16 +963,9 @@ def _candidate_manifest_matches(block: Any, record: dict[str, Any]) -> bool:
     return _candidate_record(block) == record
 
 
-def _reading_manifest(project: Path) -> dict[str, Any] | None:
-    basis = _read_json(_task_basis_path(project), default={})
-    if isinstance(basis, dict) and basis.get("context_id") != _CONTEXT_ID.get():
-        return None
-    value = basis.get("reading_manifest") if isinstance(basis, dict) else None
-    return value if isinstance(value, dict) else None
-
-
-def _evidence_current(project: Path, requested_skill: str | None = None) -> tuple[dict[str, Any], dict[str, Any], Path] | None:
-    basis = _read_json(_task_basis_path(project), default={})
+def _evidence_current(project: Path, requested_skill: str | None = None, *, basis=None) -> tuple[dict[str, Any], dict[str, Any], Path] | None:
+    if basis is None:
+        basis = _read_json(_task_basis_path(project), default={})
     if not isinstance(basis, dict) or basis.get("context_id") != _CONTEXT_ID.get():
         return None
     manifest = basis.get("reading_manifest")
@@ -1443,7 +1436,7 @@ def _reading_reuse_key(basis):
     return _identity_hash({"reading": identity, "task": _review_identity(reading_basis)})
 
 
-def _validate_current_inputs(project: Path, basis: dict[str, Any]) -> dict[str, Any]:
+def _validate_current_inputs(project: Path, basis: dict[str, Any], *, adopted_candidates=None) -> dict[str, Any]:
     """Recheck known dependencies at consumption time; never grants execution authority."""
     manifest = basis.get("reading_manifest", {})
     if not isinstance(manifest, dict) or manifest.get("project_path") != str(project):
@@ -1530,9 +1523,10 @@ def _validate_current_inputs(project: Path, basis: dict[str, Any]) -> dict[str, 
     if not isinstance(constraints, list):
         raise StageContextError("任务依据缺少预算外适用 confirmed 约束；请重新 prepare，不能沿用旧选择结果。")
     records = list(manifest.get("selected", [])) + constraints
-    evidence = _evidence_current(project, basis["skill"])
-    if evidence:
-        records.extend(evidence[1].get("adopted_candidates", []))
+    if adopted_candidates is None:
+        evidence = _evidence_current(project, basis["skill"], basis=basis)
+        adopted_candidates = evidence[1].get("adopted_candidates", []) if evidence else []
+    records.extend(adopted_candidates)
     if records:
         tombstones = _tombstone_fingerprints(knowledge_root, load_policy(ROOT))
         for item in records:
@@ -1922,11 +1916,10 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     write_text_if_changed(output, content)
     write_text_if_changed(_task_basis_path(project), json.dumps(task_basis, ensure_ascii=False, indent=2) + "\n")
     if methods.required or result.candidates:
-        restored = False
-        if _evidence_current(project) is None:
-            restored = _restore_reading_cache(project, args.skill, task_basis['reading_reuse_key'])
+        current = _evidence_current(project, basis=task_basis)
+        restored = current is None and _restore_reading_cache(project, args.skill, task_basis['reading_reuse_key'])
         report['stage_reading_restored'] = restored
-        if _evidence_current(project) is None:
+        if current is None and not restored:
             write_text_if_changed(_context_dir(project, "method_reading_packet.md"), base_packet)
             stale = _context_dir(project, "method_reading_evidence.json")
             if stale.is_file(): stale.unlink()
@@ -1996,9 +1989,11 @@ def _asset_batch_delivery_lines(batch):
     return [
         "", "## 本批交回", "", _asset_batch_binding_line(batch),
         "- 本批执行者跟到准确成图落盘和实看自查，或出现需交回的真实阻塞。提示词和提交清单是中间结果。",
-        "- 完成时更新上述现有实看回执，顶层沿用本卡的 `context_id` 和 `request_sha256` 来标明实际执行的请求。委派批次的完成通知只回批次、已完成目标、真实阻塞和回执路径；途中只通知可接续的新结果或需决策的阻塞。",
+        "- 完成时更新上述现有实看回执，顶层沿用本卡的 `context_id` 和 `request_sha256`。每项实看写准确的 `target`、`candidate_id`、`observer`、`visual_status: passed|failed`、`observations`；通过项另写 `path` 和 `sha256`。",
+        "- 回执写齐后再通知协调方。完成通知只回批次、已完成目标、真实阻塞和回执路径；途中只通知可接续的新结果或需决策的阻塞。",
         "- 无成图可实看且确实需交回的阻塞，沿原回执 `items` 写准确 `target`、`observer`、`status: blocked` 和简短 `blocking_issue`。",
         "- 主对话直接制作时核对现有回执。委派批次由协调方按 `docs/rules/execution.md#等待与工具回传` 续等。超时不叠加 `read_thread`、`list_agents`、目录/日志查询或提前调用 `--receive-batch`；沿原等待渠道和游标续等；收到需核验的可接续新结果时只核受影响项。超过本轮已约定总等待期限仍无终态时，只读回查原任务一次，不重新提交。收到终态后用 `handoff --receive-batch` 验收准确回执一次，缺项交原执行者补核。",
+        "- 接收时保留返回的逐项 `issue`，据此修正原回执；原回执和候选未变时沿用这次结果，等执行者补齐后再验。",
         "- 回执只证明本批候选自查，网站或明确授权的对话确认继续走原入口。", "",
     ]
 
@@ -2380,12 +2375,13 @@ def review_pack(args: argparse.Namespace) -> dict[str, Any]:
     return report
 
 
-def _ensure_prepared_base(args: argparse.Namespace) -> dict[str, Any]:
+def _ensure_prepared(args: argparse.Namespace) -> dict[str, Any]:
     """产前硬门禁：生产某 stage 产物前，校验阶段启动包存在且 Skill 匹配。
 
     校验结构、已选知识正文和调用方声明的任务必需项。
     通过不证明 Agent 已阅读或完成知识合规审查。
     """
+    usage = _check_run_budget(args)
     project = Path(args.project).expanduser().resolve()
     if not project.is_dir():
         raise StageContextError(f"项目目录不存在：{project}")
@@ -2411,8 +2407,29 @@ def _ensure_prepared_base(args: argparse.Namespace) -> dict[str, Any]:
             f"请先为该 Skill 运行 prepare，不得沿用上一个 Skill 的启动包。"
         )
     validate_text("startup", startup, text)
-    reading_manifest = _reading_manifest(project)
-    trial = reading_manifest.get("candidate_trial") if isinstance(reading_manifest, dict) else None
+    # Distinguish a complete selection record from merely having a heading.
+    body, separator, record = text.rpartition("\n## 选择记录")
+    selected = re.search(r"(?m)^- 已选知识块：(.+)$", record)
+    if not separator or not selected:
+        raise StageContextError("启动包缺少已选知识记录，请重新 prepare。")
+    raw_ids = selected.group(1).strip()
+    ids = [] if raw_ids == "无" else [item.strip() for item in raw_ids.split(",")]
+    bundle = body.split(f"# {skill} 当前知识包", 1)[1]
+    blocks = list(re.finditer(r"(?m)^## (MSB-KB-[\w-]+) \[[^\]\n]+\]\s*$", bundle))
+    actual = [item.group(1) for item in blocks]
+    if len(set(ids)) != len(ids) or ids != actual:
+        raise StageContextError("已选知识记录与正文不一致，请重新 prepare。")
+    for index, block in enumerate(blocks):
+        end = blocks[index + 1].start() if index + 1 < len(blocks) else len(bundle)
+        content = bundle[block.end():end]
+        content = re.sub(r"(?m)^适用条件：.*$", "", content).strip()
+        if not content:
+            raise StageContextError(f"知识块正文为空：{block.group(1)}，请重新 prepare。")
+    if not _task_basis_path(project).is_file():
+        raise StageContextError("启动包缺少仓库内置知识来源证据（阅读任务清单缺失或无效）；请重新 prepare。")
+    _, basis = _load_task_basis(project, skill)
+    manifest = basis.get("reading_manifest")
+    trial = manifest.get("candidate_trial") if isinstance(manifest, dict) else None
     trial_packet = _context_dir(project, "candidate_trial_packet.md")
     if trial is not None:
         if not test_context(project) or "execution_mode: candidate_test" not in text:
@@ -2438,26 +2455,9 @@ def _ensure_prepared_base(args: argparse.Namespace) -> dict[str, Any]:
             raise StageContextError("隔离候选来源正文、版本或 hash 已漂移；请重新 prepare。")
     elif trial_packet.exists():
         raise StageContextError("发现未登记的隔离候选试用包；请重新 prepare。")
-    # Distinguish a complete selection record from merely having a heading.
-    body, separator, record = text.rpartition("\n## 选择记录")
-    selected = re.search(r"(?m)^- 已选知识块：(.+)$", record)
-    if not separator or not selected:
-        raise StageContextError("启动包缺少已选知识记录，请重新 prepare。")
-    raw_ids = selected.group(1).strip()
-    ids = [] if raw_ids == "无" else [item.strip() for item in raw_ids.split(",")]
-    bundle = body.split(f"# {skill} 当前知识包", 1)[1]
-    blocks = list(re.finditer(r"(?m)^## (MSB-KB-[\w-]+) \[[^\]\n]+\]\s*$", bundle))
-    actual = [item.group(1) for item in blocks]
-    if len(set(ids)) != len(ids) or ids != actual:
-        raise StageContextError("已选知识记录与正文不一致，请重新 prepare。")
-    for index, block in enumerate(blocks):
-        end = blocks[index + 1].start() if index + 1 < len(blocks) else len(bundle)
-        content = bundle[block.end():end]
-        content = re.sub(r"(?m)^适用条件：.*$", "", content).strip()
-        if not content:
-            raise StageContextError(f"知识块正文为空：{block.group(1)}，请重新 prepare。")
-    reading = _evidence_current(project, skill)
-    adopted_ids = {item["id"] for item in reading[1].get("adopted_candidates", [])} if reading else set()
+    reading = _evidence_current(project, skill, basis=basis)
+    adopted = reading[1].get("adopted_candidates", []) if reading else []
+    adopted_ids = {item["id"] for item in adopted}
     for rule in getattr(args, "required_rule", None) or []:
         if rule not in ids and rule not in adopted_ids:
             raise StageContextError(f"当前任务必需动态规则未命中：{rule}")
@@ -2465,14 +2465,13 @@ def _ensure_prepared_base(args: argparse.Namespace) -> dict[str, Any]:
         path = (ROOT / reference).resolve()
         if not path.is_relative_to(ROOT.resolve()) or not path.is_file() or not path.stat().st_size:
             raise StageContextError(f"当前任务必需本地规范不存在、为空或越出仓库：{reference}")
-        _, basis = _load_task_basis(project, skill)
         frozen = {item["path"]: item["sha256"] for item in basis["standards"].get("local_documents", [])}
         frozen[basis["standards"]["root_rules"]] = basis["standards"]["root_rules_sha256"]
         if str(path) not in frozen:
             raise StageContextError(f"必需本地规范未在本轮冻结：{reference}；在 prepare 请求 local_references 中列明并重新准备。")
         if digest(path) != frozen[str(path)]:
             raise StageContextError(f"必需本地规范已变更：{reference}；请重新 prepare。")
-    return {
+    result = {
         "kind": "startup",
         "path": str(startup),
         "skill": skill,
@@ -2480,6 +2479,42 @@ def _ensure_prepared_base(args: argparse.Namespace) -> dict[str, Any]:
         "knowledge_compliance": "requires_agent_review",
         "ok": True,
     }
+    if usage is not None:
+        result["run_usage"] = usage
+    if not isinstance(manifest, dict):
+        raise StageContextError("启动包缺少仓库内置知识来源证据（阅读任务清单缺失或无效）；请重新 prepare。")
+    result.update(_validate_current_inputs(project, basis, adopted_candidates=adopted))
+    if manifest.get("skill") != skill or manifest.get("project_path") != str(project) or not isinstance(manifest.get("methods"), list):
+        raise StageContextError("阅读任务清单无效，请重新 prepare。")
+    test_only = manifest.get("test_only_proposed_method_ids", [])
+    if not isinstance(test_only, list) or not all(isinstance(item, str) and item for item in test_only):
+        raise StageContextError("阅读任务清单的测试标记无效，请重新 prepare。")
+    # A candidate directory is discoverability only. With no mandatory method it cannot
+    # turn optional reading into a production gate.
+    if not manifest["methods"]:
+        if adopted:
+            result["candidate_reading_evidence"] = "recorded"
+        elif not reading:
+            evidence = _read_json(_context_dir(project, "method_reading_evidence.json"), default=None)
+            if isinstance(evidence, dict) and evidence.get("adopted_candidates"):
+                result["candidate_reading_evidence"] = "invalid"
+        if test_only:
+            result["ok"] = False
+    else:
+        identity = _reading_identity(args)
+        manifest_identity = {key: manifest.get(key) for key in identity}
+        identity_matches = all(identity.values()) and all(isinstance(value, str) and value for value in manifest_identity.values()) and identity == manifest_identity
+        complete = bool(reading and identity_matches)
+        result["reading_identity"] = "matched" if identity_matches else ("required" if not all(identity.values()) or not all(manifest_identity.values()) else "mismatch")
+        result["method_reading_evidence"] = "recorded" if complete else "required"
+        result["required_method_count"] = len(manifest["methods"])
+        result["test_only_proposed_method_ids"] = test_only
+        result["ok"] = result["ok"] and complete and not test_only
+    if test_only:
+        result["production_blocked"] = "test_only_proposed_method_binding"
+    if getattr(args, "show_task_basis", False) and result["ok"]:
+        result["task_basis"] = _task_reading_view(basis)
+    return result
 
 
 @_context_scoped
@@ -2490,52 +2525,6 @@ def ensure_prepared(args: argparse.Namespace) -> dict[str, Any]:
     if testing:
         result.update(test_metadata())
         result["candidate_checks_passed"] = result.get("ok") is True
-    if getattr(args, "show_task_basis", False) and result.get("ok") is True:
-        _, basis = _load_task_basis(project, args.skill)
-        result["task_basis"] = _task_reading_view(basis)
-    return result
-
-
-def _ensure_prepared(args: argparse.Namespace) -> dict[str, Any]:
-    usage = _check_run_budget(args)
-    result = _ensure_prepared_base(args)
-    project = Path(args.project).expanduser().resolve()
-    if usage is not None:
-        result["run_usage"] = usage
-    manifest = _reading_manifest(project)
-    if not isinstance(manifest, dict):
-        raise StageContextError("启动包缺少仓库内置知识来源证据（阅读任务清单缺失或无效）；请重新 prepare。")
-    skill = result["skill"]
-    _, basis = _load_task_basis(project, skill)
-    result.update(_validate_current_inputs(project, basis))
-    if manifest.get("skill") != skill or manifest.get("project_path") != str(project) or not isinstance(manifest.get("methods"), list):
-        raise StageContextError("阅读任务清单无效，请重新 prepare。")
-    test_only = manifest.get("test_only_proposed_method_ids", [])
-    if not isinstance(test_only, list) or not all(isinstance(item, str) and item for item in test_only):
-        raise StageContextError("阅读任务清单的测试标记无效，请重新 prepare。")
-    # A candidate directory is discoverability only. With no mandatory method it cannot
-    # turn optional reading into a production gate.
-    if not manifest["methods"]:
-        evidence = _read_json(_context_dir(project, "method_reading_evidence.json"), default=None)
-        adopted = evidence.get("adopted_candidates") if isinstance(evidence, dict) else []
-        if adopted:
-            result["candidate_reading_evidence"] = "recorded" if _evidence_current(project, skill) else "invalid"
-        if test_only:
-            result["ok"] = False
-            result["production_blocked"] = "test_only_proposed_method_binding"
-        return result
-    identity = _reading_identity(args)
-    manifest_identity = {key: manifest.get(key) for key in identity}
-    identity_matches = all(identity.values()) and all(isinstance(value, str) and value for value in manifest_identity.values()) and identity == manifest_identity
-    current = _evidence_current(project, skill)
-    complete = bool(current and identity_matches)
-    result["reading_identity"] = "matched" if identity_matches else ("required" if not all(identity.values()) or not all(manifest_identity.values()) else "mismatch")
-    result["method_reading_evidence"] = "recorded" if complete else "required"
-    result["required_method_count"] = len(manifest["methods"])
-    result["test_only_proposed_method_ids"] = test_only
-    result["ok"] = bool(result.get("ok")) and complete and not test_only
-    if test_only:
-        result["production_blocked"] = "test_only_proposed_method_binding"
     return result
 
 @_context_scoped
@@ -2543,10 +2532,10 @@ def record_method_reading(args: argparse.Namespace) -> dict[str, Any]:
     project = Path(args.project).expanduser().resolve()
     skill = str(args.skill or "").strip()
     _require_preparation_skill(skill)
-    manifest = _reading_manifest(project)
+    _, basis = _load_task_basis(project, skill)
+    manifest = basis.get("reading_manifest")
     if not skill or not isinstance(manifest, dict) or manifest.get("skill") != skill or manifest.get("project_path") != str(project) or not isinstance(manifest.get("methods"), list):
         raise StageContextError("没有与当前 Skill 匹配的阅读任务清单；请先 prepare。")
-    _, basis = _load_task_basis(project, skill)
     _validate_current_inputs(project, basis)
     identity = _reading_identity(args)
     if not all(identity.values()) or any(manifest.get(key) != identity[key] for key in identity):
@@ -2602,7 +2591,7 @@ def record_method_reading(args: argparse.Namespace) -> dict[str, Any]:
         "attestation": "agent_reported_complete_reading"}
     if _CONTEXT_ID.get() is not None:
         evidence["context_id"] = _CONTEXT_ID.get()
-    evidence['reading_reuse_key'] = _read_json(_task_basis_path(project), default={}).get('reading_reuse_key')
+    evidence['reading_reuse_key'] = basis.get('reading_reuse_key')
     output = _context_dir(project, "method_reading_evidence.json")
     write_text_if_changed(output, json.dumps(evidence, ensure_ascii=False, indent=2) + "\n")
     _save_reading_cache(project)
