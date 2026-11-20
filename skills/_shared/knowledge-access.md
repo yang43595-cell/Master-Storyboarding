@@ -103,7 +103,7 @@ python scripts/stage_context_cli.py ensure-prepared \
   --show-task-basis
 ```
 
-主对话直做批次不建独立目录，沿用阶段准备，最小形状为：`prepare --project <项目> --skill <当前图片Skill> --objective <本阶段目标与停止点> --request-json <本阶段请求JSON> --actor-id <本阶段实际agentID> --task-id <本阶段任务ID>`；请求中冻结本批 `image_targets`，读完后在同一 `ensure-prepared` 加 `--mark-read --method ...`（不传 `--context-id`），并写回现有回执。
+主对话直做批次不建独立目录，沿用阶段准备；仅在新增或变更本批 `image_targets` 时才重新 prepare，否则直接沿用现有 `task_basis`。需要重新准备时最小形状为：`prepare --project <项目> --skill <当前图片Skill> --objective <本阶段目标与停止点> --request-json <本阶段请求JSON> --actor-id <本阶段实际agentID> --task-id <本阶段任务ID>`；请求中冻结本批 `image_targets`，读完后在同一 `ensure-prepared` 加 `--mark-read --method ...`（不传 `--context-id`），并写回现有回执。
 
 通过后仍由该图片执行者完成提示词、授权内生成、实看、必要修正和独占落盘，再沿现有记录交回准确文件及用途。资产 Web 继续使用本次 task-package 的受限读取流程，不传此参数叠加普通 prepare；网页一图一独立会话可保留，批次上限不改变网页并发或单状态候选数。
 
