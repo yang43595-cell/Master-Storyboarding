@@ -375,6 +375,14 @@
 5. 输出：F08 五项保留、压到 3 行且逐项有结论。
 6. 测试：F13 按门禁分类；复核环境无 pytest，分类清单先在本机跑。
 
+### 9.6 落地状态（2026-11-21）
+
+- 已落地：F03、F05、F06、F08、F09、F11、F12、F14。
+- 保留：F01、F02、F04、F10；F07 撤回。
+- 待办：F13 测试按门禁分类（未删测试）。
+- 验证：`test_doc_reference_integrity` 4 passed；`test_stage_context_cli.py` 122 passed（含 `--mark-read` 用例）；全量 3076 passed、63 failed（均为环境缺少 Node/ffmpeg 与 `/private/var` 别名）、9 skipped、222 subtests passed。
+- 改动在本分支 `cleanup/overdefense-20261121`。
+
 ---
 
 ## 附录：复现命令与数据（基线 12fa5ae）
