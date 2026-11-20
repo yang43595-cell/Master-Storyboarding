@@ -316,7 +316,7 @@
 | F08 | `11f3666`（2026-11-09）新增“压缩后的主动恢复核对”：核状态、可选分支、平台参数、采用方式、阶段依赖。提交只有标题，具体事故未见存档；从新增文本看是防“用旧摘要继续”。 | 检查需要，逐项长文不需要 | **降级**：五项检查保留，输出压到 3 行 |
 | F09 | `12fa5ae`（2026-11-20）把台账与计量写进开工；用途是验证优化（[production-improvements.md:44-48](../production-improvements.md)），不是出片必需。 | 出片不需要 | **删除“每轮必做”**；`usage-check` 工具保留按需 |
 | F10 | `db553ac`（2026-11-18）“复用准确场景控制决定、减少红帧重试”；`scene_state_assessment` 是 changed/unchanged 判定，`persistent_objects` 是观察记录（[delivery-snapshot-checks.md:120-126](delivery-snapshot-checks.md)）。 | 需要 | **保留**；不合并 |
-| F11 | 蓝图旧句把 `review-pack` 与每步命令并列（[PROJECT_BLUEPRINT.md:27](../PROJECT_BLUEPRINT.md)）；三个 SKILL 收尾写“执行旧稿归档”；README 已写成“仅用户明确要求”（[README.md:57-63](README.md)）。 | 不需要 | **删除误导句** |
+| F11 | 蓝图旧句把 `review-pack` 与每步命令并列（[PROJECT_BLUEPRINT.md:27](../PROJECT_BLUEPRINT.md)）；两个 SKILL（导演、分镜）收尾写“执行旧稿归档”；编导本来就是“按需归档”；README 已写成“仅用户明确要求”（[README.md:57-63](README.md)）。 | 不需要 | **删除误导句** |
 | F12 | 重复段：`2ddba97` 与 `db553ac` 各引入一份，合并后并存（两行 blame 分别为 42、44）；133 处声明是历次“不要冒称已读/已看/已生成”的累积。 | 重复段不需要；声明部分需要 | **只删除重复段**；声明未批量收敛，具体禁令保留 |
 | F13 | 每轮审计都加负例回归（[audit-20261017](audit-20261017.md) 从 910 项增到 1086 项等），[D-08（decisions.md:160-166）](../decisions.md) 要求最小充分。 | 门禁测试需要；退役路径/纯文案不需要 | **降级**：按“删了会不会坏真实出片”分类，先删退役/文案，不设数字目标 |
 | F14 | `2ddba97`/`802ad3e`（2026-11-18）删除 Blender 预演与旧资产 UI 前后的手工快照；git 已有历史（[D-03（decisions.md:118-124）](../decisions.md)）。**复核更正**：`visual_asset_library.py:194` 把 `root.parent/'vault'` 作为默认资产备份目录，`reconcile_vault`（[:207](../../scripts/visual_asset_library.py#L207)、[:220](../../scripts/visual_asset_library.py#L220)）启动时读取；`DEFAULT_LIBRARY` 是 `.master-storyboarding/visual-library`。因此同级 `vault` 是资产库备份，不是审计副本。 | 源码快照不需要；vault/visual-library 需要 | **只删无用源码快照**；`visual-library` 与 `vault` 保留，除非用户确认备份可弃 |
@@ -377,7 +377,7 @@
 
 ### 9.6 落地状态（2026-11-21）
 
-- 已落地：F03、F05、F06、F08、F09、F11、F12、F14。F06 复核补强：无 `context-id` 时仍校验并冻结 `image_targets`，批次不得改变已冻结目标。
+- 已落地：F03、F05、F06、F08、F09、F11、F12、F14。F06 复核补强：请求带 `image_targets` 时仍校验并冻结；完全省略目标的普通准备路径不由程序区分；批次不得改变已冻结目标。
 - 保留：F01、F02、F04、F10；F07 撤回。
 - 待办：F13 测试按门禁分类（未删测试）。
 - 验证：`test_doc_reference_integrity` 4 passed；`test_stage_context_cli.py` 123 passed（含 `--mark-read` 与无批次目录目标冻结用例）；全量 3077 passed、63 failed（环境缺少 Node/ffmpeg、`/private/var` 别名及 3 个私有画布 fixture）、9 skipped、222 subtests passed。

@@ -4,7 +4,7 @@
 
 ## 本 Skill 产出须命中的规范（缺即停）
 
-缺口判断与产出前，按 [普通准备与选知](../../_shared/knowledge-access.md#普通阶段准备与选知) 准备本轮资料，实际阅读两份完整方法并登记，再用 `ensure-prepared --project <项目> --skill storyboard-director` 校验准备状态；实际图片生产批次的 prepare／阅读登记／ensure 均加同一 `--context-id <本批ID>`、`--actor-id <本批实际执行者>` 与 `--task-id <本批任务>`，仅盘点／复用不虚构生图目标。完整命令见[批次隔离入口](../../_shared/knowledge-access.md#图片批次的隔离准备)。同时核对下列适用规范。包缺失时自行准备或报告真实阻塞；动态规则与直接读取的本地规范分别核对，本地规范无需重复嵌入知识包：
+缺口判断与产出前，按 [普通准备与选知](../../_shared/knowledge-access.md#普通阶段准备与选知) 准备本轮资料，实际阅读两份完整方法并登记，再用 `ensure-prepared --project <项目> --skill storyboard-director` 校验准备状态；委派、并行或跨执行者交接的实际图片生产批次，prepare／阅读登记／ensure 均加同一 `--context-id <本批ID>`、`--actor-id <本批实际执行者>` 与 `--task-id <本批任务>`；主对话直做批次沿用阶段准备、不传 `--context-id`，但仍冻结 `image_targets` 并写回回执；仅盘点／复用不虚构生图目标。完整命令见[批次隔离入口](../../_shared/knowledge-access.md#图片批次的隔离准备)。同时核对下列适用规范。包缺失时自行准备或报告真实阻塞；动态规则与直接读取的本地规范分别核对，本地规范无需重复嵌入知识包：
 
 - **视觉补充方法**：`VISUAL-SUPPLEMENT-METHOD` 负责缺口证据、参考覆盖与状态继承判断；本模块 + `references/storyboard-production-checklist.md` 负责请求执行与检查。
 - **景别/机位/调度/运镜/切点继承**：补图必须继承导演包的镜头契约与已确认资产状态，不重写景别/机位/调度/运镜/切点；景别与基础连续性剪辑属模型通用能力或导演已定，不靠知识包供给，不重新决定。
