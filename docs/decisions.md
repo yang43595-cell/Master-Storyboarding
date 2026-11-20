@@ -70,15 +70,15 @@
 - **决定与边界**：保真关键镜先连看起幅、轨迹、落幅、对白指向和下一反应，记录原片时间窗及镜号。先核共用母图的用途，确有独立缺口才补图。正式补图准备只接就绪请求，校验与冻结用同份请求字节，并匹配已采用导演版和准确镜号。真实依赖变化仍触发复核。罗盘当次失效的六张补图均有实际用途镜号改变，保留原判定。
 - **验证与依据**：原片约 75.5–81 秒已复核。本地覆盖复用项、错导演版、错镜号、请求漂移和未受影响的下游复用。实际误拆镜、补图次数和同因返工待正常生产复测。见[导演自查](../skills/storyboard-planner/references/专业影视分镜审查门槛.md#关键镜头的原片核对)和[补图入口](../skills/storyboard-director/SKILL.md)。
 
+以上整改的[来源聊天](codex://threads/01a1f43c-8eec-7d02-bdbb-ea6f9995a116)记录了稳定工作树的全仓复跑。Python 3130 项通过，另有 233 个子测试通过、4 项跳过（可选 ASR、Windows 环境项及两个未配置的私有原片用例）。Node 19 项通过，内置知识包 57 文件校验通过。这是来源聊天的本地验证记录，实际节省和红帧现场行为随下一次正常生产取证。
+
 ### 过度防御清理：保留分层证据，减少重复仪式（2026-11-21）
 
-- **定位**：`PROJECT_RULES.md`、`docs/rules/execution.md`、`docs/rules/project-layout.md`、`skills/_shared/knowledge-access.md`、`docs/PROJECT_BLUEPRINT.md`、`docs/production-improvements.md`、`scripts/stage_context_cli.py` 的 `ensure-prepared --mark-read`、`scripts/tests/test_stage_context_cli.py`。
+- **定位**：`PROJECT_RULES.md`、`docs/rules/execution.md`、`docs/rules/project-layout.md`、`skills/_shared/knowledge-access.md`、`docs/PROJECT_BLUEPRINT.md`、`docs/production-improvements.md`、`scripts/stage_context_cli.py` 的 `ensure-prepared --mark-read`、`scripts/tests/test_stage_context_cli.py`、`.gitignore`、`skills/storyboard-planner/SKILL.md`、`skills/storyboard-director/SKILL.md`。
 - **背景与原因**：独立审计 F01–F14 后复核确认：F01 的人工/自主/网站权威与 state/manifest 双索引、F02 的计划/实测/回读、F04 的自主验收报告、F10 的观察 vs 判定，都是分层证据，不是重复；F07 采用后预检因来源状态变化必须重跑。可减项集中在条件化文案、重复段、按需计量、主对话批次例外、恢复输出、阅读登记往返和授权抄写。
-- **决定与边界**：保留 F01/F02/F04/F10 与 F07 的现有行为。F05 增加 `ensure-prepared --mark-read --method ...`，一次完成“读后登记 + 产前门禁”，仍要求先实际阅读并保留身份/版本校验；F06 主对话直做界面批次不另建批次目录，但保留 `image_targets` 冻结与回执；F08 五项恢复核对保留、输出压到 2–3 行；F09 计量改按需；F03 授权引用 `kickoff` 定位、不重复抄写；F11/F12/F14 只改文案、删重复段、清理无用源码快照（删除前已 tar 备份到本机临时目录）；F13 测试按门禁分类留待后续。
+- **决定与边界**：保留 F01/F02/F04/F10 与 F07 的现有行为。F05 增加 `ensure-prepared --mark-read --method ...`，一次完成“读后登记 + 产前门禁”，仍要求先实际阅读并保留身份/版本校验；登记先于门禁落盘，门禁失败时保留已登记事实；F06 主对话直做界面批次不另建批次目录，但保留 `image_targets` 冻结与回执（无 `context-id` 时仍校验并冻结目标，批次不得改变已冻结目标）；F08 五项恢复核对保留、输出压到 2–3 行；F09 计量改按需；F03 授权引用 `kickoff` 定位并记录其当前值/哈希、不重复抄写；F11/F12/F14 只改文案、删重复段、清理无用源码快照（删除前已 tar 备份到本机临时目录）；F13 测试按门禁分类留待后续。
 - **放弃的方案**：删除分层证据（会混淆人工/自主/网站权威或丢失计划/实测/回读核对）；复用采用前预检（来源未 current 会失败）；按数量大规模删测试。
-- **验证与依据**：`test_doc_reference_integrity` 4 passed；`test_stage_context_cli.py` 122 passed（含新增 `--mark-read` 用例）；全量 3076 passed、63 failed（均为环境缺少 Node/ffmpeg 与 macOS `/private/var` 别名）、9 skipped、222 subtests passed。审计与复核见[过度防御审计](development/audit-20261121-overdefense.md)。改动在本分支 `cleanup/overdefense-20261121`。
-
-以上整改的[来源聊天](codex://threads/01a1f43c-8eec-7d02-bdbb-ea6f9995a116)记录了稳定工作树的全仓复跑。Python 3130 项通过，另有 233 个子测试通过、4 项跳过（可选 ASR、Windows 环境项及两个未配置的私有原片用例）。Node 19 项通过，内置知识包 57 文件校验通过。这是来源聊天的本地验证记录，实际节省和红帧现场行为随下一次正常生产取证。
+- **验证与依据**：`test_doc_reference_integrity` 4 passed；`test_stage_context_cli.py` 123 passed（含新增 `--mark-read` 与无批次目录目标冻结用例）；全量 3077 passed、63 failed（环境缺少 Node/ffmpeg、macOS `/private/var` 别名及 3 个私有画布 fixture）、9 skipped、222 subtests passed。审计与复核见[过度防御审计](development/audit-20261121-overdefense.md)。改动在本分支 `cleanup/overdefense-20261121`。
 
 ### Three.js 只播放 Blender 同源白模（2026-10-03）
 

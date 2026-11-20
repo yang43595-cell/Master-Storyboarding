@@ -4,7 +4,7 @@
 
 ## 本 Skill 产出须命中的规范（缺即停）
 
-普通图片批次按[隔离准备入口](../../_shared/knowledge-access.md#图片批次的隔离准备)执行；产出前运行 `python scripts/stage_context_cli.py ensure-prepared --project <项目> --skill asset-image-assistant --context-id <本批ID> --actor-id <本批实际执行者> --task-id <本批任务>`，与本批 prepare／阅读登记保持一致。普通准备沿本轮启动包读取并登记现有方法。Web 只核本次 task-package，背景固定层的专业方法随场景制作项加载。两种入口均核对下列适用规范；真实缺项按当前普通准备或 Web 入口补齐或报告受影响范围，动态知识与本地规范分开核对：
+委派、并行或跨执行者交接的普通图片批次按[隔离准备入口](../../_shared/knowledge-access.md#图片批次的隔离准备)执行；产出前运行 `python scripts/stage_context_cli.py ensure-prepared --project <项目> --skill asset-image-assistant --context-id <本批ID> --actor-id <本批实际执行者> --task-id <本批任务>`，与本批 prepare／阅读登记保持一致。主对话直做批次沿用本阶段 `task_basis`，不传 `--context-id`，但仍须冻结 `image_targets` 并写回现有回执。普通准备沿本轮启动包读取并登记现有方法。Web 只核本次 task-package，背景固定层的专业方法随场景制作项加载。两种入口均核对下列适用规范；真实缺项按当前普通准备或 Web 入口补齐或报告受影响范围，动态知识与本地规范分开核对：
 
 - **色卡统一风格**（锁整片跨镜头配色）：见 `references/01-style-master-guide.md` 的"整片色彩统一（色卡）"工作流；有 `STYLE_REFERENCE` 或需锁整片配色时必做，它是与背景母版、多角度参考组并列的第三种一致性路线。
 - **图片连续性**：核[共用检查](../../storyboard-director/references/image-continuity-hard-rules.md#共用检查)。人物只读对应输出规格和适用的身份引用；做场景时按[背景母版](../references/03-scene-master-guide.md#背景母版与单变量派生)及[多角度覆盖](../references/03-scene-master-guide.md#多角度场景参考组)核固定层和空间。

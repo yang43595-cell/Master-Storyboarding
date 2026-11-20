@@ -1056,7 +1056,27 @@ def test_ensure_prepared_can_record_reading_in_same_call(tmp_path: Path) -> None
     args.candidate_scope = []
     assert cli.ensure_prepared(args)['ok'] is True
     args.mark_read = False
+    args.method = []
     assert cli.ensure_prepared(args)['ok'] is True
+
+
+def test_image_targets_without_batch_context_are_validated_and_frozen(tmp_path: Path) -> None:
+    project = _project(tmp_path)
+    request = project / 'request.json'
+    payload = {'asset_method_scopes': {'style': True, 'character': True, 'scene': True, 'object': True},
+               'image_targets': ['AST-01@OUT-01']}
+    request.write_text(json.dumps(payload), encoding='utf-8')
+    vault = _method_vault(tmp_path / 'method-vault')
+    args = argparse.Namespace(
+        project=str(project), skill='asset-image-assistant', objective='无批次目录的目标冻结',
+        request_json=str(request), vault=str(vault), actor_id='test-agent', task_id='test-target-freeze')
+    cli.prepare(args)
+    basis = json.loads((project / cli.CONTEXT_DIR / 'task_basis.json').read_text(encoding='utf-8'))
+    assert basis['scope']['image_targets'] == ['AST-01@OUT-01']
+    payload['image_targets'] = ['../bad']
+    request.write_text(json.dumps(payload), encoding='utf-8')
+    with pytest.raises(cli.StageContextError, match='image_targets'):
+        cli.prepare(args)
 
 
 def test_visual_supplement_cannot_continue_with_only_shared_method(tmp_path: Path) -> None:

@@ -172,7 +172,7 @@
 ### F11 `review-pack`／旧稿归档被写成常规步骤
 
 - **位置**：[PROJECT_BLUEPRINT.md:27](../PROJECT_BLUEPRINT.md)、[creative-director/SKILL.md:32](../../skills/creative-director/SKILL.md)、[storyboard-planner/SKILL.md:52](../../skills/storyboard-planner/SKILL.md)、[storyboard-director/SKILL.md:33](../../skills/storyboard-director/SKILL.md)、[draft-lifecycle.md:12-17](../../skills/_shared/draft-lifecycle.md)
-- **现状**：蓝图第 27 行把 `review-pack` 与 `prepare`/`ensure-prepared`/`handoff`/`validate` 并列为“每步之间”的命令；三个创作 SKILL 收尾都写“执行旧稿归档收尾”，而 `draft-lifecycle.md` 已说“没有可归档项不创建空目录或空报告”。README 的 `review-pack` 小节已写“仅在用户明确要求独立审核时”，可作为正确写法参照。
+- **现状**：蓝图第 27 行把 `review-pack` 与 `prepare`/`ensure-prepared`/`handoff`/`validate` 并列为“每步之间”的命令；两个创作 SKILL（导演、分镜）收尾写“执行旧稿归档收尾”；编导本来就是“按需归档”，而 `draft-lifecycle.md` 已说“没有可归档项不创建空目录或空报告”。README 的 `review-pack` 小节已写“仅在用户明确要求独立审核时”，可作为正确写法参照。
 - **为什么算过度防御**：规则正文已经限定“独立审核只在用户明确要求时启动”，但上手文档仍按常规写，容易让执行者多做一步；归档同理，无旧稿时是空动作。
 - **建议**：文档改成“仅在明确要求/确有旧稿时”；SKILL 收尾统一为条件句。
 - **收益 / 风险**：减少误执行；无行为风险。
@@ -317,7 +317,7 @@
 | F09 | `12fa5ae`（2026-11-20）把台账与计量写进开工；用途是验证优化（[production-improvements.md:44-48](../production-improvements.md)），不是出片必需。 | 出片不需要 | **删除“每轮必做”**；`usage-check` 工具保留按需 |
 | F10 | `db553ac`（2026-11-18）“复用准确场景控制决定、减少红帧重试”；`scene_state_assessment` 是 changed/unchanged 判定，`persistent_objects` 是观察记录（[delivery-snapshot-checks.md:120-126](delivery-snapshot-checks.md)）。 | 需要 | **保留**；不合并 |
 | F11 | 蓝图旧句把 `review-pack` 与每步命令并列（[PROJECT_BLUEPRINT.md:27](../PROJECT_BLUEPRINT.md)）；三个 SKILL 收尾写“执行旧稿归档”；README 已写成“仅用户明确要求”（[README.md:57-63](README.md)）。 | 不需要 | **删除误导句** |
-| F12 | 重复段：`2ddba97` 与 `db553ac` 各引入一份，合并后并存（两行 blame 分别为 42、44）；133 处声明是历次“不要冒称已读/已看/已生成”的累积。 | 重复段不需要；声明部分需要 | **删除重复段**；声明收敛到一处总则，保留具体禁令 |
+| F12 | 重复段：`2ddba97` 与 `db553ac` 各引入一份，合并后并存（两行 blame 分别为 42、44）；133 处声明是历次“不要冒称已读/已看/已生成”的累积。 | 重复段不需要；声明部分需要 | **只删除重复段**；声明未批量收敛，具体禁令保留 |
 | F13 | 每轮审计都加负例回归（[audit-20261017](audit-20261017.md) 从 910 项增到 1086 项等），[D-08（decisions.md:160-166）](../decisions.md) 要求最小充分。 | 门禁测试需要；退役路径/纯文案不需要 | **降级**：按“删了会不会坏真实出片”分类，先删退役/文案，不设数字目标 |
 | F14 | `2ddba97`/`802ad3e`（2026-11-18）删除 Blender 预演与旧资产 UI 前后的手工快照；git 已有历史（[D-03（decisions.md:118-124）](../decisions.md)）。**复核更正**：`visual_asset_library.py:194` 把 `root.parent/'vault'` 作为默认资产备份目录，`reconcile_vault`（[:207](../../scripts/visual_asset_library.py#L207)、[:220](../../scripts/visual_asset_library.py#L220)）启动时读取；`DEFAULT_LIBRARY` 是 `.master-storyboarding/visual-library`。因此同级 `vault` 是资产库备份，不是审计副本。 | 源码快照不需要；vault/visual-library 需要 | **只删无用源码快照**；`visual-library` 与 `vault` 保留，除非用户确认备份可弃 |
 
@@ -377,10 +377,10 @@
 
 ### 9.6 落地状态（2026-11-21）
 
-- 已落地：F03、F05、F06、F08、F09、F11、F12、F14。
+- 已落地：F03、F05、F06、F08、F09、F11、F12、F14。F06 复核补强：无 `context-id` 时仍校验并冻结 `image_targets`，批次不得改变已冻结目标。
 - 保留：F01、F02、F04、F10；F07 撤回。
 - 待办：F13 测试按门禁分类（未删测试）。
-- 验证：`test_doc_reference_integrity` 4 passed；`test_stage_context_cli.py` 122 passed（含 `--mark-read` 用例）；全量 3076 passed、63 failed（均为环境缺少 Node/ffmpeg 与 `/private/var` 别名）、9 skipped、222 subtests passed。
+- 验证：`test_doc_reference_integrity` 4 passed；`test_stage_context_cli.py` 123 passed（含 `--mark-read` 与无批次目录目标冻结用例）；全量 3077 passed、63 failed（环境缺少 Node/ffmpeg、`/private/var` 别名及 3 个私有画布 fixture）、9 skipped、222 subtests passed。
 - 改动在本分支 `cleanup/overdefense-20261121`。
 
 ---

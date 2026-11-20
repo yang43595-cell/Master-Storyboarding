@@ -159,9 +159,13 @@ def _context_scoped(function):
 
 
 def _image_batch_targets(skill: str, request: dict[str, Any]) -> list[str] | None:
-    if _CONTEXT_ID.get() is None or skill not in IMAGE_SKILLS:
+    if skill not in IMAGE_SKILLS:
         return None
     targets = request.get("image_targets")
+    if targets is None:
+        if _CONTEXT_ID.get() is None:
+            return None
+        raise StageContextError("隔离生图批次的 image_targets 须包含 1..8 个准确输出身份")
     if skill == "asset-image-assistant":
         try:
             return validate_asset_batch_targets(targets)
@@ -2031,7 +2035,8 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "- 执行分工：遵守根规则的干净上下文启动规则；新一轮编导等创作生产或实质重跑由全新专属生产 agent 执行，不继承长主会话；本轮执行者读取、准备、产出并自查。其他任务按根规则执行。",
         "- 上下文边界：交接当前有效规则、原始素材、本轮约束与已确认决定及依据、现行版本、未决事项、范围和停止点；不得以摘要替代原片。已在本轮专属 agent 内的逐段推进和局部返修可继续；目标、来源或基线重大变化时新开，不按修订号机械重开。",
         f"- 等待及接收：执行前实读 `{ROOT / 'docs/rules/execution.md'}#等待与工具回传` 的宿主参数；沿原任务续等，完成后只交本轮身份、结论、差异及证据路径。原图由执行者实看，协调方按争议定向取图，不整份回传 JSON、日志或图组。",
-        *([f"- 图片批次：`{_CONTEXT_ID.get()}`，本批冻结 {len(image_targets)} 个 image_targets；阶段负责人统筹整体方向、跨批连续性和正式交接，本批执行者读取真实参考、完成获准图片及实看自查。委派时只回传准确路径与检查摘要。批次目录不构成已生成、已检查、人工确认或正式采用。"] if image_targets is not None else []),
+        *([f"- 图片批次：`{_CONTEXT_ID.get()}`，本批冻结 {len(image_targets)} 个 image_targets；阶段负责人统筹整体方向、跨批连续性和正式交接，本批执行者读取真实参考、完成获准图片及实看自查。委派时只回传准确路径与检查摘要。批次目录不构成已生成、已检查、人工确认或正式采用。"] if image_targets is not None and _CONTEXT_ID.get() is not None else []),
+        *([f"- 图片目标：本阶段请求冻结 {len(image_targets)} 个 image_targets；主对话直做批次沿用本阶段 task_basis，不另建批次目录，但仍须写回现有回执。"] if image_targets is not None and _CONTEXT_ID.get() is None else []),
         *([f"- 红帧生图：读取 `{ROOT / _REDFRAME_IMAGE_STANDARDS[0]}#生图` 及同页连接入口。由主对话直接操作，先上传素材卡并当场归位，再接线和核正文；配套上传与排版规则同批冻结。"]
           if _redframe_image_batch(args.skill, request) else []),
         *(["- 导演写稿和返修：先实看影响拍法的原片连续窗，核关键对白指向、起幅、镜内轨迹、落幅与实际切出后的反应；然后才核逐镜字段和下游影响。沿现有自查记录写准确时间窗和镜号。"]
