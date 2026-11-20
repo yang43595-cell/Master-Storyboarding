@@ -21,6 +21,10 @@ __pycache__/
 .blender-previs-cache/
 .master-storyboarding/
 .tmp_*/
+
+# OS metadata
+.DS_Store
+**/.DS_Store
 # Raw / generated media and project-private state
 *.mp4
 *.mov
