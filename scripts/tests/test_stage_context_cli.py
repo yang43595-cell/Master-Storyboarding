@@ -1038,6 +1038,27 @@ def test_third_batch_stage_requires_method_files_and_reading_before_production(t
     assert cli.ensure_prepared(args)['ok'] is True
 
 
+def test_ensure_prepared_can_record_reading_in_same_call(tmp_path: Path) -> None:
+    project = _project(tmp_path)
+    request = project / 'request.json'
+    request.write_text(json.dumps({'asset_method_scopes': {'style': True, 'character': True, 'scene': True, 'object': True}}), encoding='utf-8')
+    vault = _method_vault(tmp_path / 'method-vault')
+    args = argparse.Namespace(
+        project=str(project), skill='asset-image-assistant', objective='一次调用登记阅读',
+        request_json=str(request), vault=str(vault), actor_id='test-agent', task_id='test-mark-read')
+    cli.prepare(args)
+    basis = json.loads((project / cli.CONTEXT_DIR / 'task_basis.json').read_text(encoding='utf-8'))
+    methods = [item['id'] for item in basis['reading_manifest']['methods']]
+    assert methods
+    args.mark_read = True
+    args.method = methods
+    args.candidate_rule = []
+    args.candidate_scope = []
+    assert cli.ensure_prepared(args)['ok'] is True
+    args.mark_read = False
+    assert cli.ensure_prepared(args)['ok'] is True
+
+
 def test_visual_supplement_cannot_continue_with_only_shared_method(tmp_path: Path) -> None:
     project = _project(tmp_path)
     state_path = project / '00_项目管理/project_state.json'

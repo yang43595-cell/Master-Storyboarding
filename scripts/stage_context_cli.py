@@ -2671,6 +2671,8 @@ def _ensure_prepared(args: argparse.Namespace) -> dict[str, Any]:
 def ensure_prepared(args: argparse.Namespace) -> dict[str, Any]:
     project = Path(args.project).expanduser().resolve()
     testing = _test_request(args, project)
+    if getattr(args, "mark_read", False):
+        record_method_reading(args)
     result = _ensure_prepared(args)
     if testing:
         result.update(test_metadata())
@@ -2816,6 +2818,9 @@ def parser() -> argparse.ArgumentParser:
     gate.add_argument("--task-id", help="稳定任务标识")
     gate.add_argument("--required-rule", action="append", default=[], help="本任务必需的动态规则 ID，可重复")
     gate.add_argument("--required-reference", action="append", default=[], help="本任务必需的本地规范，仓库相对路径，可重复")
+    gate.add_argument("--mark-read", action="store_true", help="读完后在同一调用登记本轮必读方法，再执行产前门禁")
+    gate.add_argument("--method", action="append", default=[], help="已完整阅读的必读专业方法 ID；随 --mark-read 使用，可重复")
+    gate.add_argument("--candidate-scope", action="append", default=[], help="跨职责候选的本职采用范围：ID=范围与理由；随 --mark-read 使用")
     usage_check = commands.add_parser("usage-check", help="直接读取或画布批次的只读计量检查，不创建准备包")
     usage_check.add_argument("--project", required=True)
     for command in (start, gate):
