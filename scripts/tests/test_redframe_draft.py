@@ -1,10 +1,165 @@
 from contextlib import contextmanager
+from copy import deepcopy
 from types import SimpleNamespace
+from urllib.parse import quote
+import json
 import sys
 
 import pytest
 
 from scripts import redframe_draft
+from scripts.tests.test_workflow_repair_cli import bind_redframe_production_sources, redframe_fixture
+from scripts.tests.test_delivery_preflight import bind_synthetic_quality
+
+
+@pytest.mark.parametrize('case', [
+    'direct', 'wrong-bytes', 'linked', 'stale-face', 'stale-authority',
+    'three-drafts', 'late-wrong-bytes', 'interrupted-write',
+])
+def test_new_draft_batch_uses_one_refresh_and_one_ordered_download(tmp_path, monkeypatch, case):
+    plan, observed = redframe_fixture(tmp_path)
+    if case in {'three-drafts', 'late-wrong-bytes', 'interrupted-write'}:
+        third = deepcopy(plan['drafts'][1])
+        third.update(node_id='three', continuity={'event_id': 'separate-event'})
+        plan['drafts'].append(third)
+    linked = case in {'linked', 'stale-face'}
+    for draft in plan['drafts']:
+        draft.update(edges=[], source_nodes=[], realistic_face_slots=[], native_entity_type='reference')
+        draft['prompt'] += ' @图片1'
+        draft['reference_checks'][0]['canvas_binding'] = {
+            'mode': 'direct', 'purpose': 'synthetic boundary', 'prompt_reference': True}
+    first = plan['drafts'][0]
+    if linked:
+        first['realistic_face_slots'] = [1]
+        first['reference_checks'][0]['canvas_binding'].update(mode='edge', source_port='image', target_port='in')
+    bind_redframe_production_sources(tmp_path, plan, observed)
+    for draft in plan['drafts']:
+        del draft['ordered_media']
+    bind_synthetic_quality(tmp_path, plan)
+    if case == 'stale-authority':
+        assert redframe_draft.validate_submission(plan, tmp_path, formal_delivery=True, preflight=True)['ok']
+        (tmp_path / 'director.json').write_text('{"fixture": "changed after preflight"}', encoding='utf-8')
+
+        def unexpected(*args, **kwargs):
+            pytest.fail('stale project authority reached the browser')
+
+        monkeypatch.setattr(redframe_draft, 'open_workspace', unexpected)
+        with pytest.raises(ValueError, match='file/hash|登记字节'):
+            redframe_draft.run_new_draft_batch(
+                tmp_path, plan, unexpected, host_browser=unexpected, check_layout=unexpected)
+        return
+
+    nodes, edges, slots, calls = [], [], {}, []
+    source_url = 'assets/frame-node/frame.png'
+    checksum = first['reference_checks'][0]['sha256']
+    certificate = {'sourceUrl': source_url, 'assetId': 'synthetic', 'imageDigest': checksum}
+    source_node = {'id': 'frame-node', 'type': 'remote-imageNode', 'data': {
+        'outputs': {'image': {'value': {'url': source_url}}}, 'faceCertification': certificate}}
+    earlier_nodes = [source_node] if linked else []
+
+    class Workspace:
+        read_budget = 30_000
+        page = SimpleNamespace(reload=lambda **_: calls.append('refresh'))
+
+        def read_canvas(self, **kwargs):
+            calls.append('read')
+            return {'nodes': earlier_nodes + nodes, 'edges': edges.copy()}
+
+        def digest_slots(self, actual):
+            assert actual == nodes
+            calls.append('download')
+            return slots
+
+    @contextmanager
+    def open_once(factory, target, project_id):
+        calls.append('open')
+        try:
+            yield Workspace()
+        finally:
+            calls.append('close')
+
+    def write(ui, draft):
+        ident = 'created-' + draft['source_segment_id']
+        calls.append(ident)
+        if case == 'interrupted-write' and ident == 'created-two':
+            raise RuntimeError('synthetic write interruption')
+        path = f'assets/{ident}/frame.png'
+        face_slot = bool(draft['realistic_face_slots'])
+        handle = quote(json.dumps(['frame-node', 'frame-media'] if face_slot else [ident, 'slot']))
+        chip = f'<span class="imageReference" data-reference-id="{handle}" data-value="{{{{ref 1}}}}"></span>'
+        ref = {'source': ident, 'sourceHandle': 'slot', 'dataType': 'IMAGE', 'value': {'url': path}}
+        node = {'id': ident, 'type': 'remote-videoGenerationNode', 'data': {
+            'outputs': {}, 'videoMode': 'fixture-reference', 'model': '["fixture","fixture"]',
+            'mode': '"fixture-reference"', 'localReferences': {'in': [] if face_slot else [ref]},
+            'promptModel': [[{'type': 'Custom', 'html': chip}]],
+            'prompt': draft['prompt'].replace('@图片1', '{{ref 1}}'),
+            'ratio': '9:16', 'resolution': '480P', 'duration': draft['parameters']['duration'],
+        }}
+        nodes.append(node)
+        checksum = draft['reference_checks'][0]['sha256']
+        if ((case == 'wrong-bytes' and ident == 'created-two')
+                or (case == 'late-wrong-bytes' and ident == 'created-three')):
+            checksum = '0' * 64
+        if face_slot:
+            edges.append(dict(source='frame-node', sourceHandle='image', target=ident, targetHandle='in'))
+            slots[ident] = []
+        else:
+            slots[ident] = [dict(source=ident, media_id='slot', path=path, index=1, sha256=checksum, status=200)]
+        return node
+
+    def layout(ui, graph, segment_nodes):
+        assert graph['nodes'] == earlier_nodes + nodes
+        calls.append('layout')
+        return {'checked': list(segment_nodes.values())}
+
+    def read_linked(ui, graph, segment_nodes, linked_drafts, direct_receipts):
+        calls.append('read-linked')
+        assert linked_drafts == {'one': first} and direct_receipts == slots
+        node_id = segment_nodes['one']
+        media = {'node_id': 'frame-node', 'media_id': 'frame-media', 'sha256': checksum}
+        return [{
+            'node_id': node_id, 'prompt': first['prompt'], 'parameters': first['parameters'],
+            'ordered_media': [media],
+            'native_mentions': [{**media, 'entity_type': 'reference', 'native_noneditable_entity': True}],
+            'edges': [dict(source_node_id='frame-node', source_port='image', target_node_id=node_id,
+                           target_port='in', slot=1)],
+            'source_nodes': [dict(node_id='frame-node', port='image', sha256=checksum)],
+            'face_certifications': {'1': {
+                'node_id': 'frame-node', 'source_url': source_url,
+                'faceCertification': {**certificate, 'assetId': 'old'} if case == 'stale-face' else certificate}},
+        }]
+
+    monkeypatch.setattr(redframe_draft, 'open_workspace', open_once)
+    monkeypatch.setattr(redframe_draft.RedframeVideoDraftUI, '__init__', lambda *args, **kwargs: None)
+    monkeypatch.setattr(redframe_draft.RedframeVideoDraftUI, 'assert_target', lambda ui: calls.append('target'))
+    kwargs = {'host_browser': object(), 'check_layout': layout, 'collect_linked': read_linked if linked else None}
+    if case == 'interrupted-write':
+        with pytest.raises(RuntimeError, match='synthetic write interruption'):
+            redframe_draft.run_new_draft_batch(tmp_path, plan, write, **kwargs)
+        assert calls == ['open', 'target', 'read', 'created-one', 'created-two', 'close']
+        return
+
+    node_ids = ['created-' + draft['source_segment_id'] for draft in plan['drafts']]
+    errors = {'wrong-bytes': 'two 实际输入槽身份或文件顺序',
+              'late-wrong-bytes': 'three 实际输入槽身份或文件顺序',
+              'stale-face': '源卡认证与刷新的持久画布不符'}
+    if case in errors:
+        with pytest.raises(ValueError, match=errors[case]):
+            redframe_draft.run_new_draft_batch(tmp_path, plan, write, **kwargs)
+    else:
+        result = redframe_draft.run_new_draft_batch(tmp_path, plan, write, **kwargs)
+        assert result['preflight']['ok']
+        assert result['formal_readback']['ok']
+        if linked:
+            assert result['formal_readback']['face_certification_checks'] == {'created-one': {'1': 'passed'}}
+        assert result['frozen']['drafts'][1]['continuity']['previous_node_id'] == 'created-one'
+        if len(node_ids) == 3:
+            assert result['frozen']['drafts'][2]['continuity'] == {'event_id': 'separate-event'}
+        assert result['layout']['checked'] == node_ids
+    assert calls == ['open', 'target', 'read', *node_ids,
+                     'refresh', 'target', 'read', 'layout', 'download'] + (
+                         ['read-linked'] if linked else []) + ['close']
+    assert 'ordered_media' not in plan['drafts'][0]
 
 
 def test_retest_refreshes_in_the_same_browser_after_resave(monkeypatch):
@@ -127,3 +282,26 @@ def test_reusing_measured_geometry_requires_current_node_ids():
                        {'id': 'new', 'position': {'x': 250, 'y': 0}}]}
     with pytest.raises(ValueError, match='节点集合'):
         redframe_draft.measured_placements(graph, {'kept': (220, 262)}, ['kept'])
+
+
+@pytest.mark.parametrize(('field', 'value'), [
+    ('draft', {'sourceTaskId': 'old-job', 'taskId': 'old-provider-job'}),
+    ('draftHistory', {'assets/old-node/output.mp4': {'taskId': 'old-provider-job'}}),
+    ('videoTask', {'id': 'old-job'}),
+])
+def test_copied_generation_history_cannot_be_used_as_a_fresh_draft(field, value):
+    node = {'id': 'new-node', 'type': 'remote-videoGenerationNode', 'data': {
+        'outputs': {}, 'videoMode': 'reference', 'model': '["provider","model"]', 'mode': '"normal"',
+        'localReferences': {'in': []}, 'promptModel': [], 'prompt': '',
+        'ratio': '9:16', 'resolution': '1080P', 'duration': 9,
+        field: value,
+    }}
+    graph = {'nodes': [node], 'edges': []}
+    ui = SimpleNamespace(assert_target=lambda: None,
+                         workspace=SimpleNamespace(read_canvas=lambda: graph),
+                         page=SimpleNamespace(locator=lambda _: pytest.fail('dirty node reached UI')))
+    models = {'reference': ('model', {'providerId': 'provider', 'modelId': 'model', 'mode': ['normal']})}
+    with pytest.raises(ValueError, match='生成记录.*new-node'):
+        redframe_draft.native_draft(graph, node, [], models)
+    with pytest.raises(ValueError, match='生成记录.*new-node'):
+        redframe_draft.RedframeVideoDraftUI._draft_locator(ui, 'new-node')

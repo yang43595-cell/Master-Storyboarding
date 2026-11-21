@@ -10,7 +10,7 @@
 python scripts/stage_context_cli.py prepare --project <项目> --skill creative-director --objective "本轮目标" --request-json <项目需求路径> --actor-id <执行者ID> --task-id <任务ID>
 ```
 
-按 Skill 的执行顺序实读 `stage_startup.md`、实际输入和适用合同。有匹配的必读方法时，读完本轮方法包再用 `record-method-reading` 登记。同一执行者和任务运行以下命令，核验通过后进入场次判断或正文。
+按 Skill 入口实读 `stage_startup.md`、实际输入和适用合同。同一执行者和任务运行以下命令，核验通过后进入场次判断或正文。有本轮必读方法且需登记时，先读完其快照，再在同一命令加 `--mark-read` 和各方法的 `--method <ID>`。
 
 ```powershell
 python scripts/stage_context_cli.py ensure-prepared --project <项目> --skill creative-director --actor-id <执行者ID> --task-id <任务ID> --show-task-basis
@@ -35,6 +35,8 @@ python scripts/stage_context_cli.py ensure-prepared --project <项目> --skill c
 历史 narrative 1.0 只按 `narrative-package-v1.schema.json` 读取。继续返工时从真实正文建立新修订并保留原编号的对应关系。
 
 ## 开写前逐场确定保留项
+
+原片位置沿[项目登记和素材定位](../../../docs/rules/project-layout.md#定位原片与参考素材)核对。需要用候选帧定位连续片段时，用[本地抽帧入口](../../../scripts/extract_video_frames.py)的 `--video` 传已核原片、`--out-dir` 传本轮取证目录，每个时间点传一次 `--at`。按输出的拼图、帧文件路径和实际时间定位，再回原片连续核对关键动作或对白。
 
 改编或复现已有故事时，读完本轮输入、通过准备核对后，先沿原片或本轮指定基准稿逐场找出：这场让观众理解了什么变化，靠哪个具体动作、反应、对白或物件状态表现，下一场在哪里接上。沿用现有场名或 STP 定位，在本轮任务记录中每场简记一行，区分必须保留的表现、可改的实现及其依据。复现按来源保真；局部返修只核受影响场次及有依赖的前后场。已有锁定事实按原依据保留；从旧稿读出的保留判断写明来源，不记成用户确认。不另建场次表、事件层或逐场审批。
 

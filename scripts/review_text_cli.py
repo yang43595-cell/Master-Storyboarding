@@ -9,8 +9,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
-import tempfile
 from io import BytesIO
 from pathlib import Path
 
@@ -22,7 +22,7 @@ try:
     from .core.io import project_lock, utc_now, write_json
     from .core.review_publication import (project_file as _path, read_decision, read_publication,
                                           read_script_approval, require_script_approval)
-    from .core.story_sources import export_markdown, validate_story_sources
+    from .core.story_sources import export_markdown, narrative_review_projections, validate_story_sources
     from .visual_asset_choices import image_work_items
     from .visual_asset_source import source_project
 except ImportError:  # direct execution
@@ -33,7 +33,7 @@ except ImportError:  # direct execution
     from core.io import project_lock, utc_now, write_json
     from core.review_publication import (project_file as _path, read_decision, read_publication,
                                          read_script_approval, require_script_approval)
-    from core.story_sources import export_markdown, validate_story_sources
+    from core.story_sources import export_markdown, narrative_review_projections, validate_story_sources
     from visual_asset_choices import image_work_items
     from visual_asset_source import source_project
 
@@ -79,26 +79,48 @@ def _source(project: Path, value: str | Path) -> tuple[dict, dict]:
                      "awaiting_subtitle_approval_ids": review_check["awaiting_subtitle_approval_ids"]}
 
 
-def _projection(project: Path, package: dict, value: str | Path, *, subtitle_review_ids=()) -> tuple[str, dict]:
+def _projection(project: Path, package: dict, value: str | Path, *, subtitle_review_ids=(),
+                create=False) -> tuple[str, dict]:
     path = _path(project, value)
-    raw = path.read_bytes()
-    with tempfile.TemporaryDirectory(prefix=".review-export-", dir=project) as folder:
-        expected = Path(folder) / "reading.md"
-        export_markdown(package, expected, subtitle_review_ids=subtitle_review_ids)
-        if raw != expected.read_bytes():
+    projections = (text.replace('\n', os.linesep).encode('utf-8') for text in
+                   narrative_review_projections(package, subtitle_review_ids=subtitle_review_ids))
+    try:
+        raw = path.read_bytes()
+    except FileNotFoundError:
+        if not create:
+            raise
+        raw = next(projections)
+        if len(raw) > MAX_TEXT_BYTES:
+            raise AgentReviewError("送审阅读稿超过 100 KiB，请先与审核站确认交付方式。", code="INVALID_INPUT")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("xb") as output:
+            output.write(raw)
+    else:
+        if not any(raw == projection for projection in projections):
             raise ValueError("Reading Markdown differs from this exact narrative JSON; export a new copy.")
     return raw.decode("utf-8"), _binding(project, path, raw)
 
 
-def _check_preflight(project, client, path, *, case_id, stage, project_id=None):
+def _check_preflight(project, client, path, *, case_id, stage, project_id=None, retry_binding=None):
     path = _path(project, path)
     saved = json.loads(path.read_text(encoding="utf-8"))
     expected_request = {"caseId": case_id, "stage": stage}
-    if (saved.get("kind") != "agent-review-api-receipt" or saved.get("command") != "status"
-            or saved.get("project_path") != str(project) or saved.get("base_url") != client.base_url
-            or (saved.get("request") or {}).get("parameters") != expected_request):
+    if (saved.get("kind") != "agent-review-api-receipt" or saved.get("project_path") != str(project)
+            or saved.get("base_url") != client.base_url):
         raise ValueError("送审预读回执与本地项目、站点、案例或阶段不符")
-    previous = saved.get("response") or {}
+    request = saved.get("request") or {}
+    retry = saved.get("command") == "publish" and retry_binding is not None
+    if retry:
+        parameters, source, markdown = retry_binding
+        if (request.get("parameters") != parameters or saved.get("source_json") != source
+                or saved.get("markdown") != markdown or request.get("text_sha256") != markdown["sha256"]
+                or request.get("text_bytes") != markdown["bytes"]):
+            raise ValueError("重试的送审操作、用途或稿件字节与原回执不符")
+        previous = (saved.get("preflight") or {}).get("response") or {}
+    else:
+        if saved.get("command") != "status" or request.get("parameters") != expected_request:
+            raise ValueError("送审预读回执与本地项目、站点、案例或阶段不符")
+        previous = saved.get("response") or {}
     expected_case = previous.get("case") or {}
     if (expected_case.get("id") != case_id or not expected_case.get("projectId")
             or (project_id is not None and expected_case["projectId"] != project_id)
@@ -112,13 +134,14 @@ def _check_preflight(project, client, path, *, case_id, stage, project_id=None):
             or current["expectations"][key] != previous["expectations"][key] for key in version_fields)
             or current["sourceScriptVersion"] != previous.get("sourceScriptVersion")):
         raise ValueError("网站当前版本或审核状态已变化，请先核对差异再决定是否送审")
-    return {"path": path.relative_to(project).as_posix(), "response": current}
+    return {"path": path.relative_to(project).as_posix(), "response": current,
+            **({"retry": True} if retry else {})}
 
 
-def _asset_readback(client, receipt):
+def _publication_readback(client, receipt, *, stage):
     published = receipt["response"]
     try:
-        current = client.status(case_id=published["caseId"], stage="assets")
+        current = client.status(case_id=published["caseId"], stage=stage)
     except (AgentReviewError, OSError) as exc:
         return {"status": "unknown", "error": {
             "code": exc.code if isinstance(exc, AgentReviewError) else "LOCAL_IO_ERROR",
@@ -133,6 +156,8 @@ def _asset_readback(client, receipt):
     elif head.get("version") != published["version"] or head.get("generation") != published["headGeneration"]:
         # Status describes the newer head. Its source says nothing about this POST.
         status = "historical" if head.get("generation", 0) > published["headGeneration"] else "unknown"
+    elif stage == "script":
+        status = "current"
     elif current["sourceScriptVersion"] != receipt["script_version"] or source_stale is True:
         status = "source_mismatch"
     else:
@@ -193,7 +218,10 @@ def _parser() -> argparse.ArgumentParser:
     publish.add_argument("--case-id", required=True)
     publish.add_argument("--operation-id", required=True)
     publish.add_argument("--purpose")
-    publish.add_argument("--preflight", required=True, type=Path, help="Project status receipt checked before publication.")
+    script_basis = publish.add_mutually_exclusive_group(required=True)
+    script_basis.add_argument("--expected-head-version", help="Verified current script version, or none for first publication.")
+    script_basis.add_argument("--preflight", type=Path, help="Saved status or original same-operation publication receipt.")
+    publish.add_argument("--expected-project-id", help="Verified website project ID, required with --expected-head-version.")
     status = commands.add_parser("status", help="Read a stage head; this is not an approval receipt.")
     status.add_argument("--case-id", required=True)
     status.add_argument("--stage", choices=("script", "assets"), default="script")
@@ -250,9 +278,15 @@ def run(args: argparse.Namespace) -> dict:
             call = lambda: client.create_case(name=args.name, operation_id=args.operation_id)
             route = "create-case"
         elif args.command == "publish":
+            inline = args.preflight is None
+            expected_project = getattr(args, "expected_project_id", None)
+            if inline and not (expected_project or "").strip():
+                raise ValueError("--expected-project-id is required with --expected-head-version.")
+            if _path(project, args.markdown) == receipt_path:
+                raise ValueError("The reading copy and the publication receipt need distinct paths.")
             package, source = _source(project, args.narrative)
             text, markdown = _projection(project, package, args.markdown,
-                                         subtitle_review_ids=source["awaiting_subtitle_approval_ids"])
+                                         subtitle_review_ids=source["awaiting_subtitle_approval_ids"], create=inline)
             if markdown["bytes"] > MAX_TEXT_BYTES:
                 raise AgentReviewError("送审阅读稿超过 100 KiB，请先与审核站确认交付方式。", code="INVALID_INPUT")
             parameters = {"caseId": args.case_id, "stage": "script",
@@ -260,8 +294,19 @@ def run(args: argparse.Namespace) -> dict:
             if args.purpose is not None:
                 parameters["purpose"] = args.purpose
             receipt.update(source_json=source, markdown=markdown)
-            receipt["preflight"] = _check_preflight(
-                project, client, args.preflight, case_id=args.case_id, stage="script")
+            if inline:
+                current = client.status(case_id=args.case_id, stage="script")
+                expected = None if args.expected_head_version == "none" else args.expected_head_version
+                if (current["case"]["projectId"] != expected_project
+                        or current["expectations"]["expectedHeadVersion"] != expected):
+                    raise ValueError("网站项目或当前编导版本与预期不符，请核对后再发布。")
+                receipt["preflight"] = {"response": current}
+            else:
+                receipt["preflight"] = _check_preflight(
+                    project, client, args.preflight, case_id=args.case_id, stage="script",
+                    project_id=expected_project, retry_binding=(parameters, source, markdown))
+            if inline or receipt["preflight"].get("retry"):
+                receipt["readback"] = {"status": "unknown"}
             call = lambda: client.publish(case_id=args.case_id, stage="script", name=parameters["name"],
                                           text=text, operation_id=args.operation_id, purpose=args.purpose)
             route = "publish"
@@ -357,9 +402,9 @@ def run(args: argparse.Namespace) -> dict:
                 receipt["response"].get("projectId") != receipt["preflight"]["response"]["case"]["projectId"]):
             raise ValueError("发布回执的网站项目与预读不符，已保留回执供核查")
         result = {"receipt": str(receipt_path), "response": receipt["response"]}
-        if route == "publish-assets":
+        if "readback" in receipt:
             # The durable POST receipt remains usable even if this GET is interrupted.
-            readback = _asset_readback(client, receipt)
+            readback = _publication_readback(client, receipt, stage=parameters["stage"])
             write_json(receipt_path, {**receipt, "readback": readback})
             result["readback"] = readback
         if website_approval is not None:

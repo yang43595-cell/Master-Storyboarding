@@ -37,7 +37,7 @@ description: 在有效导演稿和资产图就绪后、视频提示词之前，�
 - 在导演稿及资产图确认后、视频提示词之前，先检查已确认 `storyboard.package` v4（旧 v1/v2/v3 只读）的本轮镜头及对应素材。检查可以发现缺口，不要求启动前已经证明缺口或视频生成失败；实际补图必须绑定具体 `source_shot_ids` 和现有素材无法充分表达的目标状态。
 - 先以本轮镜头关联的 AST 和明确 output ID 取得最小参考集合；同一有效上下文且同一用途可复用已完成的视觉结论。新执行者、新 Web 调用或结论未覆盖当前状态时没有可复用的“已看图”，必须实际查看需要判断的确认输出；登记与路径核对不代替此步骤。
 - 检查输入至少包含：确认导演包 revision、本轮镜头及对应确认资产，以及本轮适用的动作参考和产品实拍。检查后登记目标状态、出现/禁止/保留项、参考覆盖和决策；只有 request_supplement 必须填写缺口证据及最大生成数量。reuse_existing 用 existing_references.coverage 说明覆盖依据，return_upstream 用 return_upstream.reason 说明上游问题，不虚构缺口。
-- 用 `visual-supplement-request.json` 按 schema 登记判断。现有材料足够时记录 `reuse_existing`，最大图片数为 0，并直接复用；真正缺图时才记录 `request_supplement`。
+- 用 `visual-supplement-request.json` 按 schema 登记判断。复用指定现有图用 `reuse_existing`，普通镜头无需补图可成组记 `no_supplement`，真正缺图才用 `request_supplement`。交给视频前按[视觉交接](../../docs/rules/visual-production.md#导演到视频的视觉交接)登记本版检查结论和必用关系图。
 - 独立候选试跑仅按 PROJECT_RULES 的现有测试授权例外执行。补图请求调用 `scripts.core.schema_contracts.validate_visual_supplement_request(value, project_root=项目路径, candidate_test=True)`，须有有效隔离项目状态；默认不传测试参数或直接校验原 schema 仍要求已确认导演。测试来源如实写 `source_storyboard.status: candidate`，不伪写 confirmed。请求登记 `type: visual-supplement-request`，manifest 的采用身份继续 candidate/unreviewed；正文保留实际业务结果：补图草案 candidate、复用 not_needed、退回 blocked。不能为消费者改成假 candidate；return_upstream 仍须有真实原因且 max_images=0。候选消费者复核此合同及准确来源，交接卡带业务状态和退回原因。schema_valid 只证明结构，不说明已确认、已解决或可生成；blocked 应返回指定上游处理。其他合同不获得此状态例外，不生成、不采用、不发布。
 
 

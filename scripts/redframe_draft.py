@@ -21,7 +21,9 @@ from scripts.core.artifacts import load_manifest, project_path
 from scripts.core.io import read_json, write_json
 from scripts.core.quality_evidence import draft_binding, fingerprint
 from scripts.core.redframe_image_ui import ImageUIError, RedframeImageUI, _ident
-from scripts.core.redframe_workspace import NativeTag, RedframeWorkspace, RedframeWorkspaceError
+from scripts.core.redframe_workspace import (
+    NativeTag, RedframeWorkspace, RedframeWorkspaceError, video_generation_records,
+)
 
 
 def canvas_nodes(graph):
@@ -98,34 +100,29 @@ def source_capabilities(project, frozen):
             for mode, ref in by_mode.items()}
 
 
-def native_draft(graph, node, slots, models):
-    ident, data = node['id'], node['data']
-    if node.get('type') != 'remote-videoGenerationNode' or data.get('outputs') != {}:
-        raise ValueError(f'{ident} 不是无生成输出的草稿节点')
-    aliases = {'IMAGE': '图片', 'VIDEO': '视频', 'AUDIO': '音频'}
+def _draft_data(node, node_id):
+    data = node.get('data') if node and node.get('type') == 'remote-videoGenerationNode' else None
+    if not isinstance(data, dict):
+        raise ValueError(f'视频草稿节点身份不符：{node_id}')
+    if video_generation_records(data):
+        raise ValueError(f'视频草稿节点已有生成记录：{node_id}')
+    return data
+
+
+def _native_content(ident, data, media, kinds, models):
+    if data.get('outputs') != {}:
+        raise ValueError(f'{ident} 缺少草稿节点的空输出字段')
+    aliases = {'image': '图片', 'video': '视频', 'audio': '音频'}
     mode = data['videoMode']
     model_name, capabilities = models[mode]
     if (json.loads(data['model']) != [capabilities['providerId'], capabilities['modelId']]
             or json.loads(data['mode']) not in capabilities['mode']):
         raise ValueError(f'{ident} 的实际模型或参考模式与本轮能力不符')
-    if any(edge.get('target') == ident for edge in graph['edges']):
-        raise ValueError(f'{ident} 存在入边，不能按直传草稿验收')
-    refs = data['localReferences']['in']
-    if len(refs) != len(slots):
-        raise ValueError(f'{ident} 未收齐当前原生槽的下载证据')
     types = Counter()
-    names, media = {}, []
-    for index, (ref, slot) in enumerate(zip(refs, slots), 1):
-        if (ref['source'] != ident or
-                (slot['source'], slot['media_id'], slot['path'], slot['index'])
-                != (ident, ref['sourceHandle'], ref['value']['url'], index)):
-            raise ValueError(f'{ident} 第 {index} 槽的下载证据与实际槽身份不一致')
-        if slot['status'] != 200 or not slot.get('sha256'):
-            raise ValueError(f'{ident} 第 {index} 槽附件读取失败 HTTP {slot["status"]}')
-        kind = ref['dataType']
+    names = {}
+    for index, kind in enumerate(kinds, 1):
         types[kind] += 1
         names[index] = f'@{aliases[kind]}{types[kind]}'
-        media.append({'node_id': ident, 'media_id': slot['media_id'], 'sha256': slot['sha256']})
     token_pattern = r'\{\{ref (\d+)\}\}'
     mentions = []
     for line in data['promptModel']:
@@ -134,16 +131,95 @@ def native_draft(graph, node, slots, models):
                 continue
             ((node_id, media_id), value), = NativeTag(token['html']).refs
             index = int(re.fullmatch(token_pattern, value)[1])
-            if not 1 <= index <= len(media) or (node_id, media_id) != (ident, media[index-1]['media_id']):
+            if (not 1 <= index <= len(media)
+                    or (node_id, media_id) != (media[index-1]['node_id'], media[index-1]['media_id'])):
                 raise ValueError(f'{ident} 的原生提示词引用和实际槽不符')
             mentions.append({'node_id': node_id, 'media_id': media_id, 'entity_type': 'reference',
                              'native_noneditable_entity': True})
     prompt = re.sub(token_pattern, lambda m: names[int(m[1])], data['prompt']).replace('\ufeff', '')
+    parameters = {'model': model_name, 'aspect_ratio': data['ratio'],
+                  'resolution': data['resolution'].lower(), 'duration': data['duration'],
+                  'reference_mode': mode}
+    return prompt, parameters, mentions
+
+
+def native_draft(graph, node, slots, models):
+    ident = node['id']
+    data = _draft_data(node, ident)
+    if any(edge.get('target') == ident for edge in graph['edges']):
+        raise ValueError(f'{ident} 存在入边，不能按直传草稿验收')
+    refs = data['localReferences']['in']
+    if len(refs) != len(slots):
+        raise ValueError(f'{ident} 未收齐当前原生槽的下载证据')
+    media = []
+    for index, (ref, slot) in enumerate(zip(refs, slots), 1):
+        if (ref['source'] != ident or
+                (slot['source'], slot['media_id'], slot['path'], slot['index'])
+                != (ident, ref['sourceHandle'], ref['value']['url'], index)):
+            raise ValueError(f'{ident} 第 {index} 槽的下载证据与实际槽身份不一致')
+        if slot['status'] != 200 or not slot.get('sha256'):
+            raise ValueError(f'{ident} 第 {index} 槽附件读取失败 HTTP {slot["status"]}')
+        media.append({'node_id': ident, 'media_id': slot['media_id'], 'sha256': slot['sha256']})
+    prompt, parameters, mentions = _native_content(
+        ident, data, media, [ref['dataType'].lower() for ref in refs], models)
     return {'node_id': ident, 'prompt': prompt, 'ordered_media': media, 'native_mentions': mentions,
-            'edges': [], 'source_nodes': [],
-            'parameters': {'model': model_name, 'aspect_ratio': data['ratio'],
-                           'resolution': data['resolution'].lower(), 'duration': data['duration'],
-                           'reference_mode': mode}}
+            'edges': [], 'source_nodes': [], 'parameters': parameters}
+
+
+def _check_new_plan(plan, *, allow_linked=False):
+    drafts = rows_by_id(plan['drafts'])
+    segments = {}
+    for draft in drafts.values():
+        segment = draft['source_segment_id']
+        if not isinstance(segment, str) or not segment or segment in segments:
+            raise ValueError('写前计划须有不重复的来源段号')
+        if draft.get('realistic_face_slots') and not allow_linked:
+            raise ValueError(f'{segment} 含认证源卡槽，须走整节点连线回读')
+        if (draft.get('edges') != [] or draft.get('source_nodes') != []
+                or draft.get('ordered_media', []) != []):
+            raise ValueError(f'{segment} 须使用尚未绑定平台输入的首次写入计划')
+        if draft['quality_evidence'].get('input_sha256') != fingerprint(draft_binding(draft)):
+            raise ValueError(f'{segment} 写前自查证据与计划不一致')
+        segments[segment] = draft
+    return segments
+
+
+def _bind_new_drafts(project, plan, segment_nodes, observed):
+    if observed.get('revision') != plan['revision']:
+        raise ValueError('刷新回读修订与写前计划不一致')
+    frozen = deepcopy(plan)
+    drafts = frozen['drafts']
+    segments = {draft['source_segment_id'] for draft in drafts}
+    actual = rows_by_id(observed['drafts'])
+    if (segments != set(segment_nodes)
+            or len(set(segment_nodes.values())) != len(drafts)
+            or set(segment_nodes.values()) != set(actual)):
+        raise ValueError('计划段号、实际创建的节点 ID 和刷新回读不一一对应')
+    actual_ids = {draft['node_id']: segment_nodes[draft['source_segment_id']] for draft in drafts}
+    for draft in drafts:
+        segment = draft['source_segment_id']
+        node_id = segment_nodes[segment]
+        if node_id == draft['node_id']:
+            raise ValueError(f'{segment} 须使用新建的实际节点 ID')
+        row = actual[node_id]
+        media = row['ordered_media']
+        if [item['sha256'] for item in media] != [ref['sha256'] for ref in draft['reference_checks']]:
+            raise ValueError(f'{segment} 实际输入槽身份或文件顺序与写前计划不一致')
+        if draft.get('realistic_face_slots'):
+            draft.update(edges=deepcopy(row['edges']), source_nodes=deepcopy(row['source_nodes']))
+        elif any(item['node_id'] != node_id for item in media):
+            raise ValueError(f'{segment} 实际输入槽身份或文件顺序与写前计划不一致')
+        draft.update(node_id=node_id, ordered_media=deepcopy(media))
+        continuity = draft.get('continuity', {})
+        predecessor = continuity.get('previous_node_id')
+        if predecessor in actual_ids:
+            continuity['previous_node_id'] = actual_ids[predecessor]
+        draft['quality_evidence']['input_sha256'] = fingerprint(draft_binding(draft))
+    observed = {**observed, 'frozen_sha256': digest(frozen)}
+    result = compare(frozen, observed, project, formal_delivery=True)
+    if not result['ok']:
+        raise ValueError('刷新回读未通过：' + json.dumps(result['differences'], ensure_ascii=False))
+    return {'frozen': frozen, 'observed': observed, 'formal_readback': result}
 
 
 def finalize_new_drafts(project, plan, preflight, segment_nodes, observed):
@@ -153,38 +229,8 @@ def finalize_new_drafts(project, plan, preflight, segment_nodes, observed):
     if (preflight.get('ok') is not True or not isinstance(report, dict) or report.get('ok') is not True
             or report.get('frozen_sha256') != digest(plan)):
         raise ValueError('写前预检未通过，或快照与通过的预检不一致')
-    if observed.get('revision') != plan['revision']:
-        raise ValueError('刷新回读修订与写前计划不一致')
-    frozen = deepcopy(plan)
-    drafts = frozen['drafts']
-    segments = {draft['source_segment_id'] for draft in drafts}
-    actual = rows_by_id(observed['drafts'])
-    if (not drafts or len(segments) != len(drafts) or segments != set(segment_nodes)
-            or len(set(segment_nodes.values())) != len(drafts)
-            or set(segment_nodes.values()) != set(actual)):
-        raise ValueError('计划段号、实际创建的节点 ID 和刷新回读不一一对应')
-    for draft in drafts:
-        segment = draft['source_segment_id']
-        node_id = segment_nodes[segment]
-        if draft.get('realistic_face_slots'):
-            raise ValueError(f'{segment} 含认证源卡槽，须走整节点连线回读')
-        if (draft.get('edges') != [] or draft.get('source_nodes') != []
-                or draft.get('ordered_media', []) != [] or node_id == draft['node_id']):
-            raise ValueError(f'{segment} 须使用首次直传计划和新建的实际节点 ID')
-        evidence = draft['quality_evidence']
-        if evidence.get('input_sha256') != fingerprint(draft_binding(draft)):
-            raise ValueError(f'{segment} 写前自查证据与计划不一致')
-        media = actual[node_id]['ordered_media']
-        if ([item['sha256'] for item in media] != [ref['sha256'] for ref in draft['reference_checks']]
-                or any(item['node_id'] != node_id for item in media)):
-            raise ValueError(f'{segment} 实际输入槽身份或文件顺序与写前计划不一致')
-        draft.update(node_id=node_id, ordered_media=deepcopy(media))
-        evidence['input_sha256'] = fingerprint(draft_binding(draft))
-    observed = {**observed, 'frozen_sha256': digest(frozen)}
-    result = compare(frozen, observed, project, formal_delivery=True)
-    if not result['ok']:
-        raise ValueError('刷新回读未通过：' + json.dumps(result['differences'], ensure_ascii=False))
-    return {'frozen': frozen, 'observed': observed, 'formal_readback': result}
+    _check_new_plan(plan)
+    return _bind_new_drafts(project, plan, segment_nodes, observed)
 
 
 @contextmanager
@@ -201,9 +247,7 @@ class RedframeVideoDraftUI(RedframeImageUI):
     def _draft_locator(self, node_id):
         self.assert_target()
         node = canvas_nodes(self.workspace.read_canvas()).get(_ident(node_id))
-        if (not node or node['type'] != 'remote-videoGenerationNode'
-                or node['data'].get('outputs') or node['data'].get('videoTask')):
-            raise ValueError(f'视频节点不是无生成记录的草稿：{node_id}')
+        _draft_data(node, node_id)
         return self.page.locator(f'[data-id="{node_id}"]')
 
     def create_video_draft(self, x, y, label):
@@ -299,16 +343,129 @@ class RedframeVideoDraftUI(RedframeImageUI):
         self.assert_target()
         snapshot = verify_saved(self.workspace, {node_id: expected})
         nodes = canvas_nodes(snapshot)
+        data = _draft_data(nodes[node_id], node_id)
         edges = [edge for edge in snapshot['edges'] if
                  (edge.get('source'), edge.get('sourceHandle'), edge.get('target'), edge.get('targetHandle'))
                  == (source_id, 'image', node_id, 'in')]
-        if len(edges) != 1 or nodes[node_id]['data'].get('outputs') or nodes[node_id]['data'].get('videoTask'):
-            raise ValueError(f'刷新后未确认唯一参考连线或草稿节点已有生成记录：{node_id}')
+        if len(edges) != 1:
+            raise ValueError(f'刷新后未确认唯一参考连线：{node_id}')
         actual, = self.workspace.digest_image_outputs([nodes[source_id]])
         if actual.get('sha256') != hashlib.sha256(Path(reference_path).read_bytes()).hexdigest():
             raise ValueError(f'刷新后的参考原件与本次上传不符：{source_id}')
-        return {'node_id': node_id, 'duration': nodes[node_id]['data']['duration'], 'source_id': source_id,
+        return {'node_id': node_id, 'duration': data['duration'], 'source_id': source_id,
                 'edge_id': edges[0]['id'], 'reference_sha256': actual['sha256']}
+
+
+def _check_linked_observation(graph, nodes, row, draft, direct_slots, models):
+    node_id = row['node_id']
+    observed = Counter((edge['source_node_id'], edge['source_port'], edge['target_node_id'], edge['target_port'])
+                       for edge in row['edges'])
+    actual = Counter((edge.get('source'), edge.get('sourceHandle'), edge.get('target'), edge.get('targetHandle'))
+                     for edge in graph['edges'] if edge.get('target') == node_id)
+    if observed != actual:
+        raise ValueError(f'{node_id} 连线回读与刷新的持久画布不符')
+    kinds = [ref['kind'] for ref in draft['reference_checks']]
+    prompt, parameters, mentions = _native_content(
+        node_id, nodes[node_id]['data'], row['ordered_media'], kinds, models)
+    actual_mentions = [(entry['node_id'], entry['media_id']) for entry in row['native_mentions']]
+    if (row['prompt'] != prompt or row['parameters'] != parameters
+            or actual_mentions != [(entry['node_id'], entry['media_id']) for entry in mentions]):
+        raise ValueError(f'{node_id} 正文、参数或原生引用与刷新的持久画布不符')
+    direct_media = [media for media, ref in zip(row['ordered_media'], draft['reference_checks'])
+                    if ref['canvas_binding']['mode'] == 'direct']
+    if (len(direct_media) != len(direct_slots)
+            or any(slot.get('status') != 200 or (media['node_id'], media['media_id'], media['sha256'])
+                   != (slot['source'], slot['media_id'], slot.get('sha256'))
+                   for media, slot in zip(direct_media, direct_slots))):
+        raise ValueError(f'{node_id} 直传槽原件与整批下载证据不符')
+    for slot, record in row.get('face_certifications', {}).items():
+        source = nodes[record['node_id']]['data']
+        port = draft['reference_checks'][int(slot) - 1]['canvas_binding']['source_port']
+        output = source.get('outputs', {}).get(port) or {}
+        source_url = (output.get('value') or {}).get('url')
+        if (source.get('faceCertification') != record['faceCertification']
+                or source_url != record['source_url']):
+            raise ValueError(f'{node_id} 源卡认证与刷新的持久画布不符')
+
+
+def run_new_draft_batch(project, plan, write, *, host_browser, check_layout, collect_linked=None):
+    """Preflight current project inputs, then write and read back in one session.
+
+    `write(ui, planned_draft)` returns its new native ID or the complete node
+    expected after save. It performs no refresh or generation.
+    `check_layout(ui, graph, segment_nodes)` measures the refreshed layout
+    and raises on a layout conflict.
+    When the plan has source-card slots, `collect_linked(ui, graph, segment_nodes,
+    linked_drafts, slots)` returns the linked rows from that same refresh, using
+    the already downloaded direct slots and actual source-card bytes, native
+    references, edges and certifications.
+    The two collectors are read-only.
+    """
+    started = time.monotonic()
+    drafts = _check_new_plan(plan, allow_linked=True)
+    linked = {segment: draft for segment, draft in drafts.items() if draft.get('realistic_face_slots')}
+    if linked and collect_linked is None:
+        raise ValueError('认证源卡槽须提供本批真实连线、原件和认证回读')
+    if any(draft.get('native_identity_mode', 'media_id') != 'media_id' for draft in drafts.values()):
+        raise ValueError('该批次入口只接收原生媒体 ID 回读')
+    preflight = validate_submission(plan, project, formal_delivery=True, preflight=True)
+    direct = [segment for segment in drafts if segment not in linked]
+    models = source_capabilities(project, plan)
+    target, project_id = plan['target_url'], plan['target_project_id']
+    segment_nodes, expected = {}, {}
+    tick = time.monotonic()
+    timings = {'plan_check_seconds': round(tick - started, 3)}
+    with open_workspace(host_browser, target, project_id) as workspace:
+        ui = RedframeVideoDraftUI(workspace.page, project_id, target, workspace=workspace)
+        ui.assert_target()
+        before = canvas_nodes(workspace.read_canvas())
+        next_tick = time.monotonic()
+        timings['open_seconds'] = round(next_tick - tick, 3)
+        for segment, draft in drafts.items():
+            saved = write(ui, deepcopy(draft))
+            node = saved if isinstance(saved, dict) else None
+            node_id = _ident(saved if node is None else node['id'])
+            if node_id in before or node_id in expected or node_id == draft['node_id']:
+                raise ValueError(f'{segment} 须绑定本批新建的唯一草稿节点 ID：{node_id}')
+            if node is not None:
+                _draft_data(node, node_id)
+            segment_nodes[segment] = node_id
+            expected[node_id] = node
+        tick = time.monotonic()
+        timings['write_seconds'] = round(tick - next_tick, 3)
+        workspace.page.reload(wait_until='domcontentloaded')
+        ui.assert_target()
+        graph = verify_saved(workspace, expected)
+        actual = canvas_nodes(graph)
+        for node_id in segment_nodes.values():
+            _draft_data(actual[node_id], node_id)
+        next_tick = time.monotonic()
+        timings['refresh_seconds'] = round(next_tick - tick, 3)
+        layout = check_layout(ui, graph, segment_nodes)
+        tick = time.monotonic()
+        timings['layout_seconds'] = round(tick - next_tick, 3)
+        slots = workspace.digest_slots([actual[node_id] for node_id in segment_nodes.values()])
+        nodes = [actual[segment_nodes[segment]] for segment in direct]
+        rows = {node['id']: native_draft(graph, node, slots[node['id']], models) for node in nodes}
+        if linked:
+            linked_rows = rows_by_id(collect_linked(ui, graph, segment_nodes, linked, slots))
+            if set(linked_rows) != {segment_nodes[segment] for segment in linked}:
+                raise ValueError('认证源卡回读须与本批实际连线草稿一一对应')
+            for segment, draft in linked.items():
+                node_id = segment_nodes[segment]
+                _check_linked_observation(graph, actual, linked_rows[node_id], draft, slots[node_id], models)
+            rows.update(linked_rows)
+        next_tick = time.monotonic()
+        timings['attachments_seconds'] = round(next_tick - tick, 3)
+    tick = time.monotonic()
+    timings['close_seconds'] = round(tick - next_tick, 3)
+    observed = dict(target_url=target, target_project_id=project_id, revision=plan['revision'],
+                    phase='after_refresh', drafts=[rows[node_id] for node_id in segment_nodes.values()])
+    result = _bind_new_drafts(project, plan, segment_nodes, observed)
+    ended = time.monotonic()
+    timings.update(formal_readback_seconds=round(ended - tick, 3),
+                   elapsed_seconds=round(ended - started, 3))
+    return {**result, 'preflight': preflight, 'segment_nodes': segment_nodes, 'layout': layout, 'timings': timings}
 
 
 def before_write_readback(graph, baseline, targets, models):

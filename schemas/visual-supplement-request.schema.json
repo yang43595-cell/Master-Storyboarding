@@ -7,8 +7,7 @@
   "additionalProperties": false,
   "required": [
     "schema_version", "project_id", "request_id", "status", "source_storyboard",
-    "source_shot_ids", "target_state", "must_appear", "must_not_appear",
-    "preserve", "existing_references", "decision", "max_images", "return_upstream"
+    "source_shot_ids", "decision", "max_images", "return_upstream"
   ],
   "properties": {
     "source_paths": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/pathString"}},
@@ -20,16 +19,53 @@
     "source_storyboard": {"$ref": "#/$defs/storyboardRef"},
     "source_shot_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/shotId"}},
     "gap": {"$ref": "#/$defs/gap"},
+    "visual_review": {
+      "type": "object", "additionalProperties": false,
+      "required": ["storyboard_sha256", "observation"],
+      "properties": {
+        "storyboard_sha256": {"$ref": "#/$defs/sha256"},
+        "observation": {"$ref": "#/$defs/nonblankString"}
+      }
+    },
+    "relationship_reference": {
+      "description": "指定本镜必用的既有空间关系图。新记录填写参考编号与字节指纹。",
+      "oneOf": [
+        {"const": true},
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["ref_id", "sha256"],
+          "properties": {
+            "ref_id": {"$ref": "#/$defs/nonblankString"},
+            "sha256": {"$ref": "#/$defs/sha256"}
+          }
+        }
+      ]
+    },
     "target_state": {"$ref": "#/$defs/nonEmptyString"},
     "must_appear": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/nonEmptyString"}},
     "must_not_appear": {"type": "array", "items": {"$ref": "#/$defs/nonEmptyString"}},
     "preserve": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/nonEmptyString"}},
     "existing_references": {"type": "array", "items": {"$ref": "#/$defs/reference"}},
-    "decision": {"enum": ["reuse_existing", "request_supplement", "return_upstream"]},
+    "decision": {"enum": ["reuse_existing", "request_supplement", "return_upstream", "no_supplement"]},
     "max_images": {"type": "integer", "minimum": 0, "maximum": 4},
     "return_upstream": {"$ref": "#/$defs/returnUpstream"}
   },
   "allOf": [
+    {
+      "if": {"properties": {"decision": {"const": "no_supplement"}}, "required": ["decision"]},
+      "then": {
+        "required": ["visual_review"],
+        "properties": {
+          "status": {"const": "not_needed"},
+          "max_images": {"const": 0},
+          "return_upstream": {"properties": {"required": {"const": false}}},
+          "existing_references": {"maxItems": 0},
+          "gap": false,
+          "relationship_reference": false
+        }
+      },
+      "else": {"required": ["target_state", "must_appear", "must_not_appear", "preserve", "existing_references"]}
+    },
     {
       "if": {"properties": {"decision": {"const": "reuse_existing"}}, "required": ["decision"]},
       "then": {"properties": {"existing_references": {"minItems": 1}, "max_images": {"const": 0}, "status": {"const": "not_needed"}, "return_upstream": {"properties": {"required": {"const": false}}}}}
@@ -45,6 +81,8 @@
   ],
   "$defs": {
     "nonEmptyString": {"type": "string", "minLength": 1},
+    "nonblankString": {"type": "string", "pattern": "\\S"},
+    "sha256": {"type": "string", "maxLength": 64, "pattern": "^[0-9a-f]{64}$"},
     "pathString": {"type": "string", "minLength": 3},
     "shotId": {"type": "string", "pattern": "^S[0-9]{2,}[A-Z]?-[0-9]{3,}$"},
     "storyboardRef": {

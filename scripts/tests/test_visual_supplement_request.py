@@ -14,6 +14,59 @@ def request():
             "must_not_appear":[], "preserve":["layout"], "existing_references":[{"kind":"confirmed_asset", "ref_id":"AST-BOX/state1", "path":"open.png", "coverage":"open box interior"}],
             "decision":"reuse_existing", "max_images":0, "return_upstream":{"required":False, "target":"none", "reason":""}}
 
+
+def no_supplement_request():
+    value = request()
+    for key in ('target_state', 'must_appear', 'must_not_appear', 'preserve', 'existing_references'):
+        value.pop(key)
+    value.update(decision='no_supplement', visual_review={
+        'storyboard_sha256': 'a' * 64,
+        'observation': 'The mirror view keeps the same seat and needs no additional image.',
+    })
+    return value
+
+
+def test_no_supplement_can_omit_image_fields_or_use_an_empty_reference_list():
+    value = no_supplement_request()
+    validator = Draft202012Validator(SCHEMA)
+    validator.validate(value)
+    value['existing_references'] = []
+    validator.validate(value)
+    value.pop('visual_review')
+    assert not validator.is_valid(value)
+
+
+@pytest.mark.parametrize('changes', [
+    {'status': 'candidate'},
+    {'max_images': 1},
+    {'return_upstream': {'required': True, 'target': 'storyboard-planner', 'reason': 'unresolved seat'}},
+    {'existing_references': request()['existing_references']},
+    {'relationship_reference': True},
+    {'gap': {'type': 'space', 'observed_evidence': 'seat is hidden',
+             'why_existing_is_insufficient': 'space has not been established',
+             'downstream_consequence': 'the position may drift'}},
+    {'visual_review': {'storyboard_sha256': 'a' * 64, 'observation': ' \t\n'}},
+    {'visual_review': {'storyboard_sha256': 'A' * 64, 'observation': 'checked'}},
+    {'visual_review': {'storyboard_sha256': 'a' * 64 + '\n', 'observation': 'checked'}},
+])
+def test_no_supplement_rejects_image_work_or_incomplete_review(changes):
+    assert not Draft202012Validator(SCHEMA).is_valid({**no_supplement_request(), **changes})
+
+
+@pytest.mark.parametrize(('relationship', 'valid'), [
+    (True, True),
+    ({'ref_id': 'AST-BOX/state1', 'sha256': 'a' * 64}, True),
+    (False, False),
+    ({'ref_id': 'AST-BOX/state1'}, False),
+    ({'ref_id': ' ', 'sha256': 'a' * 64}, False),
+    ({'ref_id': 'AST-BOX/state1', 'sha256': 'A' * 64}, False),
+])
+def test_relationship_reference_supports_legacy_flag_or_pinned_selection(relationship, valid):
+    value = request()
+    value['relationship_reference'] = relationship
+    assert Draft202012Validator(SCHEMA).is_valid(value) == valid
+
+
 def test_reuse_requires_coverage_but_not_gap():
     value=request(); Draft202012Validator(SCHEMA).validate(value)
     value["existing_references"]=[]
@@ -23,6 +76,7 @@ def test_supplement_requires_actual_gap_and_positive_count():
     value=request(); value.update(decision="request_supplement",status="candidate",max_images=1)
     assert list(Draft202012Validator(SCHEMA).iter_errors(value))
     value["gap"]={"type":"critical_state","observed_evidence":"closed reference only","why_existing_is_insufficient":"interior hidden","downstream_consequence":"interior may be invented"}
+    value["existing_references"] = []
     Draft202012Validator(SCHEMA).validate(value)
     value["max_images"]=0
     assert list(Draft202012Validator(SCHEMA).iter_errors(value))
@@ -48,7 +102,7 @@ def candidate_request(project, decision='return_upstream'):
     from test_candidate_test_mode import setup, add
     setup(project)
     add(project, 'ART-R03', 'storyboard.package', {'status': 'candidate', 'revision': 'R03'})
-    value = request()
+    value = no_supplement_request() if decision == 'no_supplement' else request()
     value['source_storyboard'].update(status='candidate', path='ART-R03.json')
     if decision == 'return_upstream':
         value.update(decision=decision, status='blocked', return_upstream={
@@ -71,7 +125,10 @@ def register_request(project, value, *, request_type='visual-supplement-request'
     return path
 
 
-@pytest.mark.parametrize('decision,status', [('return_upstream', 'blocked'), ('reuse_existing', 'not_needed'), ('request_supplement', 'candidate')])
+@pytest.mark.parametrize('decision,status', [
+    ('return_upstream', 'blocked'), ('reuse_existing', 'not_needed'),
+    ('request_supplement', 'candidate'), ('no_supplement', 'not_needed'),
+])
 def test_candidate_request_keeps_honest_business_outcome(tmp_path, decision, status):
     from scripts.core import artifacts, candidate_test
     from scripts.core.schema_contracts import validate_visual_supplement_request

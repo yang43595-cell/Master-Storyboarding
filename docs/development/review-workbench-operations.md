@@ -4,18 +4,9 @@
 
 ## 编导文本送审命令
 
-[review_text_cli.py](../../scripts/review_text_cli.py) 的 `publish` 子命令使用编导 `script` 文本和现有 Markdown 导出。先核本轮业务项目的送审范围。已有案例时从可信交接或工作台核对案例 ID 和网站项目 ID。新建时从创建回执核对这两个 ID。后续轮次沿同一项目身份检查，凭据参数只传本机文件路径。
+[review_text_cli.py](../../scripts/review_text_cli.py) 的 `publish` 一次完成编导稿校验、同版阅读稿、发布前核对、送审和网站状态回读。沿可信交接、工作台或原发布回执核项目 ID、案例 ID 和预期当前版本。原片对白先核来源和说话人，合格的原创或授权改写对白随整稿审核。
 
-先校验并生成只读阅读副本；该动作不读密钥、不联网。原片对白仍须完成来源和说话人核对。来源记录完整、说话人已核的作者新增和授权改编对白可以随整稿首次审核；命令列出等待整稿批准的 DLG，保留原 JSON 和对白证据原字节：
-
-```sh
-python scripts/review_text_cli.py prepare \
-  --project '<业务项目绝对路径>' \
-  --narrative '02_编导/R01_叙事包.json' \
-  --output '02_编导/R01_审核阅读稿.md'
-```
-
-需要新建案例时：
+需要新建案例时，沿已有授权执行 `create-case`，用返回的案例 ID 和网站项目 ID。
 
 ```sh
 python scripts/review_text_cli.py create-case \
@@ -24,30 +15,22 @@ python scripts/review_text_cli.py create-case \
   --receipt '00_项目管理/审核发送/创建案例.json'
 ```
 
-先把状态回执中的网站项目 ID、案例 ID 和当前版本核对到本轮实际项目，再用该回执发送同版投影。首次发布也要核对空 head。
+首次发布传 `--expected-head-version none`。修改后重发时传本次返修依据的准确网站版本。
 
 ```sh
-python scripts/review_text_cli.py status \
-  --project '<业务项目绝对路径>' --case-id '<真实案例ID>' \
-  --token-file '<本机凭据文件>' --receipt '00_项目管理/审核发送/R01_发布前状态.json'
-
 python scripts/review_text_cli.py publish \
   --project '<业务项目绝对路径>' --case-id '<真实案例ID>' \
-  --preflight '00_项目管理/审核发送/R01_发布前状态.json' \
+  --expected-project-id '<真实网站项目ID>' --expected-head-version none \
   --narrative '02_编导/R01_叙事包.json' --markdown '02_编导/R01_审核阅读稿.md' \
   --operation-id '<本次发布的UUID>' --token-file '<本机凭据文件>' \
   --receipt '00_项目管理/审核发送/R01_发布.json'
-
-python scripts/review_text_cli.py status \
-  --project '<业务项目绝对路径>' --case-id '<真实案例ID>' \
-  --token-file '<本机凭据文件>' --receipt '00_项目管理/审核发送/R01_版本回读.json'
 ```
 
-发布会重跑送审检查并精确比较 JSON 重导出的 Markdown 字节；隔离试验、已失效、有未决问题、正文漂移或输出路径越出项目时拒绝。候选送审不要求先登记为 current；以上命令不改业务 JSON、manifest、人工确认或项目流转。回执包含准确源路径／修订／hash、投影 hash、请求标识和原始返回；回执独占新建，不覆盖已有记录。使用[编导网站决定与采用](#编导网站决定与采用)的 `decision` 命令读取网站整稿通过后，才将同版确认为正式稿，并据此覆盖该版中仅待整稿批准的创作对白。
+同版阅读稿缺失就新建，已有文件须与本版 JSON 的投影逐字节匹配。只需本地阅读稿时用 `prepare --narrative <编导JSON> --output <阅读稿>`。已有单独状态回执时仍可传 `--preflight <状态回执>`，沿原来的发布前差异检查及独立 `status` 回读。
 
-同一操作的精确重试沿用原 `operationId`、案例、文件名、正文、用途和预读回执，另存新的发布回执。超时先核原操作和当前状态。若状态已前进，先到准确项目核查原提交是否已生效或已有其他版本，不用新预读或新 UUID 强行重发。改内容、文件名或用途时，在确认当前版本后另登记新操作。返修另存新 JSON 修订并重新导出。
+发布回执保留源稿修订和字节、阅读稿摘要、写前状态和实际发布响应。`readback.status=current` 表示当前版本、代数和网站项目均匹配。`historical` 表示网站已有更新版本，`unknown` 表示暂未读回准确状态，沿原发布回执查询。需要查看正文或标注时，沿回执中的案例和版本进入对应页面。正式采用等用户网站通过后沿[编导网站决定与采用](#编导网站决定与采用)办理。
 
-发布回包的 URL 可能先打开项目列表。进入本轮准确项目与版本后，实际读取正文及附录；项目总览、深链和状态响应均不能代替正文或审核决定。
+同一操作结果未知时先核原操作和当前状态。状态未变才用原 `operationId`、案例、文件名、正文和用途精确重试，`--preflight` 指向原发布回执或此前的独立状态回执，`--receipt` 使用新路径。状态已前进时先核清原发布结果，再决定是否处理新版。改内容、文件名或用途需新操作。
 
 ## 编导网站决定与采用
 

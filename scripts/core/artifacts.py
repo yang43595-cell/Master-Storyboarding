@@ -206,6 +206,45 @@ def _delegated_dialogue_passed(root, entry, state):
     return any(check["id"] == "CREATIVE-DIALOGUE" and check["result"] == "pass" for check in report["checks"])
 
 
+def _video_revision_visual_rows(root, payload, segments, prior, director, known_shots, state):
+    """Use only changed rows for the new visual check on a verified full revision."""
+    from .quality_evidence import source_shot_ids
+    from .revision_control import _generation_segments
+
+    baseline_path = project_path(root, prior.get("path_or_url", ""))
+    if (not baseline_path.is_relative_to(root) or baseline_path.suffix.lower() != ".json"
+            or not baseline_path.is_file() or prior.get("artifact_id") not in state["current_artifacts"]
+            or not artifact_is_adopted(prior, state, root)
+            or payload["source_storyboard"].get("sha256") != director["checksum"]):
+        return segments
+    try:
+        raw = baseline_path.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != prior.get("checksum"):
+            return segments
+        baseline = json.loads(raw.decode("utf-8"))
+        previous = _generation_segments(baseline)
+    except (OSError, ValueError):
+        return segments
+    if not previous or not isinstance(baseline.get("generation_segments"), list):
+        return segments
+
+    # Only the candidate identity, author self-check, and revision reconciliation
+    # may differ outside of the explicit generation rows.
+    ignored = {"generation_segments", "revision", "document", "self_check", "segment_reconciliation"}
+    before = {key: value for key, value in baseline.items() if key not in ignored}
+    after = {key: value for key, value in payload.items() if key not in ignored}
+    if sha256_json(before) != sha256_json(after):
+        return segments
+    if ([row["segment_id"] for row in previous] != [row["segment_id"] for row in segments]
+            or {shot for row in previous for shot in source_shot_ids(row)} != known_shots):
+        return segments
+    if any(source_shot_ids(old) != source_shot_ids(new)
+           or any(old.get(key) != new.get(key) for key in ("source_dialogue_ids", "source_paragraph_ids"))
+           for old, new in zip(previous, segments)):
+        return segments
+    return [new for old, new in zip(previous, segments) if sha256_json(old) != sha256_json(new)]
+
+
 def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
                                  manifest: dict[str, Any] | None = None, *, reading_existing: bool = False,
                                  approval_receipt: dict[str, Any] | None = None,
@@ -295,17 +334,36 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
         validate_story_sources(narrative, storyboard, project_root=root, narrative_path=narrative_path,
                                require_dialogue_evidence=True)
         from . import revision_control
+        from .quality_evidence import director_shot_audio, replay_source_audio, source_shot_ids
         segments = revision_control._generation_segments(payload)
         if segments is None:
             raise ValueError("正式视频提示词必须包含真实 generation_segments，材料分组不能代替生成段")
+        known_shots = {shot["shot_id"] for scene in storyboard.get("scenes", [])
+                       for shot in scene.get("shots", [])}
+        prior = [item for item in manifest.get("artifacts", [])
+                 if item.get("logical_id") == logical_id and item.get("status") == "current"]
+        if len(prior) > 1:
+            raise ValueError("视频提示词旧版不唯一；生成段续跑基线未知")
         if not reading_existing:
             from .asset_refs import resolve_final_images
             from .delivery_files import declared_input_roots, discover_dependencies
             from .prompt_body import submitted_body_issues, submitted_prompt_body
+            from .visual_readiness import require_visual_readiness
             scope = payload.get("scope")
             if (payload.get("production_blocked") is True
                     or isinstance(scope, dict) and scope.get("unwritten_shot_ids")):
                 raise ValueError("视频稿本轮范围仍有阻塞或未写镜号")
+            director = next(item for item in manifest["artifacts"]
+                            if item.get("logical_id") == "storyboard.package" and item.get("status") == "current")
+            visual_rows = segments
+            if (prior and entry.get("status") == "candidate" and entry.get("artifact_id") != prior[0]["artifact_id"]
+                    and entry.get("depends_on") == prior[0].get("depends_on")):
+                visual_rows = _video_revision_visual_rows(root, payload, segments, prior[0],
+                                                          director, known_shots, state)
+            if visual_rows:
+                require_visual_readiness(root, storyboard, director,
+                                         {shot for row in visual_rows for shot in source_shot_ids(row)},
+                                         rows=visual_rows, manifest=manifest)
             asset_references = []
             for row in segments:
                 if (row.get("production_blocked") is True or row.get("submit_ready") is False
@@ -329,17 +387,10 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
                 payload=payload, verify_hashes=True)
             if not dependencies["ok"]:
                 raise ValueError("视频稿输入不可用：" + "；".join(dependencies["errors"] + dependencies["uncheckable"]))
-        from .quality_evidence import director_shot_audio, replay_source_audio, source_shot_ids
-        known_shots = {shot["shot_id"] for scene in storyboard.get("scenes", [])
-                       for shot in scene.get("shots", [])}
         for row in segments:
             unknown = set(source_shot_ids(row)) - known_shots
             if unknown:
                 raise ValueError("视频来源镜号不属于准确已确认导演包：" + ", ".join(sorted(unknown)))
-        prior = [item for item in manifest.get("artifacts", [])
-                 if item.get("logical_id") == logical_id and item.get("status") == "current"]
-        if len(prior) > 1:
-            raise ValueError("视频提示词旧版不唯一；生成段续跑基线未知")
         if prior:
             revision_control._validate_segment_reconciliation(root, prior[0], payload)
         from .generation_boundaries import validate_generation_boundaries
@@ -490,7 +541,7 @@ def adopt_initial_agent_artifact(project_root: Path, artifact_id: str, report_pa
                                  *, expected_checksum: str | None = None) -> dict[str, Any]:
     """Adopt authorized downstream work without minting a human confirmation."""
     from .candidate_test import require_production
-    from .agent_acceptance import build_agent_acceptance, validate_agent_acceptance, skill_for_artifact
+    from .agent_acceptance import read_agent_self_check, validate_agent_acceptance, skill_for_artifact
     from . import revision_control
     root = Path(project_root).resolve()
     with project_lock(root):
@@ -514,8 +565,7 @@ def adopt_initial_agent_artifact(project_root: Path, artifact_id: str, report_pa
             raise ValueError("自主采用候选实际字节与单段预检来源的 sha256 不符")
         entry["checksum"] = actual
         state = load_project_state(root)
-        entry["agent_acceptance"] = build_agent_acceptance(root, entry, report_path, state=state)
-        report = validate_agent_acceptance(root, entry, state=state)
+        entry["agent_acceptance"], report = read_agent_self_check(root, entry, report_path, state=state)
         if validate_agent_submission(root, entry, manifest, report) != actual or digest(path) != actual:
             raise ValueError("候选在自主采用检查期间发生变化")
         validate_agent_acceptance(root, entry, state=state)
@@ -619,14 +669,14 @@ def unchanged_director_edges(project, manifest, state, baseline, replacement) ->
     return kept
 
 
-def asset_export_snapshot(project, entry, previous=None):
+def asset_export_snapshot(project, entry, previous=None, *, file_digest=None):
     """Read a registered export once per locked operation, bound to its exact entry."""
     from .asset_refs import registered_output_snapshot
 
     identity = (project.resolve(), *(entry.get(key) for key in ('artifact_id', 'path_or_url', 'checksum')))
     if previous is not None and previous[0] == identity:
         return previous
-    return identity, registered_output_snapshot(project, entry)
+    return identity, registered_output_snapshot(project, entry, file_digest=file_digest)
 
 
 def asset_output_impact(project, manifest, baseline, replacement):
@@ -796,7 +846,8 @@ def mark_impacted_artifacts_stale(
 
 
 @project_locked
-def promote_candidate(project_root: Path, logical_id: str, artifact_id: str, *, previous_asset_snapshot=None) -> PromotionReport:
+def promote_candidate(project_root: Path, logical_id: str, artifact_id: str, *,
+                      previous_asset_snapshot=None, file_digest=None) -> PromotionReport:
     """确认新候选产物：新版本设 current，同一 logical_id 的旧版本变 superseded。"""
     from .candidate_test import require_production
     require_production(project_root)
@@ -827,12 +878,14 @@ def promote_candidate(project_root: Path, logical_id: str, artifact_id: str, *, 
     # Compute on the adopted graph before replacement; existing manual callers
     # may already have invalidated it, so stale rows must remain idempotent.
     if logical_id == 'visual.asset.manifest':
-        if new_item.get('user_approved') is False:
-            from .asset_refs import registered_output_snapshot
-            if not _asset_review_receipt_valid(new_item, project_root) or not registered_output_snapshot(project_root, new_item):
-                raise ValueError('代审资产导出缺少有效的逐图采用记录')
-        baseline = asset_export_snapshot(project_root, active[0], previous_asset_snapshot)[1] if active else None
-        replacement = asset_export_snapshot(project_root, new_item)[1]
+        delegated = new_item.get('user_approved') is False
+        if delegated and not _asset_review_receipt_valid(new_item, project_root):
+            raise ValueError('代审资产导出缺少有效的逐图采用记录')
+        replacement = asset_export_snapshot(project_root, new_item, file_digest=file_digest)[1]
+        if delegated and not replacement:
+            raise ValueError('代审资产导出缺少有效的逐图采用记录')
+        baseline = (asset_export_snapshot(project_root, active[0], previous_asset_snapshot, file_digest=file_digest)[1]
+                    if active else None)
         unchanged_edges, segments = asset_output_impact(project_root, manifest, baseline, replacement)
         mark_impacted_artifacts_stale(manifest, {logical_id}, '采用了新的资产表',
                                      new_item.get('revision', ''), unchanged_edges=unchanged_edges,
@@ -911,14 +964,15 @@ def cache_file_digests(read_digest=None, *, check_for_changes=False):
     return file_digest
 
 
-def verify_image_confirmation(path, receipt):
+def verify_image_confirmation(path, receipt, *, file_digest=None):
     """Verify new byte-bound receipts; do not invent hashes for older approvals."""
     if "image_sha256" not in receipt:
         return
     expected = receipt["image_sha256"]
     path = Path(path)
+    file_digest = digest if file_digest is None else file_digest
     if (not isinstance(expected, str) or not re.fullmatch(r"[a-f0-9]{64}", expected)
-            or not path.is_file() or digest(path) != expected):
+            or not path.is_file() or file_digest(path) != expected):
         raise ValueError("已确认图片内容已变化或缺失，请保留原记录并重新选图确认：" + str(path))
 
 

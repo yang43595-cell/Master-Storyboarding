@@ -63,17 +63,28 @@ with image_browser_session(task_browser, project_id=project_id, canvas_url=canva
 
 从[我的画布](https://redframe-ai.xmpaohong.com:28888/#/projects)打开登记的项目，核对项目和子画布。新建按本轮授权执行，并登记实际地址和项目 ID。项目使用 Seedance 2.5，其余参数核对开工记录和当前原生控件。
 
+接手续做时，同时核本地现有交付记录及本轮准确节点的持久化数据。平台已有任务或成片时，把可核的任务、结果与文件路径写回原记录，分别说明草稿、平台任务和成片状态。把画布交给用户时附实际子画布地址、对应段号，并说明登录失效时可从[红帧入口](https://redframe-ai.xmpaohong.com:28888/#/projects)用本人账号重新进入。
+
+已有生成回执时，可先离线核对本次范围。交付回执或冻结交付提供段号与节点映射，`--receipt` 传原任务或生成回执，可重复。原交付记录已引用的结果回执用 `--recorded` 指定。归档迁移时可用 `--former-root` 传归档前准确的项目根，重算当前文件指纹。
+
+```sh
+python -m scripts.reconcile_video_delivery --project "<业务项目>" \
+  --delivery "06_视频/画布交付回执.json" --receipt "06_视频/生成回执.json"
+```
+
+按段号、节点和任务将待补结果写回原交付记录，注明实际已校验的文件。同段多版分别保留，已观察的历史结果与当前画布状态分别核对。缺回执、任务状态未知、身份冲突或本机文件未核的范围继续按原节点和任务核实。
+
 草稿按[红帧交付要求](../voiceover-to-video-script/references/seedance-delivery-package.md#红帧与小云雀的交付边界)和下文写入。首次写入、换写法或批量排版时做[代表段验收](../voiceover-to-video-script/references/seedance-delivery-package.md#红帧代表段验收)，含写实人脸时做[人脸认证](../voiceover-to-video-script/references/seedance-delivery-package.md#红帧草稿的人脸认证)。右侧对话中的 `@` 用于对话引用，视频草稿使用对应视频节点「生成提示词」主编辑器中的原生 `@`。默认交草稿。用户已明确授权生成时，沿[已授权生成的取证](../voiceover-to-video-script/references/seedance-delivery-package.md#已授权生成的取证)继续。
 
 ### 视频提交结果未知时续查
 
 利用已有写前节点回读，在原提交记录记准确 `node_id`、`previous_task_id`（已读到无旧任务时填 `null`）和带时区的 `click_intent_at`。提交后已取得 `task_id` 时按该 ID 续查。若没收到提交回执且还没有任务 ID，在同一个工作区会话调用 `workspace.read_video_submission(submission)`，直接从原节点的 `data.videoTask` 找任务 ID。它仅返回节点、阶段及可归属原节点的任务 ID。缺已知 ID 且没有写前记录、仍是旧任务、启动时间早于本次点击意图，或尚未读到任务时，保留 `submission_unknown`。发现同节点存在其他提交时保留归属未知。
 
-读到任务 ID 后沿此 ID 查询状态。`task_observed` 只记录原节点上的任务，完成状态、实际生成输入及成片分别按既有证据核验。老输出出现或接口超时均继续沿原任务处理，禁止以查询结果未知为由重新点击。
+读到任务 ID 后沿此 ID 查询状态。`task_observed` 只记录原节点上的任务，完成状态、实际生成输入及成片分别按既有证据核验。已完成的节点还可能只在 `outputs`、`draft` 或 `draftHistory` 留有结果。沿原节点核对这些字段与既有提交记录，确证的成片写回本轮交付记录，任务归属未知时仍保留未知。老输出出现或接口超时均继续沿原任务处理，禁止以查询结果未知为由重新点击。
 
 ### 成批写入和整节点回读
 
-红帧的上传、接线、调时长和刷新回读默认由主对话用 Playwright 完成。每批只开启一个独立后台 Edge。图片使用 `image_browser_session`，视频使用 `scripts.redframe_draft.open_workspace(task_browser, target_url, project_id)`。在同一个 `with` 块内复用 `workspace` 和页面，按目标节点、槽位、保存回执或控件的实际状态等待。整批保存并收口布局后，在同一会话刷新页面，回读持久化结果。已定稿草稿没有本轮修改授权时保持只读。正式写入消费同一份已采用源稿与冻结快照。先核[写前内容与快照](../voiceover-to-video-script/references/seedance-delivery-package.md#正式草稿写前检查)，按本页相应字段和操作执行。
+红帧的上传、接线、调时长和刷新回读默认由主对话用 Playwright 完成。每批只开启一个独立后台 Edge。图片使用 `image_browser_session`，视频使用 `scripts.redframe_draft.open_workspace(task_browser, target_url, project_id)`。在同一个 `with` 块内复用 `workspace` 和页面，按目标节点、槽位、保存回执或控件的实际状态等待。整批保存并收口布局后，在同一会话刷新页面，回读持久化结果。已定稿草稿没有本轮修改授权时保持只读。正式写入消费同一份已采用源稿与冻结快照。先核[写前内容与快照](../voiceover-to-video-script/references/seedance-delivery-package.md#正式草稿写前检查)。新建采用 `scripts.redframe_draft.run_new_draft_batch` 串起本页的原生写入、布局采集和正式回读；它管理整批的同一会话、刷新和槽位下载。现有节点按[更新前核已有编辑](#更新前核已有编辑)处理。
 
 需要在原画布做一次已授权的源卡连线测试时，可在该 `with` 块内这样执行。`source_xy` 和 `draft_xy` 取本轮实看确认的两个空位。已有准确测试草稿或素材卡时，传原节点 ID 并从缺失步骤续作。
 
@@ -91,10 +102,10 @@ with open_workspace(task_browser, target_url, project_id) as workspace:
 
 测试入口使用原生素材卡、端口和时长轨道。回执包含刷新后的草稿 ID、实际秒数、源卡/连线身份和参考原件哈希。正式草稿仍走下文的写前预检、原生正文引用和整节点验收。
 
-1. 上传前按[写实人脸认证](../voiceover-to-video-script/references/redframe-canvas-usage.md#写实人脸认证)确认首槽路径及可复用范围，再按[上传前计划](#新建直传计划和回读)冻结每槽方式。对实际目标和本批冻结 JSON 运行[正式预检 `--delivery --preflight`](../../docs/development/delivery-snapshot-checks.md#操作与采用)，按 `ok: true`、目标、段号、`frozen_sha256` 和 `face_source_card_slots` 执行。缺图的段记下具体依赖，等生图回执齐备后另批；素材齐备的独立段先写。更新走[最后可信基线和实际写前读数](#更新前核已有编辑)。
+1. 上传前按[写实人脸认证](../voiceover-to-video-script/references/redframe-canvas-usage.md#写实人脸认证)确认首槽路径及可复用范围，再按[上传前计划](#新建直传计划和回读)冻结每槽方式。批次入口在开浏览器前核当前正式采用、实际目标和本批冻结 JSON。需独立诊断或使用兼容路径时，沿[正式预检 `--delivery --preflight`](../../docs/development/delivery-snapshot-checks.md#操作与采用)查具体缺口。缺图的段记下具体依赖，等生图回执齐备后另批；素材齐备的独立段先写。更新走[最后可信基线和实际写前读数](#更新前核已有编辑)。
 2. 同一批次沿用同一份通过的预检。目标、正文、参数、镜号或引用来源／顺序变化时，只重跑受影响段。素材区复用已核卡片，缺需认证或审阅的卡片才按[素材区上传](../voiceover-to-video-script/references/redframe-canvas-usage.md#素材区上传)补。各草稿从自己的原生「上传参考」控件按序直传，每槽发起一次上传。已核实须用认证源卡的槽走[写实人脸认证与接线](../voiceover-to-video-script/references/redframe-canvas-usage.md#写实人脸认证)。用持久画布的槽数和有序槽 ID 确认就绪，再写原生 `@` 和参数。异常先读原节点，定位缺失槽后才补。后台命令有界续等，输出仅留段号、状态及异常，完成时交一次回执。
-3. 用 `verify_placements` 按实际尺寸一次核本批预留位置。新建时直接放入预留位置，平台落点偏移时才调整。每个新节点先以原节点 ID 确认持久化，再继续批次。节点未读到时按原 ID 只读回查。参数以工作区原生字段为准，按[整节点字段](#红帧整节点的源连线用途与时间)准备并核对。
-4. 保存收到回执后，用 `verify_saved` 核实际写入的节点内容，含正文、参数和原生槽。批内中间检查只读这些字段。发现旧值按原节点处理受影响段，布局有偏差先修正，然后在原后台会话刷新，核准确节点及最终布局并截图。布局收口后的同一次刷新采集整批受影响节点，用 `RedframeWorkspace.digest_slots` 一次读取当前各槽原件并计算 SHA-256。工具只重试暂态失败槽一次。已取得的成功槽沿本轮刷新证据交付；仍失败时留下准确槽和错误，后续定向补核该槽，发现原生槽身份、顺序或路径变动才重查其影响范围。首次直传用 [`finalize-new`](#新建直传计划和回读) 绑定实际槽并出正式回执。已有节点同值复测沿用[写前基线和当前读数](#更新前核已有编辑)，只在授权内保存一次。相同故障持续时保留原节点 ID、最后可信快照和最小复现。
+3. 用 `verify_placements` 按实际尺寸一次核本批预留位置。新建用 `RedframeVideoDraftUI.create_video_draft` 的「视频」菜单，保留旧节点、任务和成片，旧结果归位按[批量修改节点](../voiceover-to-video-script/references/redframe-canvas-usage.md#批量修改节点)执行。新节点持久化后核原生 ID 及 `videoTask`、`outputs`、`draft`、`draftHistory` 均无生成记录，再继续写入。节点未读到时按原 ID 只读回查。参数以工作区原生字段为准，按[整节点字段](#红帧整节点的源连线用途与时间)准备并核对。
+4. 保存收到回执后，用 `verify_saved` 核实际写入的节点内容，含正文、参数和原生槽。批内中间检查只读这些字段。发现旧值按原节点处理受影响段，布局有偏差先修正，然后在原后台会话刷新，核准确节点及最终布局并截图。布局收口后的同一次刷新采集整批受影响节点，用 `RedframeWorkspace.digest_slots` 一次读取当前各槽原件并计算 SHA-256。工具只重试暂态失败槽一次。已取得的成功槽沿本轮刷新证据交付；仍失败时留下准确槽和错误，后续定向补核该槽，发现原生槽身份、顺序或路径变动才重查其影响范围。批次入口一次绑定实际槽并返回冻结交付、实采回读和正式检查；已有同一批真实采集时可用 [`finalize-new`](#新建直传计划和回读) 独立收口。已有节点同值复测沿用[写前基线和当前读数](#更新前核已有编辑)，只在授权内保存一次。相同故障持续时保留原节点 ID、最后可信快照和最小复现。
 
 离线比较只消费实际采集值。原生引用字段、输入槽字节下载、持久化、认证传递和布局均需实际执行者在合法平台通路实测。常规直传用现有工作区采集；旧连线按[既有连线草稿](#既有连线草稿)。页面字段采集异常、接线或明确使用 port 模式时，再查[平台采集](#平台采集与离线合同的接缝)。交回差异、结论、截图及原生数据路径，协调方核当前回执与依赖。
 
@@ -133,6 +144,8 @@ python scripts/redframe_draft.py finalize-new --project <项目> --plan <写前�
 红帧新草稿默认用 `direct`，包括产品与动作参考。已核实须用认证源卡的槽按[写实人脸认证与接线](../voiceover-to-video-script/references/redframe-canvas-usage.md#写实人脸认证)执行。直传槽不填端口，整段均直传时 `edges` 和 `source_nodes` 均为空列表。真实商品识别仍靠已有产品参考登记与实看，不从名称推断。原片裁切与完整画幅按准确文件版本区分。已有实际连线时另读[既有连线草稿](#既有连线草稿)。
 
 逐镜时长从制作字段 `shot_durations` 读取，合计须等于 `parameters.duration`。新稿正文按镜头顺序写视听过程，省略逐镜秒数区间。画布正文须与采用稿一致。
+
+**2026-11-21 用户更正：视频节点的时长是拖动轨道，不是固定时间。** 生成面板里的 4/8/13/17/21/26/30 秒等只是轨道上的快捷档或显示值，实际时长由拖动时长轨道设置；必须按稿内准确秒数拖动，再以节点原生持久化字段回读核验，不能把 6/7/9 秒四舍五入成固定档位。
 
 保存刷新后，读回整个受影响节点的正文、参数、全部输入槽、正文原生实体、源节点 hash 和全部入边。回读 `source_nodes` / `edges` 不分列表顺序，其他原有有序媒体与正文比较保持严格。对比原始画布连线时按边 ID 核两端节点、端口及其他绑定字段。红帧会重算 `sourceX`、`sourceY`、`targetX`、`targetY`，这些字段用于绘制连线。布局验证另核实际画面。无正文引用槽只从预期 mentions 中排除，其来源、槽、用途及边继续检查。仅换两份素材也核完整节点。`canvas_input_checks` 给逐节点结论，技术通过仍不认证采集行为、媒体远端来源或视觉效果。
 

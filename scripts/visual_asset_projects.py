@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import copy
 from concurrent.futures import ThreadPoolExecutor
+from hashlib import sha256
+from io import BytesIO
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -137,6 +140,69 @@ def reference_evidence(project, requirements, assets=()):
             documents.append({'path': str(path.resolve()), 'content': path.read_text(encoding='utf-8-sig')})
     return {'reference_documents': documents, 'unavailable_references': unavailable,
             'reference_images': list(dict.fromkeys(images))}
+
+
+class _ExportImages:
+    """Share file checks and hold source bytes only until all copies are placed."""
+
+    def __init__(self):
+        self.snapshots = {}
+
+    @staticmethod
+    def _version(path):
+        stat = path.stat()
+        return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns
+
+    def _snapshot(self, path, *, keep_bytes=False):
+        path = Path(path)
+        version = self._version(path)
+        cached = self.snapshots.get(version)
+        if cached is not None and (not keep_bytes or cached[1] is not None):
+            return cached
+        raw = path.read_bytes()
+        if self._version(path) != version:
+            raise ValueError('导出期间图片文件已变化，请重新核对：' + str(path))
+        snapshot = (sha256(raw).hexdigest(), raw if keep_bytes else None)
+        self.snapshots[version] = snapshot
+        return snapshot
+
+    def digest(self, path):
+        return self._snapshot(path)[0]
+
+    def original(self, path):
+        return self._snapshot(path, keep_bytes=True)
+
+    def original_digest(self, path):
+        return self.original(path)[0]
+
+    def release_originals(self):
+        self.snapshots = {version: (checksum, None) for version, (checksum, _) in self.snapshots.items()}
+
+    def copy(self, source, target, *, expected=None):
+        """Write the reviewed bytes and compare with the actual destination."""
+        checksum, raw = self.original(source)
+        if expected is not None and checksum != expected:
+            raise ValueError('导出期间选图字节已变化，请重新核对：' + str(source))
+        try:
+            output = target.open('xb')
+        except FileExistsError:
+            return False, self.digest(target) == checksum
+        created = None
+        try:
+            with output:
+                created = os.fstat(output.fileno())
+                output.write(raw)
+            shutil.copystat(source, target)
+        except (OSError, KeyboardInterrupt):
+            if created is not None:
+                try:
+                    current = target.lstat()
+                    if (current.st_dev, current.st_ino) == (created.st_dev, created.st_ino):
+                        target.unlink()
+                except OSError:
+                    pass
+            raise
+        return True, self.digest(target) == checksum
 
 
 class Projects:
@@ -854,12 +920,12 @@ class Projects:
                     raise ValueError('场景来源须绑定当前AST中更早的环境制作项，不得前向、循环或跨类别引用')
                 pending.append(prior[1])
 
-    def validate_dependency_confirmation(self, job, step):
+    def validate_dependency_confirmation(self, job, step, *, file_digest=None):
         self.validate_scene_sources(job, step)
         receipt = step.get('project_confirmation') or {}
         if receipt:
-            asset = self.lib.get(step['selected'], require_file=True)
-            verify_image_confirmation(asset['original'], receipt)
+            asset = self.lib.get(step['selected'], require_file=True, file_digest=file_digest)
+            verify_image_confirmation(asset['original'], receipt, file_digest=file_digest)
             if receipt.get('agent_review'):
                 validate_asset_review(self.get(job['project_id'])['path'], receipt['agent_review'])
         if (receipt and step.get('kind') == '环境' and step['dependencies'] and
@@ -869,7 +935,7 @@ class Projects:
                 receipt['dependency_confirmations'] != self.dependency_basis(job, step)):
             raise ValueError('前置图片的确认版本已变化，请重新核对此制作项：' + step['name'])
 
-    def validate_export_basis(self, project):
+    def validate_export_basis(self, project, *, file_digest=None):
         for row in project['rows']:
             if not row.get('job_id'):
                 raise ValueError('尚未完成：' + row['requirement']['asset_id'])
@@ -881,14 +947,15 @@ class Projects:
                     continue
                 if step['status'] != 'confirmed' or not step.get('project_confirmation'):
                     raise ValueError('尚未逐项确认：' + job['ast_id'] + ' / ' + step['name'])
-                self.dependencies(job, step)
-                asset = self.lib.get(step['selected'], require_file=True)
+                self.dependencies(job, step, file_digest=file_digest)
+                asset = self.lib.get(step['selected'], require_file=True, file_digest=file_digest)
                 if asset.get('backup', {}).get('status') == 'saved':
-                    verify_image_confirmation(asset['backup']['path'], step['project_confirmation'])
+                    verify_image_confirmation(asset['backup']['path'], step['project_confirmation'],
+                                              file_digest=file_digest)
         if project.get('export'):
-            self.validate_export_snapshot(project, project['export'], complete=True)
+            self.validate_export_snapshot(project, project['export'], complete=True, file_digest=file_digest)
 
-    def validate_export_snapshot(self, project, exported, *, complete):
+    def validate_export_snapshot(self, project, exported, *, complete, file_digest=None):
         # The project copy is independent of the Vault original. Check its
         # own receipt too before returning a previously cached handoff.
         from core.asset_refs import _confirmed_output
@@ -925,28 +992,30 @@ class Projects:
             raise ValueError(' / '.join(problems))
         confirmation_cache = {}
         if (len(outputs) != exported['count'] or any(
-                _confirmed_output(root, ast_id, output, confirmation_cache=confirmation_cache) is None
+                _confirmed_output(root, ast_id, output, confirmation_cache=confirmation_cache,
+                                  file_digest=file_digest) is None
                 for ast_id, output in outputs)):
             raise ValueError('已导出确认图片内容已变化或缺失，请保留原记录并重新核对交接')
 
-    def dependencies(self, job, step):
-        self.validate_dependency_confirmation(job, step)
+    def dependencies(self, job, step, *, file_digest=None):
+        self.validate_dependency_confirmation(job, step, file_digest=file_digest)
         refs = []
         for key in step['dependencies']:
             prior = next(s for s in job['steps'] if s['key'] == key)
             if not prior.get('project_confirmation') or prior['status'] != 'confirmed':
                 raise ValueError('先在项目表中确认前置制作项：' + prior['name'])
-            self.validate_dependency_confirmation(job, prior)
-            asset = self.lib.get(prior['selected'], require_file=True)
+            self.validate_dependency_confirmation(job, prior, file_digest=file_digest)
+            asset = self.lib.get(prior['selected'], require_file=True, file_digest=file_digest)
             if asset.get('trashed_at'):
                 raise ValueError('前置图片已删除，请先恢复')
             refs.append(asset)
         return refs
 
-    def copy_to_project(self, project, asset):
+    def copy_to_project(self, project, asset, *, images=None, expected=None):
         """Give a task its own verified copy of a Vault-owned original."""
         source = Path(asset['original']).resolve()
-        verify_image_confirmation(source, asset.get('confirmation') or {})
+        verify_image_confirmation(source, asset.get('confirmation') or {},
+                                  file_digest=images.digest if images else None)
         vault_root = (self.lib.vault / '资产库').resolve()
         if asset.get('reference_only') and asset['provenance'].get('project_id') == project['id']:
             reference_root = Path(project['path']).resolve() / '04_资产' / '项目参考'
@@ -959,7 +1028,14 @@ class Projects:
         if not destination.resolve().is_relative_to(project_root):
             raise ValueError('项目取图目标路径越界')
         destination.parent.mkdir(parents=True, exist_ok=True)
-        if destination.exists():
+        if images is not None:
+            created, matches = images.copy(source, destination, expected=expected)
+            if not matches:
+                if created:
+                    destination.unlink()
+                    raise ValueError('复制到项目后的文件校验失败：' + asset['name'])
+                raise ValueError('项目参考副本与知识库原图不同，已保留两边文件：' + str(destination))
+        elif destination.exists():
             if not visual_asset_backup.same_file(source, destination):
                 raise ValueError('项目参考副本与知识库原图不同，已保留两边文件：' + str(destination))
         else:
@@ -1784,7 +1860,7 @@ class Projects:
             self._validate_reviewed_export(p, targets, self._same_scoped_asset)
             return self._export_locked({'project_id': p['id']}, chat_package=basis)
 
-    def _has_current_confirmation(self, project, job, step, asset):
+    def _has_current_confirmation(self, project, job, step, asset, *, file_digest=digest):
         receipt = step.get('project_confirmation') or {}
         if (step['status'] != 'confirmed' or not receipt.get('id') or receipt.get('source') != project['source']
                 or receipt.get('asset_id') != asset['id'] or not receipt.get('image_sha256')):
@@ -1794,7 +1870,7 @@ class Projects:
             validate_asset_review(project['path'], review)
             return self._same_scoped_asset(receipt, {**review, 'ast_id': job['ast_id'],
                 'output_id': step_output_id(step), 'asset_id': asset['id'], 'purpose': step['purpose'],
-                'image_sha256': digest(Path(asset['original']))}, project['source'])
+                'image_sha256': file_digest(Path(asset['original']))}, project['source'])
         chat = receipt.get('chat_confirmation')
         if chat:
             authorization = require_asset_workflow_authorization(project['path'], chat.get('authorization_id'))
@@ -1812,7 +1888,7 @@ class Projects:
                     and web.get('image_sha256') == receipt['image_sha256']
                     and (not binding or (binding.get('ast_id'), binding.get('output_id'),
                          binding.get('script_sha256')) == (job['ast_id'], step_output_id(step),
-                         digest(Path(project['source']['path'])))))
+                         file_digest(Path(project['source']['path'])))))
         return False
 
     def reopen(self, payload):
@@ -2049,8 +2125,9 @@ class Projects:
                       {'confirmation_channel': (chat_package or {}).get('channel', 'chat_confirmation'),
                        **({'authorization_id': chat_package['authorization_id']}
                           if chat_package and 'authorization_id' in chat_package else {})})
+            images = _ExportImages()
             if p.get('export'):
-                self.validate_export_basis(p)
+                self.validate_export_basis(p, file_digest=images.digest)
                 return {'adopted': True, 'complete': True, 'export': p['export'], **result} if scoped else p['export']
             if not scoped:
                 workflow, _ = asset_review_workflow(p['path'])
@@ -2070,6 +2147,7 @@ class Projects:
             if not p['rows'] and not requirements and not p['narrative'].get('_asset_choices'):
                 raise ValueError('项目没有资产需求，无需生成资产交接')
             collected = []
+            technical_checks = {}
             required_finals = character_output_contract(Path(p['path']), [row['requirement']['asset_id'] for row in p['rows']])
             for row in p['rows']:
                 if not row.get('job_id'):
@@ -2113,27 +2191,37 @@ class Projects:
                         current = self._current_workbench(p)
                         stamp = observed_stamp
                     _, step = self._project_step(current, job, i, required_finals=required_finals)
-                    self.dependencies(job, step)
                     asset = self.lib.get(step['selected'])
-                    if scoped and not self._has_current_confirmation(p, job, step, asset):
+                    source = Path(asset['original'])
+                    backed = asset.get('backup', {}).get('status') == 'saved'
+                    self.dependencies(job, step, file_digest=images.original_digest)
+                    if scoped and not self._has_current_confirmation(
+                            p, job, step, asset, file_digest=images.digest):
                         raise ValueError('选图没有对应的当前来源、用途或字节确认依据：' + ast + ' / ' + step_output_id(step))
                     if asset.get('reference_only'):
                         raise ValueError('项目参考图不能作为正式交付：' + step['name'])
-                    if asset.get('trashed_at') or not Path(asset['original']).is_file():
+                    if asset.get('trashed_at') or not source.is_file():
                         raise ValueError('选定图片已删除或丢失：' + step['name'])
-                    if asset.get('backup', {}).get('status') != 'saved':
+                    if not backed:
                         if scoped:
                             pending_backup_ids.add(asset['id'])
                             continue
                         raise ValueError('图片仍待知识库备份：' + asset['name'] + '。' +
                                          asset.get('backup', {}).get('message', '请先重试知识库备份'))
                     backup_path = Path(asset['backup']['path'])
-                    if not backup_path.is_file() or backup_path.read_bytes() != Path(asset['original']).read_bytes():
+                    checksum, raw = images.original(source)
+                    verify_image_confirmation(source, step['project_confirmation'], file_digest=images.digest)
+                    if not backup_path.is_file() or images.original_digest(backup_path) != checksum:
                         raise ValueError('知识库备份缺失或与选图不一致，请先修复备份')
-                    check = self.skill.technical_check(asset['original'], None if step['kind'] == '人物1x4' else step['ratio'])
+                    ratio = None if step['kind'] == '人物1x4' else step['ratio']
+                    key = (checksum, ratio)
+                    if key not in technical_checks:
+                        technical_checks[key] = self.skill.technical_check(BytesIO(raw), ratio)
+                    del raw
+                    check = technical_checks[key]
                     if not check['passed']:
                         raise ValueError('图片技术检查未通过')
-                    collected.append((row, job, step, asset, check))
+                    collected.append((row, job, step, asset, (check, checksum)))
             complete = not (missing_outputs or pending_backup_ids)
             if scoped:
                 result.update(adopted=bool(collected), complete=complete)
@@ -2148,7 +2236,7 @@ class Projects:
             previous_export = p.get('partial_export')
             if (previous_export and not p.get('export_pending') and not complete
                     and previous_export.get('items') == current_basis):
-                self.validate_export_snapshot(p, previous_export, complete=False)
+                self.validate_export_snapshot(p, previous_export, complete=False, file_digest=images.digest)
                 return {**result, 'export': {key: value for key, value in previous_export.items() if key != 'items'}}
 
             root = Path(p['path'])
@@ -2156,7 +2244,8 @@ class Projects:
             logical = 'visual.asset.manifest'
             previous = [a for a in manifest['artifacts'] if a.get('logical_id') == logical]
             active = [entry for entry in previous if entry.get('status') in {'current', 'stale'}]
-            previous_asset_snapshot = (asset_export_snapshot(root, active[0], previous_asset_snapshot)
+            previous_asset_snapshot = (asset_export_snapshot(root, active[0], previous_asset_snapshot,
+                                                             file_digest=images.digest)
                                        if len(active) == 1 else None)
             previous_outputs = (previous_asset_snapshot[1] or {}) if previous_asset_snapshot else {}
             if not p.get('export_pending'):
@@ -2234,7 +2323,7 @@ class Projects:
                           'candidates': [], 'confirmed_asset': None, 'confirmed_outputs': []}
                 if req['category'] == 'CHARACTER':
                     record['character_type'] = character_type(req)
-                for n, (_, job, step, asset, check) in enumerate(row_outputs, 1):
+                for n, (_, job, step, asset, (check, expected)) in enumerate(row_outputs, 1):
                     output_id = step_output_id(step)
                     original = previous_outputs.get((req['asset_id'], output_id))
                     confirmation = step['project_confirmation']
@@ -2247,20 +2336,19 @@ class Projects:
                         target = folder / req['asset_id'] / (req['asset_id'] + '_' + safe(step['key']) + '_' + safe(step['view']) + '_' + revision + Path(asset['original']).suffix.lower())
                     target.parent.mkdir(exist_ok=True)
                     source = Path(asset['original'])
-                    if target.exists() and target.read_bytes() != source.read_bytes():
-                        raise ValueError('导出目标已有不同图片，保留现场：' + str(target))
-                    if not target.exists():
-                        shutil.copy2(source, target)
-                    if source.read_bytes() != target.read_bytes():
+                    created, matches = images.copy(source, target, expected=expected)
+                    if not matches:
+                        if not created:
+                            raise ValueError('导出目标已有不同图片，保留现场：' + str(target))
                         raise ValueError('复制校验未通过')
-                    verify_image_confirmation(target, step['project_confirmation'])
+                    verify_image_confirmation(target, confirmation, file_digest=images.digest)
                     candidate_id = req['asset_id'] + f'-C{n:02d}'
                     confirm_ref = str(receipt_path) + '#' + step['project_confirmation']['id']
                     refs = list(dict.fromkeys(req['reference_paths'] + [self.lib.get(i)['original'] for i in step.get('reference_ids', [])]))
                     if not refs:
                         # The original import location is historical provenance;
                         # the verified project copy is the durable current input.
-                        refs = [str(self.copy_to_project(p, asset))]
+                        refs = [str(self.copy_to_project(p, asset, images=images, expected=expected))]
                     refs = list(dict.fromkeys(resolve_reference(root, r, manifest['artifacts'], load_project_state(root))
                                               for r in refs))
                     record['reference_paths'] = list(dict.fromkeys(record['reference_paths'] + refs))
@@ -2301,6 +2389,7 @@ class Projects:
                                             'prompt': step.get('prompt'), 'audit': step.get('audit'),
                                             'authorization': step.get('authorization'), 'provenance': provenance, 'backup': asset['backup']})
                 out['assets'].append(record)
+            images.release_originals()
             validate(out, 'visual-asset-manifest.schema.json')
             # Everything is copied and validated before updating the project's official state.
             self.fresh(p)
@@ -2362,7 +2451,8 @@ class Projects:
                 if delegated_export:
                     entry['asset_review_sha256'] = digest(receipt_path)
                 save_manifest(root, manifest)
-                promote_candidate(root, logical, artifact_id, previous_asset_snapshot=previous_asset_snapshot)
+                promote_candidate(root, logical, artifact_id, previous_asset_snapshot=previous_asset_snapshot,
+                                  file_digest=images.digest)
             # A current pending transaction already committed. Only complete its
             # missing state/cache/handoff; never rewrite its manifest or receipt.
             state = load_project_state(root)

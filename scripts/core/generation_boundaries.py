@@ -635,17 +635,44 @@ def diagnose_scene_state_plan(payload, storyboard, *, segment_ids=None, project=
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", type=Path, required=True)
-    parser.add_argument("--prompt", type=Path, required=True, help="视频稿，支持项目相对路径")
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--prompt", type=Path, help="视频稿，支持项目相对路径")
+    mode.add_argument("--shot-id", action="append", help="写词前核这些导演镜号的检查结论和视觉依赖，可重复")
     parser.add_argument("--storyboard", type=Path, required=True, help="准确导演稿，支持项目相对路径")
     parser.add_argument("--segment-id", action="append", help="仅自查所列生成段及稿内相邻接缝，可重复；省略时检查整稿")
     args = parser.parse_args(argv)
+    if args.shot_id and args.segment_id:
+        parser.error('--segment-id 只用于 --prompt')
     try:
+        from .artifacts import (_read_confirmed_package_source, load_manifest, project_path,
+                                validate_current_dependencies)
+        from .project_state import load_project_state
+        from .visual_readiness import require_visual_readiness
+        project = args.project.resolve()
+        board_path = project_path(project, str(args.storyboard))
+        manifest = load_manifest(project)
+        directors = [item for item in manifest['artifacts']
+                     if item.get('logical_id') == 'storyboard.package' and item.get('status') == 'current'
+                     and project_path(project, item['path_or_url']) == board_path]
+        if args.shot_id:
+            if len(directors) != 1:
+                raise ValueError('写词前核须使用准确已采用导演稿')
+            director = directors[0]
+            state = load_project_state(project)
+            storyboard, _ = _read_confirmed_package_source(
+                project, manifest, state,
+                {'revision': director['revision'], 'path': str(board_path), 'artifact_id': director['artifact_id']},
+                'storyboard.package')
+            validate_current_dependencies(director, manifest, state, project)
+            result = require_visual_readiness(project, storyboard, director, args.shot_id, manifest=manifest,
+                                              require_review=True)
+            print(json.dumps({"ok": True, **result}, ensure_ascii=False))
+            return 0
         prompt_path = (args.project / args.prompt).resolve()
         prompt_bytes = prompt_path.read_bytes()
         payload = json.loads(prompt_bytes.decode('utf-8-sig'))
-        storyboard = json.loads((args.project / args.storyboard).read_text(encoding="utf-8-sig"))
-        from .artifacts import load_manifest, project_path
-        sources = [entry for entry in load_manifest(args.project)['artifacts']
+        storyboard = json.loads(board_path.read_text(encoding="utf-8-sig"))
+        sources = [entry for entry in manifest['artifacts']
                    if entry.get('logical_id') == 'video.prompt'
                    and entry.get('status') in {'candidate', 'current'}
                    and project_path(args.project, entry.get('path_or_url', '')) == prompt_path]
@@ -659,9 +686,34 @@ def main(argv=None):
             source_artifact = {'artifact_id': entry['artifact_id'], 'revision': entry['revision'], 'sha256': actual}
         result = validate_generation_boundaries(payload, storyboard, args.project, review_segment_ids=args.segment_id,
                                                 source_artifact=source_artifact)
+        if len(directors) == 1:
+            rows = [row for row in _rows(payload) if not args.segment_id or row['segment_id'] in args.segment_id]
+            result['visual_readiness'] = require_visual_readiness(
+                project, storyboard, directors[0],
+                {shot for row in rows for shot in source_shot_ids(row)}, rows=rows, manifest=manifest)
         if (payload.get('scope') or {}).get('type') in {'full_local_authored', 'selected_ranges'}:
             from .delivery_files import declared_input_roots, discover_dependencies
-            dependencies = discover_dependencies(args.project, payload=payload,
+            dependency_payload = payload
+            if args.segment_id:
+                # Keep the document's shared inputs and files for the reviewed
+                # segments and their checked seams. Full adoption checks the full draft.
+                covered = set(result['checked_segment_ids'])
+                for previous, following in result['adjacent_boundaries_reviewed']:
+                    covered.update((previous, following))
+                dependency_payload = dict(payload)
+                if 'generation_segments' in payload:
+                    dependency_payload['generation_segments'] = [
+                        row for row in payload['generation_segments'] if row['segment_id'] in covered]
+                for container in ('creative_sections', 'independent_candidate_ranges'):
+                    if container not in payload:
+                        continue
+                    sections = []
+                    for section in payload[container]:
+                        rows = [row for row in section['generation_segments'] if row['segment_id'] in covered]
+                        if rows:
+                            sections.append({**section, 'generation_segments': rows})
+                    dependency_payload[container] = sections
+            dependencies = discover_dependencies(args.project, payload=dependency_payload,
                                                  input_roots=declared_input_roots(payload), verify_hashes=True)
             if not dependencies['ok']:
                 raise ValueError('视频稿输入不可用：' + '; '.join(dependencies['errors'] + dependencies['uncheckable']))

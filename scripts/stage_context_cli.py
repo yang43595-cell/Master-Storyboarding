@@ -650,7 +650,19 @@ def _handoff_revision_status(project: Path) -> tuple[dict[str, Any] | None | str
     return active_change, transaction_rows, blockers
 
 
-def _confirmed_handoff_inputs(project: Path, target_skill: str, *, state=None) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+def _handoff_inputs(project, state, target_skill, request=None, *, manifest=None):
+    if request is None:
+        return _confirmed_project_inputs(project, state, manifest=manifest)[1]
+    inputs = _request_input_versions(request)
+    snapshot = _input_snapshot(project, inputs, state, prefer_declared_artifacts=True,
+                               source_roles=_task_source_roles(target_skill, request))
+    selected = set(snapshot["selected_artifact_ids"])
+    if snapshot.get("artifact_scope") != "declared" or not selected:
+        raise StageContextError("定向交接须在本轮请求声明已选采用产物，或沿用普通交接")
+    return [fact["record"] for fact in snapshot["artifacts"] if fact["record"]["artifact_id"] in selected]
+
+
+def _confirmed_handoff_inputs(project: Path, target_skill: str, *, state=None, request=None) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     skill_path = ROOT / "skills" / target_skill / "SKILL.md"
     if not skill_path.is_file():
         raise StageContextError(f"目标 Skill 不存在：{target_skill}")
@@ -663,10 +675,10 @@ def _confirmed_handoff_inputs(project: Path, target_skill: str, *, state=None) -
     _, _, blockers = _handoff_revision_status(project)
     if blockers:
         raise StageContextError("正式交接被修订状态阻止：" + "；".join(blockers))
-    return _confirmed_project_inputs(project, state)
+    return state, _handoff_inputs(project, state, target_skill, request)
 
 
-def _first_director_handoff(project, state):
+def _first_director_handoff(project, state, request=None):
     receipts = state["user_confirmations"]
     manifest = load_manifest(project)
     if not receipts and not any(a.get("logical_id") == "narrative.package"
@@ -676,7 +688,7 @@ def _first_director_handoff(project, state):
     _, _, blockers = _handoff_revision_status(project)
     if blockers:
         raise StageContextError("正式交接被修订状态阻止：" + "；".join(blockers))
-    _, inputs = _confirmed_project_inputs(project, state, manifest=manifest)
+    inputs = _handoff_inputs(project, state, "storyboard-planner", request, manifest=manifest)
     for entry in inputs:
         if entry.get("logical_id") != "narrative.package":
             continue
@@ -1308,13 +1320,21 @@ def _input_snapshot(project: Path, inputs: dict[str, Any], state: dict[str, Any]
 def _task_source_roles(skill: str, request: dict[str, Any]) -> list[str]:
     """Include upstream packages that the selected phase uses by contract."""
     roles = []
-    if (skill == "asset-image-assistant" and request.get("image_targets")) or request.get("material_output_ids"):
+    if (skill == "storyboard-planner" or (skill == "asset-image-assistant" and request.get("image_targets"))
+            or request.get("material_output_ids")):
         roles.append("narrative.package")
     if skill == "storyboard-director" and (request.get("source_shot_ids") or request.get("supplement_request_paths")):
         roles.append("storyboard.package")
     if request.get("material_output_ids"):
         roles.append("visual.asset.manifest")
     return roles
+
+
+def _request_input_versions(request):
+    return _normalize_source_alias({
+        key: value for key, value in request.items()
+        if key.startswith("source_") or key in {"sources", "inputs", "material_output_ids", "supplement_request_paths"}
+    })
 
 
 def _recovery_check_text() -> str:
@@ -1888,10 +1908,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     delivery_contract = _delivery_contract(request)
     if testing and (delivery_contract["delivery_object"] == "submission" or request.get("generation_authorized")):
         raise StageContextError("候选测试只允许 plan/prompt，不允许生成提交")
-    input_versions = _normalize_source_alias({
-        key: value for key, value in request.items()
-        if key.startswith("source_") or key in {"sources", "inputs", "material_output_ids", "supplement_request_paths"}
-    })
+    input_versions = _request_input_versions(request)
     if product_pack:
         input_versions["product_reference_files"] = [product_pack["manifest_path"],
                                                      *(item["path"] for item in product_pack["references"])]
@@ -2093,8 +2110,8 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "- 上下文较长或压缩恢复后：重读根规则与当前 Skill；以下细则原文已不可用时重新读取。冻结与阅读记录不证明内容仍在上下文。",
         *(["- 本轮适用细则（准确版本已冻结在 task_basis.json）：",
            *[f"  - `{path}`" for path in rule_documents]] if rule_documents else []),
-        "- 执行分工：遵守根规则的干净上下文启动规则；新一轮编导等创作生产或实质重跑由全新专属生产 agent 执行，不继承长主会话；本轮执行者读取、准备、产出并自查。其他任务按根规则执行。",
-        "- 上下文边界：交接当前有效规则、原始素材、本轮约束与已确认决定及依据、现行版本、未决事项、范围和停止点；不得以摘要替代原片。已在本轮专属 agent 内的逐段推进和局部返修可继续；目标、来源或基线重大变化时新开，不按修订号机械重开。",
+        "- 执行分工：同一项目的编导、导演和视频提示词默认由当前制作执行者接续。按当前 Skill 核对输入，复用仍有效的原文、方法和参考核验。",
+        "- 实际换执行者时，交接本轮目标、范围、停止点、有效来源和准确修订、用户决定与未决项。接收者实读所需原件，再按本阶段入口继续。",
         f"- 等待及接收：执行前实读 `{ROOT / 'docs/rules/execution.md'}#等待与工具回传` 的宿主参数；沿原任务续等，完成后只交本轮身份、结论、差异及证据路径。原图由执行者实看，协调方按争议定向取图，不整份回传 JSON、日志或图组。",
         *([f"- 图片批次：`{_CONTEXT_ID.get()}`，本批冻结 {len(image_targets)} 个 image_targets；阶段负责人统筹整体方向、跨批连续性和正式交接，本批执行者读取真实参考、完成获准图片及实看自查。委派时只回传准确路径与检查摘要。批次目录不构成已生成、已检查、人工确认或正式采用。"] if image_targets is not None and _CONTEXT_ID.get() is not None else []),
         *([f"- 图片目标：本阶段请求冻结 {len(image_targets)} 个 image_targets；主对话直做批次沿用本阶段 task_basis，不另建批次目录，但仍须写回现有回执。"] if image_targets is not None and _CONTEXT_ID.get() is None else []),
@@ -2258,17 +2275,29 @@ def handoff(args: argparse.Namespace) -> dict[str, Any]:
         raise StageContextError("隔离候选交接不得登记生产阶段")
     if getattr(args, "receive_batch", False):
         return _receive_asset_batch(project, args, target_skill, from_skill)
-    asset_batch = _asset_batch_handoff(project, args, target_skill)
+    request_path = getattr(args, "request_json", None)
+    request = None
+    if request_path and target_skill in TASK_HANDOFF_SKILLS and not getattr(args, "batch_receipt", None):
+        if _test_request(args, project):
+            raise StageContextError("隔离候选交接沿已登记的候选输入")
+        request = _read_json(Path(request_path).expanduser().resolve(), default=None)
+        if not isinstance(request, dict) or not any(request.get(key) for key in (
+                "source_artifact_id", "source_artifact_ids", "source_shot_ids", "material_output_ids")):
+            raise StageContextError("定向交接须提供含选定来源范围的本轮请求")
+        asset_batch = None
+    else:
+        asset_batch = _asset_batch_handoff(project, args, target_skill)
     # Declared transitions share the project writer lock. Inspect revision facts
     # before any write or recovery can change them.
     can_register_transition = from_skill or (
         target_skill == "storyboard-planner" and not getattr(args, "candidate_test", False)
     )
     with file_lock(project / PROJECT_LOCK_RELATIVE) if can_register_transition else nullcontext():
-        return _write_handoff(args, project, target_skill, from_skill, authorization_id, asset_batch=asset_batch)
+        return _write_handoff(args, project, target_skill, from_skill, authorization_id, asset_batch=asset_batch,
+                              request=request)
 
 
-def _write_handoff(args, project, target_skill, from_skill, authorization_id, *, asset_batch=None):
+def _write_handoff(args, project, target_skill, from_skill, authorization_id, *, asset_batch=None, request=None):
     testing = _test_request(args, project)
     register_transition = False
     if testing:
@@ -2289,17 +2318,17 @@ def _write_handoff(args, project, target_skill, from_skill, authorization_id, *,
         _, _, blockers = _handoff_revision_status(project)
         if blockers:
             raise StageContextError("正式交接被修订状态阻止：" + "；".join(blockers))
-        state, inputs = _confirmed_project_inputs(project, state)
+        inputs = _handoff_inputs(project, state, target_skill, request)
         register_transition = (current, expected) != (from_skill, target_skill)
     else:
         state = _state(project)
         if (target_skill == "storyboard-planner" and state["project_status"] == "active"
                 and state["current_stage"] in ("", "creative-director") and state["next_stage"] in (None, "")):
-            inputs = _first_director_handoff(project, state)
+            inputs = _first_director_handoff(project, state, request)
             from_skill = "creative-director"
             register_transition = True
         else:
-            state, inputs = _confirmed_handoff_inputs(project, target_skill, state=state)
+            state, inputs = _confirmed_handoff_inputs(project, target_skill, state=state, request=request)
     current_stage = from_skill or str(state.get("current_stage") or "")
     if not current_stage:
         raise StageContextError("项目当前阶段为空，不能生成交接卡")
@@ -2332,7 +2361,7 @@ def _write_handoff(args, project, target_skill, from_skill, authorization_id, *,
     startup_requirement = (
         "- `voiceover-to-video-script` 直接按其 Skill 的原始资料读取例外建立本段输入范围；不生成或校验 stage_startup.md。"
         if target_skill == "voiceover-to-video-script" else
-        "- 按根规则为已授权的下一 Skill 建立执行者。统一入口在网站通过、编导整稿对话确认正式采用或有效自主采用后，按本轮范围继续；兼容人工流程沿其继续规则。创作新轮由专属生产 agent 准备并校验 stage_startup.md。"
+        "- 已解锁的范围由当前执行者按目标 Skill 接续，普通准备按 `prepare`、实读、`ensure-prepared` 办理。实际换执行者时沿本卡的身份继续。"
     )
     task_context = _CONTEXT_ID.get()
     lines.extend([
@@ -2352,9 +2381,9 @@ def _write_handoff(args, project, target_skill, from_skill, authorization_id, *,
         *([f"- 准备、读取登记、产前检查和需要的审核包沿本任务 `--context-id {task_context}`；使用原执行者和任务 ID。"]
           if task_context and target_skill in TASK_HANDOFF_SKILLS else []),
         "- 编导交接须实际读准确正文、核来源和本轮自查结论；关键发现及未核范围复用现有任务记录，程序 ok 不代表叙事充分。",
-        "- 创作新轮使用干净的专属执行者，同轮返修可续用。核对仓库、规则和执行环境。用户明确要求时才单独审核。",
+        "- 沿用同项目仍有效的已读原文和参考核验。新来源、新用途或版本变化时定向补核。用户明确要求时才单独审核。",
         "- 图片沿有效确认输出消费。同用途复用已有观察，版本或用途变化时定向实看。资产人审和下游补图自主采用各用原入口。",
-        ("- 只消费以上未确认候选及准确稳定 ID；不得读取旧案例答案，不得写入确认记录。" if testing else "- 只消费以上有效采用产物及其稳定 ID；不得读取旧生产对话或未列入启动包的历史内容。"),
+        ("- 只消费以上未确认候选及准确稳定 ID；不得读取旧案例答案，不得写入确认记录。" if testing else "- 使用以上有效采用产物及其稳定 ID，沿真实来源定位本阶段需要的原件。"),
         "- 本交接不等于下一阶段已启动，也不替代下一阶段的输入门禁。", "",
     ])
     if asset_batch:
@@ -2952,7 +2981,7 @@ def parser() -> argparse.ArgumentParser:
     handoff_cmd.add_argument("--stop-at", help="本轮完成条件与停止点，不能扩展已有授权")
     handoff_cmd.add_argument("--actor-id", help="普通编导或导演交接的实际接收执行者，与 --task-id 同用")
     handoff_cmd.add_argument("--task-id", help="接收方的稳定任务 ID，与 --actor-id 同用")
-    handoff_cmd.add_argument("--request-json", help="资产批次沿用含 image_targets 的现有请求")
+    handoff_cmd.add_argument("--request-json", help="普通编导或导演沿用声明来源范围的阶段请求；资产批次沿用含 image_targets 的请求")
     handoff_cmd.add_argument("--batch-receipt", help="本批实际实看回执的准确项目内路径")
     handoff_cmd.add_argument("--receive-batch", action="store_true", help="只读接收本批的紧凑结果，不更新交接或项目状态")
     for command in (start, gate, receipt, review, handoff_cmd):

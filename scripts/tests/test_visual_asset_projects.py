@@ -1,5 +1,6 @@
 """Project bridge acceptance checks using isolated project files and a fake Vault guard."""
 import copy
+from collections import Counter
 import json
 from pathlib import Path
 import subprocess
@@ -2044,6 +2045,69 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(read_snapshot.call_count, 2)
         self.assertEqual(result['revision'], pending['revision'])
         self.assertEqual(len(list((Path(self.p['path'])/'04_资产/母版').iterdir())), 1)
+
+    def test_export_reads_each_image_once_and_detects_changed_existing_copy(self):
+        self.prepare_export()
+        service = self.lib.projects
+        asset = self.lib.get(self.asset['id'])
+        alias = self.base / 'backup-alias.png'
+        alias.symlink_to(asset['original'])
+        asset['backup']['path'] = str(alias)
+        self.lib.save(asset)
+        reads = Counter()
+        read_bytes = Path.read_bytes
+
+        def count_image_reads(path):
+            if path.suffix == '.png':
+                reads[path.resolve()] += 1
+            return read_bytes(path)
+
+        request = {'project_id': self.p['id'], 'confirm': True}
+        with patch.object(Path, 'read_bytes', count_image_reads):
+            result = service.export(request)
+            self.assertEqual(len(reads), 7)  # Two originals and five delivered views.
+            self.assertEqual(set(reads.values()), {1})
+            reads.clear()
+            self.assertEqual(service.export(request), result)
+            self.assertEqual(len(reads), 7)
+            self.assertEqual(set(reads.values()), {1})
+
+        manifest = pmod.read(result['manifest'])
+        delivered = Path(manifest['assets'][0]['confirmed_outputs'][0]['path'])
+        replacement = b'a different file at the same delivery path'
+        delivered.write_bytes(replacement)
+        with self.assertRaisesRegex(ValueError, '已导出确认图片内容已变化'):
+            service.export(request)
+        self.assertEqual(delivered.read_bytes(), replacement)
+
+    def test_export_copy_error_is_retryable(self):
+        self.prepare_export()
+        service = self.lib.projects
+        request = {'project_id': self.p['id'], 'confirm': True}
+        with patch.object(pmod.shutil, 'copystat', side_effect=OSError('模拟复制中断')):
+            with self.assertRaisesRegex(OSError, '模拟复制中断'):
+                service.export(request)
+        pending = service.get(self.p['id'])['export_pending']
+        folder = Path(self.p['path']) / '04_资产/母版' / (pending['revision'] + '_' + pending['id'])
+        self.assertFalse(list(folder.rglob('*.png')))
+        self.assertEqual(service.export(request)['revision'], pending['revision'])
+
+    def test_export_does_not_copy_original_changed_after_technical_check(self):
+        self.prepare_export()
+        service = self.lib.projects
+        copy_original = pmod._ExportImages.copy
+
+        def swap_source_before_copy(images, source, target, **kwargs):
+            source.write_bytes(b'content changed after preflight')
+            return copy_original(images, source, target, **kwargs)
+
+        request = {'project_id': self.p['id'], 'confirm': True}
+        with patch.object(pmod._ExportImages, 'copy', swap_source_before_copy):
+            with self.assertRaisesRegex(ValueError, '导出期间选图字节已变化'):
+                service.export(request)
+        pending = service.get(self.p['id'])['export_pending']
+        folder = Path(self.p['path']) / '04_资产/母版' / (pending['revision'] + '_' + pending['id'])
+        self.assertFalse(list(folder.rglob('*.png')))
 
 
 if __name__ == '__main__':
