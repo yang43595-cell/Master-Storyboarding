@@ -17,6 +17,7 @@ import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterable
 from .character_assets import (character_type, uses_wardrobe, scoped_output_requirements,
                                validate_output_plan, final_output_problems)
 from .image_technical import character_board_image_problem
@@ -568,6 +569,34 @@ def current_narrative(root: Path) -> dict:
 
 def asset_index(asset_list: dict) -> dict[str, dict]:
     return {item["asset_id"]: item for item in asset_list["items"]}
+
+
+def director_location_readiness(root: Path, storyboard: dict, shot_ids: Iterable[str]) -> list[str]:
+    """Find missing master images for required locations in the requested shots."""
+    scope = set(shot_ids)
+    shots_by_asset: dict[str, list[str]] = {}
+    for scene in storyboard.get('scenes', []):
+        for shot in scene.get('shots', []):
+            shot_id = shot['shot_id']
+            if shot_id in scope:
+                for asset_id in shot.get('source_asset_requirement_ids', []):
+                    shots_by_asset.setdefault(asset_id, []).append(shot_id)
+    if not shots_by_asset:
+        return []
+
+    index = asset_index(load_asset_list(root))
+    problems = []
+    for asset_id, shots in shots_by_asset.items():
+        item = index.get(asset_id)
+        if item is None:
+            problems.append(f"{asset_id}（{', '.join(shots)}）：导演引用的需求不在当前资产清单")
+            continue
+        if item['state'] != 'needs_image' or item.get('category') != 'LOCATION':
+            continue
+        image = item.get('image', {})
+        if image.get('status') != 'confirmed' or not image.get('outputs'):
+            problems.append(f"{asset_id}（{item['name']}，{', '.join(shots)}）：缺可用的已确认母版图片")
+    return problems
 
 
 def _aliases(item: dict) -> list[str]:

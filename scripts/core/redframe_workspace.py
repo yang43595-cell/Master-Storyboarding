@@ -14,6 +14,7 @@ REDFRAME_ORIGIN = "https://redframe-ai.xmpaohong.com:28888"
 _CANVAS_FILE = "画布1.json"
 _RETRY_STATUSES = {408, 502, 503, 504}
 _ID = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
+_VIDEO_HISTORY_FIELDS = ('videoTask', 'draft', 'draftHistory', 'outputs')
 
 _WORKSPACE_REQUESTS = """async ({origin, directory, operation, payload, timeout, budget}) => {
   if (location.origin !== origin) return {error: 'wrong_origin'};
@@ -170,6 +171,22 @@ def _retryable(result):
 def _is_canvas(graph):
     return (isinstance(graph, dict) and graph.get('toonflowCanvas') is True
             and isinstance(graph.get('nodes'), list) and isinstance(graph.get('edges'), list))
+
+
+def video_generation_records(data):
+    return {key: data[key] for key in _VIDEO_HISTORY_FIELDS if data.get(key)}
+
+
+def _canvas_video_records(graph):
+    records = {}
+    for node in graph['nodes']:
+        if node.get('type') != 'remote-videoGenerationNode':
+            continue
+        node_id = node['id']
+        if node_id in records:
+            raise ValueError(f'画布包含重复视频节点 ID：{node_id}')
+        records[node_id] = video_generation_records(node['data'])
+    return {node_id: history for node_id, history in records.items() if history}
 
 
 class RedframeWorkspace:
@@ -339,9 +356,15 @@ class RedframeWorkspace:
         return _image_output_path(node)
 
     def write_canvas(self, expected_graph, next_graph):
-        """Check the current canvas, then send a single save within that page evaluation."""
+        """Preserve video results, then compare and save once within the page evaluation."""
         if not all(map(_is_canvas, (expected_graph, next_graph))):
             raise ValueError('expected a native Redframe canvas')
+        previous_records = _canvas_video_records(expected_graph)
+        next_records = _canvas_video_records(next_graph)
+        changed = sorted(node_id for node_id in previous_records.keys() | next_records.keys()
+                         if previous_records.get(node_id) != next_records.get(node_id))
+        if changed:
+            raise ValueError('批量保存会改变视频生成记录：' + ', '.join(changed))
         result, = self._request('write', {
             'path': _CANVAS_FILE, 'expected': expected_graph, 'graph': next_graph,
         }, 1, min(self.read_budget, self.timeout * 2))

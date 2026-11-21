@@ -672,6 +672,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             json_projections=projections)
     if not dependencies['ok']:
         raise ValueError('Dependency readiness failed: ' + '; '.join(dependencies['errors'] + dependencies['uncheckable']))
+    entries = {item['artifact_id']: item for item in manifest['artifacts']}
     reuse_source_review = False
     product_pack = None
     product_requirements = []
@@ -684,7 +685,6 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             from core.web_content import source_review_segments
             from core.prompt_body import submitted_prompt_body
             from core.product_reference_pack import resolve_product_pack, resolve_pack_media
-        entries = {item['artifact_id']: item for item in manifest['artifacts']}
         videos = [payload for ref, _, payload in scene_sources
                   if entries[ref['artifact_id']].get('logical_id') == 'video.prompt']
         boards = [payload for ref, _, payload in scene_sources
@@ -719,6 +719,21 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         frozen['drafts'], scene_sources, project, check_submitted_body=not private_preview,
         delivery_platform='redframe' if formal_redframe else None,
     ) or {}
+    if not private_preview:
+        try:
+            from .core.visual_readiness import require_visual_readiness
+        except ImportError:
+            from core.visual_readiness import require_visual_readiness
+        submitted_shots = {shot for row in drafts.values() for shot in source_shot_ids(row)}
+        for ref, _, payload in scene_sources:
+            source = entries[ref['artifact_id']]
+            if source.get('logical_id') != 'storyboard.package':
+                continue
+            shots = submitted_shots.intersection(
+                shot['shot_id'] for scene in payload['scenes'] for shot in scene['shots'])
+            if shots:
+                require_visual_readiness(project, payload, source, shots,
+                                         rows=drafts.values(), manifest=manifest)
     if set(contexts) != set(external):
         raise ValueError('partial delivery requires exact prior-node evidence for every source continuation')
     validation_rows, context_scopes = [], {}

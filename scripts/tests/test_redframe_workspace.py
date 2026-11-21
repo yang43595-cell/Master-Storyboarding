@@ -1,4 +1,5 @@
 import hashlib
+from copy import deepcopy
 import json
 import shutil
 import subprocess
@@ -200,6 +201,42 @@ def test_canvas_write_failure_is_not_replayed():
     assert error.value.status == 503
     assert [call['operation'] for call in page.calls] == ['write']
     assert page.calls[0]['payload'] == {'path': '画布1.json', 'expected': canvas, 'graph': canvas}
+
+
+@pytest.mark.parametrize('change', ['remove', 'replace', 'clear-history', 'copy'])
+def test_canvas_write_preserves_existing_video_generation_records(change):
+    old = {'id': 'old-video', 'type': 'remote-videoGenerationNode', 'data': {
+        'draftHistory': {'assets/old-video/video.mp4': {'taskId': 'provider-task'}},
+        'outputs': {},
+    }}
+    canvas = {'toonflowCanvas': True, 'nodes': [old], 'edges': []}
+    modified = deepcopy(canvas)
+    target = modified['nodes'][0]
+    if change == 'remove':
+        modified['nodes'] = []
+    elif change == 'replace':
+        target['type'] = 'remote-videoNode'
+    elif change == 'clear-history':
+        target['data']['draftHistory'] = {}
+    else:
+        modified['nodes'].append(dict(target, id='copied-video'))
+
+    page = PageReplies()
+    with pytest.raises(ValueError, match='生成记录'):
+        RedframeWorkspace(page, 'project').write_canvas(canvas, modified)
+    assert page.calls == []
+
+
+def test_canvas_write_renames_and_moves_generated_video_without_changing_history():
+    old = {'id': 'old-video', 'type': 'remote-videoGenerationNode', 'position': {'x': 0, 'y': 0},
+           'data': {'label': 'V01', 'outputs': {'video': {'value': {'url': 'assets/old-video/video.mp4'}}}}}
+    canvas = {'toonflowCanvas': True, 'nodes': [old], 'edges': []}
+    modified = deepcopy(canvas)
+    modified['nodes'][0]['position']['x'] = 200
+    modified['nodes'][0]['data']['label'] = 'V01 历史'
+    page = PageReplies({'results': [{'status': 200, 'error': None, 'phase': 'write'}]})
+    RedframeWorkspace(page, 'project').write_canvas(canvas, modified)
+    assert page.calls[0]['payload']['graph'] == modified
 
 
 def test_canvas_read_requires_persisted_graph_and_exact_origin():

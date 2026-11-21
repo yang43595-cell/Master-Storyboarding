@@ -206,6 +206,45 @@ def _delegated_dialogue_passed(root, entry, state):
     return any(check["id"] == "CREATIVE-DIALOGUE" and check["result"] == "pass" for check in report["checks"])
 
 
+def _video_revision_visual_rows(root, payload, segments, prior, director, known_shots, state):
+    """Use only changed rows for the new visual check on a verified full revision."""
+    from .quality_evidence import source_shot_ids
+    from .revision_control import _generation_segments
+
+    baseline_path = project_path(root, prior.get("path_or_url", ""))
+    if (not baseline_path.is_relative_to(root) or baseline_path.suffix.lower() != ".json"
+            or not baseline_path.is_file() or prior.get("artifact_id") not in state["current_artifacts"]
+            or not artifact_is_adopted(prior, state, root)
+            or payload["source_storyboard"].get("sha256") != director["checksum"]):
+        return segments
+    try:
+        raw = baseline_path.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != prior.get("checksum"):
+            return segments
+        baseline = json.loads(raw.decode("utf-8"))
+        previous = _generation_segments(baseline)
+    except (OSError, ValueError):
+        return segments
+    if not previous or not isinstance(baseline.get("generation_segments"), list):
+        return segments
+
+    # Only the candidate identity, author self-check, and revision reconciliation
+    # may differ outside of the explicit generation rows.
+    ignored = {"generation_segments", "revision", "document", "self_check", "segment_reconciliation"}
+    before = {key: value for key, value in baseline.items() if key not in ignored}
+    after = {key: value for key, value in payload.items() if key not in ignored}
+    if sha256_json(before) != sha256_json(after):
+        return segments
+    if ([row["segment_id"] for row in previous] != [row["segment_id"] for row in segments]
+            or {shot for row in previous for shot in source_shot_ids(row)} != known_shots):
+        return segments
+    if any(source_shot_ids(old) != source_shot_ids(new)
+           or any(old.get(key) != new.get(key) for key in ("source_dialogue_ids", "source_paragraph_ids"))
+           for old, new in zip(previous, segments)):
+        return segments
+    return [new for old, new in zip(previous, segments) if sha256_json(old) != sha256_json(new)]
+
+
 def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
                                  manifest: dict[str, Any] | None = None, *, reading_existing: bool = False,
                                  approval_receipt: dict[str, Any] | None = None,
@@ -295,17 +334,36 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
         validate_story_sources(narrative, storyboard, project_root=root, narrative_path=narrative_path,
                                require_dialogue_evidence=True)
         from . import revision_control
+        from .quality_evidence import director_shot_audio, replay_source_audio, source_shot_ids
         segments = revision_control._generation_segments(payload)
         if segments is None:
             raise ValueError("正式视频提示词必须包含真实 generation_segments，材料分组不能代替生成段")
+        known_shots = {shot["shot_id"] for scene in storyboard.get("scenes", [])
+                       for shot in scene.get("shots", [])}
+        prior = [item for item in manifest.get("artifacts", [])
+                 if item.get("logical_id") == logical_id and item.get("status") == "current"]
+        if len(prior) > 1:
+            raise ValueError("视频提示词旧版不唯一；生成段续跑基线未知")
         if not reading_existing:
             from .asset_refs import resolve_final_images
             from .delivery_files import declared_input_roots, discover_dependencies
             from .prompt_body import submitted_body_issues, submitted_prompt_body
+            from .visual_readiness import require_visual_readiness
             scope = payload.get("scope")
             if (payload.get("production_blocked") is True
                     or isinstance(scope, dict) and scope.get("unwritten_shot_ids")):
                 raise ValueError("视频稿本轮范围仍有阻塞或未写镜号")
+            director = next(item for item in manifest["artifacts"]
+                            if item.get("logical_id") == "storyboard.package" and item.get("status") == "current")
+            visual_rows = segments
+            if (prior and entry.get("status") == "candidate" and entry.get("artifact_id") != prior[0]["artifact_id"]
+                    and entry.get("depends_on") == prior[0].get("depends_on")):
+                visual_rows = _video_revision_visual_rows(root, payload, segments, prior[0],
+                                                          director, known_shots, state)
+            if visual_rows:
+                require_visual_readiness(root, storyboard, director,
+                                         {shot for row in visual_rows for shot in source_shot_ids(row)},
+                                         rows=visual_rows, manifest=manifest)
             asset_references = []
             for row in segments:
                 if (row.get("production_blocked") is True or row.get("submit_ready") is False
@@ -329,17 +387,10 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
                 payload=payload, verify_hashes=True)
             if not dependencies["ok"]:
                 raise ValueError("视频稿输入不可用：" + "；".join(dependencies["errors"] + dependencies["uncheckable"]))
-        from .quality_evidence import director_shot_audio, replay_source_audio, source_shot_ids
-        known_shots = {shot["shot_id"] for scene in storyboard.get("scenes", [])
-                       for shot in scene.get("shots", [])}
         for row in segments:
             unknown = set(source_shot_ids(row)) - known_shots
             if unknown:
                 raise ValueError("视频来源镜号不属于准确已确认导演包：" + ", ".join(sorted(unknown)))
-        prior = [item for item in manifest.get("artifacts", [])
-                 if item.get("logical_id") == logical_id and item.get("status") == "current"]
-        if len(prior) > 1:
-            raise ValueError("视频提示词旧版不唯一；生成段续跑基线未知")
         if prior:
             revision_control._validate_segment_reconciliation(root, prior[0], payload)
         from .generation_boundaries import validate_generation_boundaries
