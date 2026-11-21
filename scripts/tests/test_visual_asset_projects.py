@@ -2160,6 +2160,47 @@ class ProjectTests(unittest.TestCase):
         target = Path(manifest['assets'][1]['confirmed_outputs'][0]['path'])
         self.assertEqual(target.read_bytes(), approved)
 
+    def test_export_partial_copy_does_not_block_same_revision_retry(self):
+        self.prepare_export()
+        service = self.lib.projects
+        request = {'project_id': self.p['id'], 'confirm': True}
+        asset_root = Path(self.p['path']) / '04_资产/母版'
+        copy2 = pmod.shutil.copy2
+        written = []
+
+        def interrupt_second_copy(source, destination, *args, **kwargs):
+            path = Path(destination)
+            if path.is_relative_to(asset_root):
+                written.append(path)
+                if len(written) == 2:
+                    with Path(source).open('rb') as stream:
+                        path.write_bytes(stream.read(11))
+                    raise OSError('模拟写图中断')
+            return copy2(source, destination, *args, **kwargs)
+
+        with patch.object(pmod.shutil, 'copy2', side_effect=interrupt_second_copy):
+            with self.assertRaisesRegex(OSError, '模拟写图中断'):
+                service.export(request)
+        self.assertEqual(len(written), 2)
+        self.assertFalse(written[1].exists())
+        pending = service.get(self.p['id'])['export_pending']
+        folder = asset_root / (pending['revision'] + '_' + pending['id'])
+        first, = (path for path in folder.rglob('*') if path.is_file())
+        original_bytes = first.read_bytes()
+
+        result = service.export(request)
+        self.assertEqual(result['revision'], pending['revision'])
+        self.assertEqual(Path(result['folder']), folder)
+        self.assertEqual(result['count'], 5)
+        self.assertEqual(first.read_bytes(), original_bytes)
+        receipt = pmod.read(folder / '用户确认记录.json')
+        expected = {(item['ast_id'], item['output_id']): item['confirmation']['image_sha256']
+                    for item in receipt['items']}
+        manifest = pmod.read(result['manifest'])
+        actual = {(asset['asset_id'], output['output_id']): pmod.digest(Path(output['path']))
+                  for asset in manifest['assets'] for output in asset['confirmed_outputs']}
+        self.assertEqual(actual, expected)
+
     def test_export_rechecks_row_if_workbench_is_replaced_between_outputs(self):
         self.prepare_export()
         service = self.lib.projects
