@@ -2048,7 +2048,7 @@ class ProjectTests(unittest.TestCase):
         request = {'project_id': self.p['id'], 'confirm': True}
         asset = self.lib.get(self.asset['id'])
         original = Path(asset['original']).resolve()
-        backup = self.base / 'independent-scene-backup.png'
+        backup = (self.base / 'independent-scene-backup.png').resolve()
         backup.write_bytes(original.read_bytes())
         asset['backup']['path'] = str(backup)
         self.lib.save(asset)
