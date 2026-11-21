@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 from .schema_contracts import require_schema
@@ -932,15 +933,19 @@ SUBTITLE_REVIEW_DISCLOSURE = ("**硬字幕对白待整稿审核。** 以下台�
                               "没有人工听核或已核时码。")
 
 
-def render_markdown(package: dict, *, subtitle_review_ids=()) -> str:
+def render_markdown(package: dict, *, subtitle_review_ids=(), legacy_paragraph_headings=False) -> str:
     schema = ('narrative-package.schema.json' if 'story_paragraphs' in package
               else 'storyboard-package.schema.json')
     require_schema(package, schema, label='导出源')
     # Readable projection first; retain every original field in the technical appendix.
     reading = []
     if 'story_paragraphs' in package:
-        for paragraph in package['story_paragraphs']:
-            reading += ['## ' + paragraph['paragraph_id'], paragraph['text']]
+        paragraphs = package['story_paragraphs']
+        if legacy_paragraph_headings:
+            for paragraph in paragraphs:
+                reading += ['## ' + paragraph['paragraph_id'], paragraph['text']]
+        else:
+            reading = ['## 故事正文', *(paragraph['text'] for paragraph in paragraphs)]
         character_outputs = []
         for requirement in package['asset_requirements']:
             kind = requirement.get('character_output_kind')
@@ -971,6 +976,15 @@ def render_markdown(package: dict, *, subtitle_review_ids=()) -> str:
             + '\n\n'.join(reading) + '\n\n'
             + '## 完整结构化来源（只读技术附录）\n\n'
             + f"{fence}json\n{payload}\n{fence}\n")
+
+
+def narrative_review_projections(package: dict, *, subtitle_review_ids=()) -> Iterator[bytes]:
+    """Yield exact review file bytes for both layouts with LF or CRLF."""
+    for legacy_paragraph_headings in (False, True):
+        text = render_markdown(package, subtitle_review_ids=subtitle_review_ids,
+                               legacy_paragraph_headings=legacy_paragraph_headings)
+        yield text.encode('utf-8')
+        yield text.replace('\n', '\r\n').encode('utf-8')
 
 
 def export_markdown(package: dict, destination: Path, *, subtitle_review_ids=()) -> None:

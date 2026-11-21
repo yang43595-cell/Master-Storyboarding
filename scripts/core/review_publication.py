@@ -4,7 +4,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import tempfile
 from dataclasses import InitVar, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -95,7 +94,7 @@ class _VerifiedScriptApproval:
 
 def read_script_approval(project, publication, client, *, artifact_id, receipt_path):
     """Read through the production API, using the original publication as the local byte binding."""
-    from .story_sources import export_markdown, validate_story_sources
+    from .story_sources import narrative_review_projections, validate_story_sources
 
     if (client.base_url != DEFAULT_BASE_URL or publication.get("base_url") != DEFAULT_BASE_URL
             or publication.get("project_path") != str(project) or publication.get("command") != "publish"
@@ -111,19 +110,19 @@ def read_script_approval(project, publication, client, *, artifact_id, receipt_p
         raise ValueError("已送审编导稿的项目、修订或文件字节已变化")
     # The server version is its own content-model hash. Verify the local
     # publication's source and text bindings without replaying its write.
-    with tempfile.TemporaryDirectory(prefix=".review-adopt-", dir=project) as folder:
-        projection = Path(folder) / "reading.md"
-        subtitle_ids = source.get("awaiting_subtitle_approval_ids", [])
-        if subtitle_ids:
-            current = validate_story_sources(package, project_root=project, review_ready=True)
-            if subtitle_ids != current["awaiting_subtitle_approval_ids"]:
-                raise ValueError("硬字幕待审范围与发布回执不一致")
-        export_markdown(package, projection, subtitle_review_ids=subtitle_ids)
-        text = projection.read_bytes()
+    subtitle_ids = source.get("awaiting_subtitle_approval_ids", [])
+    if subtitle_ids:
+        current = validate_story_sources(package, project_root=project, review_ready=True)
+        if subtitle_ids != current["awaiting_subtitle_approval_ids"]:
+            raise ValueError("硬字幕待审范围与发布回执不一致")
     markdown, request = publication["markdown"], publication["request"]
-    sha256 = hashlib.sha256(text).hexdigest()
-    if (markdown["sha256"] != sha256 or request["text_sha256"] != sha256
-            or markdown["bytes"] != len(text) or request["text_bytes"] != len(text)):
+    projections = narrative_review_projections(package, subtitle_review_ids=subtitle_ids)
+    for projection in projections:
+        sha256 = hashlib.sha256(projection).hexdigest()
+        if (markdown["sha256"] == sha256 == request["text_sha256"]
+                and markdown["bytes"] == len(projection) == request["text_bytes"]):
+            break
+    else:
         raise ValueError("发布回执中的阅读稿与本版编导 JSON 不一致")
 
     decision = read_decision(client, publication)
@@ -168,22 +167,28 @@ class ChatScriptApproval:
         source_raw = source.read_bytes()
         if hashlib.sha256(raw).hexdigest() != proof['sha256'] or hashlib.sha256(source_raw).hexdigest() != sha256:
             raise ValueError('编导稿或对话审阅稿已偏离审阅时的文件字节')
-        from .story_sources import SUBTITLE_REVIEW_DISCLOSURE, render_markdown
+        from .story_sources import SUBTITLE_REVIEW_DISCLOSURE, narrative_review_projections
         actual = raw.decode('utf-8-sig').replace('\r\n', '\n')
         match = re.search(r'^' + re.escape(SUBTITLE_REVIEW_DISCLOSURE) + r'\n\n([^\n]+)\n\n', actual, re.M)
         ids = tuple(match[1].split('、')) if match else ()
         if not ids or len(set(ids)) != len(ids) or any(not re.fullmatch(r'DLG-[A-Z0-9-]+', ident) for ident in ids):
             raise ValueError('对话审阅稿缺硬字幕披露或准确对白 ID')
         package = json.loads(source_raw.decode('utf-8-sig'))
-        expected = render_markdown(package, subtitle_review_ids=ids)
         annex = '## 完整结构化来源（只读技术附录）\n'
-        body, _, source_appendix = expected.rpartition(annex)
         # Some exports add the environment table after the canonical reading body.
         actual_body, _, actual_appendix = actual.rpartition(annex)
-        extra = actual_body.removeprefix(body).lstrip('\n')
         env_heading = '## 环境资产需求\n\n'
-        extra_env = extra.startswith(env_heading) and '\n## ' not in extra[len(env_heading):]
-        if actual != expected and not (actual_body.startswith(body) and extra_env and actual_appendix == source_appendix):
+        for projection in narrative_review_projections(package, subtitle_review_ids=ids):
+            expected = projection.decode('utf-8').replace('\r\n', '\n')
+            if actual == expected:
+                break
+            body, _, source_appendix = expected.rpartition(annex)
+            if not actual_body.startswith(body) or actual_appendix != source_appendix:
+                continue
+            extra = actual_body.removeprefix(body).lstrip('\n')
+            if extra.startswith(env_heading) and '\n## ' not in extra[len(env_heading):]:
+                break
+        else:
             raise ValueError('对话审阅稿与本版 JSON 的阅读正文或技术附录不一致')
         return cls(project, artifact_id, str(source), revision, sha256, quote, at, reference,
                    reading.relative_to(project).as_posix(), proof['sha256'], ids)

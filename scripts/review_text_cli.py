@@ -10,7 +10,6 @@ import argparse
 import hashlib
 import json
 import sys
-import tempfile
 from io import BytesIO
 from pathlib import Path
 
@@ -22,7 +21,7 @@ try:
     from .core.io import project_lock, utc_now, write_json
     from .core.review_publication import (project_file as _path, read_decision, read_publication,
                                           read_script_approval, require_script_approval)
-    from .core.story_sources import export_markdown, validate_story_sources
+    from .core.story_sources import export_markdown, narrative_review_projections, validate_story_sources
     from .visual_asset_choices import image_work_items
     from .visual_asset_source import source_project
 except ImportError:  # direct execution
@@ -33,7 +32,7 @@ except ImportError:  # direct execution
     from core.io import project_lock, utc_now, write_json
     from core.review_publication import (project_file as _path, read_decision, read_publication,
                                          read_script_approval, require_script_approval)
-    from core.story_sources import export_markdown, validate_story_sources
+    from core.story_sources import export_markdown, narrative_review_projections, validate_story_sources
     from visual_asset_choices import image_work_items
     from visual_asset_source import source_project
 
@@ -82,11 +81,8 @@ def _source(project: Path, value: str | Path) -> tuple[dict, dict]:
 def _projection(project: Path, package: dict, value: str | Path, *, subtitle_review_ids=()) -> tuple[str, dict]:
     path = _path(project, value)
     raw = path.read_bytes()
-    with tempfile.TemporaryDirectory(prefix=".review-export-", dir=project) as folder:
-        expected = Path(folder) / "reading.md"
-        export_markdown(package, expected, subtitle_review_ids=subtitle_review_ids)
-        if raw != expected.read_bytes():
-            raise ValueError("Reading Markdown differs from this exact narrative JSON; export a new copy.")
+    if raw not in narrative_review_projections(package, subtitle_review_ids=subtitle_review_ids):
+        raise ValueError("Reading Markdown differs from this exact narrative JSON; export a new copy.")
     return raw.decode("utf-8"), _binding(project, path, raw)
 
 

@@ -93,6 +93,11 @@
 - **决定与边界**：直接核准确版本的叙事稿、已披露审阅稿和真实整稿通过回执，下游沿用同版范围。漏列、来源冲突或说话人未定位的条目仍处理。字幕依据保持未听核、未核时码。
 - **验证与依据**：实际 R02 的 38 条已只读对齐，本地回归覆盖漏列、正文不符和同版续用。下次整稿通过时查有无无依据的补问。见[对话采用](development/artifact-adoption.md#编导对话确认)和[确认测试](../scripts/tests/test_review_text_cli.py)。
 
+### 编导阅读稿按原故事顺序排段（2026-11-22）
+
+- 《老板娘 AI 酸》R01 的阅读稿在每个原文段落前自动加了 STP 标题。新读稿把原段落连续排在「故事正文」下，人物最终交付说明与结构化技术附录保留。既有网站送审稿、发布回执和对话审阅仍核对该版 JSON 与准确文件字节，兼容已编号版本及 LF、CRLF 写法。历史来源 Markdown 继续沿用原有编号解析。[导出](../scripts/core/story_sources.py) · [审核绑定](../scripts/core/review_publication.py)
+- 《老板娘 AI 酸》R01 只读回放确认 11 段正文顺序与字句完全一致，人物资产说明和技术附录逐字节一致，重现的旧编号稿与历史文件逐字节一致。本地测试覆盖新旧稿、两种换行、篡改正文或附录、未披露的对白和原审阅字节变更，368 项回归及 13 项子测试通过。[审核回归](../scripts/tests/test_review_text_cli.py)
+
 ### 导演先核连续原片，补图只处理实际缺口（2026-11-19）
 
 - **定位**：`storyboard-planner` 的「关键镜头的原片核对」、`stage_context_cli.py` 的 `_validate_redframe_supplement_targets`、`image_targets` / `supplement_request_paths`、`unchanged_director_edges`。
