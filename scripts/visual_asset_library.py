@@ -262,7 +262,7 @@ class Library:
             items = [json.loads(row[0]) for row in db.execute(f'SELECT data FROM {table} ORDER BY rowid DESC')]
             return [asset_record(item) for item in items] if table == 'assets' else [item for item in items if not item.get('record_deleted_at')]
 
-    def get(self, ident, table='assets', *, require_file=False):
+    def get(self, ident, table='assets', *, require_file=False, file_digest=None):
         assert table in {'assets', 'jobs'}
         with self.connect() as db:
             row = db.execute(f'SELECT data FROM {table} WHERE id=?', (ident,)).fetchone()
@@ -276,9 +276,11 @@ class Library:
             if require_file and item.get('file_error'):
                 raise ValueError(item['file_error'])
             if require_file:
-                verify_image_confirmation(item['original'], item.get('confirmation') or {})
+                verify_image_confirmation(item['original'], item.get('confirmation') or {},
+                                          file_digest=file_digest)
                 provenance = item.get('provenance') or {}
-                if provenance.get('external_generation') and digest(Path(item['original'])) != provenance.get('image_sha256'):
+                file_digest = digest if file_digest is None else file_digest
+                if provenance.get('external_generation') and file_digest(Path(item['original'])) != provenance.get('image_sha256'):
                     raise ValueError('外部生成来源绑定的图片内容已变化，请保留原记录并重新导入候选')
         return item
 

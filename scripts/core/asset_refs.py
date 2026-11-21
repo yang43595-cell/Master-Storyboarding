@@ -222,7 +222,7 @@ def legacy_prop_reuse_label(output: dict, receipt: dict) -> bool:
 
 
 def _confirmed_output(root: Path, asset_id: str, output: dict, *, confirmation_cache=None,
-                      display_label=False) -> dict | None:
+                      display_label=False, file_digest=None) -> dict | None:
     """Return one explicitly confirmed output, or None when its evidence is incomplete.
 
     Candidates are deliberately absent here.  A confirmation record can be concise, but
@@ -283,7 +283,7 @@ def _confirmed_output(root: Path, asset_id: str, output: dict, *, confirmation_c
             validate_asset_review(root, review)
         elif review:
             return None
-        verify_image_confirmation(image_path, image_receipt)
+        verify_image_confirmation(image_path, image_receipt, file_digest=file_digest)
         covered_states = output.get('covered_states')
         if covered_states is not None:
             if (not isinstance(covered_states, list) or not covered_states
@@ -318,7 +318,7 @@ def _confirmed_output(root: Path, asset_id: str, output: dict, *, confirmation_c
     }
 
 
-def registered_output_snapshot(root: Path, entry: dict) -> dict[tuple[str, str], dict] | None:
+def registered_output_snapshot(root: Path, entry: dict, *, file_digest=None) -> dict[tuple[str, str], dict] | None:
     """Read exact confirmed output identities from one byte-bound asset export."""
     if entry.get('logical_id') != 'visual.asset.manifest' or entry.get('type') != 'visual-asset-manifest':
         return None
@@ -336,7 +336,8 @@ def registered_output_snapshot(root: Path, entry: dict) -> dict[tuple[str, str],
                 return None
             for output in asset['confirmed_outputs']:
                 key = (asset['asset_id'], output['output_id'])
-                selected = _confirmed_output(root, key[0], output, confirmation_cache=confirmation_cache)
+                selected = _confirmed_output(root, key[0], output, confirmation_cache=confirmation_cache,
+                                             file_digest=file_digest)
                 if (key in outputs or not all(isinstance(value, str) and value for value in key)
                         or not selected or not selected.get('sha256')
                         or not Path(selected['path']).is_relative_to(root.resolve())):

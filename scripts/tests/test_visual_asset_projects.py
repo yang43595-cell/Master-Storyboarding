@@ -1,10 +1,15 @@
 """Project bridge acceptance checks using isolated project files and a fake Vault guard."""
+import builtins
+from collections import Counter
+from contextlib import contextmanager
 import copy
+import io
 import json
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import tracemalloc
 import unittest
 from unittest.mock import patch
 
@@ -16,6 +21,26 @@ import visual_asset_projects as pmod
 from core.artifacts import load_manifest
 from core.character_layout import character_layout_reference
 from core.project_state import new_project_state, write_project_state, load_project_state
+
+
+@contextmanager
+def image_reads(root):
+    root = root.resolve()
+    reads = Counter()
+
+    def count(open_file):
+        def open_image(path, mode='r', *args, **kwargs):
+            if isinstance(path, (str, Path)) and 'r' in mode:
+                image = Path(path)
+                if image.suffix.lower() == '.png':
+                    image = image.resolve()
+                    if image.is_relative_to(root):
+                        reads[image] += 1
+            return open_file(path, mode, *args, **kwargs)
+        return open_image
+
+    with patch.object(builtins, 'open', count(builtins.open)), patch.object(io, 'open', count(io.open)):
+        yield reads
 
 
 def fixture(base, *, product=False):
@@ -1856,6 +1881,9 @@ class ProjectTests(unittest.TestCase):
         self.assertTrue(partial['waiting_for_remaining_outputs'])
         self.assertEqual(partial['export']['count'], 1)
         self.assertEqual(require_final_images(root, [first_ast + '@' + first_key]), (True, []))
+        partial_manifest = Path(partial['export']['manifest'])
+        partial_receipt = partial_manifest.parent / '用户确认记录.json'
+        snapshots = {path: path.read_bytes() for path in (partial_manifest, partial_receipt)}
         self.assertEqual(service.apply_chat_confirmation(p['id'], authorization_id='FLOW-ASSET-TEST',
                                                          confirmation={'outputs': []}), partial)
         from core.asset_refs import resolve_final_images
@@ -1892,6 +1920,11 @@ class ProjectTests(unittest.TestCase):
                                         confirmation=confirmation)
         selected = self.lib.get(jobs[other_ast]['id'], 'jobs')['steps'][0]
         self.assertIsNone(selected['project_confirmation'])
+        with image_reads(self.base) as reads:
+            repeated = service.apply_chat_confirmation(p['id'], authorization_id='FLOW-ASSET-TEST',
+                                                       confirmation={'outputs': []})
+        self.assertEqual(repeated, partial)
+        self.assertEqual(reads[Path(distinct['original']).resolve()], 0)
         second_key = pmod.step_output_id(selected)
         scope = {'ast_id': other_ast, 'output_id': second_key, 'asset_id': distinct['id'],
                  'purpose': selected['purpose'], 'image_sha256': pmod.digest(Path(distinct['original']))}
@@ -1918,6 +1951,7 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual([item['confirmation']['chat_confirmation']['confirmation']['quote'] for item in receipts],
                          [confirmation['quote'], new_basis['quote']])
         self.assertEqual(self.lib.get(jobs[first_ast]['id'], 'jobs')['steps'][0], done)
+        self.assertEqual({path: path.read_bytes() for path in snapshots}, snapshots)
         entries = {item['artifact_id']: item for item in load_manifest(root)['artifacts']}
         self.assertEqual(entries['EXACT-A']['status'], 'current')
         self.assertEqual(entries['LEGACY-A']['status'], 'stale')
@@ -2008,6 +2042,165 @@ class ProjectTests(unittest.TestCase):
                 self.select_confirm(row['job'], i)
         self.backup()
 
+    def test_export_reuses_shared_image_checks_and_rechecks_existing_delivery(self):
+        self.prepare_export()
+        service = self.lib.projects
+        request = {'project_id': self.p['id'], 'confirm': True}
+        asset = self.lib.get(self.asset['id'])
+        original = Path(asset['original']).resolve()
+        backup = (self.base / 'independent-scene-backup.png').resolve()
+        backup.write_bytes(original.read_bytes())
+        asset['backup']['path'] = str(backup)
+        self.lib.save(asset)
+        with image_reads(self.base) as first_reads:
+            result = service.export(request)
+        with image_reads(self.base) as retry_reads:
+            self.assertEqual(service.export(request), result)
+
+        self.assertEqual(result['count'], 5)
+        # Four scene views share one source and backup. Allow a source
+        # read for each new copy plus shared checks and decoding.
+        self.assertGreater(first_reads[original], 0, first_reads)
+        self.assertLessEqual(first_reads[original], 8, first_reads)
+        self.assertEqual(first_reads[backup], 1, first_reads)
+        self.assertEqual(retry_reads[original], 1, retry_reads)
+        self.assertEqual(retry_reads[backup], 1, retry_reads)
+
+        manifest = pmod.read(result['manifest'])
+        delivered = Path(manifest['assets'][0]['confirmed_outputs'][0]['path'])
+        replacement = b'a different file at the same delivery path'
+        delivered.write_bytes(replacement)
+        with self.assertRaisesRegex(ValueError, '已导出确认图片内容已变化'):
+            service.export(request)
+        self.assertEqual(delivered.read_bytes(), replacement)
+
+    def test_export_large_distinct_batch_does_not_buffer_all_source_images(self):
+        service = self.lib.projects
+        project = service.get(self.p['id'])
+        plan = plan_result()
+        first_prop = plan['rows'][1]['outputs'][0]
+        plan['rows'][1]['outputs'] = [{**first_prop, 'key': f'prop{i}'} for i in range(8)]
+        service.apply_plan(project, project['rows'], plan, {})
+
+        expected = {}
+        total_bytes = 0
+        for row in service.detail(self.p['id'])['rows']:
+            job = row['job']
+            for index, step in enumerate(job['steps']):
+                path = self.base / f"{job['ast_id']}-{step['key']}.png"
+                canvas = (400, 300) if step['kind'] == '环境' else (1600, 900)
+                Image.new('RGB', canvas, (index + 1, 20, 40)).save(path)
+                # Trailing bytes enlarge the physical input without making
+                # the generated, deterministic test image expensive to decode.
+                with path.open('ab') as stream:
+                    for _ in range(48):
+                        stream.write(b'x' * (64 * 1024))
+                asset, _ = self.lib.import_file(path, category='场景' if step['kind'] == '环境' else '物品')
+                service.select({'job_id': job['id'], 'index': index, 'asset_id': asset['id']})
+                service.confirm({'job_id': job['id'], 'index': index, 'confirm': True})
+                expected[(job['ast_id'], pmod.step_output_id(step))] = pmod.digest(path)
+                total_bytes += path.stat().st_size
+        self.backup()
+
+        self.assertEqual(len(set(expected.values())), 12)
+        tracing = tracemalloc.is_tracing()
+        if not tracing:
+            tracemalloc.start()
+        try:
+            current, _ = tracemalloc.get_traced_memory()
+            tracemalloc.reset_peak()
+            result = service.export({'project_id': self.p['id'], 'confirm': True})
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            if not tracing:
+                tracemalloc.stop()
+
+        self.assertEqual(result['count'], len(expected))
+        manifest = pmod.read(result['manifest'])
+        actual = {(asset['asset_id'], output['output_id']): pmod.digest(Path(output['path']))
+                  for asset in manifest['assets'] for output in asset['confirmed_outputs']}
+        self.assertEqual(actual, expected)
+        self.assertLess(peak - current, total_bytes)
+
+    def test_export_rechecks_source_replaced_after_technical_check(self):
+        self.prepare_export()
+        service = self.lib.projects
+        step = self.job(1)['steps'][0]
+        source = Path(self.lib.get(step['selected'])['original'])
+        approved = source.read_bytes()
+        replacement = b'bytes replaced after reading the approved image'
+        check = service.skill.technical_check
+        replaced = False
+
+        def replace_after_check(path, ratio):
+            nonlocal replaced
+            result = check(path, ratio)
+            if ratio == step['ratio'] and not replaced:
+                source.write_bytes(replacement)
+                replaced = True
+            return result
+
+        with patch.object(service.skill, 'technical_check', side_effect=replace_after_check):
+            with self.assertRaisesRegex(ValueError, '已变化|不一致|校验未通过'):
+                service.export({'project_id': self.p['id'], 'confirm': True})
+        self.assertTrue(replaced)
+        self.assertEqual(source.read_bytes(), replacement)
+        project = service.get(self.p['id'])
+        self.assertNotIn('export', project)
+        root = Path(project['path'])
+        self.assertFalse(any(entry['logical_id'] == 'visual.asset.manifest' and entry['status'] == 'current'
+                             for entry in load_manifest(root)['artifacts']))
+        self.assertFalse(any(path.read_bytes() == replacement
+                             for path in (root / '04_资产/母版').rglob('*.png')))
+        source.write_bytes(approved)
+        result = service.export({'project_id': self.p['id'], 'confirm': True})
+        if pending := project.get('export_pending'):
+            self.assertEqual(result['revision'], pending['revision'])
+        manifest = pmod.read(result['manifest'])
+        target = Path(manifest['assets'][1]['confirmed_outputs'][0]['path'])
+        self.assertEqual(target.read_bytes(), approved)
+
+    def test_export_partial_copy_does_not_block_same_revision_retry(self):
+        self.prepare_export()
+        service = self.lib.projects
+        request = {'project_id': self.p['id'], 'confirm': True}
+        asset_root = Path(self.p['path']) / '04_资产/母版'
+        copy2 = pmod.shutil.copy2
+        written = []
+
+        def interrupt_second_copy(source, destination, *args, **kwargs):
+            path = Path(destination)
+            if path.is_relative_to(asset_root):
+                written.append(path)
+                if len(written) == 2:
+                    with Path(source).open('rb') as stream:
+                        path.write_bytes(stream.read(11))
+                    raise OSError('模拟写图中断')
+            return copy2(source, destination, *args, **kwargs)
+
+        with patch.object(pmod.shutil, 'copy2', side_effect=interrupt_second_copy):
+            with self.assertRaisesRegex(OSError, '模拟写图中断'):
+                service.export(request)
+        self.assertEqual(len(written), 2)
+        self.assertFalse(written[1].exists())
+        pending = service.get(self.p['id'])['export_pending']
+        folder = asset_root / (pending['revision'] + '_' + pending['id'])
+        first, = (path for path in folder.rglob('*') if path.is_file())
+        original_bytes = first.read_bytes()
+
+        result = service.export(request)
+        self.assertEqual(result['revision'], pending['revision'])
+        self.assertEqual(Path(result['folder']), folder)
+        self.assertEqual(result['count'], 5)
+        self.assertEqual(first.read_bytes(), original_bytes)
+        receipt = pmod.read(folder / '用户确认记录.json')
+        expected = {(item['ast_id'], item['output_id']): item['confirmation']['image_sha256']
+                    for item in receipt['items']}
+        manifest = pmod.read(result['manifest'])
+        actual = {(asset['asset_id'], output['output_id']): pmod.digest(Path(output['path']))
+                  for asset in manifest['assets'] for output in asset['confirmed_outputs']}
+        self.assertEqual(actual, expected)
+
     def test_export_rechecks_row_if_workbench_is_replaced_between_outputs(self):
         self.prepare_export()
         service = self.lib.projects
@@ -2038,12 +2231,17 @@ class ProjectTests(unittest.TestCase):
             with self.assertRaises(OSError):
                 self.lib.projects.export({'project_id': self.p['id'], 'confirm': True})
         pending = self.lib.projects.get(self.p['id'])['export_pending']
+        asset_root = Path(self.p['path']) / '04_资产/母版'
+        folder = asset_root / (pending['revision'] + '_' + pending['id'])
+        copies = {path: pmod.digest(path) for path in folder.rglob('*.png')}
+        self.assertEqual(len(copies), 5)
         with patch.object(self.lib.projects, 'get', wraps=self.lib.projects.get) as read_snapshot:
             result = self.lib.projects.export({'project_id': self.p['id'], 'confirm': True})
         self.assertEqual(result['count'], 5)
         self.assertEqual(read_snapshot.call_count, 2)
         self.assertEqual(result['revision'], pending['revision'])
-        self.assertEqual(len(list((Path(self.p['path'])/'04_资产/母版').iterdir())), 1)
+        self.assertEqual(list(asset_root.iterdir()), [folder])
+        self.assertEqual({path: pmod.digest(path) for path in folder.rglob('*.png')}, copies)
 
 
 if __name__ == '__main__':
