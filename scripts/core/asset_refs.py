@@ -387,21 +387,29 @@ def _legacy_confirmed_output(root: Path, asset: dict, confirmation_cache: dict) 
     }
 
 
-def confirmed_images(root: Path) -> dict[str, dict]:
+def confirmed_images(root: Path, *, requests: Iterable[str] | None = None) -> dict[str, dict]:
     """Read current, explicitly confirmed outputs from the newest asset manifest.
 
     ``candidates`` are production history, not approved material.  Likewise a
     replacement frame is scoped by the manifest output that names it; it must not
     be appended to unrelated assets merely because the record shares a folder.
     Registered manifests must still be current and confirmed.  Unregistered
-    legacy manifests retain their per-output confirmation compatibility.
+    legacy manifests retain their per-output confirmation compatibility. A bare
+    AST checks all of its outputs, while AST@output_id checks the named output.
     """
+    scope: dict[str, set[str] | None] = {}
+    if requests is not None:
+        for request in requests:
+            asset_id, separator, output_id = request.partition("@")
+            if not separator:
+                scope[asset_id] = None
+            elif (output_ids := scope.setdefault(asset_id, set())) is not None:
+                output_ids.add(output_id)
+
     master = root / MASTER_DIR
-    result: dict[str, dict] = {}
     if not master.is_dir():
-        return result
+        return {}
     registrations: dict[Path, list[dict]] = {}
-    confirmation_cache = {}
     for entry in load_manifest(root).get("artifacts", []):
         path_text = entry.get("path_or_url")
         if isinstance(path_text, str) and path_text:
@@ -414,6 +422,7 @@ def confirmed_images(root: Path) -> dict[str, dict]:
                 # Stop before merging, rather than reviving an earlier legacy image.
                 raise ValueError("已登记资产导出清单内容已变化或缺失，请重新核对：" + str(path))
     state = load_project_state(root)
+    current_assets: dict[str, tuple[Path, dict]] = {}
     for folder in sorted(p for p in master.iterdir() if p.is_dir()):
         manifest_path = folder / "visual-asset-manifest.json"
         if not manifest_path.is_file():
@@ -434,51 +443,70 @@ def confirmed_images(root: Path) -> dict[str, dict]:
         )
         for asset in manifest.get("assets", []):
             asset_id = asset.get("asset_id")
-            if not isinstance(asset_id, str):
+            if not isinstance(asset_id, str) or (requests is not None and asset_id not in scope):
                 continue
             if entries is None and asset.get("status") in {"candidate", "awaiting_user_review", "rejected"}:
                 continue  # Legacy candidates have not replaced the adopted output either.
-            # An adopted but stale/invalid output is a current gap, not
-            # permission to revive an older master.
-            result.pop(asset_id, None)
-            if not current_manifest or asset.get("status") != "confirmed":
-                continue
-            outputs = [item for item in (
-                _confirmed_output(root, asset_id, output, confirmation_cache=confirmation_cache, display_label=True)
-                for output in asset.get("confirmed_outputs", [])
-                if isinstance(output, dict)
-            ) if item is not None]
-            selected = asset.get("confirmed_asset")
-            if "confirmed_outputs" not in asset:
+            # Resolve the current row before verifying its files. A missing or
+            # invalid output in that row must not revive an older master.
+            current_assets.pop(asset_id, None)
+            if current_manifest and asset.get("status") == "confirmed":
+                current_assets[asset_id] = (manifest_path, asset)
+
+    confirmation_cache = {}
+    result: dict[str, dict] = {}
+    for asset_id, (manifest_path, asset) in current_assets.items():
+        requested_outputs = scope.get(asset_id)
+        outputs = []
+        if "confirmed_outputs" not in asset:
+            if requested_outputs is None or "legacy-main" in requested_outputs:
                 legacy = _legacy_confirmed_output(root, asset, confirmation_cache)
-                outputs = [legacy] if legacy else []
-            if not outputs:
-                continue
-            # 确认时间随投影一起返回，不再为每个输出重读一次确认记录。
-            confirmed_at = max((str(item.get("confirmed_at") or "") for item in outputs), default="")
-            selected_path = selected.get("path") if isinstance(selected, dict) else None
-            if isinstance(selected_path, str):
-                selected_path = str(_image_path(root, selected_path))
-            if selected_path and not any(item["path"] == selected_path for item in outputs):
-                selected_path = None
-            result[asset_id] = {
-                "status": "confirmed",
-                "manifest": str(manifest_path.relative_to(root)),
-                "confirmed_at": confirmed_at,
-                "selected_path": selected_path,
-                # Retain the old lightweight interface for consumers that only
-                # need paths.  Detailed selection must use outputs.
-                "files": [item["path"] for item in outputs],
-                "outputs": outputs,
-            }
+                if legacy is not None:
+                    outputs.append(legacy)
+        else:
+            for output in asset["confirmed_outputs"]:
+                if not isinstance(output, dict):
+                    continue
+                output_id = output.get("output_id")
+                if requested_outputs is not None and (
+                    not isinstance(output_id, str) or output_id not in requested_outputs
+                ):
+                    continue
+                confirmed = _confirmed_output(root, asset_id, output, confirmation_cache=confirmation_cache,
+                                              display_label=True)
+                if confirmed is not None:
+                    outputs.append(confirmed)
+        if not outputs:
+            continue
+        confirmed_at = max((str(item.get("confirmed_at") or "") for item in outputs), default="")
+        selected = asset.get("confirmed_asset")
+        selected_path = selected.get("path") if isinstance(selected, dict) else None
+        if isinstance(selected_path, str):
+            selected_path = str(_image_path(root, selected_path))
+        if selected_path and not any(item["path"] == selected_path for item in outputs):
+            selected_path = None
+        result[asset_id] = {
+            "status": "confirmed",
+            "manifest": str(manifest_path.relative_to(root)),
+            "confirmed_at": confirmed_at,
+            "selected_path": selected_path,
+            # Retain the old lightweight interface for consumers that only
+            # need paths. Detailed selection must use outputs.
+            "files": [item["path"] for item in outputs],
+            "outputs": outputs,
+        }
     _apply_output_decisions(root, result)
+    for asset_id, image in result.items():
+        if scope.get(asset_id) is not None and image["status"] == "unavailable":
+            image["availability_reason"] = "requested_outputs_rejected"
     return result
 
 
-def build_asset_list(root: Path, narrative: dict, choices: dict | None = None) -> dict:
+def build_asset_list(root: Path, narrative: dict, choices: dict | None = None, *,
+                     image_requests: Iterable[str] | None = None) -> dict:
     """当前资产清单：state + 在场区间 + 图片状态。"""
     choices = choices if choices is not None else read_choices(root)
-    images = confirmed_images(root)
+    images = confirmed_images(root, requests=image_requests)
     usage = load_usage(root, narrative)
     items = []
     for requirement in effective(narrative, choices):
@@ -526,13 +554,14 @@ def write_asset_list(root: Path, narrative: dict, choices: dict) -> Path:
     return path
 
 
-def load_asset_list(root: Path, narrative: dict | None = None, choices: dict | None = None) -> dict:
+def load_asset_list(root: Path, narrative: dict | None = None, choices: dict | None = None, *,
+                    image_requests: Iterable[str] | None = None) -> dict:
     if narrative is None:
         narrative = current_narrative(root)
     # The JSON file is a convenience snapshot, never an authority for image
     # confirmation.  Rebuild in memory so an old candidate-polluted snapshot
     # cannot be re-exported by a later tool invocation.
-    return build_asset_list(root, narrative, choices)
+    return build_asset_list(root, narrative, choices, image_requests=image_requests)
 
 
 def current_narrative(root: Path) -> dict:
@@ -664,7 +693,7 @@ def _document_fragments(path: Path):
 def scan_references(root: Path, asset_ids: list[str], asset_list: dict | None = None,
                     name_hit_limit: int = 8) -> dict:
     """扫描当前候选里对指定资产的引用位命中与名字命中。"""
-    asset_list = asset_list or load_asset_list(root)
+    asset_list = asset_list or load_asset_list(root, image_requests=asset_ids)
     index = asset_index(asset_list)
     scanned = current_files(root)
     report = {"generated_at": datetime.now(timezone.utc).isoformat(),
@@ -762,11 +791,11 @@ def _requested_output(item: dict, request: str) -> tuple[dict | None, str | None
 
 def scope_assets(root: Path, requests: list[str]) -> tuple[list[dict], list[str]]:
     """Return only requested AST/output facts for a production segment."""
-    index = asset_index(load_asset_list(root))
+    index = asset_index(load_asset_list(root, image_requests=requests))
     result: list[dict] = []
     problems: list[str] = []
     for request in requests:
-        asset_id = request.partition("@")[0]
+        asset_id, separator, _ = request.partition("@")
         item = index.get(asset_id)
         if item is None:
             problems.append(f"{asset_id}：不在当前资产清单中")
@@ -782,12 +811,18 @@ def scope_assets(root: Path, requests: list[str]) -> tuple[list[dict], list[str]
             entry['uses_wardrobe'] = item.get('uses_wardrobe', True)
         for decision_issue in _decision_issues_for_request(root, request):
             problems.append(f"{asset_id}：{decision_issue}")
-        output, issue = _requested_output(item, request)
-        if request.partition("@")[1]:
+        if separator:
+            output, issue = _requested_output(item, request)
             if issue:
                 problems.append(f"{asset_id}：{issue}")
-            if output is not None:
+            if output is None:
+                entry.update(image_status="missing", manifest=None, selected_path=None, availability_reason=None)
+            else:
                 entry["outputs"] = [output]
+                entry["image_status"] = "unavailable" if issue else "confirmed"
+                entry["availability_reason"] = "requested_output_rejected" if issue else None
+                if issue or entry["selected_path"] != output["path"]:
+                    entry["selected_path"] = None
         else:
             entry["outputs"] = image.get("outputs", [])
             entry["unavailable_outputs"] = image.get("unavailable_outputs", [])
@@ -840,22 +875,21 @@ def _required_images(root: Path, requests: list[str], *, final: bool = False) ->
         guard_action(root, logical_ids=['narrative.package', 'visual.asset.manifest'])
     except ValueError as exc:
         return {}, [str(exc)]
-    index = asset_index(load_asset_list(root))
-    selected = {}
-    problems = []
     requirements = character_output_contract(root, requests) if final else {}
-    if requirements:
-        problems.extend(final_output_problems(requirements, requests, {
-            ast: item.get("image", {}).get("outputs", []) for ast, item in index.items()
-        }))
-        # A bare AST means all registered final outputs, not intermediate build files.
-        expanded = []
-        for request in requests:
-            ast, marker, _ = request.partition("@")
-            expanded.extend([ast + "@" + output for output in requirements[ast]]
-                            if not marker and ast in requirements else [request])
-        requests = expanded
-    for request in dict.fromkeys(requests):
+    # A bare character AST selects the whole registered final group.
+    expanded = []
+    for request in requests:
+        ast, marker, _ = request.partition("@")
+        if not marker and ast in requirements:
+            expanded.extend(f"{ast}@{output}" for output in requirements[ast])
+        else:
+            expanded.append(request)
+    index = asset_index(load_asset_list(root, image_requests=expanded))
+    selected = {}
+    problems = final_output_problems(requirements, requests, {
+        ast: item.get("image", {}).get("outputs", []) for ast, item in index.items()
+    }) if requirements else []
+    for request in dict.fromkeys(expanded):
         asset_id, marker, output_id = request.partition("@")
         item = index.get(asset_id)
         for issue in _decision_issues_for_request(root, request):
