@@ -18,15 +18,24 @@ from scripts.tests.source_fixture import copy_source_fixture
 def isolated_stage_knowledge(tmp_path, monkeypatch):
     """Inject synthetic knowledge for tests of consumers, never CLI behavior."""
     resolve = cli.resolve_knowledge_root
+    resolve_bundle = cli.resolve_knowledge_bundle
 
-    def resolve_fixture(value=None, *, repo_root=None):
+    def synthetic_root(value):
         if value is not None:
             path = Path(value).resolve()
             if path.is_relative_to(tmp_path.resolve()) and path.is_dir() and not cli.is_bundled_root(path):
                 return path
-        return resolve(value, repo_root=repo_root)
+
+    def resolve_fixture(value=None, *, repo_root=None):
+        return synthetic_root(value) or resolve(value, repo_root=repo_root)
+
+    def resolve_bundle_fixture(value=None, *, repo_root=None):
+        if (path := synthetic_root(value)) is not None:
+            return path, {}
+        return resolve_bundle(value, repo_root=repo_root)
 
     monkeypatch.setattr(cli, "resolve_knowledge_root", resolve_fixture)
+    monkeypatch.setattr(cli, "resolve_knowledge_bundle", resolve_bundle_fixture)
 
 
 pytestmark = pytest.mark.usefixtures("isolated_stage_knowledge")
@@ -1038,10 +1047,16 @@ def test_third_batch_stage_requires_method_files_and_reading_before_production(t
     assert cli.ensure_prepared(args)['ok'] is True
 
 
-def test_ensure_prepared_can_record_reading_in_same_call(tmp_path: Path) -> None:
+@pytest.mark.parametrize('source_changes', [False, True])
+def test_ensure_prepared_can_record_reading_in_same_call(tmp_path: Path, monkeypatch, source_changes) -> None:
     project = _project(tmp_path)
+    source = (project / 'source.mp4').resolve()
+    source.write_bytes(b'original source')
     request = project / 'request.json'
-    request.write_text(json.dumps({'asset_method_scopes': {'style': True, 'character': True, 'scene': True, 'object': True}}), encoding='utf-8')
+    request.write_text(json.dumps({
+        'asset_method_scopes': {'style': True, 'character': True, 'scene': True, 'object': True},
+        'source_files': [source.name],
+    }), encoding='utf-8')
     vault = _method_vault(tmp_path / 'method-vault')
     args = argparse.Namespace(
         project=str(project), skill='asset-image-assistant', objective='一次调用登记阅读',
@@ -1050,14 +1065,47 @@ def test_ensure_prepared_can_record_reading_in_same_call(tmp_path: Path) -> None
     basis = json.loads((project / cli.CONTEXT_DIR / 'task_basis.json').read_text(encoding='utf-8'))
     methods = [item['id'] for item in basis['reading_manifest']['methods']]
     assert methods
+    source_reads = []
+    reference_reads = []
+    required_reference = cli.ROOT / 'PROJECT_RULES.md'
+    original_digest = cli.digest
+    original_write = cli.write_text_if_changed
+    evidence = (project / cli.CONTEXT_DIR / 'method_reading_evidence.json').resolve()
+
+    def count_source_reads(path):
+        if path == source:
+            source_reads.append(path)
+        if path == required_reference:
+            reference_reads.append(path)
+        return original_digest(path)
+
+    def write_then_change_source(path, content):
+        written = original_write(path, content)
+        if path == evidence and source_changes:
+            source.write_bytes(b'new source after reading evidence was saved')
+        return written
+
+    monkeypatch.setattr(cli, 'digest', count_source_reads)
+    monkeypatch.setattr(cli, 'write_text_if_changed', write_then_change_source)
     args.mark_read = True
     args.method = methods
     args.candidate_rule = []
     args.candidate_scope = []
+    args.required_reference = ['PROJECT_RULES.md']
+    if source_changes:
+        with pytest.raises(cli.StageContextError, match='当前来源'):
+            cli.ensure_prepared(args)
+        assert evidence.is_file()
+        assert len(source_reads) == 2
+        return
     assert cli.ensure_prepared(args)['ok'] is True
+    assert len(source_reads) == 1
+    assert reference_reads == [required_reference]
     args.mark_read = False
     args.method = []
     assert cli.ensure_prepared(args)['ok'] is True
+    assert len(source_reads) == 2
+    assert reference_reads == [required_reference, required_reference]
 
 
 def test_image_targets_without_batch_context_are_validated_and_frozen(tmp_path: Path) -> None:

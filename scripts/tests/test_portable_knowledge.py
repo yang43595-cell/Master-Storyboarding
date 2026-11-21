@@ -12,7 +12,8 @@ import unittest
 from unittest.mock import patch
 
 from scripts.core.knowledge_runtime import (
-    KnowledgeRuntimeError, resolve_knowledge_root, verify_bundle, verify_selected_file,
+    KnowledgeRuntimeError, resolve_knowledge_root, resolve_knowledge_bundle, verify_bundle,
+    verify_selected_file, verify_selected_files,
 )
 from scripts.core.knowledge_blocks import build_knowledge_index, load_policy
 from scripts.core.method_documents import resolve_method_documents, MethodDocumentError
@@ -90,6 +91,26 @@ class PortableKnowledgeTests(unittest.TestCase):
         # Optional external assets are deliberately absent and not required.
         self.assertFalse((self.root / 'raw/videos').exists())
         self.assertEqual(resolve_knowledge_root(repo_root=self.repo), self.root)
+
+    def test_batch_selection_verifies_bundle_once_and_revalidates_on_later_call(self):
+        template = self.root / 'template.md'
+        reference = self.root / 'reference.md'
+        for path, role in ((template, 'template'), (reference, 'reference_only')):
+            path.write_bytes(METHOD)
+            self.manifest['files'].append({
+                'path': path.name, 'sha256': hashlib.sha256(METHOD).hexdigest(), 'role': role,
+            })
+        self.save()
+        relative_paths = (self.relative, template.name)
+        with patch('scripts.core.knowledge_runtime.verify_bundle', wraps=verify_bundle) as verifier:
+            self.assertEqual(verify_selected_files(self.root, relative_paths), {
+                self.relative: self.file, template.name: template,
+            })
+            verifier.assert_called_once_with(self.root)
+
+        reference.write_bytes(b'drift in a bundled file outside the selection')
+        with self.assertRaisesRegex(KnowledgeRuntimeError, 'hash mismatch: reference.md'):
+            verify_selected_files(self.root, relative_paths)
 
     def test_reference_blocks_never_activate_and_exact_read_is_guarded(self):
         self.file.write_bytes(METHOD + b'<!-- msb-knowledge\n{"status":"enabled"}\n-->\nreference only\n<!-- /msb-knowledge -->')
@@ -191,7 +212,8 @@ class PortableKnowledgeTests(unittest.TestCase):
         request.write_text(json.dumps({'use_story_method': True}))
         args = cli.parser().parse_args(['prepare', '--project', str(project), '--skill', 'creative-director',
             '--objective', 'portable regression', '--vault', str(self.root), '--request-json', str(request)])
-        with patch.object(cli, 'resolve_knowledge_root', lambda explicit=None, **_: resolve_knowledge_root(explicit, repo_root=self.repo)):
+        with (patch.object(cli, 'resolve_knowledge_root', lambda explicit=None, **_: resolve_knowledge_root(explicit, repo_root=self.repo)),
+              patch.object(cli, 'resolve_knowledge_bundle', lambda explicit=None, **_: resolve_knowledge_bundle(explicit, repo_root=self.repo))):
             cli.prepare(args)
             basis = json.loads(cli._task_basis_path(project).read_text())
             cli._validate_current_inputs(project, basis)
@@ -222,7 +244,8 @@ class PortableKnowledgeTests(unittest.TestCase):
         request.write_text(json.dumps({'creator_mask_face_effect': True}))
         args = cli.parser().parse_args(['prepare', '--project', str(project), '--skill', 'asset-image-assistant',
             '--objective', 'template regression', '--vault', str(self.root), '--request-json', str(request)])
-        with patch.object(cli, 'resolve_knowledge_root', lambda explicit=None, **_: resolve_knowledge_root(explicit, repo_root=self.repo)):
+        with (patch.object(cli, 'resolve_knowledge_root', lambda explicit=None, **_: resolve_knowledge_root(explicit, repo_root=self.repo)),
+              patch.object(cli, 'resolve_knowledge_bundle', lambda explicit=None, **_: resolve_knowledge_bundle(explicit, repo_root=self.repo))):
             cli.prepare(args)
             basis = json.loads(cli._task_basis_path(project).read_text())
             frozen = next(item for item in basis['standards']['professional_methods'] if item.get('template_path'))

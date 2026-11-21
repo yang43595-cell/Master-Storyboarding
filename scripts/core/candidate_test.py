@@ -65,13 +65,22 @@ def context(project):
     return value
 
 
+_PRODUCTION_BLOCKED = "候选测试禁止正式采用、生成提交或发布；仍为 unreviewed"
+
+
 def require_production(project):
     """Guard supported adoption/submission endpoints, including removed mode state."""
+    if context(project):
+        raise ValueError(_PRODUCTION_BLOCKED)
+    require_production_manifest(project)
+
+
+def require_production_manifest(project):
+    """Reject test artifacts after the caller has checked the project mode."""
     from .artifacts import load_manifest
-    if context(project) or any(a.get("candidate_test") or a.get("production_blocked")
-                               or a.get("type") == "preview-reference"
-                               for a in load_manifest(Path(project))["artifacts"]):
-        raise ValueError("候选测试禁止正式采用、生成提交或发布；仍为 unreviewed")
+    if any(a.get("candidate_test") or a.get("production_blocked") or a.get("type") == "preview-reference"
+           for a in load_manifest(Path(project))["artifacts"]):
+        raise ValueError(_PRODUCTION_BLOCKED)
 
 
 def validate_preview_registration(project, item, run_id):

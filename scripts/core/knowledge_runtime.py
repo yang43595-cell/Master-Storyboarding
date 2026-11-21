@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -28,13 +29,17 @@ def bundled_root(repo_root: Path | None = None) -> Path:
 
 
 def resolve_knowledge_root(explicit: str | Path | None = None, *, repo_root: Path | None = None) -> Path:
+    return resolve_knowledge_bundle(explicit, repo_root=repo_root)[0]
+
+
+def resolve_knowledge_bundle(explicit: str | Path | None = None, *, repo_root: Path | None = None) -> tuple[Path, dict[str, Any]]:
+    """Return the canonical root and its verified manifest for the current check."""
     root = bundled_root(repo_root)
     if explicit is not None and (
         not str(explicit).strip() or Path(explicit).expanduser().resolve() != root
     ):
         raise KnowledgeRuntimeError("production knowledge must use the repository's knowledge/runtime bundle")
-    verify_bundle(root)
-    return root
+    return root, verify_bundle(root)
 
 
 def is_bundled_root(root: Path) -> bool:
@@ -89,13 +94,20 @@ def verify_bundle(root: Path | None = None) -> dict[str, Any]:
     return manifest
 
 
+def verify_selected_files(root: Path, relatives: Iterable[str], *, verified_manifest: dict[str, Any] | None = None) -> dict[str, Path]:
+    """Resolve explicit files, reusing a manifest already verified for this root and check."""
+    targets = {relative: safe_knowledge_file(root, relative) for relative in relatives}
+    if targets and is_bundled_root(root):
+        manifest = verify_bundle(root) if verified_manifest is None else verified_manifest
+        manifest_paths = {entry["path"] for entry in manifest["files"]}
+        for relative in targets:
+            if relative not in manifest_paths:
+                raise KnowledgeRuntimeError(f"knowledge file not selected in manifest: {relative}")
+    return targets
+
+
 def verify_selected_file(root: Path, relative: str) -> Path:
-    target = safe_knowledge_file(root, relative)
-    if is_bundled_root(root):
-        manifest = verify_bundle(root)
-        if relative not in {entry["path"] for entry in manifest["files"]}:
-            raise KnowledgeRuntimeError(f"knowledge file not selected in manifest: {relative}")
-    return target
+    return verify_selected_files(root, (relative,))[relative]
 
 
 if __name__ == "__main__":

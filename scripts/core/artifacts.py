@@ -888,6 +888,29 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def cache_file_digests(read_digest=None, *, check_for_changes=False):
+    """Reuse file digests within one operation, optionally rechecking file identity."""
+    if read_digest is None:
+        read_digest = digest
+    hashes = {}
+
+    def file_version(path):
+        stat = path.stat()
+        return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns
+
+    def file_digest(path):
+        version = file_version(path) if check_for_changes else None
+        cached = hashes.get(path)
+        if cached is not None and cached[0] == version:
+            return cached[1]
+        checksum = read_digest(path)
+        if not check_for_changes or version == file_version(path):
+            hashes[path] = (version, checksum)
+        return checksum
+
+    return file_digest
+
+
 def verify_image_confirmation(path, receipt):
     """Verify new byte-bound receipts; do not invent hashes for older approvals."""
     if "image_sha256" not in receipt:

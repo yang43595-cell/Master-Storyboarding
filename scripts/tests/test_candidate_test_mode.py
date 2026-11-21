@@ -163,11 +163,18 @@ def test_test_selection_checks_exact_dependencies(tmp_path, mutation):
     with pytest.raises(ValueError): mode.resolve_inputs(project)
 
 
-@pytest.mark.parametrize('action', ['promote', 'confirm', 'commit', 'submit'])
+@pytest.mark.parametrize('action', ['prepare', 'ensure-prepared', 'promote', 'confirm', 'commit', 'submit'])
 def test_production_exits_reject_even_after_mode_removed(tmp_path, action):
     project = setup(tmp_path)
     add(project, 'N', 'narrative.package', {'status': 'candidate', 'revision': 'R01'})
     state = load_project_state(project); state.pop('candidate_test'); write_project_state(project, state)
+    if action in {'prepare', 'ensure-prepared'}:
+        args = ['--project', str(project), '--skill', 'creative-director']
+        if action == 'prepare':
+            args.extend(['--objective', 'synthetic production guard regression'])
+        with pytest.raises(cli.StageContextError, match='unreviewed'):
+            cli.main([action, *args])
+        return
     calls = {
         'promote': lambda: artifacts.promote_candidate(project, 'narrative.package', 'N'),
         'confirm': lambda: revision_control.confirm_candidate(project, change_id='missing', approval_ref='fake'),

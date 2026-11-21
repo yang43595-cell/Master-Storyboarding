@@ -18,8 +18,10 @@ from pathlib import Path, PureWindowsPath
 from typing import Any
 
 try:
-    from .core.candidate_test import context as test_context, configure as configure_test, resolve_inputs as test_inputs, result_metadata as test_metadata, require_production, validate_stage as validate_test_stage, validate_usage_contract
-    from .core.artifacts import (artifact_is_adopted, exact_narrative_approval, project_path, digest,
+    from .core.candidate_test import (context as test_context, configure as configure_test, resolve_inputs as test_inputs,
+                                      result_metadata as test_metadata, require_production, require_production_manifest,
+                                      validate_stage as validate_test_stage, validate_usage_contract)
+    from .core.artifacts import (artifact_is_adopted, exact_narrative_approval, project_path, digest, cache_file_digests,
                                  validate_current_dependencies, load_manifest,
                                  register_workspace_artifact, adopt_initial_package,
                                  adopt_initial_agent_artifact, validate_candidate_submission)
@@ -29,7 +31,8 @@ try:
                                         character_template_kinds)
     from .core.agent_acceptance import register_workflow_authorization, require_workflow_authorization
     from .core.io import write_text, write_text_if_changed
-    from .core.knowledge_runtime import resolve_knowledge_root, is_bundled_root, verify_bundle, verify_selected_file
+    from .core.knowledge_runtime import (resolve_knowledge_root, resolve_knowledge_bundle, is_bundled_root,
+                                          verify_bundle, verify_selected_file, verify_selected_files)
     from .core.knowledge_blocks import build_knowledge_index, load_policy, parse_knowledge_blocks
     from .core.knowledge_selector import render_knowledge_bundle, render_knowledge_candidates, render_candidate_trial_bundle, select_knowledge
     from .core.candidate_source_snapshot import CandidateSnapshotError, inspect_candidate_snapshot, load_candidate_snapshot_rules
@@ -44,8 +47,10 @@ try:
     from .core.review_delta import fingerprint, revision_delta, lightweight_revision
     from .session_usage import checkpoint
 except ImportError:  # direct CLI execution
-    from core.candidate_test import context as test_context, configure as configure_test, resolve_inputs as test_inputs, result_metadata as test_metadata, require_production, validate_stage as validate_test_stage, validate_usage_contract
-    from core.artifacts import (artifact_is_adopted, exact_narrative_approval, project_path, digest,
+    from core.candidate_test import (context as test_context, configure as configure_test, resolve_inputs as test_inputs,
+                                     result_metadata as test_metadata, require_production, require_production_manifest,
+                                     validate_stage as validate_test_stage, validate_usage_contract)
+    from core.artifacts import (artifact_is_adopted, exact_narrative_approval, project_path, digest, cache_file_digests,
                                 validate_current_dependencies, load_manifest,
                                 register_workspace_artifact, adopt_initial_package,
                                 adopt_initial_agent_artifact, validate_candidate_submission)
@@ -55,7 +60,8 @@ except ImportError:  # direct CLI execution
                                        character_template_kinds)
     from core.agent_acceptance import register_workflow_authorization, require_workflow_authorization
     from core.io import write_text, write_text_if_changed
-    from core.knowledge_runtime import resolve_knowledge_root, is_bundled_root, verify_bundle, verify_selected_file
+    from core.knowledge_runtime import (resolve_knowledge_root, resolve_knowledge_bundle, is_bundled_root,
+                                         verify_bundle, verify_selected_file, verify_selected_files)
     from core.knowledge_blocks import build_knowledge_index, load_policy, parse_knowledge_blocks
     from core.knowledge_selector import render_knowledge_bundle, render_knowledge_candidates, render_candidate_trial_bundle, select_knowledge
     from core.candidate_source_snapshot import CandidateSnapshotError, inspect_candidate_snapshot, load_candidate_snapshot_rules
@@ -190,13 +196,13 @@ def _vault_root(value: str | None) -> Path:
         raise StageContextError(str(exc)) from exc
 
 
-def _recorded_knowledge_root(manifest: dict[str, Any]) -> Path:
+def _recorded_knowledge_bundle(manifest: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
     value = manifest.get("vault_root")
     if not isinstance(value, str) or not value:
         raise StageContextError("任务依据缺少本项目知识根；请重新 prepare。")
     try:
-        return _vault_root(value)
-    except StageContextError as exc:
+        return resolve_knowledge_bundle(value, repo_root=ROOT)
+    except ValueError as exc:
         raise StageContextError(f"任务依据的知识根已失效；请用仓库内置知识重新 prepare：{exc}") from exc
 
 
@@ -238,7 +244,7 @@ def _test_request(args, project):
         raise StageContextError("隔离测试须配置 candidate-test 并显式传 --candidate-test；生产入口不消费测试稿")
     if not testing:
         try:
-            require_production(project)
+            require_production_manifest(project)
         except ValueError as exc:
             raise StageContextError(str(exc)) from exc
     return testing
@@ -827,20 +833,11 @@ def status(args: argparse.Namespace) -> dict[str, Any]:
         "blockers": blockers, "ok": production_ok}
 
 
-def _file_digests():
-    hashes: dict[Path, str] = {}
-
-    def file_digest(path: Path) -> str:
-        if path not in hashes:
-            hashes[path] = digest(path)
-        return hashes[path]
-
-    return file_digest
-
-
-def _confirmed_project_inputs(project: Path, state: dict[str, Any], *, manifest=None, file_digest=None) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+def _confirmed_project_inputs(project: Path, state: dict[str, Any], *, manifest=None, file_digest=None,
+                              artifact_ids=None, checked_dependencies=None) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Resolve selected versions with valid human confirmation or agent acceptance."""
-    artifact_ids = state.get("current_artifacts") or []
+    if artifact_ids is None:
+        artifact_ids = state.get("current_artifacts") or []
     if not isinstance(artifact_ids, list) or not artifact_ids or any(not isinstance(item, str) or not item for item in artifact_ids):
         raise StageContextError("项目没有可交接的当前有效产物 ID")
     try:
@@ -849,8 +846,8 @@ def _confirmed_project_inputs(project: Path, state: dict[str, Any], *, manifest=
         raise StageContextError("artifact_manifest.json 不存在或无效：" + str(exc)) from exc
     indexed = {item.get("artifact_id"): item for item in manifest["artifacts"] if isinstance(item, dict)}
     inputs: list[dict[str, Any]] = []
-    file_digest = _file_digests() if file_digest is None else file_digest
-    checked_dependencies: set[str] = set()
+    file_digest = cache_file_digests(digest) if file_digest is None else file_digest
+    checked_dependencies = set() if checked_dependencies is None else checked_dependencies
     for artifact_id in artifact_ids:
         item = indexed.get(artifact_id)
         if not isinstance(item, dict) or item.get("status") != "current":
@@ -897,24 +894,34 @@ def _current_handoff_text(project: Path, target_skill: str, snapshot: dict[str, 
     pattern = r"(?m)^- artifact_id：`([^`\n]+)`\n" + "\n".join(
         rf"  - {field}：`([^`\n]*)`" for field in fields[1:]
     )
-    records = [(*record[:-1], str(project_path(project, record[-1])))
-               for record in re.findall(pattern, text)]
     if snapshot is None:
         snapshot = _input_snapshot(project, {}, _state(project))
     indexed = {fact["record"]["artifact_id"]: fact for fact in snapshot["artifacts"]}
-    inputs = [indexed[ident] for ident in snapshot["selected_artifact_ids"]]
+    selected_ids = snapshot["selected_artifact_ids"]
+    inputs = [indexed[ident] for ident in selected_ids]
     testing = bool(snapshot.get("candidate_test"))
-    if not testing and not inputs:
+    scoped = snapshot.get("artifact_scope") == "declared"
+    if not testing and not inputs and not scoped:
         raise StageContextError("项目没有可交接的当前有效产物 ID")
     if testing != ("execution_mode: candidate_test" in text):
         raise StageContextError("交接卡运行模式与项目不一致；重新 handoff")
+    hash_pattern = r"(?m)^  - (?:candidate_)?sha256：`([a-f0-9]{64})`$"
+    has_hashes = bool(re.search(hash_pattern, text))
+    if scoped:
+        # Existing cards list every current input. Consume and show only rows
+        # relevant to the new task, leaving the original card untouched.
+        selected = set(selected_ids)
+        text = re.sub(r"(?m)^- artifact_id：`([^`\n]+)`\n(?:^  [^\n]*(?:\n|$))*",
+                      lambda row: row[0] if row[1] in selected else "", text)
+    records = [(*record[:-1], str(project_path(project, record[-1])))
+               for record in re.findall(pattern, text)]
     expected = [tuple(str(fact["record"].get(field, "")) for field in fields[:-1])
                 + (fact["file"]["path"],) for fact in inputs]
     if sorted(records) != sorted(expected):
         raise StageContextError("已有交接卡的产物、版本或路径已过期；先按当前确认输入重新运行 handoff。")
-    hashes = re.findall(r"(?m)^  - (?:candidate_)?sha256：`([a-f0-9]{64})`$", text)
-    if testing or hashes:
-        if hashes != [fact["file"]["sha256"] for fact in inputs]:
+    if testing or has_hashes:
+        ordered = [indexed[record[0]] for record in records] if scoped else inputs
+        if re.findall(hash_pattern, text) != [fact["file"]["sha256"] for fact in ordered]:
             raise StageContextError("交接卡来源字节已改变；重新核对并 handoff")
     return text
 
@@ -1203,7 +1210,8 @@ def _explicit_source_paths(project: Path, inputs: dict[str, Any]) -> list[Path]:
     return sorted(paths)
 
 
-def _input_snapshot(project: Path, inputs: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
+def _input_snapshot(project: Path, inputs: dict[str, Any], state: dict[str, Any], *, file_digest=None,
+                    prefer_declared_artifacts=False, source_roles=()) -> dict[str, Any]:
     """Bound current validity to explicit sources and state-selected upstream inputs."""
     sources = _explicit_source_paths(project, inputs)
     try:
@@ -1211,7 +1219,8 @@ def _input_snapshot(project: Path, inputs: dict[str, Any], state: dict[str, Any]
     except (OSError, ValueError) as exc:
         raise StageContextError(f"artifact_manifest.json 无效：{exc}") from exc
     testing = test_context(project)
-    selected = list(testing["input_artifact_ids"] if testing else (state.get("current_artifacts") or []))
+    current_ids = list(testing["input_artifact_ids"] if testing else (state.get("current_artifacts") or []))
+    declared_ids = []
     def collect_ids(value: Any, key: str = "") -> None:
         if isinstance(value, dict):
             for name, child in value.items():
@@ -1222,8 +1231,8 @@ def _input_snapshot(project: Path, inputs: dict[str, Any], state: dict[str, Any]
         elif key in {"artifact_id", "artifact_ids", "source_artifact_id", "source_artifact_ids"}:
             if not isinstance(value, str) or not value:
                 raise StageContextError("显式来源产物 ID 无效")
-            if value not in selected:
-                selected.append(value)
+            if value not in declared_ids:
+                declared_ids.append(value)
     collect_ids(inputs)
     # Explicit registered sources are authoritative too, even if absent from the
     # convenience selection. Keep ordinary unregistered raw sources supported.
@@ -1235,13 +1244,32 @@ def _input_snapshot(project: Path, inputs: dict[str, Any], state: dict[str, Any]
             path = project_path(project, entry["path_or_url"])
         except ValueError:
             continue
-        if str(path) in source_names and entry.get("artifact_id") not in selected:
-            selected.append(entry.get("artifact_id"))
+        if str(path) in source_names and entry.get("artifact_id") not in declared_ids:
+            declared_ids.append(entry.get("artifact_id"))
+    if prefer_declared_artifacts and not testing:
+        for role in source_roles:
+            matches = [entry["artifact_id"] for entry in manifest["artifacts"]
+                       if entry.get("logical_id") == role and entry.get("status") == "current"]
+            if len(matches) > 1:
+                raise StageContextError(f"本轮上游须有唯一 current 产物：{role}")
+            declared_ids.extend(ident for ident in matches if ident not in declared_ids)
+    scoped = prefer_declared_artifacts and not testing and bool(declared_ids)
+    selected = declared_ids if scoped else list(dict.fromkeys([*current_ids, *declared_ids]))
     records = []
-    file_digest = _file_digests()
+    file_digest = cache_file_digests(digest) if file_digest is None else file_digest
     if selected:
         if testing:
             records = test_inputs(project, selected)
+        elif scoped:
+            checked = set()
+            _, records = _confirmed_project_inputs(project, state, manifest=manifest, file_digest=file_digest,
+                                                   artifact_ids=selected, checked_dependencies=checked)
+            upstream = sorted(checked.difference(selected))
+            if upstream:
+                _, dependencies = _confirmed_project_inputs(project, state, manifest=manifest, file_digest=file_digest,
+                                                            artifact_ids=upstream, checked_dependencies=checked)
+                records.extend(dependencies)
+            selected = [item["artifact_id"] for item in records]
         else:
             _, records = _confirmed_project_inputs(project, {**state, "current_artifacts": selected},
                                                    manifest=manifest, file_digest=file_digest)
@@ -1259,18 +1287,34 @@ def _input_snapshot(project: Path, inputs: dict[str, Any], state: dict[str, Any]
         ids = [*ids, receipt.get("artifact_id")]
         referenced = {item for item in ids if isinstance(item, str) and item}
         return not referenced or bool(referenced & selected_set)
+    accepted_issues = state.get("accepted_issues", [])
+    if scoped and isinstance(accepted_issues, list):
+        accepted_issues = [item for item in accepted_issues if relevant(item)]
     return {
         "sources": [file_fact(path) for path in sources],
-        "selected_artifact_ids": list(testing["input_artifact_ids"] if testing else (state.get("current_artifacts") or [])),
+        "selected_artifact_ids": sorted(selected_set.intersection(current_ids)) if scoped else current_ids,
+        **({"artifact_scope": "declared"} if scoped else {}),
         **({"candidate_test": testing} if testing else {}),
         "artifacts": [{"record": {k: v for k, v in item.items() if k not in {"updated_at", "created_at"}},
                        "file": file_fact(project_path(project, item["path_or_url"])),
                        "confirmation_byte_binding": "recorded" if item.get("checksum") else "legacy_unhashed"}
                       for item in records],
         "authority": {"user_confirmations": [item for item in state.get("user_confirmations", []) if relevant(item)],
-                      "accepted_issues": state.get("accepted_issues", []),
+                      "accepted_issues": accepted_issues,
                       "project_status": state.get("project_status"), "finalization": state.get("finalization")},
     }
+
+
+def _task_source_roles(skill: str, request: dict[str, Any]) -> list[str]:
+    """Include upstream packages that the selected phase uses by contract."""
+    roles = []
+    if (skill == "asset-image-assistant" and request.get("image_targets")) or request.get("material_output_ids"):
+        roles.append("narrative.package")
+    if skill == "storyboard-director" and (request.get("source_shot_ids") or request.get("supplement_request_paths")):
+        roles.append("storyboard.package")
+    if request.get("material_output_ids"):
+        roles.append("visual.asset.manifest")
+    return roles
 
 
 def _recovery_check_text() -> str:
@@ -1579,12 +1623,12 @@ def _reading_reuse_key(basis):
     return _identity_hash({"reading": identity, "task": _review_identity(reading_basis)})
 
 
-def _validate_current_inputs(project: Path, basis: dict[str, Any], *, adopted_candidates=None) -> dict[str, Any]:
+def _validate_current_inputs(project: Path, basis: dict[str, Any], *, adopted_candidates=None, file_digest=None) -> dict[str, Any]:
     """Recheck known dependencies at consumption time; never grants execution authority."""
     manifest = basis.get("reading_manifest", {})
     if not isinstance(manifest, dict) or manifest.get("project_path") != str(project):
         raise StageContextError("任务依据属于另一项目；请在当前项目重新 prepare。")
-    knowledge_root = _recorded_knowledge_root(manifest)
+    knowledge_root, verified_bundle = _recorded_knowledge_bundle(manifest)
     snapshot = basis.get("input_snapshot")
     if not isinstance(snapshot, dict):
         raise StageContextError("任务依据缺少当前输入版本证据；请重新 prepare。")
@@ -1619,7 +1663,9 @@ def _validate_current_inputs(project: Path, basis: dict[str, Any], *, adopted_ca
         # Old preparations omitted this alias entirely. Reopen the declaration
         # at consumption too, so their empty snapshots cannot remain valid.
         inputs = {**inputs, "sources": basis["task_request"]["sources"]}
-    current = _input_snapshot(project, inputs, _state(project))
+    scoped = snapshot.get("artifact_scope") == "declared"
+    current = _input_snapshot(project, inputs, _state(project), file_digest=file_digest,
+                              prefer_declared_artifacts=scoped, source_roles=_task_source_roles(skill, frozen_request))
     if current != snapshot:
         raise StageContextError("当前来源、选定产物或确认依据已改变；请重新 prepare 并核对变更。")
     scope = _handoff_scope(_current_handoff_text(project, basis["skill"], current))
@@ -1652,18 +1698,22 @@ def _validate_current_inputs(project: Path, basis: dict[str, Any], *, adopted_ca
         if not item.get("path") or not item.get("sha256"):
             raise StageContextError("任务规范缺少版本证据；请重新 prepare。")
         documents.append((_local_knowledge_path(Path(item["path"])), item["sha256"]))
+    bundled_documents = []
     for item in standards.get("professional_methods", []):
-        method_path = verify_selected_file(knowledge_root, item["path"])
-        documents.append((method_path, item.get("sha256")))
+        bundled_documents.append((item["path"], item.get("sha256")))
         template_path = declared_methods.get(item["id"], {}).get("template_path")
         if template_path != item.get("template_path") or (template_path and not item.get("template_sha256")):
             raise StageContextError("适用方法模板缺少冻结版本；请重新 prepare。")
         if template_path:
-            documents.append((verify_selected_file(knowledge_root, template_path), item["template_sha256"]))
+            bundled_documents.append((template_path, item["template_sha256"]))
+    bundled_paths = verify_selected_files(knowledge_root, (relative for relative, _ in bundled_documents),
+                                          verified_manifest=verified_bundle)
+    documents.extend((bundled_paths[relative], checksum) for relative, checksum in bundled_documents)
+    document_digest = digest if file_digest is None else file_digest
     for path, checksum in documents:
         if not checksum:
             raise StageContextError("任务规范缺少版本证据；请重新 prepare。")
-        if not path.is_file() or digest(path) != checksum:
+        if not path.is_file() or document_digest(path) != checksum:
             raise StageContextError(f"当前方法、绑定或规范已改变：{path}；请重新 prepare。")
     constraints = manifest.get("applicable_confirmed")
     if not isinstance(constraints, list):
@@ -1847,7 +1897,18 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
                                                      *(item["path"] for item in product_pack["references"])]
     raw_state = _state(project)
     summary = _state_summary(raw_state)
-    snapshot = _input_snapshot(project, input_versions, raw_state)
+    has_local_selection = any(request.get(key) for key in (
+        "source_artifact_id", "source_artifact_ids", "source_shot_ids", "image_targets", "material_output_ids",
+        "supplement_request_paths",
+    )) or bool(getattr(args, "change_id", None))
+    snapshot = _input_snapshot(project, input_versions, raw_state,
+                               prefer_declared_artifacts=has_local_selection,
+                               source_roles=_task_source_roles(args.skill, request))
+    startup_state = _state_reading_view(summary)
+    if snapshot.get("artifact_scope") == "declared":
+        startup_state.update(current_artifacts=snapshot["selected_artifact_ids"],
+                             user_confirmations=snapshot["authority"]["user_confirmations"],
+                             accepted_issues=snapshot["authority"]["accepted_issues"])
     if args.skill == 'storyboard-director' and _redframe_image_batch(args.skill, request) and not testing:
         _validate_redframe_supplement_targets(project, request, snapshot)
     handoff_text = _current_handoff_text(project, args.skill, snapshot)
@@ -2049,7 +2110,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "## 本轮范围", "",
         "- 交付对象、非目标、输入版本、范围字段和适用标准仅维护在上列 `task_basis.json`；本启动包不复制第二份范围记录。", "",
         "## 当前项目事实", "", "```json",
-        json.dumps(_state_reading_view(summary), ensure_ascii=False, indent=2), "```", "",
+        json.dumps(startup_state, ensure_ascii=False, indent=2), "```", "",
         *( ["## 上一阶段交接事实", "", handoff_text.rstrip(), ""] if handoff_text else [] ),
         *revision_lines,
         *method_lines,
@@ -2530,7 +2591,7 @@ def review_pack(args: argparse.Namespace) -> dict[str, Any]:
     return report
 
 
-def _ensure_prepared(args: argparse.Namespace) -> dict[str, Any]:
+def _ensure_prepared(args: argparse.Namespace, *, file_digest=None) -> dict[str, Any]:
     """产前硬门禁：生产某 stage 产物前，校验阶段启动包存在且 Skill 匹配。
 
     校验结构、已选知识正文和调用方声明的任务必需项。
@@ -2616,16 +2677,20 @@ def _ensure_prepared(args: argparse.Namespace) -> dict[str, Any]:
     for rule in getattr(args, "required_rule", None) or []:
         if rule not in ids and rule not in adopted_ids:
             raise StageContextError(f"当前任务必需动态规则未命中：{rule}")
-    for reference in getattr(args, "required_reference", None) or []:
-        path = (ROOT / reference).resolve()
-        if not path.is_relative_to(ROOT.resolve()) or not path.is_file() or not path.stat().st_size:
-            raise StageContextError(f"当前任务必需本地规范不存在、为空或越出仓库：{reference}")
+    required_references = getattr(args, "required_reference", None) or []
+    if required_references:
+        if file_digest is None:
+            file_digest = cache_file_digests(digest, check_for_changes=True)
         frozen = {item["path"]: item["sha256"] for item in basis["standards"].get("local_documents", [])}
         frozen[basis["standards"]["root_rules"]] = basis["standards"]["root_rules_sha256"]
-        if str(path) not in frozen:
-            raise StageContextError(f"必需本地规范未在本轮冻结：{reference}；在 prepare 请求 local_references 中列明并重新准备。")
-        if digest(path) != frozen[str(path)]:
-            raise StageContextError(f"必需本地规范已变更：{reference}；请重新 prepare。")
+        for reference in required_references:
+            path = (ROOT / reference).resolve()
+            if not path.is_relative_to(ROOT.resolve()) or not path.is_file() or not path.stat().st_size:
+                raise StageContextError(f"当前任务必需本地规范不存在、为空或越出仓库：{reference}")
+            if str(path) not in frozen:
+                raise StageContextError(f"必需本地规范未在本轮冻结：{reference}；在 prepare 请求 local_references 中列明并重新准备。")
+            if file_digest(path) != frozen[str(path)]:
+                raise StageContextError(f"必需本地规范已变更：{reference}；请重新 prepare。")
     result = {
         "kind": "startup",
         "path": str(startup),
@@ -2638,7 +2703,7 @@ def _ensure_prepared(args: argparse.Namespace) -> dict[str, Any]:
         result["run_usage"] = usage
     if not isinstance(manifest, dict):
         raise StageContextError("启动包缺少仓库内置知识来源证据（阅读任务清单缺失或无效）；请重新 prepare。")
-    result.update(_validate_current_inputs(project, basis, adopted_candidates=adopted))
+    result.update(_validate_current_inputs(project, basis, adopted_candidates=adopted, file_digest=file_digest))
     if manifest.get("skill") != skill or manifest.get("project_path") != str(project) or not isinstance(manifest.get("methods"), list):
         raise StageContextError("阅读任务清单无效，请重新 prepare。")
     test_only = manifest.get("test_only_proposed_method_ids", [])
@@ -2676,9 +2741,13 @@ def _ensure_prepared(args: argparse.Namespace) -> dict[str, Any]:
 def ensure_prepared(args: argparse.Namespace) -> dict[str, Any]:
     project = Path(args.project).expanduser().resolve()
     testing = _test_request(args, project)
+    file_digest = None
     if getattr(args, "mark_read", False):
-        record_method_reading(args)
-    result = _ensure_prepared(args)
+        # Recheck mutable inputs after writing reading evidence, but reuse the
+        # byte digests for unchanged source files within this invocation.
+        file_digest = cache_file_digests(digest, check_for_changes=True)
+        _record_method_reading(args, file_digest=file_digest)
+    result = _ensure_prepared(args, file_digest=file_digest)
     if testing:
         result.update(test_metadata())
         result["candidate_checks_passed"] = result.get("ok") is True
@@ -2686,6 +2755,10 @@ def ensure_prepared(args: argparse.Namespace) -> dict[str, Any]:
 
 @_context_scoped
 def record_method_reading(args: argparse.Namespace) -> dict[str, Any]:
+    return _record_method_reading(args)
+
+
+def _record_method_reading(args: argparse.Namespace, *, file_digest=None) -> dict[str, Any]:
     project = Path(args.project).expanduser().resolve()
     skill = str(args.skill or "").strip()
     _require_preparation_skill(skill)
@@ -2693,7 +2766,7 @@ def record_method_reading(args: argparse.Namespace) -> dict[str, Any]:
     manifest = basis.get("reading_manifest")
     if not skill or not isinstance(manifest, dict) or manifest.get("skill") != skill or manifest.get("project_path") != str(project) or not isinstance(manifest.get("methods"), list):
         raise StageContextError("没有与当前 Skill 匹配的阅读任务清单；请先 prepare。")
-    _validate_current_inputs(project, basis)
+    _validate_current_inputs(project, basis, file_digest=file_digest)
     identity = _reading_identity(args)
     if not all(identity.values()) or any(manifest.get(key) != identity[key] for key in identity):
         raise StageContextError("登记读取证据必须使用 prepare 时记录的实际执行者 --actor-id 与稳定任务 --task-id。")
@@ -2719,9 +2792,10 @@ def record_method_reading(args: argparse.Namespace) -> dict[str, Any]:
     if any(str(reasons.get(rule, "")).startswith("skill_boundary:") and rule not in scopes for rule in requested_candidates):
         raise StageContextError("跨职责候选只能采用本职内容；须用 --candidate-scope ID=本职适用范围 声明，范围外实现项不成为产出要求。")
     adopted = [_read_candidate_exact(vault, catalog[rule]) for rule in requested_candidates]
-    tombstones = _tombstone_fingerprints(vault, load_policy(ROOT))
-    if any(item.fingerprint in tombstones for item in adopted):
-        raise StageContextError("候选知识已被墓碑禁用；请重新 prepare。")
+    if adopted:
+        tombstones = _tombstone_fingerprints(vault, load_policy(ROOT))
+        if any(item.fingerprint in tombstones for item in adopted):
+            raise StageContextError("候选知识已被墓碑禁用；请重新 prepare。")
     records = [_candidate_record(item) for item in adopted]
     constraints = manifest.get("applicable_confirmed", [])
     all_records = list({item["id"]: item for item in [*manifest.get("selected", []), *constraints, *records]
