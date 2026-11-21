@@ -212,7 +212,8 @@ class _ExportImages:
             raise ValueError('导出期间选图字节已变化，请重新核对：' + str(source))
         if target.exists():
             return False, self.digest(target) == checksum
-        origin = self._copies.get(checksum, source)
+        copy_key = (source.resolve(), checksum)
+        origin = self._copies.get(copy_key, source)
         identity = None
         try:
             with tempfile.TemporaryDirectory(prefix='.asset-copy-', dir=target.parent) as folder:
@@ -229,7 +230,7 @@ class _ExportImages:
             self._remove_own_copy(target, identity)
             raise
         if matches:
-            self._copies[checksum] = target
+            self._copies[copy_key] = target
         else:
             self._remove_own_copy(target, identity)
         return True, matches
