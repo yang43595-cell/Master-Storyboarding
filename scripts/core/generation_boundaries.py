@@ -101,6 +101,31 @@ def _rows(payload):
     return rows
 
 
+def _local_dependency_payload(payload, review):
+    covered = set(review['checked_segment_ids'])
+    for boundary in review['adjacent_boundaries_reviewed']:
+        covered.update(boundary)
+
+    def selected(segments):
+        # Creative sections can reference the top-level rows by ID instead of
+        # containing the rows themselves. The source parser validates both forms.
+        return [entry for entry in segments
+                if (entry if isinstance(entry, str) else entry['segment_id']) in covered]
+
+    scoped = dict(payload)
+    if 'generation_segments' in payload:
+        scoped['generation_segments'] = selected(payload['generation_segments'])
+    for key in ('creative_sections', 'independent_candidate_ranges'):
+        if payload.get(key) is None:
+            continue
+        scoped[key] = []
+        for group in payload[key]:
+            rows = selected(group['generation_segments'])
+            if rows:
+                scoped[key].append({**group, 'generation_segments': rows})
+    return scoped
+
+
 def _source_boundary(record, boundary_shots, shots, *, allow_dialogue=False):
     """Bind the rationale to an existing director field, never inferred prose."""
     _need(isinstance(record, dict), "拆段须引用准确导演边界")
@@ -693,8 +718,10 @@ def main(argv=None):
                 {shot for row in rows for shot in source_shot_ids(row)}, rows=rows, manifest=manifest)
         if (payload.get('scope') or {}).get('type') in {'full_local_authored', 'selected_ranges'}:
             from .delivery_files import declared_input_roots, discover_dependencies
-            dependencies = discover_dependencies(args.project, payload=payload,
-                                                 input_roots=declared_input_roots(payload), verify_hashes=True)
+            dependency_payload = _local_dependency_payload(payload, result) if args.segment_id else payload
+            dependencies = discover_dependencies(project, payload=dependency_payload,
+                                                 input_roots=declared_input_roots(dependency_payload),
+                                                 verify_hashes=True)
             if not dependencies['ok']:
                 raise ValueError('视频稿输入不可用：' + '; '.join(dependencies['errors'] + dependencies['uncheckable']))
             result['input_files_checked'] = len(dependencies['checked_files'])

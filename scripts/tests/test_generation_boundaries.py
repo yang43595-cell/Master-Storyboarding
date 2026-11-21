@@ -113,6 +113,122 @@ def test_local_cli_checks_named_segment_and_both_adjacent_seams(tmp_path, capsys
     assert "同场景默认合并" in json.loads(capsys.readouterr().out)["error"]
 
 
+@pytest.mark.parametrize('draft_format', [
+    'top-level', 'null-sections', 'section-links', 'embedded-sections',
+    'independent-ranges', 'section-links-with-ranges',
+])
+def test_segment_file_review_ignores_unrelated_segments_but_checks_both_neighbors(tmp_path, capsys, draft_format):
+    director = tmp_path / 'director.json'
+    director.write_text(json.dumps({'scenes': [
+        {'scene_id': f'C{i}', 'shots': [{'shot_id': f'S{i}'}]} for i in range(1, 5)
+    ]}))
+    rows = [
+        {'segment_id': f'V{i:02d}', 'source_shot_ids': [f'S{i}'],
+         'materials': [{'path': f'V{i:02d}.png'}],
+         'edit_in_seconds': i - 1, 'edit_out_seconds': i}
+        for i in range(1, 5)
+    ]
+    groups = [rows[:2], rows[2:3], rows[3:]]
+    links = [{'generation_segments': [row['segment_id'] for row in group]} for group in groups]
+    embedded = [{'generation_segments': group} for group in groups]
+    formats = {
+        'top-level': {'generation_segments': rows},
+        'null-sections': {'generation_segments': rows, 'creative_sections': None},
+        'section-links': {'generation_segments': rows, 'creative_sections': links},
+        'embedded-sections': {'creative_sections': embedded},
+        'independent-ranges': {'generation_segments': rows[:2], 'independent_candidate_ranges': embedded[1:]},
+        'section-links-with-ranges': {
+            'generation_segments': rows[:2], 'creative_sections': links,
+            'independent_candidate_ranges': embedded[1:],
+        },
+    }
+    prompt = tmp_path / 'video.json'
+    prompt.write_text(json.dumps({**formats[draft_format], 'scope': {'type': 'full_local_authored'}}))
+    for row in rows[:3]:
+        (tmp_path / row['materials'][0]['path']).write_bytes(b'existing reference')
+    args = ['--project', str(tmp_path), '--prompt', prompt.name, '--storyboard', director.name]
+    local = [*args, '--segment-id', 'V02']
+
+    assert main(local) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report['checked_segment_ids'] == ['V02']
+    assert report['adjacent_boundaries_reviewed'] == [['V01', 'V02'], ['V02', 'V03']]
+    assert report['input_files_checked'] == 3
+    assert main(args) == 1
+    assert 'V04.png' in json.loads(capsys.readouterr().out)['error']
+
+    for ident in ('V01', 'V02', 'V03'):
+        image = tmp_path / f'{ident}.png'
+        image.unlink()
+        assert main(local) == 1
+        error = json.loads(capsys.readouterr().out)['error']
+        assert image.name in error
+        assert 'V04.png' not in error
+        image.write_bytes(b'existing reference')
+
+
+def test_local_review_preserves_shared_inputs_for_the_document_and_relevant_sections(tmp_path, capsys):
+    director = tmp_path / 'director.json'
+    director.write_text(json.dumps({'scenes': [
+        {'scene_id': f'C{i}', 'shots': [{'shot_id': f'S{i}'}]} for i in range(1, 5)
+    ]}))
+    prompt = tmp_path / 'video.json'
+    prompt.write_text(json.dumps({
+        'scope': {'type': 'full_local_authored'},
+        'source_files': [{'path': 'shared.txt'}],
+        'generation_segments': [{'segment_id': f'V{i:02d}', 'source_shot_ids': [f'S{i}']} for i in range(1, 5)],
+        'creative_sections': [
+            {'generation_segments': ['V01', 'V02']},
+            {'generation_segments': ['V03'], 'source_files': [{'path': 'seam.txt'}]},
+            {'generation_segments': ['V04'], 'source_files': [{'path': 'unrelated.txt'}]},
+        ],
+    }))
+    (tmp_path / 'shared.txt').write_text('shared input')
+    (tmp_path / 'seam.txt').write_text('adjacent section input')
+    local = ['--project', str(tmp_path), '--prompt', prompt.name, '--storyboard', director.name, '--segment-id', 'V02']
+
+    assert main(local) == 0
+    assert json.loads(capsys.readouterr().out)['input_files_checked'] == 2
+    for name in ('shared.txt', 'seam.txt'):
+        path = tmp_path / name
+        path.unlink()
+        assert main(local) == 1
+        error = json.loads(capsys.readouterr().out)['error']
+        assert name in error
+        assert 'unrelated.txt' not in error
+        path.write_text('existing input')
+
+
+def test_local_review_excludes_segments_across_a_declared_gap(tmp_path, capsys):
+    director = tmp_path / 'director.json'
+    director.write_text(json.dumps({'scenes': [
+        {'scene_id': f'C{i}', 'shots': [{'shot_id': f'S{i}'}]} for i in range(1, 6)
+    ]}))
+    prompt = tmp_path / 'video.json'
+    prompt.write_text(json.dumps({
+        'scope': {'type': 'selected_ranges', 'independent_ranges': [
+            {'segment_ids': ['V01', 'V02']}, {'segment_ids': ['V03', 'V04']},
+        ]},
+        'generation_segments': [
+            {'segment_id': 'V01', 'source_shot_ids': ['S1'], 'edit_in_seconds': 0, 'edit_out_seconds': 1},
+            {'segment_id': 'V02', 'source_shot_ids': ['S2'], 'edit_in_seconds': 1, 'edit_out_seconds': 2},
+        ],
+        'independent_candidate_ranges': [{'generation_segments': [
+            {'segment_id': 'V03', 'source_shot_ids': ['S4'], 'edit_in_seconds': 3, 'edit_out_seconds': 4,
+             'materials': [{'path': 'V03.png'}]},
+            {'segment_id': 'V04', 'source_shot_ids': ['S5'], 'edit_in_seconds': 4, 'edit_out_seconds': 5},
+        ]}],
+    }))
+    args = ['--project', str(tmp_path), '--prompt', prompt.name, '--storyboard', director.name]
+
+    assert main([*args, '--segment-id', 'V02']) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report['adjacent_boundaries_reviewed'] == [['V01', 'V02']]
+    assert report['selected_range_gaps_skipped'] == 1
+    assert main(args) == 1
+    assert 'V03.png' in json.loads(capsys.readouterr().out)['error']
+
+
 def fixture(tmp_path, maximum=18):
     evidence = tmp_path / "synthetic-capability.txt"
     evidence.write_text("Synthetic test observation, not a real platform capability.")
