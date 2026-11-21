@@ -321,3 +321,15 @@ def test_conflicting_json_aliases_explicitly_unchecked(tmp_path, other, capsys):
     assert count == 0 and '正文不一致' in errors[0]
     assert main([str(p)]) == 2
     assert 'UNCHECKED' in capsys.readouterr().out
+
+
+def test_focal_cli_reports_standalone_filler_in_actual_submission(tmp_path, capsys):
+    from scripts.check_video_prompt_focal_intent import main
+
+    prompt = tmp_path / 'submitted.txt'
+    prompt.write_text('她放下刷子。动作自然，画质真实。', encoding='utf-8')
+
+    assert main([str(prompt)]) == 1
+    output = capsys.readouterr().out
+    assert '独立泛词「动作自然」' in output
+    assert '独立泛词「画质真实」' in output

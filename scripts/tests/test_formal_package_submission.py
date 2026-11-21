@@ -160,14 +160,26 @@ def test_normal_cli_keeps_invalid_submission_as_candidate_without_confirmation(t
     assert load_project_state(project)["user_confirmations"] == []
 
 
-def test_valid_formal_storyboard_requires_controlled_adoption_entry(tmp_path):
+@pytest.mark.parametrize("duplicate_minimum", [False, True])
+def test_formal_storyboard_checks_required_visuals_at_adoption(tmp_path, duplicate_minimum):
     story, _ = confirmed_narrative(tmp_path)
     board = board_candidate(tmp_path, story)
+    visuals = [{"prompt_clause": "她松开放在桌上的手。", "min_seconds": 1.0},
+               {"prompt_clause": "物品留在桌面。"}]
+    if duplicate_minimum:
+        visuals[1]["min_seconds"] = 2.0
+    board["scenes"][0]["shots"][0]["required_visuals"] = visuals
     write_json(tmp_path / "B-CAND.json", board)
-    cli.main(["adopt-package", "--project", str(tmp_path), "--artifact-id", "B-CAND",
-              "--logical-id", "storyboard.package", "--path", "B-CAND.json",
-              "--revision", board["revision"], "--depends-on", "narrative.package",
-              "--approval-ref", "synthetic:approval"])
+    args = ["adopt-package", "--project", str(tmp_path), "--artifact-id", "B-CAND",
+            "--logical-id", "storyboard.package", "--path", "B-CAND.json",
+            "--revision", board["revision"], "--depends-on", "narrative.package",
+            "--approval-ref", "synthetic:approval"]
+    if duplicate_minimum:
+        with pytest.raises(cli.StageContextError, match="required_visuals: S01-010"):
+            cli.main(args)
+        assert "B-CAND" not in load_project_state(tmp_path)["current_artifacts"]
+        return
+    cli.main(args)
     adopted = next(a for a in artifacts.load_manifest(tmp_path)["artifacts"] if a["artifact_id"] == "B-CAND")
     assert adopted["status"] == "current"
     assert "target_url" not in board and "platform" not in board
@@ -436,12 +448,25 @@ def test_whole_revision_approval_covers_new_creative_dialogue_without_editing_ev
 def video_project(root, *, current_prompt=True):
     story, _ = confirmed_narrative(root)
     board = board_candidate(root, story)
-    # Synthetic second scene: the reconciliation test must also retain real
-    # source mappings rather than treating two unmapped prompts as a full film.
+    # Preserve scene IDs to exercise the existing cross-scene handoff checks.
     second = copy.deepcopy(board["scenes"][0])
-    second["scene_id"] = "S02"
-    second["shots"][0].update(shot_id="S02-010", source_dialogue_ids=[])
-    second["shots"][0]["audio"]["dialogue"] = []
+    second.update(scene_id="S02", audiovisual_flow="对方先看桌上的物品，再抬眼看向主角。")
+    second_shot = second["shots"][0]
+    second_shot.update(
+        shot_id="S02-010",
+        source_dialogue_ids=[],
+        purpose="接拒绝后的对方反应",
+        take={"start": "物品已在桌面，两人仍在左右原位",
+              "process": "对方先看桌上的物品，再抬眼看向主角",
+              "end": "双方对视，物品留在桌面"},
+        cut={"entry": "接拒绝后的半拍停顿",
+             "exit": "两人对视时切出",
+             "trigger": "对方抬眼与主角对视",
+             "information_handoff": "保留双方重新谈判前的停顿"},
+        rhythm="对方抬眼后停半拍",
+        audio={"dialogue": [], "sfx": []},
+    )
+    second_shot["camera"]["framing"] = "中近景，眼高，对方偏右，主角肩膀留在左前景"
     board["scenes"].append(second)
     board_path = root / "B.json"
     write_json(board_path, board)
@@ -453,28 +478,62 @@ def video_project(root, *, current_prompt=True):
     manifest["artifacts"].append(board_entry)
     source_board = {"artifact_id": "B", "logical_id": "storyboard.package",
                     "revision": board["revision"], "path": board_path.name}
-    old_prompt = {"revision": "R01", "source_storyboard": source_board,
-                  "generation_segments": [{"segment_id": "G-01", "prompt": "Alice close-up: stop at the door.", "source_shot_ids": ["S01-010"]},
-                                          {"segment_id": "G-02", "prompt": "She turns back.", "source_shot_ids": ["S02-010"]}]}
+    old_prompt = {
+        "revision": "R01", "source_storyboard": source_board,
+        "generation_segments": [
+            {
+                "segment_id": "G-01", "source_shot_ids": ["S01-010"],
+                "prompt": (
+                    "眼高固定中近景，主角偏左，焦点在她的眼睛。左侧窗光照到桌边。"
+                    "主角拿着物品看向对方，说：“不。”随后把物品放在桌面，发出轻响，手随即松开。"
+                    "拒绝后停半拍，等主角目光稳定后切出。"
+                ),
+                "director_coverage": [{
+                    "shot_id": "S01-010",
+                    "action": {"field": "take.process", "quote": "说完拒绝，把物品放在桌面",
+                               "prompt_quote": "随后把物品放在桌面"},
+                    "reaction": None,
+                    "movement": {"field": "camera.movement", "quote": "固定",
+                                 "prompt_quote": "眼高固定中近景"},
+                    "cut": {"field": "cut.exit", "quote": "主角目光稳定后切出",
+                            "prompt_quote": "等主角目光稳定后切出"},
+                }],
+            },
+            {
+                "segment_id": "G-02", "source_shot_ids": ["S02-010"],
+                "prompt": (
+                    "眼高固定中近景，对方偏右，左前景保留主角肩膀，物品留在桌面。"
+                    "对方先看桌上的物品，再抬眼看向主角。停半拍，两人对视时切出。"
+                ),
+                "director_coverage": [{
+                    "shot_id": "S02-010",
+                    "action": {"field": "take.process", "quote": "对方先看桌上的物品",
+                               "prompt_quote": "对方先看桌上的物品"},
+                    "reaction": {"field": "take.process", "quote": "再抬眼看向主角",
+                                 "prompt_quote": "再抬眼看向主角"},
+                    "movement": {"field": "camera.movement", "quote": "固定",
+                                 "prompt_quote": "眼高固定中近景"},
+                    "cut": {"field": "cut.exit", "quote": "两人对视时切出",
+                            "prompt_quote": "两人对视时切出"},
+                }],
+            },
+        ],
+    }
     for scene, segment in zip(board["scenes"], old_prompt["generation_segments"]):
         shot = scene["shots"][0]
         segment["source_audio"] = [
             dict(fragment, source_shot_id=shot["shot_id"]) for fragment in shot["audio"]["dialogue"]
         ]
-    # The synthetic shot mapping deliberately crosses scene IDs while keeping
-    # the same actor, doorway and visible state across the cut.
     old_prompt["generation_segments"][1]["physical_continuity"] = {
         "from_segment_id": "G-01",
-        "permitted_change": "Alice turns her head without stepping away.",
-        "positions": {"status": "no_visual_needed", "previous_state": "Alice stops at the door.",
-                      "current_state": "Alice stands at the same door.",
-                      "basis": "The cloned scene and its continuation keep Alice at one marked position."},
-        "props": {"status": "no_visual_needed", "previous_state": "Alice carries no object.",
-                  "current_state": "Alice carries no object.",
-                  "basis": "Neither source shot gives Alice an object or a handoff."},
-        "visibility": {"status": "no_visual_needed", "previous_state": "Alice is visible in close-up.",
-                        "current_state": "Alice remains visible while looking back.",
-                        "basis": "The turn does not introduce a new visible character or object."},
+        "permitted_change": "保持对话轴，切至右侧对方的反应。",
+        "positions": {"status": "no_visual_needed", "previous_state": "主角在左，对方在右。",
+                      "current_state": "两人仍在左右原位。", "basis": "两镜沿用同一组空间规则和对话轴。"},
+        "props": {"status": "no_visual_needed", "previous_state": "物品已在桌上，主角松手。",
+                  "current_state": "物品留在桌上。", "basis": "后镜起始沿用前镜收尾的物品位置。"},
+        "visibility": {"status": "no_visual_needed", "previous_state": "主角中近景。",
+                       "current_state": "对方中近景，主角肩膀在左前景。",
+                       "basis": "两镜只更换取景，仍是同一对话双方。"},
     }
     old_path = root / "P-OLD.json"
     write_json(old_path, old_prompt)
@@ -524,7 +583,8 @@ def test_formal_video_adoption_rejects_rewritten_source_audio(tmp_path):
                 if a["artifact_id"] == entry["artifact_id"])["status"] == "candidate"
 
 
-@pytest.mark.parametrize("reason", ["内部对白", "视频段未就绪", "视频稿输入不可用"])
+@pytest.mark.parametrize("reason", ["内部对白", "视频段未就绪", "视频稿输入不可用",
+                                    "独立泛词", "action 的落点", "director_coverage"])
 def test_formal_video_adoption_catches_known_delivery_failures(tmp_path, reason):
     payload = video_project(tmp_path, current_prompt=False)
     row = payload["generation_segments"][0]
@@ -532,6 +592,13 @@ def test_formal_video_adoption_catches_known_delivery_failures(tmp_path, reason)
         row["prompt"] += " 继续拍 S05-008。"
     elif reason == "视频段未就绪":
         row["submit_ready"] = False
+    elif reason == "独立泛词":
+        row["prompt"] = "动作自然，画质真实。"
+    elif reason == "action 的落点":
+        # The declared director action survives in metadata, but the model won't receive it.
+        row["prompt"] = row["prompt"].replace("随后把物品放在桌面", "随后抬起手")
+    elif reason == "director_coverage":
+        del row["director_coverage"]
     else:
         row["materials"] = [{"path": "missing.png"}]
     entry = register(tmp_path, "P-BAD", "video.prompt", payload, ["storyboard.package"])
@@ -598,11 +665,11 @@ def test_formal_video_prompt_accepts_reasoned_generation_segment_change(tmp_path
     baseline = video_project(tmp_path)
     payload = copy.deepcopy(baseline)
     payload["revision"] = "R02"
-    payload["generation_segments"][1].update(segment_id="G-03", prompt="Continue after the turn.")
+    payload["generation_segments"][1]["segment_id"] = "G-03"
     payload["segment_reconciliation"] = {
         "baseline": {"artifact_id": "P-OLD", "sha256": artifacts.digest(tmp_path / "P-OLD.json")},
-        "changes": [{"action": "remove", "segment_id": "G-02", "reason": "Move the return glance to a later continuation."},
-                    {"action": "add", "segment_id": "G-03", "reason": "Keep the continuation as its own generation segment."}],
+        "changes": [{"action": "remove", "segment_id": "G-02", "reason": "Retire the replaced segment ID."},
+                    {"action": "add", "segment_id": "G-03", "reason": "Give the existing reaction shot a new segment ID."}],
     }
     write_json(tmp_path / "P-NEW.json", payload)
     rc.open_change(tmp_path, change_id="PROMPT-REV", tier="T1",

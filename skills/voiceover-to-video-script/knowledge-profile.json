@@ -2,6 +2,7 @@
   "schema_version": "1.0",
   "skill": "voiceover-to-video-script",
   "topics": ["video-prompt", "asset-driven-video", "continuity", "video-generation", "sound"],
+  "navigation_maintenance_note": "2026-11-22 按本轮用户授权修正基础方法和素材职责方法的仓库内链接，沿用既有方法绑定。素材职责的 promotion_record 保留 2026-11-05 的采用依据与当时原件指纹。当前运行副本指纹见 knowledge/manifest.json。",
   "professional_methods": [
     {
       "id": "VGEN-PROMPT-FOUNDATION",

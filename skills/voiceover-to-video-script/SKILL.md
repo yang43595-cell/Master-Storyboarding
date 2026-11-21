@@ -5,9 +5,9 @@ description: 根据已有导演包、原文对白和真实素材编写分段视�
 
 # 视频提示词与生成
 
-开始本职任务前读取[共用三层规范](../_shared/skill-layers.md)。本 Skill 适用边界：承接准确导演稿、对白和真实素材，直接读取本职视频方法及模板；不恢复 prepare，不改导演镜头，上传与生成仍依授权。
+开始本职任务前读取[项目规则](../../PROJECT_RULES.md)与[共用三层规范](../_shared/skill-layers.md)。本 Skill 承接准确导演稿、对白和真实素材，负责生成分段、正文转写与素材引用。导演拍法的变更回导演阶段，上传与生成沿本轮授权。
 
-遵守 [项目规则](../../PROJECT_RULES.md)。直接读取原始资料，读取复用与回传按[定向读取与证据](../_shared/knowledge-access.md#读取与执行开销)及[等待与工具回传](../../docs/rules/execution.md#等待与工具回传)执行。适用的计量运行按[直接读取和画布检查点](../../docs/development/token-budget.md#直接读取和画布的同一计量检查点)执行 `usage-check`，不因此建立准备包。不建立准备包、任务索引、阅读凭据或审核包，新轮实质创作先按项目干净上下文规则交全新专属生产执行者，同轮返修续用；本轮执行者不递归派生产子 agent，也不自动派独立审核者；用户明确要求独立审核时，按 [审核方法](../stage-reviewer/modules/review-method.md#视频提示词的直接审核分支) 交当前准确候选与来源，不恢复旧包。旧逐块任务和编码格式已退役，不恢复旧进度链；历史产物不修改。
+新一轮实质创作按[项目执行分工](../../docs/rules/execution.md#skill-执行分工)交全新专属生产执行者，同轮返修续用。用户明确要求独立审核时，按[直接审核分支](../stage-reviewer/modules/review-method.md#视频提示词的直接审核分支)交当前准确候选与来源。读取复用与回传按[定向读取与证据](../_shared/knowledge-access.md#读取与执行开销)及[等待与工具回传](../../docs/rules/execution.md#等待与工具回传)执行。适用的计量运行按[直接读取和画布检查点](../../docs/development/token-budget.md#直接读取和画布的同一计量检查点)执行 `usage-check`。
 
 ## 执行顺序与停止点
 
@@ -37,7 +37,13 @@ description: 根据已有导演包、原文对白和真实素材编写分段视�
 
 ## 输入与读取
 
-本节适用于写／改提示词；其他操作按入口表读取其直接依据，任务查询不因历史稿未重新审查而被要求重写。
+### 三层入口
+
+1. 第一层从项目规则、本页的任务入口和本轮输入确定职责、版本、范围与停点。沿实际任务直接读原件。查询和下载从原任务与提交记录开始，历史稿沿原入口追溯。视频的旧 prepare、任务索引、阅读凭据、逐块任务及编码格式已经退役。
+2. 第二层写改稿按任务表读取视频方法的相应小节，再读[正文模板](templates/video-script-template.md)、[共用语言红线](../_shared/prompt-language.md)与[视频语言规范](references/prompt-language-hard-rules.md)的适用部分。专业方法按 [knowledge-profile.json](knowledge-profile.json) 的 `direct_read_when` 读取。先用 `python -m scripts.core.knowledge_runtime` 核验仓库固定知识包，再实读基础方法与素材职责方法。选定 Seedance 2.5 时加读控制方法，已确认准确商品且本轮涉及其展示或真实使用时加读商品方法。草稿、生成、质检和排障沿各自入口读取本轮所需合同。
+3. 第三层按具体问题选用本轮登记的案例原件和仓库内明确引用的参考资料。核对来源覆盖和适用范围，区分已核事实、推断及待验证处理。原片、商品实物和动作参考按本轮实际来源核验。同任务同版本已读资料复用，缺失或状态冲突记准确缺口。
+
+### 核本轮写稿输入
 
 写词前按[导演到视频的视觉交接](../../docs/rules/visual-production.md#导演到视频的视觉交接)核对本轮导演镜号和按需分镜的实际检查结论。复用图与已采用补图按原用途使用。未检查或仍缺关键参考时补核对应镜段，独立且就绪的镜段可继续。
 
@@ -45,13 +51,9 @@ description: 根据已有导演包、原文对白和真实素材编写分段视�
 
 核对范围、导演包及其叙事包的准确版本、最终对白和所用素材。写改提示词及保存画布时，从项目需求的 `kickoff.canvas` 读取平台、模型、画幅、分辨率和目标画布，可用 `python scripts/stage_context_cli.py kickoff --project <业务项目>` 只读核对。范围未变时沿用开工决定。正式产出使用已确认来源；仅在用户明确授权试写时使用候选来源并标出阻塞，不能据此提交生成。
 
-按入口表读写稿或返修小节、[语言规范](references/prompt-language-hard-rules.md)及适用来源。候选返修遵守[未确认稿生命周期](../_shared/draft-lifecycle.md)；使用参考图时核[图片连续性的共用检查](../storyboard-director/references/image-continuity-hard-rules.md#共用检查)。指定图片承担开场状态时读[真实开场状态](../storyboard-director/references/reference-asset-contract.md#真实开场状态)，引用人物 1×4 时核[唯一面部来源](../asset-image-assistant/references/02-character-master-guide.md#唯一面部来源)，涉及灯光表达时读取[灯光提示词规范](../storyboard-planner/references/lighting-prompt-standard.md)的适用小节。涉及真实外观时实际查看本段选中的确认输出，不从文件名推断；已核验且用途未变的图片复用既有结论，只在新用途、版本变化或结论不足时补看。声音参考仅在用户明确提出或选用时读取，按[项目可选边界](../../docs/rules/visual-production.md#导演稿之后的生产顺序)处理；视觉补充只在使用时读取。
+候选返修遵守[未确认稿生命周期](../_shared/draft-lifecycle.md)；使用参考图时核[图片连续性的共用检查](../storyboard-director/references/image-continuity-hard-rules.md#共用检查)。指定图片承担开场状态时读[真实开场状态](../storyboard-director/references/reference-asset-contract.md#真实开场状态)，引用人物 1×4 时核[唯一面部来源](../asset-image-assistant/references/02-character-master-guide.md#唯一面部来源)，涉及灯光表达时读取[灯光提示词规范](../storyboard-planner/references/lighting-prompt-standard.md)的适用小节。涉及真实外观时实际查看本段选中的确认输出，不从文件名推断；已核验且用途未变的图片复用既有结论，只在新用途、版本变化或结论不足时补看。声音参考仅在用户明确提出或选用时读取，按[项目可选边界](../../docs/rules/visual-production.md#导演稿之后的生产顺序)处理；视觉补充只在使用时读取。
 
 已在开工选择本地产品参考包时，通过同一 `kickoff --project` 输出读取 `product_reference_pack`，把本段所选包内文件作为实际输入。按[产品参考对接](../_shared/product-usage-contract.md#广告中的产品展示与使用)核参考职责和缺口。
-
-专项方法按 [knowledge-profile.json](knowledge-profile.json) 的 `direct_read_when` 和明确路径直接读取。知识根固定为本仓库 `knowledge/runtime/`，先运行 `python -m scripts.core.knowledge_runtime` 核验所选文件与字节，再读取本 Skill 适用的内置方法和第三层资料。业务原片、产品实物和动作素材按本轮已核实的来源读取。基础和素材职责方法用于匹配任务；Seedance 2.5 方法仅在选择该模型时读；产品专项方法只在本轮已确认准确产品且有对应展示或真实使用时按 profile 读取。缺失或状态冲突报告具体缺口，不以模板替代，不全库搜索或复制方法正文。同任务同版本已读内容复用；长资料按自然章节补读，不生成事件包。
-
-本轮登记了适用历史案例时，按当前输入范围使用其原件，区分已核实事实、推断与待验证处理。放大或缩小的通用核对沿下文比例来源执行。
 
 ## 创作、自查与交付
 
@@ -82,18 +84,16 @@ description: 根据已有导演包、原文对白和真实素材编写分段视�
 
 本轮明确选用声音参考时，按[声音用途与现代稿引用](../voice-reference-manager/modules/voice-method.md#确定性命令与用途核对)核实际用途与确认范围，在同一 `video.prompt` JSON 保留 `audio_policy: voice_reference` 或准确 `voice_reference_manifest_path`，并使登记依赖可追溯到所用 `voice.character.<角色ID>`；沿导演/叙事的准确对白映射引用，不用自然语言说明替代机器可核的选择。未选用时不新增这些字段或声音前置。
 
-- 确定分段与模型参数：按实际入口读[平台合同](references/seedance-platform-contract.md)：CLI 核当前帮助，小云雀网页核当前原生控件及允许输入，不把某个入口的历史参数套到另一个入口。
-- 产品出镜：按已绑定的产品方法与本轮项目登记的商品资料、包装和动作参考核对，只写已确认的使用动作。需要商品 brief 时读项目内实际文件。
-- 上传或保存草稿：按本 Skill 的保存／更新草稿入口直达本轮平台小节。
-- 用户要求生成、查询或下载：网页按实际平台和原提交入口操作；使用 CLI 时读[CLI 执行](references/seedance-cli-notes.md)，必要时保存 UTF-8 TXT，不依赖机器计划。
-- 生成异常读[排错](references/troubleshooting.md)；明确要求内容质检时读[质检清单](references/video-qc-checklist.md)。
+- 确定分段与模型参数时，红帧读[视频节点时长](references/redframe-canvas-usage.md#视频节点时长)，小云雀读[网页写入选择](references/seedance-platform-contract.md#小云雀网页写入选择2026-10-23-用户要求)，CLI 按[历史基线](references/seedance-platform-contract.md#一核验基线)核本轮帮助。参数以实际入口能力与用户本轮选择为依据。
+- CLI 生成读[提交前](references/seedance-cli-notes.md#提交前)，已有任务读[查询、下载和结果](references/seedance-cli-notes.md#查询下载和结果)。网页操作沿实际平台及原提交入口。
+- 生成异常读[排错](references/troubleshooting.md)。该页的第三层面部表演资料仅在对应问题出现时选读。
 
 模型选择不等于上传、付费或提交授权；已有授权仅在原范围内有效，缺实质参数才询问。来源或授权冲突阻塞相关动作，不改对白、不猜素材、不改导演决定、不进入其他 Skill。
 
-素材清单只放 `04_资产/当前资产清单.json` 里状态为“要出图”且有已确认母版图片的资产；被取消或被拆分的父项不放进素材、也不写进正文引用，无图人物或物件只写在镜内过程或动作文字里，保留外观描述、在场状态与对白归属，不虚造图片引用。候选逐项列选中的准确 output ID 和拟上传顺序；平台操作后核同一清单的实际上传与原生绑定，不把计划写成已执行。提交前用 `python -m scripts.core.asset_refs --project <项目> --require-final-image <AST-ID@OUTPUT-ID...>` 核对本段实际选择。已登记最终人物板的造型须选对应板。首尾帧模式按该平台槽位核对准确端点及其制作时实际采用的人物板，并由端点继承身份、服装和空间尺度。裸 `AST-ID` 只可做资产可用性检查，不能证明某个具体版本已核验；无图、输出不存在或已取消的项直接阻塞。
+逐段列实际选中的参考文件、版本、职责与拟上传顺序。选用 `04_资产/当前资产清单.json` 中的人物、场景或道具母版时，使用已确认的具体输出。提交前用 `python -m scripts.core.asset_refs --project <项目> --require-final-image <AST-ID@OUTPUT-ID...>` 核这些图片，裸 `AST-ID` 只用于资产可用性检查。需核的图片无图、输出不存在或已取消时暂停受影响段；导演与视觉交接允许仅用文字表达的人物或物件，按来源在正文写清外观、在场状态与对白归属。产品包、按需补图及已选声音参考沿各自的来源合同核验。平台操作后按同一清单核实际上传和原生绑定。采用首尾帧模式时，核准确端点和制作端点时所用人物板，由端点继承身份、服装和空间尺度。
 分镜补图按准确 ART-ID 用 `--require-reference` 核对，同时传 `--for-shots <本次镜号...>` 并按[观察证据准入](../storyboard-director/references/image-evidence-admission.md)核对登记中的本用途观察；可与 `--require-final-image` 同次检查。文件/确认通过不等于切点状态正确，仍须实际看图并核对获准用途。旧ID失效时返回相应返工步骤，不按同名文件自动换新版。
 
-有广告产品出镜时，按[广告中的产品展示与使用](../_shared/product-usage-contract.md#广告中的产品展示与使用)核对展示、使用动作、参考覆盖与有效时长。涉及使用动作时按同一合同读取当前资产清单的 `product_usage` / `action_references`，只取本轮镜头实际对应的动作；缺关键参考或拍法时返回上游。产品案例随适用的第二层方法按需选读。
+有广告产品出镜时，按[广告中的产品展示与使用](../_shared/product-usage-contract.md#广告中的产品展示与使用)核对展示、使用动作、参考覆盖与有效时长。涉及使用动作时按同一合同读取当前资产清单的 `product_usage` / `action_references`，只取本轮镜头实际对应的动作；缺关键参考或拍法时返回上游。开管承托、重复出料或参考阶段重叠有疑问时，选读[产品动作案例](references/product-action-case-notes.md)，对照本轮产品与实际取用片段。
 
 ## 视觉生产衔接细则
 

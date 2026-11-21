@@ -15,6 +15,7 @@ from scripts.core.io import write_json
 from scripts.core.project_state import load_project_state, write_project_state
 from scripts.core.project_kickoff import REQUEST_PATH
 from scripts.tests.test_delivery_preflight import delivery, bind_synthetic_canvas, bind_synthetic_quality
+from scripts.tests.test_generation_boundaries import director_body_sample
 from scripts.tests.test_session_usage import record
 
 
@@ -147,6 +148,51 @@ def test_redframe_full_cli_and_saved_graph_readback(tmp_path):
     # Source validity is rechecked even with a matching saved graph and old PASS.
     (tmp_path / 'director.json').write_text('{"fixture":"changed"}')
     assert canvas_cli(tmp_path, frozen, observed).returncode != 0
+
+
+def test_formal_redframe_preflight_checks_director_against_submitted_body(tmp_path):
+    frozen, _ = redframe_fixture(tmp_path)
+    row = frozen['drafts'][0]
+    frozen['drafts'] = [row]
+    board_path, video_path = tmp_path / 'director.json', tmp_path / 'video.json'
+    board, video = [json.loads(path.read_bytes()) for path in (board_path, video_path)]
+    source = video['generation_segments'][0]
+    shot_id = source['source_shot_ids'][0]
+    shot, body, coverage = director_body_sample(shot_id)
+    board['schema_version'] = '4.0'
+    original_shot = board['scenes'][0]['shots'][0]
+    original_shot.update(shot, take={**original_shot['take'], **shot['take']})
+    write_json(board_path, board)
+    board_sha256 = artifacts.digest(board_path)
+    video['source_storyboard']['sha256'] = board_sha256
+
+    def submit(text):
+        row['prompt'] = source['prompt'] = text
+        write_json(video_path, video)
+        new_hashes = {'DIRECTOR': board_sha256, 'VIDEO': artifacts.digest(video_path)}
+        manifest = artifacts.load_manifest(tmp_path)
+        for artifact in manifest['artifacts']:
+            if artifact['artifact_id'] in new_hashes:
+                artifact['checksum'] = new_hashes[artifact['artifact_id']]
+        write_json(tmp_path / artifacts.MANIFEST_PATH, manifest)
+        for item in frozen['source_artifacts']:
+            item['sha256'] = new_hashes[item['artifact_id']]
+        bind_synthetic_quality(tmp_path, frozen)
+        return canvas_cli(tmp_path, frozen)
+
+    missing = submit(body)
+    assert missing.returncode != 0 and 'director_coverage' in missing.stdout + missing.stderr
+    source['director_coverage'] = [coverage]
+    passed = submit(body)
+    # The fixture's unrelated second segment has no director_coverage.
+    assert passed.returncode == 0, passed.stdout + passed.stderr
+    cut_missing = submit(body.replace(coverage['cut']['prompt_quote'], ''))
+    assert cut_missing.returncode != 0 and 'cut 的落点未出现在实际提交正文' in cut_missing.stdout + cut_missing.stderr
+    reaction = coverage['reaction']['prompt_quote']
+    after_cut = submit(body.replace(reaction, '') + reaction)
+    assert after_cut.returncode != 0 and 'reaction 正文顺序与出镜切点冲突' in after_cut.stdout + after_cut.stderr
+    filler = submit('动作自然，画质真实。')
+    assert filler.returncode != 0 and '独立泛词' in filler.stdout + filler.stderr
 
 
 @pytest.mark.parametrize('kind,suffix', [('image', '.png'), ('video', '.mp4')])

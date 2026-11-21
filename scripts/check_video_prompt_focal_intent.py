@@ -1,4 +1,4 @@
-"""Check focal intent and known internal-note leaks in submitted prompt bodies.
+"""Check focal intent and known language problems in submitted prompt bodies.
 
 This is a text check, not an assessment of staging or generated video quality.
 """
@@ -189,7 +189,7 @@ def inspect_document(path: Path, *, require_focal_intent: bool = False, project:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="检查提交正文的定性焦段表达与内部说明泄漏")
+    parser = argparse.ArgumentParser(description="检查提交正文的焦段表达、常见独立泛词和内部说明泄漏")
     parser.add_argument("prompt_file", type=Path)
     parser.add_argument("--require-focal-intent", action="store_true",
                         help="仅当已核对上游确有关键光学要求时启用；脚本不替代适用性判断")
@@ -208,7 +208,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2 if all("场景真实感[unverified/" in e for e in errors) else 1
     if args.check_scene_realism:
         print("SCENE DECLARATIONS CONSISTENT: 仅已声明计划一致；旁人遗漏、自然语言含义及真实视频/声音仍未验证。")
-    print(f"PASS {args.prompt_file}: {count} 个正文通过适用的焦段表达与已知内部说明检查；未指定上游的光学需求仍须人工核对，不代表空间、动作或成片效果通过")
+    print(f"PASS {args.prompt_file}: {count} 个正文通过适用的焦段与有限语言检查；仍须对照导演核实可见动作、空间及光学要求")
     return 0
 
 

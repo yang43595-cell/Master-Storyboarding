@@ -309,6 +309,9 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
     elif logical_id == "storyboard.package":
         if payload.get("schema_version") != "4.0":
             raise ValueError("旧导演事件包仅保留历史读取；正式 storyboard.package 须使用 4.0 JSON 契约")
+        if not reading_existing:
+            from .quality_evidence import required_visuals
+            required_visuals(payload)
         narrative, narrative_path = _read_confirmed_package_source(root, manifest, state, payload.get("source_narrative"),
                                                                     "narrative.package")
         from .story_sources import validate_story_sources
@@ -344,10 +347,10 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
                  if item.get("logical_id") == logical_id and item.get("status") == "current"]
         if len(prior) > 1:
             raise ValueError("视频提示词旧版不唯一；生成段续跑基线未知")
+        content_segment_ids = None
         if not reading_existing:
             from .asset_refs import resolve_final_images
             from .delivery_files import declared_input_roots, discover_dependencies
-            from .prompt_body import submitted_body_issues, submitted_prompt_body
             from .visual_readiness import require_visual_readiness
             scope = payload.get("scope")
             if (payload.get("production_blocked") is True
@@ -360,17 +363,16 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
                     and entry.get("depends_on") == prior[0].get("depends_on")):
                 visual_rows = _video_revision_visual_rows(root, payload, segments, prior[0],
                                                           director, known_shots, state)
+            content_segment_ids = [row['segment_id'] for row in visual_rows]
             if visual_rows:
                 require_visual_readiness(root, storyboard, director,
-                                         {shot for row in visual_rows for shot in source_shot_ids(row)},
-                                         rows=visual_rows, manifest=manifest)
+                                              {shot for row in visual_rows for shot in source_shot_ids(row)},
+                                              rows=visual_rows, manifest=manifest)
             asset_references = []
             for row in segments:
                 if (row.get("production_blocked") is True or row.get("submit_ready") is False
                         or row.get("blockers")):
                     raise ValueError(f"{row['segment_id']}: 视频段未就绪")
-                if issues := submitted_body_issues(submitted_prompt_body(row)):
-                    raise ValueError(f"{row['segment_id']}: " + "；".join(issues))
                 refs = row.get("materials", row.get("candidate_upload_order", []))
                 if isinstance(refs, list):
                     asset_references.extend(
@@ -397,7 +399,8 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
         validate_generation_boundaries(
             payload, storyboard, root, require_physical=not reading_existing,
             source_artifact={'artifact_id': entry['artifact_id'], 'revision': entry['revision'],
-                             'sha256': candidate_sha256}, state=state)
+                             'sha256': candidate_sha256}, state=state,
+            prompt_content_segment_ids=content_segment_ids)
         if not reading_existing:
             shot_audio = director_shot_audio([storyboard])
             if shot_audio or any("source_audio" in row for row in segments):

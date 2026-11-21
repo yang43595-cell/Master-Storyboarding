@@ -320,11 +320,14 @@ def _validate_report(project, entry, report, state, pointer=None):
             or any(not isinstance(item, dict) or not _text(item.get("id")) for item in checks)
             or len(checks) != len(expected) or {item.get("id") for item in checks} != expected):
         raise ValueError("自查未覆盖准确清单，缺项不能报整稿通过")
+    required_pass = CORE_CHECKS[skill]
+    if skill == "voiceover-to-video-script" and entry.get("status") == "candidate":
+        required_pass = required_pass | {"PROMPT-LANG", "VIDEO-PROMPT-NOISE"}
     for item in checks:
         if (not isinstance(item.get("result"), str) or item["result"] not in {"pass", "not_applicable"}
                 or not _text(item.get("observation")) or not _text(item.get("locator"))
                 or (item["result"] == "not_applicable" and (
-                    item["id"] in CORE_CHECKS[skill] or not _text(item.get("reason"))))):
+                    item["id"] in required_pass or not _text(item.get("reason"))))):
             raise ValueError("自查存在失败/未知、缺观察，或核心检查被写为不适用：" + str(item.get("id")))
     if skill == "storyboard-director":
         from .quality_evidence import validate_image_evidence
