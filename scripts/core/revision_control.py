@@ -867,7 +867,7 @@ def _assert_workflow_authorization(project: Path, change: dict[str, Any], entry:
 def confirm_agent_candidate(project: Path, *, change_id: str, report_path: str) -> dict[str, Any]:
     """Accept the current self-checked revision, without recording human approval."""
     from .candidate_test import require_production
-    from .agent_acceptance import build_agent_acceptance, validate_agent_acceptance
+    from .agent_acceptance import read_agent_self_check
     project = project.resolve()
     with project_lock(project):
         require_production(project)
@@ -891,10 +891,9 @@ def confirm_agent_candidate(project: Path, *, change_id: str, report_path: str) 
         state = load_project_state(project)
         grant = _assert_workflow_authorization(project, change, item, state)
         checked = dict(item)
-        checked["agent_acceptance"] = build_agent_acceptance(project, checked, report_path, state=state)
+        checked["agent_acceptance"], report = read_agent_self_check(project, checked, report_path, state=state)
         if checked["agent_acceptance"]["authorization_id"] != grant["id"]:
             raise RevisionControlError("自主验收报告不属于本变更流程授权")
-        report = validate_agent_acceptance(project, checked, state=state)
         validate_agent_submission(project, checked, manifest, report)
         acceptance = checked["agent_acceptance"]
         change["candidate_acceptance"] = acceptance

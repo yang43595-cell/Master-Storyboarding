@@ -541,7 +541,7 @@ def adopt_initial_agent_artifact(project_root: Path, artifact_id: str, report_pa
                                  *, expected_checksum: str | None = None) -> dict[str, Any]:
     """Adopt authorized downstream work without minting a human confirmation."""
     from .candidate_test import require_production
-    from .agent_acceptance import build_agent_acceptance, validate_agent_acceptance, skill_for_artifact
+    from .agent_acceptance import read_agent_self_check, validate_agent_acceptance, skill_for_artifact
     from . import revision_control
     root = Path(project_root).resolve()
     with project_lock(root):
@@ -565,8 +565,7 @@ def adopt_initial_agent_artifact(project_root: Path, artifact_id: str, report_pa
             raise ValueError("自主采用候选实际字节与单段预检来源的 sha256 不符")
         entry["checksum"] = actual
         state = load_project_state(root)
-        entry["agent_acceptance"] = build_agent_acceptance(root, entry, report_path, state=state)
-        report = validate_agent_acceptance(root, entry, state=state)
+        entry["agent_acceptance"], report = read_agent_self_check(root, entry, report_path, state=state)
         if validate_agent_submission(root, entry, manifest, report) != actual or digest(path) != actual:
             raise ValueError("候选在自主采用检查期间发生变化")
         validate_agent_acceptance(root, entry, state=state)
@@ -670,14 +669,14 @@ def unchanged_director_edges(project, manifest, state, baseline, replacement) ->
     return kept
 
 
-def asset_export_snapshot(project, entry, previous=None):
+def asset_export_snapshot(project, entry, previous=None, *, file_digest=None):
     """Read a registered export once per locked operation, bound to its exact entry."""
     from .asset_refs import registered_output_snapshot
 
     identity = (project.resolve(), *(entry.get(key) for key in ('artifact_id', 'path_or_url', 'checksum')))
     if previous is not None and previous[0] == identity:
         return previous
-    return identity, registered_output_snapshot(project, entry)
+    return identity, registered_output_snapshot(project, entry, file_digest=file_digest)
 
 
 def asset_output_impact(project, manifest, baseline, replacement):
@@ -847,7 +846,8 @@ def mark_impacted_artifacts_stale(
 
 
 @project_locked
-def promote_candidate(project_root: Path, logical_id: str, artifact_id: str, *, previous_asset_snapshot=None) -> PromotionReport:
+def promote_candidate(project_root: Path, logical_id: str, artifact_id: str, *,
+                      previous_asset_snapshot=None, file_digest=None) -> PromotionReport:
     """确认新候选产物：新版本设 current，同一 logical_id 的旧版本变 superseded。"""
     from .candidate_test import require_production
     require_production(project_root)
@@ -878,12 +878,14 @@ def promote_candidate(project_root: Path, logical_id: str, artifact_id: str, *, 
     # Compute on the adopted graph before replacement; existing manual callers
     # may already have invalidated it, so stale rows must remain idempotent.
     if logical_id == 'visual.asset.manifest':
-        if new_item.get('user_approved') is False:
-            from .asset_refs import registered_output_snapshot
-            if not _asset_review_receipt_valid(new_item, project_root) or not registered_output_snapshot(project_root, new_item):
-                raise ValueError('代审资产导出缺少有效的逐图采用记录')
-        baseline = asset_export_snapshot(project_root, active[0], previous_asset_snapshot)[1] if active else None
-        replacement = asset_export_snapshot(project_root, new_item)[1]
+        delegated = new_item.get('user_approved') is False
+        if delegated and not _asset_review_receipt_valid(new_item, project_root):
+            raise ValueError('代审资产导出缺少有效的逐图采用记录')
+        replacement = asset_export_snapshot(project_root, new_item, file_digest=file_digest)[1]
+        if delegated and not replacement:
+            raise ValueError('代审资产导出缺少有效的逐图采用记录')
+        baseline = (asset_export_snapshot(project_root, active[0], previous_asset_snapshot, file_digest=file_digest)[1]
+                    if active else None)
         unchanged_edges, segments = asset_output_impact(project_root, manifest, baseline, replacement)
         mark_impacted_artifacts_stale(manifest, {logical_id}, '采用了新的资产表',
                                      new_item.get('revision', ''), unchanged_edges=unchanged_edges,
@@ -962,14 +964,15 @@ def cache_file_digests(read_digest=None, *, check_for_changes=False):
     return file_digest
 
 
-def verify_image_confirmation(path, receipt):
+def verify_image_confirmation(path, receipt, *, file_digest=None):
     """Verify new byte-bound receipts; do not invent hashes for older approvals."""
     if "image_sha256" not in receipt:
         return
     expected = receipt["image_sha256"]
     path = Path(path)
+    file_digest = digest if file_digest is None else file_digest
     if (not isinstance(expected, str) or not re.fullmatch(r"[a-f0-9]{64}", expected)
-            or not path.is_file() or digest(path) != expected):
+            or not path.is_file() or file_digest(path) != expected):
         raise ValueError("已确认图片内容已变化或缺失，请保留原记录并重新选图确认：" + str(path))
 
 

@@ -2,22 +2,21 @@
 
 ## 本 Skill 产出须命中的规范（缺即停）
 
-本 Skill 按“准备 → 阅读 → 登记 → 校验 → 产出”执行。先按 [普通准备与选知](../../_shared/knowledge-access.md#普通阶段准备与选知) 整理准确输入；广告任务在准备前按[广告中的产品展示与使用](../../_shared/product-usage-contract.md#广告中的产品展示与使用)确定当前商品及条件方法；需要按本轮条件选读时，在 prepare 命令追加 `--request-json <本轮请求文件>`。已有有效准备包和阅读证据按共享规则复用。
+本 Skill 按“准备 → 实读 → 校验 → 产出”执行。先按[普通准备与选知](../../_shared/knowledge-access.md#普通阶段准备与选知)整理准确输入。广告任务先按[广告中的产品展示与使用](../../_shared/product-usage-contract.md#广告中的产品展示与使用)确定当前商品及条件方法。需要按本轮条件选读时，在 prepare 命令追加 `--request-json <本轮请求文件>`。已有有效准备包和阅读证据按共享规则复用。
 
-以下命令从仓库根目录执行；`<执行者ID>` 与 `<任务ID>` 由当前执行者确定，并在同一任务的三条命令中保持一致，不需要用户填写。
+以下命令从仓库根目录执行。当前执行者在同一任务中沿用自己的执行者 ID 和稳定任务 ID。
 
 ```powershell
 python scripts/stage_context_cli.py prepare --project <项目> --skill storyboard-planner --objective "本轮目标" --actor-id <执行者ID> --task-id <任务ID>
 ```
 
-首次准备或已有阅读不再适用时，实际读取本轮 `stage_startup.md`、`method_reading_packet.md` 完整正文及下列适用本地合同；已有有效阅读按共享规则复用，不因再次校验而重读全文。读完才登记，不能用登记命令代替阅读：
+首次准备或已有阅读不再适用时，实际读取本轮 `stage_startup.md`、`method_reading_packet.md` 完整正文及下列适用本地合同。已有有效阅读可复用。读完后将登记并入产前校验。
 
 ```powershell
-python scripts/stage_context_cli.py record-method-reading --project <项目> --skill storyboard-planner --method STORYBOARD-PLANNING-METHOD --actor-id <执行者ID> --task-id <任务ID>
-python scripts/stage_context_cli.py ensure-prepared --project <项目> --skill storyboard-planner --actor-id <执行者ID> --task-id <任务ID> --required-reference skills/storyboard-planner/references/foundations/01_分镜与剪辑组织.md --required-reference skills/storyboard-planner/references/foundations/02_景别与构图.md --required-reference skills/storyboard-planner/references/foundations/03_运镜与人物调度.md
+python scripts/stage_context_cli.py ensure-prepared --project <项目> --skill storyboard-planner --actor-id <执行者ID> --task-id <任务ID> --show-task-basis --mark-read --method STORYBOARD-PLANNING-METHOD --required-reference skills/storyboard-planner/references/foundations/01_分镜与剪辑组织.md --required-reference skills/storyboard-planner/references/foundations/02_景别与构图.md --required-reference skills/storyboard-planner/references/foundations/03_运镜与人物调度.md
 ```
 
-如本轮准备包还选中产品专项方法，实读后在同一登记命令追加 `--method <专项方法ID>`。首次读取本轮任务依据时，在上述 `ensure-prepared` 命令追加 `--show-task-basis`，核对目标、输入、范围与冻结检查项；有效依据未变不重复打印。
+实读本轮选中的其他必读方法后，在同一命令追加各自的 `--method <ID>`。已有有效阅读登记时省略 `--mark-read` 和 `--method`。用 `--show-task-basis` 首次核对目标、输入、范围与冻结检查项，复查时沿用未变依据。
 
 校验通过后才产出。缺少输入、确认冲突或阅读证据失效时，按具体缺口处理；动态规则与本地合同分别核对，本地合同无需重复嵌入知识包。
 

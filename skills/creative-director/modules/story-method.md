@@ -10,7 +10,7 @@
 python scripts/stage_context_cli.py prepare --project <项目> --skill creative-director --objective "本轮目标" --request-json <项目需求路径> --actor-id <执行者ID> --task-id <任务ID>
 ```
 
-按 Skill 的执行顺序实读 `stage_startup.md`、实际输入和适用合同。有匹配的必读方法时，读完本轮方法包再用 `record-method-reading` 登记。同一执行者和任务运行以下命令，核验通过后进入场次判断或正文。
+按 Skill 入口实读 `stage_startup.md`、实际输入和适用合同。同一执行者和任务运行以下命令，核验通过后进入场次判断或正文。有本轮必读方法且需登记时，先读完其快照，再在同一命令加 `--mark-read` 和各方法的 `--method <ID>`。
 
 ```powershell
 python scripts/stage_context_cli.py ensure-prepared --project <项目> --skill creative-director --actor-id <执行者ID> --task-id <任务ID> --show-task-basis

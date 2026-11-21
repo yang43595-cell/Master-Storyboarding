@@ -59,24 +59,25 @@ def test_final_gate_checks_only_requested_outfit_and_reuses_ordinary_checks(cont
     calls = []
     output = {'output_id': 'HOME-FINAL', 'output_kind': '人物1x4', 'path': 'home.png',
               'path_exists': True, 'sha256': 'a' * 64}
-    def load(root):
-        calls.append(root)
+    def load(root, *, image_requests):
+        calls.append((root, image_requests))
         return {'items': [{'asset_id': 'AST-001', 'state': 'needs_image',
                            'image': {'outputs': [output], 'manifest': 'adopted.json'}}]}
     monkeypatch.setattr(asset_refs, 'load_asset_list', load)
     monkeypatch.setattr(asset_refs, 'character_board_image_problem', lambda path: None)
     assert asset_refs.require_final_images(contract, ['AST-001@HOME-FINAL']) == (True, [])
-    assert calls == [contract]
+    assert calls == [(contract, ['AST-001@HOME-FINAL'])]
     assert asset_refs.resolve_final_images(contract, ['AST-001@HOME-FINAL']) == {
         'AST-001@HOME-FINAL': {**output, 'manifest': 'adopted.json'}}
     ok, problems = asset_refs.require_final_images(contract, ['AST-001'])
     assert not ok and any('OUT-FINAL' in problem for problem in problems)
+    assert calls[-1] == (contract, ['AST-001@HOME-FINAL', 'AST-001@OUT-FINAL'])
     with pytest.raises(ValueError, match='准确 AST@输出'):
         asset_refs.resolve_final_images(contract, ['AST-001'])
 
 
 def test_final_gate_cannot_replace_confirmation(contract, monkeypatch):
-    monkeypatch.setattr(asset_refs, 'load_asset_list', lambda root: {
+    monkeypatch.setattr(asset_refs, 'load_asset_list', lambda root, *, image_requests: {
         'items': [{'asset_id': 'AST-001', 'state': 'needs_image', 'image': {'outputs': []}}]})
     ok, problems = asset_refs.require_final_images(contract, ['AST-001@HOME-FINAL'])
     assert not ok and any('未找到已确认输出 HOME-FINAL' in problem for problem in problems)
@@ -86,7 +87,7 @@ def test_final_gate_cannot_replace_confirmation(contract, monkeypatch):
 
 def test_old_projects_keep_original_gate_without_loading_story(tmp_path, monkeypatch):
     monkeypatch.setattr(asset_refs, 'current_narrative', lambda root: pytest.fail('unneeded story read'))
-    monkeypatch.setattr(asset_refs, 'load_asset_list', lambda root: {'items': [{
+    monkeypatch.setattr(asset_refs, 'load_asset_list', lambda root, *, image_requests: {'items': [{
         'asset_id': 'AST-001', 'state': 'needs_image',
         'image': {'outputs': [{'output_id': 'SINGLE', 'path_exists': True}]},
     }]})

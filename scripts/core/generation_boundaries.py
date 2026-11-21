@@ -693,7 +693,27 @@ def main(argv=None):
                 {shot for row in rows for shot in source_shot_ids(row)}, rows=rows, manifest=manifest)
         if (payload.get('scope') or {}).get('type') in {'full_local_authored', 'selected_ranges'}:
             from .delivery_files import declared_input_roots, discover_dependencies
-            dependencies = discover_dependencies(args.project, payload=payload,
+            dependency_payload = payload
+            if args.segment_id:
+                # Keep the document's shared inputs and files for the reviewed
+                # segments and their checked seams. Full adoption checks the full draft.
+                covered = set(result['checked_segment_ids'])
+                for previous, following in result['adjacent_boundaries_reviewed']:
+                    covered.update((previous, following))
+                dependency_payload = dict(payload)
+                if 'generation_segments' in payload:
+                    dependency_payload['generation_segments'] = [
+                        row for row in payload['generation_segments'] if row['segment_id'] in covered]
+                for container in ('creative_sections', 'independent_candidate_ranges'):
+                    if container not in payload:
+                        continue
+                    sections = []
+                    for section in payload[container]:
+                        rows = [row for row in section['generation_segments'] if row['segment_id'] in covered]
+                        if rows:
+                            sections.append({**section, 'generation_segments': rows})
+                    dependency_payload[container] = sections
+            dependencies = discover_dependencies(args.project, payload=dependency_payload,
                                                  input_roots=declared_input_roots(payload), verify_hashes=True)
             if not dependencies['ok']:
                 raise ValueError('视频稿输入不可用：' + '; '.join(dependencies['errors'] + dependencies['uncheckable']))

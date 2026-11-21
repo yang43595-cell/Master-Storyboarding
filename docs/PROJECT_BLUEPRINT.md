@@ -24,7 +24,7 @@
 | 5 | `storyboard-director` 画面（按需） | 正式分镜图 |
 | 6 | `voiceover-to-video-script` 视频脚本 | 已确认导演包、原文对白与真实素材 → 完整分段 JSON 提示词（Markdown 按需导出） → 画布草稿（由你点击生成） |
 
-- **每步之间**：除 `voiceover-to-video-script` 外使用 `stage_context_cli` 的 `prepare` / `ensure-prepared` / `handoff` / `validate`（入口全集以 `PROJECT_RULES.md`「工作边界」为准）；`review-pack` 仅在用户明确要求独立审核时使用；视频提示词按其 Skill 入口直接读取和自查。
+- **阶段流转。** 编导、导演和视频提示词由同一执行者接续。普通准备按各 Skill 的 `prepare` 和读完后的 `ensure-prepared --mark-read`，视频直接读源。正式转阶段或真正转交执行者时使用现有交接入口。
 - **生产与审核**：默认流程（哪些阶段走网站人工审核、通过后如何流转、完成点在哪）以 `PROJECT_RULES.md`「网站审核到画布的统一入口」为准，不在本蓝图复述；独立审核只在用户明确要求时启动，返修回当前执行者，复审回原审核者。
 
 ### 运行流程（一图看懂）
@@ -32,7 +32,7 @@
 ```mermaid
 flowchart TD
     YOU[你 · 开工确认 / 网站人审] --> LEAD[主对话 · 协调与检查]
-    LEAD --> PROD[专属生产 agent · 做这一步并自检]
+    LEAD --> PROD[同一项目执行者 · 依次创作和自查]
     PROD --> DRAFT[出一份候选]
     DRAFT --> GATE{这一步走网站人审？}
     GATE -->|编导稿 / 资产图| YOU

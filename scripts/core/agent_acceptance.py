@@ -352,16 +352,25 @@ def _validate_report(project, entry, report, state, pointer=None):
     return authorization
 
 
-def build_agent_acceptance(project, entry, report_path, *, state=None):
-    """Validate the actual self-check and return only its immutable pointer."""
+def read_agent_self_check(project, entry, report_path, *, state=None):
+    """Return the verified report and the pointer to those exact bytes."""
     from .project_state import load_project_state
     project = Path(project).resolve()
     state = load_project_state(project) if state is None else state
     path = _file(project, str(report_path))
-    report = json.loads(path.read_text(encoding="utf-8-sig"))
+    raw = path.read_bytes()
+    report = json.loads(raw.decode("utf-8-sig"))
     authorization = _validate_report(project, entry, report, state)
-    return {"report_path": path.relative_to(project).as_posix(), "report_sha256": _digest(path),
-            "authorization_id": authorization["id"], "authorization_sha256": _json_digest(authorization)}
+    pointer = {"report_path": path.relative_to(project).as_posix(),
+               "report_sha256": hashlib.sha256(raw).hexdigest(),
+               "authorization_id": authorization["id"], "authorization_sha256": _json_digest(authorization)}
+    return pointer, report
+
+
+def build_agent_acceptance(project, entry, report_path, *, state=None):
+    """Validate the actual self-check and return its immutable pointer."""
+    pointer, _ = read_agent_self_check(project, entry, report_path, state=state)
+    return pointer
 
 
 def validate_agent_acceptance(project, entry, *, state=None):
@@ -373,8 +382,9 @@ def validate_agent_acceptance(project, entry, *, state=None):
     if not isinstance(pointer, dict):
         raise ValueError("产物缺少独立的 agent 验收依据")
     path = _file(project, pointer.get("report_path"))
-    if _digest(path) != pointer.get("report_sha256"):
+    raw = path.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != pointer.get("report_sha256"):
         raise ValueError("agent 自查报告已改变，旧验收失效")
-    report = json.loads(path.read_text(encoding="utf-8-sig"))
+    report = json.loads(raw.decode("utf-8-sig"))
     _validate_report(project, entry, report, state, pointer)
     return report

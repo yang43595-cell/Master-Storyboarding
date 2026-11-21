@@ -144,6 +144,29 @@ def test_new_local_preparation_ignores_unrelated_revision_in_input_and_handoff(t
     assert (startup.parent / 'task_basis.json').read_bytes() == original_basis
 
 
+@pytest.mark.parametrize('by_path', [False, True])
+def test_declared_handoff_reuses_task_scope_and_leaves_unrelated_files_unread(tmp_path, monkeypatch, by_path):
+    project, startup, basis, ensure, card, handoff = _prepare_local_sources(tmp_path, by_path=by_path)
+    (project / 'OTHER.txt').write_text('unrelated drift', encoding='utf-8')
+    original_digest = cli.digest
+
+    def only_related(path):
+        assert path != project / 'OTHER.txt'
+        return original_digest(path)
+
+    monkeypatch.setattr(cli, 'digest', only_related)
+    args = cli.parser().parse_args([*handoff, '--request-json', str(project / 'request.json')])
+    report = cli.handoff(args)
+    assert set(report['artifact_ids']) == {'ROOT', 'PARENT', 'LEAF'}
+    assert '- artifact_id：`OTHER`' not in card.read_text(encoding='utf-8')
+    assert cli.ensure_prepared(ensure)['ok']
+    assert json.loads((startup.parent / 'task_basis.json').read_text(encoding='utf-8')) == basis
+
+    (project / 'LEAF.txt').write_text('changed transitive dependency', encoding='utf-8')
+    with pytest.raises(cli.StageContextError, match='上游文件缺失或已偏离'):
+        cli.handoff(args)
+
+
 @pytest.mark.parametrize(('change', 'error'), [
     ('source_bytes', '内容与确认版本'),
     ('dependency_bytes', '上游文件缺失或已偏离'),

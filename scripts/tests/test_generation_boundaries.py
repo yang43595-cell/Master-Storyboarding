@@ -113,6 +113,29 @@ def test_local_cli_checks_named_segment_and_both_adjacent_seams(tmp_path, capsys
     assert "同场景默认合并" in json.loads(capsys.readouterr().out)["error"]
 
 
+def test_local_cli_checks_files_for_selected_segment_and_its_seams(tmp_path, capsys):
+    scenes = [{"scene_id": f"C{i}", "shots": [{"shot_id": f"S{i}"}]} for i in range(1, 5)]
+    director = tmp_path / "director.json"
+    director.write_text(json.dumps({"scenes": scenes}))
+    rows = [{"segment_id": f"V{i:02d}", "source_shot_ids": [f"S{i}"]} for i in range(1, 5)]
+    rows[3]["materials"] = [{"path": "other-segment.png"}]
+    prompt = tmp_path / "video.json"
+    payload = {"generation_segments": rows, "scope": {"type": "full_local_authored"}}
+    prompt.write_text(json.dumps(payload))
+    args = ["--project", str(tmp_path), "--prompt", str(prompt), "--storyboard", str(director)]
+
+    assert main(args + ["--segment-id", "V02"]) == 0
+    assert json.loads(capsys.readouterr().out)["input_files_checked"] == 0
+    assert main(args) == 1
+    assert "other-segment.png" in json.loads(capsys.readouterr().out)["error"]
+    rows[2]["materials"] = [{"path": "adjacent-segment.png"}]
+    prompt.write_text(json.dumps(payload))
+    assert main(args + ["--segment-id", "V02"]) == 1
+    error = json.loads(capsys.readouterr().out)["error"]
+    assert "adjacent-segment.png" in error
+    assert "other-segment.png" not in error
+
+
 def fixture(tmp_path, maximum=18):
     evidence = tmp_path / "synthetic-capability.txt"
     evidence.write_text("Synthetic test observation, not a real platform capability.")

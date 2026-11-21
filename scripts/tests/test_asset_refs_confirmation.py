@@ -391,6 +391,42 @@ class AssetReferenceConfirmationTests(unittest.TestCase):
         self.assertEqual([item["output_id"] for item in entries[0]["outputs"]], [output["output_id"]])
         self.assertEqual(problems, ["AST-NOT-REGISTERED：不在当前资产清单中"])
 
+    def test_exact_lookup_only_reads_selected_image_and_detects_replacement(self):
+        from unittest.mock import patch
+
+        assets = pmod.read(self.manifest_path)["assets"]
+        asset = next(item for item in assets if len(item["confirmed_outputs"]) > 1)
+        selected = asset["confirmed_outputs"][0]
+        request = f"{asset['asset_id']}@{selected['output_id']}"
+        selected_path = Path(selected["path"])
+        if not selected_path.is_absolute():
+            selected_path = self.root / selected_path
+        original_open = Path.open
+        image_reads = []
+
+        def count_image_reads(path, mode="r", *args, **kwargs):
+            if mode == "rb" and path.suffix == ".png":
+                image_reads.append(path)
+            return original_open(path, mode, *args, **kwargs)
+
+        with patch.object(Path, "open", count_image_reads):
+            output = asset_refs.resolve_final_images(self.root, [request, request])[request]
+        self.assertEqual(image_reads, [selected_path])
+        self.assertEqual(output["path"], str(selected_path))
+
+        selected_path.write_bytes(b"replacement at the confirmed path")
+        self.assertFalse(asset_refs.require_final_images(self.root, [request])[0])
+
+    def test_scoped_lookup_does_not_revive_output_missing_from_newest_manifest(self):
+        asset = next(item for item in pmod.read(self.manifest_path)["assets"]
+                     if len(item["confirmed_outputs"]) > 1)
+        older, newer = asset["confirmed_outputs"][:2]
+        ast = asset["asset_id"]
+        newer_manifest = self.root / "04_资产/母版/R99_legacy/visual-asset-manifest.json"
+        pmod.write(newer_manifest, {"assets": [{**asset, "confirmed_outputs": [newer]}]})
+        self.assertFalse(asset_refs.require_images(self.root, [f"{ast}@{older['output_id']}"])[0])
+        self.assertTrue(asset_refs.require_images(self.root, [f"{ast}@{newer['output_id']}"])[0])
+
     def test_exact_rejection_blocks_scope_and_submission_but_not_sibling_output(self):
         manifest = pmod.read(self.manifest_path)
         asset = manifest["assets"][0]
@@ -512,3 +548,40 @@ class AssetReferenceConfirmationTests(unittest.TestCase):
         self.assertIn('冻结', problems[0])
         revision_control.cancel_change(self.root, change_id='IMAGE-REWORK', reason='fixture cancelled')
         self.assertTrue(asset_refs.require_images(self.root, ['AST-CUP'])[0])
+
+    def test_director_location_readiness_checks_only_affected_shots(self):
+        board = {'scenes': [{'shots': [
+            {'shot_id': 'S01-001', 'source_asset_requirement_ids': ['AST-ROOM', 'AST-CUP']},
+            {'shot_id': 'S02-001', 'source_asset_requirement_ids': ['AST-CUP']},
+        ]}]}
+        self.assertEqual(asset_refs.director_location_readiness(self.root, board, ['S01-001']), [])
+        room = next(item for item in pmod.read(self.manifest_path)['assets'] if item['asset_id'] == 'AST-ROOM')
+        self._write_decisions([
+            self._decision('AST-ROOM', output['output_id'], decision_id=f'DEC-{index}')
+            for index, output in enumerate(room['confirmed_outputs'])
+        ])
+
+        problems = asset_refs.director_location_readiness(self.root, board, ['S01-001', 'S02-001'])
+
+        self.assertEqual(len(problems), 1)
+        self.assertIn('AST-ROOM', problems[0])
+        self.assertIn('S01-001', problems[0])
+        self.assertNotIn('S02-001', problems[0])
+        self.assertEqual(asset_refs.director_location_readiness(self.root, board, ['S02-001']), [])
+
+    def test_director_location_readiness_leaves_non_image_and_real_product_uses_to_their_contracts(self):
+        from unittest.mock import patch
+
+        items = [
+            {'asset_id': 'AST-OPTIONAL', 'state': 'no_image'},
+            {'asset_id': 'AST-CANCELED', 'state': 'excluded'},
+            {'asset_id': 'AST-SPLIT', 'state': 'split_parent'},
+            {'asset_id': 'AST-PRODUCT', 'state': 'needs_image', 'category': 'REAL_PRODUCT'},
+        ]
+        board = {'scenes': [{'shots': [{
+            'shot_id': 'S01-001', 'source_asset_requirement_ids': [item['asset_id'] for item in items],
+        }]}]}
+        with patch.object(asset_refs, 'load_asset_list', return_value={'items': items}) as load:
+            self.assertEqual(asset_refs.director_location_readiness(self.root, board, ['S02-001']), [])
+            load.assert_not_called()
+            self.assertEqual(asset_refs.director_location_readiness(self.root, board, ['S01-001']), [])

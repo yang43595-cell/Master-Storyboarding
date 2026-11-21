@@ -23,7 +23,7 @@ python scripts/stage_context_cli.py confirm-script-in-chat \
 
 ## 编导通过后接导演
 
-运行 `python scripts/stage_context_cli.py handoff --project '<业务项目绝对路径>' --to-skill storyboard-planner`。当前整稿已确认并正式采用、项目尚未登记下一阶段时，命令复用该版网站通过决定，或复用覆盖导演的既有流程授权，登记交接并生成交接卡。遇修订阻塞、阶段冲突或确认版本漂移时，先核对原记录。需要隔离导演任务时沿[任务身份参数](../../skills/_shared/knowledge-access.md#普通编导和导演的任务隔离)交接，由导演执行者核输入和准备状态。
+当前整稿已确认并正式采用后，由同一执行者续做导演。项目尚未登记正式阶段流转时，用 `python scripts/stage_context_cli.py handoff --project '<业务项目绝对路径>' --to-skill storyboard-planner` 落账，命令复用准确的网站决定或覆盖导演的既有授权。已登记的同一执行者继续用现有阶段入口。遇修订阻塞、阶段冲突或确认版本漂移先核原记录。实际更换执行者时使用[任务身份参数](../../skills/_shared/knowledge-access.md#普通编导和导演的任务隔离)。
 
 ## 登记下游流程授权
 

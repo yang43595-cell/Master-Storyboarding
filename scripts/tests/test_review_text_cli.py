@@ -63,6 +63,14 @@ def publish_args(project, receipt="publish.json"):
                                     "--preflight", "preflight.json", "--purpose", "独立合成测试"])
 
 
+def inline_publish_args(project, *basis, receipt="publish.json"):
+    return cli._parser().parse_args(["publish", "--project", str(project), "--narrative", "R01.json",
+                                    "--markdown", "R01.md", "--case-id", "012", "--operation-id", OPERATION,
+                                    "--token-file", "/not-read-by-mock", "--receipt", receipt,
+                                    "--purpose", "独立合成测试", *(basis or (
+                                        "--expected-project-id", "fixture", "--expected-head-version", "none"))])
+
+
 @pytest.fixture
 def fake_client(monkeypatch):
     calls = []
@@ -92,13 +100,16 @@ def fake_client(monkeypatch):
 
 def test_prepare_is_complete_exclusive_and_needs_no_token(tmp_path, monkeypatch):
     source, package = narrative(tmp_path)
+    package["story_paragraphs"].append({"paragraph_id": "STP-02", "text": "合成纸张被翻过去。"})
+    write_json(source, package)
     before = source.read_bytes()
     monkeypatch.setattr(cli, "AgentReviewClient", lambda **kwargs: pytest.fail("prepare must stay local"))
     result = prepare(tmp_path)
     reading = (tmp_path / "R01.md").read_text(encoding="utf-8")
     appendix = reading.split("````json\n", 1)[1].rsplit("\n````", 1)[0]
     assert json.loads(appendix) == package
-    assert package["story_paragraphs"][0]["text"] in reading
+    story = reading.split('## 故事正文\n\n', 1)[1].split('\n\n## 完整结构化来源', 1)[0]
+    assert story == '\n\n'.join(paragraph['text'] for paragraph in package['story_paragraphs'])
     assert result["source_json"]["revision"] == "R01"
     assert result["markdown"]["bytes"] > len(reading)
     with pytest.raises(FileExistsError):
@@ -135,12 +146,18 @@ def test_prepare_requires_final_character_spec_and_displays_outfits(tmp_path):
     assert "AST-LEAD 主角 · 人物1×4 · 居家服（HOME-FINAL）；外出服（OUT-FINAL）" in reading
 
 
-def test_script_adoption_uses_current_website_decision(tmp_path, fake_client, monkeypatch):
+@pytest.mark.parametrize('numbered_reading', [False, True])
+def test_script_adoption_uses_current_website_decision(tmp_path, fake_client, monkeypatch, numbered_reading):
     from scripts.core.artifacts import load_manifest
     from scripts.core.project_state import load_project_state
 
     narrative(tmp_path)
     prepare(tmp_path)
+    reading = tmp_path / 'R01.md'
+    if numbered_reading:
+        reading.write_text(reading.read_text(encoding='utf-8').replace('## 故事正文', '## STP-01', 1),
+                           encoding='utf-8')
+    reading_before = reading.read_bytes()
     _, response = fake_client
     response.update(stage="script", scope="live", operationId=OPERATION, projectId="fixture")
     cli.run(publish_args(tmp_path))
@@ -163,6 +180,7 @@ def test_script_adoption_uses_current_website_decision(tmp_path, fake_client, mo
     run("approved.json")
     assert load_project_state(tmp_path)["current_artifacts"] == ["NARRATIVE-R01"]
     assert run("approved-reread.json")["adoption"]["already_current"] is True
+    assert reading.read_bytes() == reading_before
 
 
 def test_local_adoption_failure_keeps_verified_decision_and_resumes_same_publication(tmp_path, fake_client, monkeypatch, capsys):
@@ -396,8 +414,9 @@ def test_chat_approval_rejects_partial_scope_and_same_revision_byte_drift(tmp_pa
     assert not artifacts.load_project_state(tmp_path)["user_confirmations"]
 
 
+@pytest.mark.parametrize('numbered_reading', [False, True])
 def test_chat_whole_script_consumes_disclosed_hard_subtitles_without_a_second_decision(
-    tmp_path, kickoff_review_site, monkeypatch, capsys,
+    tmp_path, kickoff_review_site, monkeypatch, capsys, numbered_reading,
 ):
     import sys
     from scripts.core import story_sources
@@ -422,6 +441,8 @@ def test_chat_whole_script_consumes_disclosed_hard_subtitles_without_a_second_de
     ids = review['awaiting_subtitle_approval_ids']
     assert ids == ['DLG-01', 'DLG-02']
     expected = reading.read_text()
+    if numbered_reading:
+        expected = expected.replace('## 故事正文', '## STP-01', 1)
     message = Path(args.confirmation_json)
     approval = json.loads(message.read_text())
 
@@ -880,6 +901,104 @@ def test_publish_exact_projection_raw_response_and_same_operation_retry(tmp_path
     with pytest.raises(FileExistsError):
         cli.run(publish_args(tmp_path))
     assert len(calls) == 4
+
+
+@pytest.mark.parametrize("existing_projection", [False, True])
+def test_inline_publish_reads_expected_head_sends_and_reads_back(tmp_path, kickoff_review_site, monkeypatch,
+                                                         existing_projection):
+    from scripts.core.artifacts import load_manifest
+    source, _ = narrative(tmp_path)
+    source_bytes = source.read_bytes()
+    reading = tmp_path / "R01.md"
+    if existing_projection:
+        prepare(tmp_path)
+        reading.write_text(reading.read_text(encoding="utf-8").replace("## 故事正文", "## STP-01", 1),
+                           encoding="utf-8")
+        previous_reading = reading.read_bytes()
+    calls = []
+    request = cli.AgentReviewClient._request
+
+    def track(client, method, route, payload=None, *, query=None):
+        calls.append((method, route, payload))
+        return request(client, method, route, payload, query=query)
+
+    monkeypatch.setattr(cli.AgentReviewClient, "_request", track)
+    result = cli.run(inline_publish_args(tmp_path))
+    assert [(method, route) for method, route, _ in calls] == [
+        ("GET", "status"), ("POST", "publish"), ("GET", "status")]
+    assert calls[1][2]["text"].encode("utf-8") == reading.read_bytes()
+    if existing_projection:
+        assert reading.read_bytes() == previous_reading
+    receipt = json.loads(Path(result["receipt"]).read_text(encoding="utf-8"))
+    assert receipt["preflight"]["response"]["head"] is None
+    assert receipt["readback"] == result["readback"]
+    assert receipt["readback"]["status"] == "current"
+    assert receipt["readback"]["response"]["head"]["version"] == receipt["response"]["version"]
+    assert not load_manifest(tmp_path)["artifacts"]
+    assert source.read_bytes() == source_bytes
+    assert not receipt["formal_adoption_performed"]
+    assert not (tmp_path / "preflight.json").exists()
+
+
+@pytest.mark.parametrize("basis", [
+    ("--expected-project-id", "wrong-project", "--expected-head-version", "none"),
+    ("--expected-project-id", "fixture", "--expected-head-version", "a" * 64),
+])
+def test_inline_publish_rejects_the_wrong_project_or_head(tmp_path, fake_client, basis):
+    calls, _ = fake_client
+    narrative(tmp_path)
+    with pytest.raises(ValueError, match="与预期不符"):
+        cli.run(inline_publish_args(tmp_path, *basis))
+    assert [name for name, _ in calls] == ["status"]
+    assert not (tmp_path / "publish.json").exists()
+
+
+def test_inline_publish_post_receipt_survives_failed_readback(tmp_path, kickoff_review_site, monkeypatch):
+    narrative(tmp_path)
+    request = cli.AgentReviewClient._request
+    calls = []
+
+    def no_readback(client, method, route, payload=None, *, query=None):
+        calls.append((method, route))
+        if calls == [("GET", "status"), ("POST", "publish"), ("GET", "status")]:
+            raise cli.AgentReviewError("readback failed", code="TRANSPORT_ERROR")
+        return request(client, method, route, payload, query=query)
+
+    monkeypatch.setattr(cli.AgentReviewClient, "_request", no_readback)
+    result = cli.run(inline_publish_args(tmp_path))
+    receipt = json.loads(Path(result["receipt"]).read_text())
+    assert len(calls) == 3
+    assert receipt["response"]["ok"]
+    assert receipt["readback"]["status"] == "unknown"
+    assert receipt["readback"]["error"]["code"] == "TRANSPORT_ERROR"
+    assert website_decision(tmp_path, "review-decision.json")["adoption"]["artifact"]["artifact_id"] == "N-R01"
+
+
+def test_inline_publish_retries_only_same_operation_against_original_preflight(tmp_path, kickoff_review_site,
+                                                                         monkeypatch):
+    narrative(tmp_path)
+    request = cli.AgentReviewClient._request
+    posts = []
+
+    def fail_first_post(client, method, route, payload=None, *, query=None):
+        if method == "POST" and route == "publish":
+            posts.append(payload)
+            if len(posts) == 1:
+                raise cli.AgentReviewError("outcome unknown", code="TRANSPORT_ERROR")
+        return request(client, method, route, payload, query=query)
+
+    monkeypatch.setattr(cli.AgentReviewClient, "_request", fail_first_post)
+    with pytest.raises(cli.AgentReviewError):
+        cli.run(inline_publish_args(tmp_path))
+    args = inline_publish_args(tmp_path, "--preflight", "publish.json", receipt="retry.json")
+    purpose = args.purpose
+    args.purpose = "changed purpose"
+    with pytest.raises(ValueError, match="与原回执不符"):
+        cli.run(args)
+    assert len(posts) == 1
+    args.purpose = purpose
+    assert cli.run(args)["readback"]["status"] == "current"
+    assert posts[0] == posts[1]
 
 
 @pytest.mark.parametrize("change", ["case", "project", "head", "review_revision"])
