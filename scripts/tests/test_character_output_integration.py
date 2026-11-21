@@ -1,4 +1,5 @@
 """Final-layout requirements use real entry points, without media generation."""
+import hashlib
 import json
 from pathlib import Path
 
@@ -12,10 +13,11 @@ from scripts.core import asset_refs
 @pytest.fixture
 def contract(tmp_path, monkeypatch):
     narrative = {'revision': 'R04', 'asset_requirements': [
-        {'asset_id': 'AST-001', 'category': 'CHARACTER', 'image_decision': '需要制作'}]}
+        {'asset_id': 'AST-001', 'name': '女一', 'category': 'CHARACTER', 'image_decision': '需要制作'}]}
     folder = tmp_path / '04_资产'
     folder.mkdir()
     (folder / '资产需求调整.json').write_text(json.dumps({
+        'added': [], 'excluded': {}, 'replaced': {},
         'character_output_requirements': {'AST-001': {
             'source_revision': 'R04', 'evidence': 'synthetic explicit final-board requirement',
             'outputs': {'HOME-FINAL': '人物1x4', 'OUT-FINAL': '人物1x4'}}}}), encoding='utf-8')
@@ -59,24 +61,51 @@ def test_final_gate_checks_only_requested_outfit_and_reuses_ordinary_checks(cont
     calls = []
     output = {'output_id': 'HOME-FINAL', 'output_kind': '人物1x4', 'path': 'home.png',
               'path_exists': True, 'sha256': 'a' * 64}
-    def load(root):
-        calls.append(root)
+    def load(root, *, image_requests):
+        calls.append((root, image_requests))
         return {'items': [{'asset_id': 'AST-001', 'state': 'needs_image',
                            'image': {'outputs': [output], 'manifest': 'adopted.json'}}]}
     monkeypatch.setattr(asset_refs, 'load_asset_list', load)
     monkeypatch.setattr(asset_refs, 'character_board_image_problem', lambda path: None)
     assert asset_refs.require_final_images(contract, ['AST-001@HOME-FINAL']) == (True, [])
-    assert calls == [contract]
+    assert calls == [(contract, ['AST-001@HOME-FINAL'])]
     assert asset_refs.resolve_final_images(contract, ['AST-001@HOME-FINAL']) == {
         'AST-001@HOME-FINAL': {**output, 'manifest': 'adopted.json'}}
     ok, problems = asset_refs.require_final_images(contract, ['AST-001'])
     assert not ok and any('OUT-FINAL' in problem for problem in problems)
+    assert calls[-1] == (contract, ['AST-001@HOME-FINAL', 'AST-001@OUT-FINAL'])
     with pytest.raises(ValueError, match='准确 AST@输出'):
         asset_refs.resolve_final_images(contract, ['AST-001'])
 
 
+def test_final_gate_checks_real_files_for_the_whole_requested_group(contract):
+    from PIL import Image
+
+    folder = contract / '04_资产/母版/R01'
+    folder.mkdir(parents=True)
+    receipt = folder / 'receipt.json'
+    proofs = []
+    outputs = []
+    for output_id in ('HOME-FINAL', 'OUT-FINAL'):
+        path = folder / f'{output_id}.png'
+        Image.new('RGB', (25, 12)).save(path)
+        proofs.append({'output_id': output_id, 'path': str(path),
+                       'image_sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
+        outputs.append({'output_id': output_id, 'output_kind': '人物1x4', 'path': str(path),
+                        'user_confirmation_ref': f'{receipt}#{output_id}'})
+    receipt.write_text(json.dumps({'images': proofs}), encoding='utf-8')
+    (folder / 'visual-asset-manifest.json').write_text(json.dumps({'assets': [
+        {'asset_id': 'AST-001', 'status': 'confirmed', 'confirmed_outputs': outputs}]}), encoding='utf-8')
+
+    assert asset_refs.require_final_images(contract, ['AST-001']) == (True, [])
+    (folder / 'OUT-FINAL.png').write_bytes(b'changed after confirmation')
+    assert asset_refs.require_final_images(contract, ['AST-001@HOME-FINAL']) == (True, [])
+    ok, problems = asset_refs.require_final_images(contract, ['AST-001'])
+    assert not ok and any('OUT-FINAL' in problem for problem in problems)
+
+
 def test_final_gate_cannot_replace_confirmation(contract, monkeypatch):
-    monkeypatch.setattr(asset_refs, 'load_asset_list', lambda root: {
+    monkeypatch.setattr(asset_refs, 'load_asset_list', lambda root, *, image_requests: {
         'items': [{'asset_id': 'AST-001', 'state': 'needs_image', 'image': {'outputs': []}}]})
     ok, problems = asset_refs.require_final_images(contract, ['AST-001@HOME-FINAL'])
     assert not ok and any('未找到已确认输出 HOME-FINAL' in problem for problem in problems)
@@ -86,7 +115,7 @@ def test_final_gate_cannot_replace_confirmation(contract, monkeypatch):
 
 def test_old_projects_keep_original_gate_without_loading_story(tmp_path, monkeypatch):
     monkeypatch.setattr(asset_refs, 'current_narrative', lambda root: pytest.fail('unneeded story read'))
-    monkeypatch.setattr(asset_refs, 'load_asset_list', lambda root: {'items': [{
+    monkeypatch.setattr(asset_refs, 'load_asset_list', lambda root, *, image_requests: {'items': [{
         'asset_id': 'AST-001', 'state': 'needs_image',
         'image': {'outputs': [{'output_id': 'SINGLE', 'path_exists': True}]},
     }]})

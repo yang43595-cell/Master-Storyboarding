@@ -363,6 +363,10 @@ class AssetReferenceConfirmationTests(unittest.TestCase):
         self.assertEqual(image["selected_path"], str(Path(legacy["confirmed_asset"]["path"])))
         self.assertEqual(image["outputs"][0]["output_id"], "legacy-main")
 
+        request = asset["asset_id"] + "@legacy-main"
+        self.assertEqual(asset_refs.require_images(self.root, [request]), (True, []))
+        self.assertFalse(asset_refs.require_images(self.root, [asset["asset_id"] + "@old-output"])[0])
+
     def test_unknown_receipt_fragment_does_not_confirm_output(self):
         self._legacy_manifest_without_checksum()
         manifest = pmod.read(self.manifest_path)
@@ -391,6 +395,66 @@ class AssetReferenceConfirmationTests(unittest.TestCase):
         self.assertEqual([item["output_id"] for item in entries[0]["outputs"]], [output["output_id"]])
         self.assertEqual(problems, ["AST-NOT-REGISTERED：不在当前资产清单中"])
 
+    def test_exact_lookup_only_reads_selected_image_and_detects_replacement(self):
+        from unittest.mock import patch
+
+        asset = next(item for item in pmod.read(self.manifest_path)["assets"]
+                     if len(item["confirmed_outputs"]) > 1)
+        selected = asset["confirmed_outputs"][0]
+        request = f"{asset['asset_id']}@{selected['output_id']}"
+        selected_path = self.root / selected["path"]
+        original_open = Path.open
+        image_reads = []
+
+        def count_image_reads(path, mode="r", *args, **kwargs):
+            if mode == "rb" and path.suffix == ".png":
+                image_reads.append(path)
+            return original_open(path, mode, *args, **kwargs)
+
+        with patch.object(Path, "open", count_image_reads):
+            entries, problems = asset_refs.scope_assets(self.root, [request])
+            self.assertEqual(problems, [])
+            self.assertEqual(entries[0]["outputs"][0]["path"], str(selected_path))
+            self.assertEqual(image_reads, [selected_path])
+            image_reads.clear()
+            output = asset_refs.resolve_final_images(self.root, [request, request])[request]
+            self.assertEqual(output["path"], str(selected_path))
+            self.assertEqual(image_reads, [selected_path])
+
+        selected_path.write_bytes(b"replacement at the confirmed path")
+        ok, problems = asset_refs.require_final_images(self.root, [request])
+        self.assertFalse(ok)
+        self.assertIn("未找到已确认输出", problems[0])
+
+    def test_bare_and_exact_requests_for_same_asset_keep_whole_scope_in_either_order(self):
+        asset = next(item for item in pmod.read(self.manifest_path)["assets"]
+                     if len(item["confirmed_outputs"]) > 1)
+        asset_id = asset["asset_id"]
+        output_ids = [output["output_id"] for output in asset["confirmed_outputs"]]
+        request = f"{asset_id}@{output_ids[0]}"
+
+        for requests in ([asset_id, request], [request, asset_id]):
+            with self.subTest(requests=requests):
+                entries, problems = asset_refs.scope_assets(self.root, requests)
+                self.assertEqual(problems, [])
+                by_request = dict(zip(requests, entries))
+                self.assertEqual([item["output_id"] for item in by_request[asset_id]["outputs"]],
+                                 output_ids)
+                self.assertEqual([item["output_id"] for item in by_request[request]["outputs"]],
+                                 [output_ids[0]])
+
+    def test_scoped_lookup_does_not_revive_output_missing_from_newest_manifest(self):
+        asset = next(item for item in pmod.read(self.manifest_path)["assets"]
+                     if len(item["confirmed_outputs"]) > 1)
+        older, newer = asset["confirmed_outputs"][:2]
+        asset_id = asset["asset_id"]
+        newer_manifest = self.root / "04_资产/母版/R99_legacy/visual-asset-manifest.json"
+        removed_request = f"{asset_id}@{older['output_id']}"
+        self.assertTrue(asset_refs.require_images(self.root, [removed_request])[0])
+        pmod.write(newer_manifest, {"assets": [{**asset, "confirmed_outputs": [newer]}]})
+        self.assertFalse(asset_refs.require_images(self.root, [removed_request])[0])
+        self.assertTrue(asset_refs.require_images(self.root, [f"{asset_id}@{newer['output_id']}"])[0])
+
     def test_exact_rejection_blocks_scope_and_submission_but_not_sibling_output(self):
         manifest = pmod.read(self.manifest_path)
         asset = manifest["assets"][0]
@@ -404,6 +468,13 @@ class AssetReferenceConfirmationTests(unittest.TestCase):
             self.root, [asset["asset_id"] + "@" + rejected["output_id"]])
         rejected_output = entries[0]["outputs"][0]
         self.assertEqual(rejected_output["applicability"]["status"], "unavailable")
+        self.assertEqual(entries[0]["availability_reason"], "requested_output_rejected")
+        mixed, mixed_problems = asset_refs.scope_assets(self.root, [
+            f"{asset['asset_id']}@{rejected['output_id']}", f"{asset['asset_id']}@{sibling['output_id']}"
+        ])
+        self.assertEqual(mixed[0], entries[0])
+        self.assertEqual(mixed_problems, problems)
+        self.assertEqual(mixed[1]["image_status"], "confirmed")
         self.assertIn("明确拒用", problems[0])
         ok, problems = asset_refs.require_images(
             self.root, [asset["asset_id"] + "@" + rejected["output_id"]])
