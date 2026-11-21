@@ -39,6 +39,15 @@ def prepare(project):
                                              "--output", "R01.md"]))
 
 
+def numbered_reading(reading, package):
+    paragraphs = package["story_paragraphs"]
+    body = "## 故事正文\n\n" + "\n\n".join(paragraph["text"] for paragraph in paragraphs)
+    numbered = "\n\n".join(
+        f"## {paragraph['paragraph_id']}\n\n{paragraph['text']}" for paragraph in paragraphs)
+    assert body in reading
+    return reading.replace(body, numbered, 1)
+
+
 def status_response(case_id="012", *, version=None, generation=0):
     return {"case": {"id": case_id, "projectId": "fixture", "name": "合成案例",
                      "status": "active", "revision": generation},
@@ -92,13 +101,16 @@ def fake_client(monkeypatch):
 
 def test_prepare_is_complete_exclusive_and_needs_no_token(tmp_path, monkeypatch):
     source, package = narrative(tmp_path)
+    package["story_paragraphs"].append({"paragraph_id": "STP-02", "text": "桌上的纸被翻过去。\n\n灯暗下来。"})
+    write_json(source, package)
     before = source.read_bytes()
     monkeypatch.setattr(cli, "AgentReviewClient", lambda **kwargs: pytest.fail("prepare must stay local"))
     result = prepare(tmp_path)
     reading = (tmp_path / "R01.md").read_text(encoding="utf-8")
     appendix = reading.split("````json\n", 1)[1].rsplit("\n````", 1)[0]
     assert json.loads(appendix) == package
-    assert package["story_paragraphs"][0]["text"] in reading
+    story = reading.split("## 故事正文\n\n", 1)[1].split("\n\n## 完整结构化来源", 1)[0]
+    assert story == "\n\n".join(paragraph["text"] for paragraph in package["story_paragraphs"])
     assert result["source_json"]["revision"] == "R01"
     assert result["markdown"]["bytes"] > len(reading)
     with pytest.raises(FileExistsError):
@@ -135,18 +147,26 @@ def test_prepare_requires_final_character_spec_and_displays_outfits(tmp_path):
     assert "AST-LEAD 主角 · 人物1×4 · 居家服（HOME-FINAL）；外出服（OUT-FINAL）" in reading
 
 
-def test_script_adoption_uses_current_website_decision(tmp_path, fake_client, monkeypatch):
+@pytest.mark.parametrize("numbered", [False, True])
+@pytest.mark.parametrize("line_ending", ["\n", "\r\n"], ids=["lf", "crlf"])
+def test_script_adoption_uses_current_website_decision(tmp_path, fake_client, monkeypatch, numbered, line_ending):
     from scripts.core.artifacts import load_manifest
     from scripts.core.project_state import load_project_state
 
-    narrative(tmp_path)
+    _, package = narrative(tmp_path)
     prepare(tmp_path)
-    _, response = fake_client
+    reading = tmp_path / "R01.md"
+    text = reading.read_text(encoding="utf-8")
+    if numbered:
+        text = numbered_reading(text, package)
+    reading.write_bytes(text.replace("\n", line_ending).encode("utf-8"))
+    calls, response = fake_client
     response.update(stage="script", scope="live", operationId=OPERATION, projectId="fixture")
     cli.run(publish_args(tmp_path))
     status = "pending"
 
     def decision(_client, **target):
+        calls.append(("decision", target))
         return {"case": {"projectId": "fixture"}, "decisionStatus": status,
                 "validity": {"isCurrent": True, "reviewable": True, "stillEffective": True,
                              "sourceStale": False, "dependencyStale": False, "dependencyUnapproved": False}}
@@ -156,6 +176,19 @@ def test_script_adoption_uses_current_website_decision(tmp_path, fake_client, mo
         return cli.run(cli._parser().parse_args(["decision", "--project", str(tmp_path),
             "--publication", "publish.json", "--stage", "script", "--adopt-script-id", "NARRATIVE-R01",
             "--token-file", "/not-read-by-mock", "--receipt", filename]))
+
+    publication = tmp_path / "publish.json"
+    original = publication.read_bytes()
+    tampered = json.loads(original)
+    wrong = text.replace("合成桌面", "真实桌面").replace("\n", line_ending).encode("utf-8")
+    expected_sha = hashlib.sha256(wrong).hexdigest()
+    tampered["markdown"].update(sha256=expected_sha, bytes=len(wrong))
+    tampered["request"].update(text_sha256=expected_sha, text_bytes=len(wrong))
+    write_json(publication, tampered)
+    with pytest.raises(ValueError, match="阅读稿与本版编导 JSON 不一致"):
+        run("tampered.json")
+    assert not any(kind == "decision" for kind, _ in calls)
+    publication.write_bytes(original)
 
     assert "adoption" not in run("pending.json")
     assert not load_manifest(tmp_path)["artifacts"]
@@ -396,8 +429,10 @@ def test_chat_approval_rejects_partial_scope_and_same_revision_byte_drift(tmp_pa
     assert not artifacts.load_project_state(tmp_path)["user_confirmations"]
 
 
+@pytest.mark.parametrize("numbered", [False, True])
+@pytest.mark.parametrize("line_ending", ["\n", "\r\n"], ids=["lf", "crlf"])
 def test_chat_whole_script_consumes_disclosed_hard_subtitles_without_a_second_decision(
-    tmp_path, kickoff_review_site, monkeypatch, capsys,
+    tmp_path, kickoff_review_site, monkeypatch, capsys, numbered, line_ending,
 ):
     import sys
     from scripts.core import story_sources
@@ -422,16 +457,21 @@ def test_chat_whole_script_consumes_disclosed_hard_subtitles_without_a_second_de
     ids = review['awaiting_subtitle_approval_ids']
     assert ids == ['DLG-01', 'DLG-02']
     expected = reading.read_text()
+    if numbered:
+        expected = numbered_reading(expected, package)
     message = Path(args.confirmation_json)
     approval = json.loads(message.read_text())
 
     def bind_reading(text):
-        reading.write_text(text, encoding='utf-8')
+        reading.write_bytes(text.replace('\n', line_ending).encode('utf-8'))
         write_json(message, {**approval, 'review_markdown': {'path': reading.name,
                                                             'sha256': artifacts.digest(reading)}})
 
     bind_reading(expected.replace('甲句。', '改了原文。', 1))
     with pytest.raises(ValueError, match='阅读正文'):
+        stage_cli.confirm_script_in_chat(args)
+    bind_reading(expected.replace('"schema_version": "2.0"', '"schema_version": "3.0"', 1))
+    with pytest.raises(ValueError, match='技术附录'):
         stage_cli.confirm_script_in_chat(args)
     bind_reading(expected.replace('DLG-01、DLG-02', 'DLG-01'))
     with pytest.raises(ValueError, match='未核对白证据.*DLG-02'):
@@ -447,6 +487,10 @@ def test_chat_whole_script_consumes_disclosed_hard_subtitles_without_a_second_de
     story_sources.validate_story_sources(package, project_root=tmp_path, narrative_path=source,
                                          require_dialogue_evidence=True)
     assert stage_cli.confirm_script_in_chat(args)['already_current']
+    other_ending = '\n' if line_ending == '\r\n' else '\r\n'
+    reading.write_bytes(reading.read_text().replace('\n', other_ending).encode('utf-8'))
+    with pytest.raises(ValueError, match='审阅时的文件字节'):
+        stage_cli.confirm_script_in_chat(args)
 
 
 @pytest.fixture
@@ -993,7 +1037,9 @@ def test_new_json_revision_gets_new_reading_without_rewriting_old_revision(tmp_p
     receipt = json.loads((tmp_path / "R02-publish.json").read_text())
     assert receipt["source_json"]["revision"] == "R02"
     assert calls[1][1]["operation_id"] == args.operation_id
-    assert "STP-01" in calls[1][1]["text"]
+    story, appendix = calls[1][1]["text"].split("## 完整结构化来源（只读技术附录）", 1)
+    assert "## STP-01" not in story
+    assert '"paragraph_id": "STP-01"' in appendix
     assert (tmp_path / "R01.md").read_bytes() == original
 
 
