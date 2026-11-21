@@ -5,6 +5,7 @@ import argparse
 from collections import Counter
 from contextlib import contextmanager
 from copy import deepcopy
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -19,6 +20,7 @@ from scripts.canvas_readback import compare, compare_baseline, digest, rows_by_i
 from scripts.core.artifacts import load_manifest, project_path
 from scripts.core.io import read_json, write_json
 from scripts.core.quality_evidence import draft_binding, fingerprint
+from scripts.core.redframe_image_ui import ImageUIError, RedframeImageUI, _ident
 from scripts.core.redframe_workspace import NativeTag, RedframeWorkspace, RedframeWorkspaceError
 
 
@@ -35,17 +37,26 @@ def verify_saved(workspace, expected_nodes, timeout=15):
     if not expected_nodes:
         raise ValueError('保存确认须有准确草稿节点 ID')
     stop = time.monotonic() + timeout
+    changed = list(expected_nodes)
     while True:
-        snapshot = workspace.read_canvas()
+        if timeout > 0:
+            budget_ms = min(workspace.read_budget, int((stop - time.monotonic()) * 1000))
+            if budget_ms <= 0:
+                break
+            snapshot = workspace.read_canvas(budget_ms=budget_ms)
+        else:
+            snapshot = workspace.read_canvas()
         nodes = canvas_nodes(snapshot)
         changed = [ident for ident, expected in expected_nodes.items()
                    if ident not in nodes or (expected is not None and nodes[ident] != expected)
                    or nodes[ident].get('type') != 'remote-videoGenerationNode']
         if not changed:
             return snapshot
-        if time.monotonic() >= stop:
-            raise ValueError('保存未在持久画布确证；先保留原节点 ID：' + ', '.join(changed))
-        time.sleep(min(1, max(0, stop - time.monotonic())))
+        remaining = stop - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(1, remaining))
+    raise ValueError('保存未在持久画布确证；先保留原节点 ID：' + ', '.join(changed))
 
 
 def verify_placements(occupied, planned):
@@ -184,12 +195,129 @@ def open_workspace(host_browser, target_url, project_id):
         yield RedframeWorkspace(page, project_id)
 
 
+class RedframeVideoDraftUI(RedframeImageUI):
+    """Native draft controls for one target workspace, with no generate action."""
+
+    def _draft_locator(self, node_id):
+        self.assert_target()
+        node = canvas_nodes(self.workspace.read_canvas()).get(_ident(node_id))
+        if (not node or node['type'] != 'remote-videoGenerationNode'
+                or node['data'].get('outputs') or node['data'].get('videoTask')):
+            raise ValueError(f'视频节点不是无生成记录的草稿：{node_id}')
+        return self.page.locator(f'[data-id="{node_id}"]')
+
+    def create_video_draft(self, x, y, label):
+        if not isinstance(label, str) or not label.strip():
+            raise ValueError('请为视频草稿提供明确名称')
+        node_id = self._new_node(x, y, menu_name='视频', generation_kind='remote-videoGenerationNode')
+        locator = self._draft_locator(node_id)
+        locator.locator('.labelText').dblclick(timeout=self.timeout)
+        title = locator.get_by_label('节点名称', exact=True)
+        title.fill(label, timeout=self.timeout)
+        title.press('Enter', timeout=self.timeout)
+        self._wait_canvas(lambda g: canvas_nodes(g)[node_id]['data'].get('label') == label or None,
+                          'save video draft label')
+        return node_id
+
+    def upload_draft_reference(self, path, x, y, label):
+        if not isinstance(label, str) or not label.strip():
+            raise ValueError('请为参考素材卡提供明确名称')
+        checksum = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+        try:
+            source_id = self.upload_source(path, x, y)
+        except ImageUIError as exc:
+            if not exc.mutation_unknown or not hasattr(exc, 'previous_node_ids'):
+                raise
+            previous = set(exc.previous_node_ids)
+
+            def recover(graph):
+                matches = [node for node in graph['nodes'] if node['id'] not in previous
+                           and node['type'] == 'remote-imageNode']
+                if len(matches) > 1:
+                    raise ValueError('上传后发现多个新素材卡，请核对原画布')
+                return matches[0]['id'] if matches else None
+
+            source_id = self._wait_canvas(recover, 'recover original draft reference', timeout=30)
+        source = canvas_nodes(self.workspace.read_canvas())[source_id]
+        actual, = self.workspace.digest_image_outputs([source])
+        if actual.get('sha256') != checksum:
+            raise ValueError(f'素材原件回读与本次上传不符：{source_id}')
+        self.rename(source_id, label)
+        return source_id
+
+    def connect_reference(self, source_id, node_id):
+        self._draft_locator(node_id)
+        self.close_dialog()
+        self._click(self.page.get_by_role('button', name='适应视图', exact=True), 'fit video reference ports')
+        self._connect(source_id, node_id, 'remote-videoGenerationNode', save_timeout=35)
+
+    def drag_duration(self, node_id, seconds):
+        if type(seconds) is not int:
+            raise ValueError('时长须为整数秒')
+        self.close_dialog()
+        locator = self._draft_locator(node_id)
+        self._click(locator.locator('.labelText'), 'focus video draft', node_id=node_id)
+        self._click(locator.get_by_role('button', name='选择视频生成时长', exact=True), 'open video duration',
+                    node_id=node_id)
+        slider = self.page.locator('input[type="range"][aria-label="视频时长滑块"]:visible')
+        slider.wait_for(state='visible', timeout=self.timeout)
+        value = self._unique(slider, 'video duration track').evaluate('''input => {
+            const r = input.getBoundingClientRect();
+            const marks = [...input.closest('.durationTrack').querySelectorAll('.durationMarks span')];
+            return {min: +input.min, max: +input.max, step: +input.step, value: +input.value,
+                    seconds: parseInt(input.getAttribute('aria-valuetext'), 10),
+                    first: Number(marks[0]?.textContent), last: Number(marks.at(-1)?.textContent),
+                    x: r.x, y: r.y, width: r.width, height: r.height};
+        }''')
+        span = value['max'] - value['min']
+        if (span <= 0 or value['step'] != 1 or value['last'] - value['first'] != span
+                or value['seconds'] != value['first'] + value['value'] - value['min']
+                or not value['first'] <= seconds <= value['last'] or value['width'] <= 12):
+            raise ValueError(f'视频时长轨道刻度与本轮秒数不符：{node_id}')
+        if value['seconds'] != seconds:
+            # The observed native thumb spans 12 CSS px. Its center stops inside the track edges.
+            left = value['x'] + 6
+            length = value['width'] - 12
+            current_x = left + (value['seconds'] - value['first']) * length / span
+            target_x = left + (seconds - value['first']) * length / span
+            y = value['y'] + value['height'] / 2
+            self.page.mouse.move(current_x, y)
+            self.page.mouse.down()
+            try:
+                self.page.mouse.move(target_x, y, steps=18)
+            finally:
+                self.page.mouse.up()
+            if slider.get_attribute('aria-valuetext') != f'{seconds}秒':
+                raise ValueError(f'视频时长轨道未到达 {seconds} 秒：{node_id}')
+        return self._wait_canvas(
+            lambda g: next((node for node in g['nodes'] if node['id'] == node_id
+                            and node['data'].get('duration') == seconds), None),
+            'save video duration', timeout=35)
+
+    def refresh_linked_draft(self, node_id, source_id, expected, reference_path):
+        self.page.reload(wait_until='domcontentloaded')
+        self.assert_target()
+        snapshot = verify_saved(self.workspace, {node_id: expected})
+        nodes = canvas_nodes(snapshot)
+        edges = [edge for edge in snapshot['edges'] if
+                 (edge.get('source'), edge.get('sourceHandle'), edge.get('target'), edge.get('targetHandle'))
+                 == (source_id, 'image', node_id, 'in')]
+        if len(edges) != 1 or nodes[node_id]['data'].get('outputs') or nodes[node_id]['data'].get('videoTask'):
+            raise ValueError(f'刷新后未确认唯一参考连线或草稿节点已有生成记录：{node_id}')
+        actual, = self.workspace.digest_image_outputs([nodes[source_id]])
+        if actual.get('sha256') != hashlib.sha256(Path(reference_path).read_bytes()).hexdigest():
+            raise ValueError(f'刷新后的参考原件与本次上传不符：{source_id}')
+        return {'node_id': node_id, 'duration': nodes[node_id]['data']['duration'], 'source_id': source_id,
+                'edge_id': edges[0]['id'], 'reference_sha256': actual['sha256']}
+
+
 def before_write_readback(graph, baseline, targets, models):
     """Reproject the unchanged native nodes, binding already verified exact slot IDs."""
     prior = rows_by_id(baseline['drafts'])
+    nodes = canvas_nodes(graph)
     rows = []
     for ident in targets:
-        node = canvas_nodes(graph)[ident]
+        node = nodes[ident]
         native = node['data']['localReferences']['in']
         media = prior[ident]['ordered_media']
         if len(native) != len(media):
@@ -217,9 +345,8 @@ def retest(project, frozen, baseline, trusted_graph, dimensions, *, resave=False
     from headless_edge import task_browser
 
     timers, started = {}, time.monotonic()
-    open_connection = lambda: open_workspace(task_browser, frozen['target_url'], frozen['target_project_id'])
-    if resave:
-        with open_connection() as workspace:
+    with open_workspace(task_browser, frozen['target_url'], frozen['target_project_id']) as workspace:
+        if resave:
             before = workspace.read_canvas()
             current = canvas_nodes(before)
             if any(current.get(ident) != node for ident, node in expected.items()):
@@ -239,9 +366,10 @@ def retest(project, frozen, baseline, trusted_graph, dimensions, *, resave=False
                 except (RedframeWorkspaceError, ValueError) as checked:
                     raise ValueError(f'保存没有确认回执；只读回查也未确认：{checked}') from exc
                 raise ValueError(f'保存没有确认回执；原节点仍可回读：{exc}') from exc
-        timers['save_seconds'] = round(time.monotonic() - started, 3)
-    tick = time.monotonic()
-    with open_connection() as workspace:
+            timers['save_seconds'] = round(time.monotonic() - started, 3)
+        tick = time.monotonic()
+        if resave:
+            workspace.page.reload(wait_until='domcontentloaded')
         snapshot = verify_saved(workspace, expected)
         if resave and snapshot != before:
             raise ValueError('保存后画布出现并发变化；保留当前现场，不覆盖')
@@ -271,7 +399,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('project', 'frozen', 'baseline', 'trusted-canvas', 'dimensions', 'report'):
         parser.add_argument('--' + name, type=Path, required=True)
-    parser.add_argument('--resave', action='store_true', help='仅在有本次授权时发送一次同值保存后独立重开')
+    parser.add_argument('--resave', action='store_true', help='仅在有本次授权时发送一次同值保存，再在原后台会话刷新回读')
     args = parser.parse_args()
     try:
         result = retest(args.project.resolve(), read_json(args.frozen), read_json(args.baseline),

@@ -15,6 +15,7 @@ import pytest
 from scripts.core.redframe_image_ui import (
     ImageUIError, RedframeImageUI, _prompt_parts, image_browser_session,
 )
+from scripts.core.redframe_workspace import RedframeWorkspaceError
 
 URL = 'https://redframe-ai.xmpaohong.com:28888/#/workspace?canvasId=canvas'
 MODEL = '["volcengineArkVideo","doubao-seedream-5-5-261028"]'
@@ -266,6 +267,22 @@ def test_focus_fits_once_then_returns_actionable_failure():
 def test_already_saved_edge_does_not_draw_again():
     ui, page, _ = adapter()
     ui.connect('source', 'target')
+    assert page.clicks == []
+
+
+def test_saved_state_poll_retries_transient_read_without_repeating_ui_action(monkeypatch):
+    ui, page, workspace = adapter()
+    calls = []
+
+    def read(**kwargs):
+        calls.append(kwargs['budget_ms'])
+        if len(calls) == 1:
+            raise RedframeWorkspaceError('canvas read', [{'status': None, 'error': 'budget'}])
+        return graph()
+
+    monkeypatch.setattr(workspace, 'read_canvas', read)
+    assert ui._wait_canvas(lambda snapshot: snapshot['edges'], 'wire reference') == graph()['edges']
+    assert len(calls) == 2
     assert page.clicks == []
 
 

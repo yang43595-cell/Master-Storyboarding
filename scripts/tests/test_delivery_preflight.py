@@ -141,6 +141,32 @@ def test_full_reference_and_native_readback_then_mutation_fails(tmp_path):
         compare(frozen, observed)
 
 
+def test_repeated_source_digest_is_scoped_to_one_delivery(tmp_path, monkeypatch):
+    frozen, observed = delivery(tmp_path)
+    frame = tmp_path / 'frame.png'
+    reads = []
+    read_digest = artifacts.digest
+
+    def count_digest(path):
+        if path == frame:
+            reads.append(path)
+        return read_digest(path)
+
+    monkeypatch.setattr(artifacts, 'digest', count_digest)
+    assert compare(frozen, observed, tmp_path)['ok']
+    assert reads == [frame]
+
+    wrong = copy.deepcopy(frozen)
+    wrong['drafts'][1]['reference_checks'][0]['sha256'] = '0' * 64
+    bind_synthetic_quality(tmp_path, wrong)
+    with pytest.raises(ValueError, match='reference file/hash'):
+        validate_submission(wrong, tmp_path, preflight=True)
+
+    frame.write_bytes(b'changed after a successful validation')
+    with pytest.raises(ValueError, match='reference file/hash'):
+        compare(frozen, observed, tmp_path)
+
+
 @pytest.mark.parametrize('mutation', ['prompt', 'native_media', 'role', 'action_still', 'entity', 'missing_entity', 'missing_ref',
     'missing_role', 'duration', 'nan', 'bool_duration', 'timeline', 'boundary', 'predecessor', 'stale_source',
     'stale_reference', 'missing_file', 'unconfirmed'])

@@ -534,12 +534,14 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         raise ValueError('画布预检需要含 target_url/drafts 的交付冻结快照，不能直接传入 video.prompt 源稿')
     import math
     try:
-        from .core.artifacts import load_manifest, artifact_is_adopted, project_path, digest as file_digest, validate_current_dependencies
+        from .core.artifacts import (load_manifest, artifact_is_adopted, project_path, cache_file_digests,
+                                     validate_current_dependencies)
         from .core.project_state import load_project_state
         from .core.candidate_test import require_production
         from .core.delivery_files import discover_dependencies
     except ImportError:
-        from core.artifacts import load_manifest, artifact_is_adopted, project_path, digest as file_digest, validate_current_dependencies
+        from core.artifacts import (load_manifest, artifact_is_adopted, project_path, cache_file_digests,
+                                    validate_current_dependencies)
         from core.project_state import load_project_state
         from core.candidate_test import require_production
         from core.delivery_files import discover_dependencies
@@ -604,6 +606,8 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             raise ValueError('preview scope cannot be used by formal delivery')
     if not isinstance(frozen.get('revision'), str) or not frozen['revision'].strip():
         raise ValueError('submission revision required')
+    file_digest = cache_file_digests(check_for_changes=True)
+
     def authority(ref):
         if private_preview:
             return preview_authority(ref)[0]
@@ -619,7 +623,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         if (not path.is_file() or path.stat().st_size == 0 or not item.get('checksum')
                 or item['checksum'] != ref.get('sha256') or file_digest(path) != ref['sha256']):
             raise ValueError('reference file/hash differs from current confirmed artifact')
-        validate_current_dependencies(item, manifest, state, project)
+        validate_current_dependencies(item, manifest, state, project, file_digest=file_digest)
         return path
     agent_reports = {}
     def agent_report(item):
@@ -1174,7 +1178,8 @@ def compare(frozen: dict, observed: dict, project: Path | None = None, *, privat
         raise ValueError('readback target differs from frozen target')
     if observed.get('phase') != 'after_refresh':
         raise ValueError('post-refresh editor readback required; graph/write receipt is insufficient')
-    if observed.get('frozen_sha256') != digest(frozen):
+    frozen_sha256 = submission['frozen_sha256'] if submission is not None else digest(frozen)
+    if observed.get('frozen_sha256') != frozen_sha256:
         raise ValueError('readback does not identify this frozen payload')
     expected = rows_by_id(frozen['drafts'])
     actual = rows_by_id(observed['drafts'])
@@ -1263,7 +1268,7 @@ def compare(frozen: dict, observed: dict, project: Path | None = None, *, privat
             'native_refresh_binding': 'selected_fields_match' if not differences else 'failed',
             'generation_authorization': 'not_checked', 'production_ready': False,
             'draft_count': len(expected), 'submission_checks': submission or 'not_checked',
-            'revision': frozen.get('revision'), 'frozen_sha256': digest(frozen),
+            'revision': frozen.get('revision'), 'frozen_sha256': frozen_sha256,
             'observed_sha256': digest(observed), 'differences': differences,
             **({'observed_target_project_id': observed['target_project_id']} if platform_project_id is not None else {}),
             'native_reference_checks': native_reference_checks,
