@@ -19,6 +19,7 @@ if not __package__:
 from scripts.canvas_readback import compare, compare_baseline, digest, rows_by_id, validate_submission
 from scripts.core.artifacts import load_manifest, project_path
 from scripts.core.io import read_json, write_json
+from scripts.core.native_references import redframe_reference_labels
 from scripts.core.quality_evidence import draft_binding, fingerprint
 from scripts.core.redframe_image_ui import ImageUIError, RedframeImageUI, _ident
 from scripts.core.redframe_workspace import (
@@ -112,17 +113,12 @@ def _draft_data(node, node_id):
 def _native_content(ident, data, media, kinds, models):
     if data.get('outputs') != {}:
         raise ValueError(f'{ident} 缺少草稿节点的空输出字段')
-    aliases = {'image': '图片', 'video': '视频', 'audio': '音频'}
     mode = data['videoMode']
     model_name, capabilities = models[mode]
     if (json.loads(data['model']) != [capabilities['providerId'], capabilities['modelId']]
             or json.loads(data['mode']) not in capabilities['mode']):
         raise ValueError(f'{ident} 的实际模型或参考模式与本轮能力不符')
-    types = Counter()
-    names = {}
-    for index, kind in enumerate(kinds, 1):
-        types[kind] += 1
-        names[index] = f'@{aliases[kind]}{types[kind]}'
+    names = dict(enumerate(redframe_reference_labels(kinds), 1))
     token_pattern = r'\{\{ref (\d+)\}\}'
     mentions = []
     for line in data['promptModel']:

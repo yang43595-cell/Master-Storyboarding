@@ -56,6 +56,41 @@ def delivery(root):
 
 
 
+@pytest.mark.parametrize('prompt,expected_ok', [
+    ('从 @视频1 转到 @图片2，再听 @音频1。', True),
+    ('从 @视频1 转到 @图片1，再听 @音频1。', False),
+    ('从 @图片2 转到 @视频1，再听 @音频1。', False),
+])
+def test_planned_redframe_labels_keep_media_kind_numbering_and_order(prompt, expected_ok):
+    from scripts.canvas_readback import validate_canvas_inputs
+
+    refs = [
+        dict(kind=kind, sha256=str(slot) * 64, canvas_binding=dict(
+            mode='direct', purpose=f'synthetic slot {slot}', prompt_reference=mentioned,
+            **({} if mentioned else {'unmentioned_reason': 'layout support'})))
+        for slot, (kind, mentioned) in enumerate(
+            [('image', False), ('video', True), ('image', True), ('audio', True)], 1)
+    ]
+    row = dict(node_id='fixture', prompt=prompt, reference_checks=refs, realistic_face_slots=[],
+               edges=[], source_nodes=[], shot_durations=[4], parameters={'duration': 4})
+    if expected_ok:
+        validate_canvas_inputs(row, redframe=True, before_upload=True)
+    else:
+        with pytest.raises(ValueError, match='正文引用须按有序素材槽逐项对应'):
+            validate_canvas_inputs(row, redframe=True, before_upload=True)
+
+
+def test_planned_redframe_labels_accept_text_only_and_explicitly_unmentioned_slots():
+    from scripts.canvas_readback import validate_canvas_inputs
+
+    row = dict(node_id='fixture', prompt='镜头拉远。', reference_checks=[], realistic_face_slots=[],
+               edges=[], source_nodes=[], shot_durations=[4], parameters={'duration': 4})
+    validate_canvas_inputs(row, redframe=True, before_upload=True)
+    row['reference_checks'] = [dict(kind='image', sha256='0' * 64, canvas_binding=dict(
+        mode='direct', purpose='layout support', prompt_reference=False, unmentioned_reason='not a prompt chip'))]
+    validate_canvas_inputs(row, redframe=True, before_upload=True)
+
+
 def bind_synthetic_quality(root, frozen):
     """Complete byte/use-bound synthetic observations, never real approval."""
     from scripts.core import quality_evidence as q

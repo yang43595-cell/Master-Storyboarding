@@ -146,6 +146,56 @@ def kwargs():
     return dict(settings=SETTINGS, sources={'source': SOURCE_HASH}, prompt='{{ref 1}} reference description')
 
 
+@pytest.mark.parametrize('fault', ['missing', 'empty', 'invalid', 'unreadable', 'wrong_format', 'truncated'])
+def test_local_source_image_is_checked_before_canvas_upload(tmp_path, monkeypatch, fault):
+    from PIL import Image
+
+    ui, _, _ = adapter()
+    path = tmp_path / ('source.jpg' if fault == 'truncated' else 'source.png')
+    if fault == 'empty':
+        path.touch()
+    elif fault == 'invalid':
+        path.write_bytes(b'not a reference image')
+    elif fault == 'wrong_format':
+        Image.new('RGB', (8, 8)).save(path, format='GIF')
+    elif fault == 'truncated':
+        Image.new('RGB', (8, 8)).save(path)
+        path.write_bytes(path.read_bytes()[:-12])
+    elif fault == 'unreadable':
+        path.touch()
+
+        def open_unreadable(*_args, **_kwargs):
+            raise PermissionError(path)
+
+        monkeypatch.setattr(Image, 'open', open_unreadable)
+
+    def no_upload(*_args, **_kwargs):
+        pytest.fail('invalid image reached the canvas upload action')
+
+    monkeypatch.setattr(ui, '_new_node', no_upload)
+    with pytest.raises(ValueError, match='local reference image'):
+        ui.upload_source(path, 10, 10)
+
+
+@pytest.mark.parametrize(('name', 'image_format'), [
+    ('source.png', None), ('source.JPG', None), ('source.jpeg', None), ('source.webp', None),
+    ('renamed.png', 'JPEG'),
+])
+def test_supported_local_source_image_reaches_canvas_upload(tmp_path, monkeypatch, name, image_format):
+    from PIL import Image
+
+    ui, _, _ = adapter()
+    path = tmp_path / name
+    Image.new('RGB', (8, 8)).save(path, format=image_format)
+
+    def upload(x, y, *, path):
+        assert (x, y, path) == (10, 20, (tmp_path / name).resolve())
+        return 'image-node'
+
+    monkeypatch.setattr(ui, '_new_node', upload)
+    assert ui.upload_source(path, 10, 20) == 'image-node'
+
+
 def test_preflight_reads_native_chip_edge_settings_and_original_bytes():
     ui, page, _ = adapter()
     result = ui.preflight('target', **kwargs())

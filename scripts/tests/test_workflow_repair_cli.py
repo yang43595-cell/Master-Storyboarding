@@ -175,6 +175,7 @@ def test_redframe_product_pack_accepts_face_source_cards(tmp_path, monkeypatch, 
     row['reference_checks'] = [dict(kind=kind, role='appearance', entity_ids=['ACTOR'], asset_id='AST-PRODUCT',
         product_reference_id='state', path=str(source), sha256=sha256,
         canvas_binding=dict(mode='edge', source_port=kind, target_port='in', purpose='fixture', prompt_reference=True))]
+    row['prompt'] += ' @图片1' if kind == 'image' else ' @视频1'
     row['edges'], row['source_nodes'] = [], []
     # Register source bytes before constructing observed graph data.
     saved_media = dict(node_id='face-card', media_id='actual-slot', sha256=sha256)
@@ -274,6 +275,7 @@ def test_money_tree_rush_uses_formal_redframe_write_preflight(tmp_path):
     write_project_state(tmp_path, state)
     for row in frozen['drafts']:
         row['parameters']['model'] = 'Seedance 2.5'
+        row['prompt'] += ' @图片1'
         row['edges'], row['source_nodes'] = [], []
         row['realistic_face_slots'] = []  # The fixture references are solid-color images.
         row['required_reference_roles'] = {'ACTOR': ['identity']}

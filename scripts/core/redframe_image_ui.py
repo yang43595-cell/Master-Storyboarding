@@ -228,6 +228,12 @@ class RedframeImageUI:
         path = Path(path).resolve()
         if not path.is_file() or path.suffix.lower() not in {'.png', '.jpg', '.jpeg', '.webp'}:
             raise ValueError('expected an existing local reference image')
+        from PIL import Image
+        try:
+            with Image.open(path, formats=['PNG', 'JPEG', 'WEBP']) as image:
+                image.load()
+        except (OSError, ValueError, Image.DecompressionBombError) as exc:
+            raise ValueError(f'cannot decode local reference image as PNG, JPEG or WebP: {path}') from exc
         return self._new_node(x, y, path=path)
 
     def rename(self, node_id, label):

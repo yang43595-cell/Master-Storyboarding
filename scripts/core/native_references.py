@@ -4,7 +4,38 @@ An empty reference list is a real applicable branch, not a fabricated entity typ
 Even that branch requires an actual empty readback, never missing observations.
 """
 
+from collections import Counter
 import re
+
+
+_REDFRAME_LABEL_TYPES = {'image': '图片', 'video': '视频', 'audio': '音频'}
+_REDFRAME_TEXT_LABEL = re.compile(r'@[ \t]*(?:图片|视频|音频)[ \t]*\d+')
+_REDFRAME_RAW_TOKEN = re.compile(r'\{\{[ \t]*ref\b')
+
+
+def redframe_reference_labels(kinds):
+    """Number references per media kind, in the order of the actual slots."""
+    counts = Counter()
+    labels = []
+    for kind in kinds:
+        if kind not in _REDFRAME_LABEL_TYPES:
+            raise ValueError(f'红帧引用素材类型无效：{kind}')
+        counts[kind] += 1
+        labels.append(f'@{_REDFRAME_LABEL_TYPES[kind]}{counts[kind]}')
+    return labels
+
+
+def validate_redframe_reference_labels(prompt, refs):
+    """Check new-plan placeholders before any native references can be created."""
+    if _REDFRAME_RAW_TOKEN.search(prompt):
+        raise ValueError('红帧上传前正文不能使用平台原生 {{ref}} 标记')
+    labels = redframe_reference_labels(ref.get('kind') for ref in refs)
+    expected = [label for label, ref in zip(labels, refs) if ref['canvas_binding']['prompt_reference']]
+    actual = _REDFRAME_TEXT_LABEL.findall(prompt)
+    if actual != expected:
+        raise ValueError(
+            f"红帧上传前正文引用须按有序素材槽逐项对应，应为 {'、'.join(expected) or '无'}，"
+            f"实为 {'、'.join(actual) or '无'}")
 
 
 def valid_native_media(media, identity_mode='media_id'):

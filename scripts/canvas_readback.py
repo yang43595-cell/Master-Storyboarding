@@ -17,14 +17,16 @@ try:
     from .core.endpoint_states import validate_endpoint_strategy
     from .core.native_port_binding import verify_port_binding
     from .core.media_types import MEDIA_EXTENSIONS
-    from .core.native_references import reference_readback_status, valid_native_media, endpoint_readback_status
+    from .core.native_references import (reference_readback_status, valid_native_media, endpoint_readback_status,
+                                         validate_redframe_reference_labels)
     from .core.project_kickoff import load_kickoff
 except ImportError:
     from core.endpoint_control import verify_endpoint_control
     from core.endpoint_states import validate_endpoint_strategy
     from core.native_port_binding import verify_port_binding
     from core.media_types import MEDIA_EXTENSIONS
-    from core.native_references import reference_readback_status, valid_native_media, endpoint_readback_status
+    from core.native_references import (reference_readback_status, valid_native_media, endpoint_readback_status,
+                                        validate_redframe_reference_labels)
     from core.project_kickoff import load_kickoff
 
 
@@ -59,7 +61,8 @@ def rows_by_id(rows: list) -> dict:
     return result
 
 
-def validate_canvas_inputs(row: dict, *, redframe: bool = False, before_upload: bool = False) -> None:
+def validate_canvas_inputs(row: dict, *, redframe: bool = False, before_upload: bool = False,
+                           preflight: bool = False) -> None:
     """Check declared graph/slot uses in the existing draft, without UI access."""
     media, refs = row.get('ordered_media'), row.get('reference_checks')
     if not isinstance(refs, list) or (not before_upload and (
@@ -119,6 +122,11 @@ def validate_canvas_inputs(row: dict, *, redframe: bool = False, before_upload: 
         if source_key in expected_sources and expected_sources[source_key] != source:
             raise ValueError('canvas source node/port names conflicting file bytes')
         expected_sources[source_key] = source
+    if redframe and (before_upload or (preflight and media == [])):
+        try:
+            validate_redframe_reference_labels(row['prompt'], refs)
+        except ValueError as exc:
+            raise ValueError(f"{row['node_id']}: {exc}") from exc
     for field, expected in (('edges', expected_edges), ('source_nodes', list(expected_sources.values()))):
         actual = row.get(field)
         if not isinstance(actual, list) or sorted(map(digest, actual)) != sorted(map(digest, expected)):
@@ -873,7 +881,8 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         if 'timing_scope' in row and (not private_preview or row['timing_scope'] != 'segment_total_only'):
             raise ValueError('only private preview may explicitly declare segment-total timing without a shot schedule')
         if redframe or 'edges' in row or 'source_nodes' in row:
-            validate_canvas_inputs(row, redframe=redframe, before_upload=before_upload)
+            validate_canvas_inputs(row, redframe=redframe, before_upload=before_upload,
+                                   preflight=formal_redframe and preflight and row['node_id'] in drafts)
         else:
             validate_shot_durations(row, row['parameters'])
         media, refs = row.get('ordered_media'), row.get('reference_checks')
@@ -881,8 +890,9 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             media = [None] * len(refs)
         if not isinstance(media, list) or not isinstance(refs, list) or len(refs) != len(media):
             raise ValueError('every uploaded media needs one explicit role/authority check in actual order')
-        if media and not (endpoint_mode or before_upload) and (not isinstance(row.get('native_entity_type'), str) or not row['native_entity_type'].strip()):
-            raise ValueError('versioned delivery requires native entity readback for all references')
+        entity_type = row.get('native_entity_type')
+        if media and not endpoint_mode and (not isinstance(entity_type, str) or not entity_type.strip()):
+            raise ValueError(f"{row['node_id']}: versioned delivery requires native entity readback for all references")
         identity_mode = row.get('native_identity_mode', 'media_id')
         if not before_upload and not valid_native_media(media, identity_mode):
             raise ValueError('every uploaded media needs exact supported native identity')

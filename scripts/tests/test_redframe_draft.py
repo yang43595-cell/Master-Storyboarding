@@ -12,6 +12,98 @@ from scripts.tests.test_workflow_repair_cli import bind_redframe_production_sour
 from scripts.tests.test_delivery_preflight import bind_synthetic_quality
 
 
+@pytest.mark.parametrize(
+    'label,damage,error',
+    [
+        ('@图片1', None, None),
+        ('@图片1', 'missing', '必需文件缺失'),
+        ('@图片1', 'changed', 'reference file/hash'),
+        ('@图片1', 'stale', 'reference artifact is unconfirmed, stale'),
+        ('@图片1', 'missing-entity-type', 'native entity readback'),
+        ('@图片2', None, '正文引用须按有序素材槽逐项对应'),
+        ('@视频1', None, '正文引用须按有序素材槽逐项对应'),
+        ('@图片 1', None, '正文引用须按有序素材槽逐项对应'),
+        ('@图片1 @图片1', None, '正文引用须按有序素材槽逐项对应'),
+        ('', None, '正文引用须按有序素材槽逐项对应'),
+        ('{{ref 1}}', None, '不能使用平台原生'),
+    ],
+)
+def test_upload_preflight_checks_the_entire_batch_before_opening_browser(tmp_path, monkeypatch, label, damage, error):
+    plan, observed = redframe_fixture(tmp_path)
+    for draft, marker in zip(plan['drafts'], ('@图片1', label)):
+        draft['prompt'] += f' {marker}' if marker else ''
+        draft.update(edges=[], source_nodes=[], realistic_face_slots=[])
+        draft['reference_checks'][0]['canvas_binding'] = {
+            'mode': 'direct', 'purpose': 'synthetic boundary', 'prompt_reference': True}
+    bind_redframe_production_sources(tmp_path, plan, observed)
+    for draft in plan['drafts']:
+        del draft['ordered_media']
+    if damage == 'missing-entity-type':
+        del plan['drafts'][-1]['native_entity_type']
+    bind_synthetic_quality(tmp_path, plan)
+    if damage == 'missing':
+        (tmp_path / 'frame.png').unlink()
+    elif damage == 'changed':
+        (tmp_path / 'frame.png').write_bytes(b'changed test bytes')
+    elif damage == 'stale':
+        from scripts.core.artifacts import save_manifest
+
+        manifest = redframe_draft.load_manifest(tmp_path)
+        next(item for item in manifest['artifacts'] if item['artifact_id'] == 'FRAME')['status'] = 'stale'
+        save_manifest(tmp_path, manifest)
+
+    class AtUploadBoundary(Exception):
+        pass
+
+    calls = []
+
+    def browser_boundary(*args, **kwargs):
+        calls.append('open_workspace')
+        raise AtUploadBoundary
+
+    def unexpected(*args, **kwargs):
+        pytest.fail('offline test reached a real browser, write or layout operation')
+
+    monkeypatch.setattr(redframe_draft, 'open_workspace', browser_boundary)
+    with pytest.raises(AtUploadBoundary if error is None else ValueError, match=error):
+        redframe_draft.run_new_draft_batch(
+            tmp_path, plan, unexpected, host_browser=unexpected, check_layout=unexpected)
+    assert calls == (['open_workspace'] if error is None else [])
+
+
+@pytest.mark.parametrize('marker,error', [
+    ('', None),
+    ('@图片1', '正文引用须按有序素材槽逐项对应'),
+    ('{{ref 1}}', '不能使用平台原生'),
+])
+def test_text_only_upload_plan_checks_explicit_empty_media(tmp_path, monkeypatch, marker, error):
+    plan, observed = redframe_fixture(tmp_path)
+    plan['drafts'] = plan['drafts'][:1]
+    observed['drafts'] = observed['drafts'][:1]
+    draft = plan['drafts'][0]
+    draft.pop('native_entity_type', None)
+    draft['prompt'] += f' {marker}' if marker else ''
+    draft.update(ordered_media=[], reference_checks=[], required_entities=[], required_reference_roles={},
+                 edges=[], source_nodes=[], realistic_face_slots=[])
+    bind_redframe_production_sources(tmp_path, plan, observed)
+    bind_synthetic_quality(tmp_path, plan)
+    assert draft['ordered_media'] == []
+
+    class AtUploadBoundary(Exception):
+        pass
+
+    def browser_boundary(*args, **kwargs):
+        raise AtUploadBoundary
+
+    def unexpected(*args, **kwargs):
+        pytest.fail('offline test reached a real browser, write or layout operation')
+
+    monkeypatch.setattr(redframe_draft, 'open_workspace', browser_boundary)
+    with pytest.raises(AtUploadBoundary if error is None else ValueError, match=error):
+        redframe_draft.run_new_draft_batch(
+            tmp_path, plan, unexpected, host_browser=unexpected, check_layout=unexpected)
+
+
 @pytest.mark.parametrize('case', [
     'direct', 'wrong-bytes', 'linked', 'stale-face', 'stale-authority',
     'three-drafts', 'late-wrong-bytes', 'interrupted-write',
