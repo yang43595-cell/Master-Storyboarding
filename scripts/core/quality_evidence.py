@@ -34,14 +34,14 @@ def _text(value):
     return isinstance(value, str) and bool(value.strip())
 
 
-def _file(root, record, allowed_roots=()):
+def _file(root, record, allowed_roots=(), *, file_digest=None):
     if not isinstance(record, dict) or not _text(record.get('path')):
         raise ValueError('quality_evidence: 缺少准确证据文件路径')
     root = Path(root).resolve()
     path = (root / record['path']).resolve()
     if not any(path.is_relative_to(r) for r in (root, *map(lambda p: Path(p).resolve(), allowed_roots))) or not path.is_file():
         raise ValueError('quality_evidence: 证据文件缺失或越出项目：' + record['path'])
-    actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    actual = hashlib.sha256(path.read_bytes()).hexdigest() if file_digest is None else file_digest(path)
     if record.get('sha256') != actual:
         raise ValueError('quality_evidence: 文件指纹已变化或缺失：' + record['path'])
     return path
@@ -155,7 +155,7 @@ def _accepted_image_checks(root, image_path, evidence, shot_ids, reference, arti
 
 
 def validate_image_evidence(root, image_path, evidence, shot_ids, *, allowed_roots=(), reference=None,
-                            product_reference=None, artifact=None, state=None):
+                            product_reference=None, artifact=None, state=None, file_digest=None):
     """Require exact image/source bytes and explicit observations for this use."""
     path = Path(image_path).resolve()
     root = Path(root).resolve()
@@ -173,11 +173,11 @@ def validate_image_evidence(root, image_path, evidence, shot_ids, *, allowed_roo
         for aspect in accepted:
             checked['checks'][aspect]['result'] = 'pass'
     _observations(checked, IMAGE_ASPECTS)
-    _file(root, {'path': str(path), 'sha256': evidence.get('image_sha256')}, allowed_roots)
+    _file(root, {'path': str(path), 'sha256': evidence.get('image_sha256')}, allowed_roots, file_digest=file_digest)
     if not isinstance(evidence.get('source_files'), list) or not evidence['source_files']:
         raise ValueError('quality_evidence: 缺实际对照的源文件及指纹')
     for source in evidence['source_files']:
-        _file(root, source, allowed_roots)
+        _file(root, source, allowed_roots, file_digest=file_digest)
     allowed = evidence.get('source_shot_ids')
     if (not isinstance(allowed, list) or not allowed or not all(_text(s) for s in allowed)
             or not shot_ids or not set(shot_ids) <= set(allowed)):
@@ -635,9 +635,12 @@ def _positive_seconds(value):
     return type(value) in (int, float) and math.isfinite(value) and value > 0
 
 
+MAX_GENERATION_SEGMENT_SECONDS = 30
+
+
 def generation_duration_values(row, parameters):
     """Collect existing generation duration aliases, excluding edit targets."""
-    values = [row[key] for key in ('duration_seconds', 'generation_seconds') if key in row]
+    values = [row[key] for key in ('duration_seconds', 'generation_seconds', 'generation_duration_seconds') if key in row]
     values.extend(parameters[key] for key in ('duration_seconds', 'duration') if key in parameters)
     return values
 
@@ -861,7 +864,8 @@ def validate_scene_state_coverage(row, needed, *, accepted_prompt_control=False)
             raise ValueError('scene_state: 新场景状态图待制作/待审或未实际引用，阻止提交；文字保持或假@不代替图片')
 
 
-def validate_scene_source_mapping(rows, sources, project, *, check_submitted_body=False, delivery_platform=None):
+def validate_scene_source_mapping(rows, sources, project, *, check_submitted_body=False, delivery_platform=None,
+                                  read_evidence=None):
     """Bind draft shot mapping to byte-checked source segments and director.
 
     sources contains (authority reference, resolved path, decoded JSON). Source
@@ -914,7 +918,7 @@ def validate_scene_source_mapping(rows, sources, project, *, check_submitted_bod
                 validate_generation_boundaries(payload, value, Path(ref.get('project_path', project)),
                                                delivery_platform=delivery_platform, delivery_segment_ids=delivery_segment_ids,
                                                action_shots=delivery_shots,
-                                               prompt_content_segment_ids=content_segment_ids)
+                                               prompt_content_segment_ids=content_segment_ids, read_evidence=read_evidence)
                 linked_director = True
         if segments:
             if rows and not linked_director and isinstance(payload.get('scenes'), list) and payload['scenes']:
@@ -924,13 +928,13 @@ def validate_scene_source_mapping(rows, sources, project, *, check_submitted_bod
                 validate_generation_boundaries(payload, payload, Path(ref.get('project_path', project)),
                                                delivery_platform=delivery_platform, delivery_segment_ids=delivery_segment_ids,
                                                action_shots=delivery_shots,
-                                               prompt_content_segment_ids=content_segment_ids)
+                                               prompt_content_segment_ids=content_segment_ids, read_evidence=read_evidence)
                 linked_director = True
             if rows and not linked_director:
                 raise ValueError('generation_boundary: 生成段源必须绑定准确导演，不能删来源绕过分段检查')
             from .generation_boundaries import validate_delivery_parameters
             validate_delivery_parameters(rows, payload, Path(ref.get('project_path', project)),
-                                         platform=delivery_platform)
+                                         platform=delivery_platform, read_evidence=read_evidence)
             video_origins.update({segment['segment_id']: ref for segment in segments})
             videos.extend(segments)
     if any(row.get('source_segment_id') for row in rows) and not videos:
@@ -953,11 +957,10 @@ def validate_scene_source_mapping(rows, sources, project, *, check_submitted_bod
         ids = source_shot_ids(row)
         if not ids or not set(ids) <= all_shots:
             raise ValueError('scene_state: 提交镜号不在准确源导演内')
-        if videos:
-            segment = row.get('source_segment_id', row.get('node_id'))
-            matches = [s for s in videos if s.get('segment_id') == segment]
-            if len(matches) != 1 or source_shot_ids(matches[0]) != ids:
-                raise ValueError('scene_state: 提交 source_shots 必须逐镜匹配准确视频源 source_segment_id，不能换镜绕过后态')
+        segment = row.get('source_segment_id', row.get('node_id'))
+        matches = [s for s in videos if s.get('segment_id') == segment]
+        if len(matches) != 1 or source_shot_ids(matches[0]) != ids:
+            raise ValueError('scene_state: 提交 source_shots 必须逐镜匹配准确视频源 source_segment_id，不能换镜绕过后态')
     delivery_sources = {s['segment_id']: (s, Path(video_origins[s['segment_id']].get('project_path', project)))
                         for s in videos}
     validate_required_visuals(rows, visual_requirements, project=project, delivery_sources=delivery_sources)

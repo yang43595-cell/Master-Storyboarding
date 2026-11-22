@@ -75,9 +75,9 @@ def _validate_endpoint_strategy(row, sources, control_proof):
     refs = row.get('reference_checks', [])
     _need(len(refs) == 2, 'endpoint strategy requires exactly two active image references')
     observations = []
-    for index, (name, role, boundary, expected_state, shot, description) in enumerate([
-        ('start', 'start_frame', strategy['initial_boundary'], requirements[0]['previous_state_id'], shots[0], scene.get('start_state')),
-        ('end', 'end_frame', strategy['final_boundary'], requirements[-1]['state_id'], shots[-1], scene.get('end_state'))]):
+    for index, (name, role, boundary, expected_state, shot) in enumerate([
+        ('start', 'start_frame', strategy['initial_boundary'], requirements[0]['previous_state_id'], shots[0]),
+        ('end', 'end_frame', strategy['final_boundary'], requirements[-1]['state_id'], shots[-1])]):
         _need(isinstance(boundary, dict) and set(boundary) == {'state_id', 'shot_id', 'position', 'source_quote', 'description'},
               'boundary must identify the actual within-shot segment start/end')
         _need(_text(expected_state) and boundary['state_id'] == expected_state and boundary['shot_id'] == shot

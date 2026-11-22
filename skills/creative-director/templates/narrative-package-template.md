@@ -43,4 +43,4 @@ status: candidate
 
 在 JSON 中直接填写人物或物件的实际名称及叙事用途。角色登记 `character_type`（HUMAN 人类、HUMANOID 人形角色、ANIMAL 动物、NON_HUMANOID 非人形角色）。动物和非人形角色登记稳定外观结构，动作状态留在剧情中。人类及人形角色的 `wardrobe_states` 按正文填写 `name` 与 `evidence`。需要制作或复用图片时，按下文所链判断填写 `character_output_kind`。如果选 `人物1x4`，每套服装另写唯一的最终 `output_id`，单套也登记。正文明确换装才新增，款式未定时交资产选图决定。自查最终规格、服装名称、换装数量和依据与正文一致。
 
-先按[资产图需求判断](../references/asset-image-necessity.md)在 `asset_requirements` 填写 `image_decision` 和 `image_reason`，再确定需要独立选图或制作的粒度。可独立选图、制作和确认的对象分别登记，例如同用于送礼的酒瓶与卡片。服装归角色服装状态，产品的固定成套构成可共用一项。独立包装和不同展示状态写明各自的制作位置。上游修订须对齐项目 `04_资产/当前资产需求表.md` 和 `资产需求调整.json` 中的现行决定。
+先按[资产图需求判断](../references/asset-image-necessity.md)在 `asset_requirements` 填写 `image_decision` 和 `image_reason`，再确定需要独立选图或制作的粒度。可独立选图、制作和确认的对象分别登记，例如同用于送礼的酒瓶与卡片。服装归角色服装状态，产品的固定成套构成可共用一项。独立包装和不同展示状态写明各自的制作位置。上游修订对照已采用叙事包与 `04_资产/资产需求调整.json` 核对受影响的决定。

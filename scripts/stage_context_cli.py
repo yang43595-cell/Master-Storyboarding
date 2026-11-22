@@ -32,16 +32,17 @@ try:
     from .core.agent_acceptance import register_workflow_authorization, require_workflow_authorization
     from .core.io import write_text, write_text_if_changed
     from .core.knowledge_runtime import (resolve_knowledge_root, resolve_knowledge_bundle, is_bundled_root,
-                                          verify_bundle, verify_selected_file, verify_selected_files)
+                                          verify_bundle, verify_selected_files)
     from .core.knowledge_blocks import build_knowledge_index, load_policy, parse_knowledge_blocks
     from .core.knowledge_selector import render_knowledge_bundle, render_knowledge_candidates, render_candidate_trial_bundle, select_knowledge
     from .core.candidate_source_snapshot import CandidateSnapshotError, inspect_candidate_snapshot, load_candidate_snapshot_rules
     from .core.method_documents import MethodDocumentError, render_method_packet, resolve_method_documents
     from .core.product_reference_pack import resolve_product_pack
     from .core.project_state import load_project_state, normalize_project_state, write_project_state
+    from .core.production_handoff import LEGACY_RULE, require_production_handoff, resolve_production_handoff
     from .core.project_kickoff import (REQUEST_PATH, RECREATION_ENTRY, RECREATION_METHOD, RECREATION_WORKFLOW,
-                                       bind_stage_request, load_kickoff, product_demo_timing_advisory,
-                                       production_workflow, validate_kickoff)
+                                       bind_stage_request, load_kickoff, load_project_request,
+                                       product_demo_timing_advisory, production_workflow, validate_kickoff)
     from .core.review_publication import ChatScriptApproval, is_recorded_website_script_approval, require_script_approval
     from .core.io import PROJECT_LOCK_RELATIVE, file_lock, project_lock, write_json
     from .core.revision_control import RevisionControlError, commit_change, guard_action, show_change
@@ -62,16 +63,17 @@ except ImportError:  # direct CLI execution
     from core.agent_acceptance import register_workflow_authorization, require_workflow_authorization
     from core.io import write_text, write_text_if_changed
     from core.knowledge_runtime import (resolve_knowledge_root, resolve_knowledge_bundle, is_bundled_root,
-                                         verify_bundle, verify_selected_file, verify_selected_files)
+                                         verify_bundle, verify_selected_files)
     from core.knowledge_blocks import build_knowledge_index, load_policy, parse_knowledge_blocks
     from core.knowledge_selector import render_knowledge_bundle, render_knowledge_candidates, render_candidate_trial_bundle, select_knowledge
     from core.candidate_source_snapshot import CandidateSnapshotError, inspect_candidate_snapshot, load_candidate_snapshot_rules
     from core.method_documents import MethodDocumentError, render_method_packet, resolve_method_documents
     from core.product_reference_pack import resolve_product_pack
     from core.project_state import load_project_state, normalize_project_state, write_project_state
+    from core.production_handoff import LEGACY_RULE, require_production_handoff, resolve_production_handoff
     from core.project_kickoff import (REQUEST_PATH, RECREATION_ENTRY, RECREATION_METHOD, RECREATION_WORKFLOW,
-                                      bind_stage_request, load_kickoff, product_demo_timing_advisory,
-                                      production_workflow, validate_kickoff)
+                                      bind_stage_request, load_kickoff, load_project_request,
+                                      product_demo_timing_advisory, production_workflow, validate_kickoff)
     from core.review_publication import ChatScriptApproval, is_recorded_website_script_approval, require_script_approval
     from core.io import PROJECT_LOCK_RELATIVE, file_lock, project_lock, write_json
     from core.revision_control import RevisionControlError, commit_change, guard_action, show_change
@@ -100,6 +102,14 @@ _CONTEXT_ID: ContextVar[str | None] = ContextVar("stage_context_id", default=Non
 IMAGE_SKILLS = {"asset-image-assistant", "storyboard-director"}
 TASK_HANDOFF_SKILLS = {"creative-director", "storyboard-planner"}
 _HANDOFF_DEFAULT_OBJECTIVE = "按目标 Skill 完成本轮已授权工作"
+_ROUTED_HANDOFF_SCOPE = ("action", "artifact_ids", "asset_ids", "output_ids", "shot_ids", "segment_ids")
+_ROUTED_SKILLS = {
+    "creative-director": ("creative",),
+    "storyboard-planner": ("director",),
+    "asset-image-assistant": ("assets",),
+    "storyboard-director": ("visual",),
+    "voiceover-to-video-script": ("video", "canvas"),
+}
 
 
 def _context_dir(project: Path, *parts: str) -> Path:
@@ -166,12 +176,12 @@ def _context_scoped(function):
     return scoped
 
 
-def _image_batch_targets(skill: str, request: dict[str, Any]) -> list[str] | None:
+def _image_batch_targets(skill: str, request: dict[str, Any], *, routed=False) -> list[str] | None:
     if skill not in IMAGE_SKILLS:
         return None
     targets = request.get("image_targets")
     if targets is None:
-        if _CONTEXT_ID.get() is None:
+        if _CONTEXT_ID.get() is None or routed:
             return None
         raise StageContextError("隔离生图批次的 image_targets 须包含 1..8 个准确输出身份")
     if skill == "asset-image-assistant":
@@ -333,7 +343,7 @@ def accept_artifact(args: argparse.Namespace) -> dict[str, Any]:
                 transaction = revision_api._commit_json_transaction_unlocked(project, {
                     project / '00_项目管理/project_state.json': state,
                 }, reason='select exact previously agent-adopted artifact')
-            adoption = {'artifact': entry, 'resumed': True, 'transaction': transaction}
+            adoption = {'resumed': True, 'transaction': transaction}
         elif change_id:
             change = revision_api.show_change(project)['active_change']
             if not change or change['change_id'] != change_id or (change.get('candidate_receipt') or {}).get('artifact_id') != entry['artifact_id']:
@@ -347,17 +357,17 @@ def accept_artifact(args: argparse.Namespace) -> dict[str, Any]:
                     raise StageContextError('待提交修订缺少自主验收报告；人工确认请沿原入口提交')
                 if project_path(project, stored_report) != report_path:
                     raise StageContextError('待提交修订的自查报告与本次输入不同')
-            transaction = revision_api.commit_change(project, change_id=change_id)
-            adoption = {'artifact': next(item for item in load_manifest(project)['artifacts']
-                                        if item['artifact_id'] == args.artifact_id), 'transaction': transaction}
+            adoption = {'transaction': revision_api.commit_change(project, change_id=change_id)}
         else:
             adoption = adopt_initial_agent_artifact(
                 project, args.artifact_id, report_path, expected_checksum=expected_checksum,
             )
-        selected = load_project_state(project)
-        adopted = next(item for item in load_manifest(project)['artifacts'] if item['artifact_id'] == args.artifact_id)
-        if adopted['artifact_id'] not in selected['current_artifacts'] or not artifact_is_adopted(adopted, selected, project):
-            raise StageContextError('采用后 manifest/state 准确回读未通过，不得进入下游')
+        if 'artifact' not in adoption:
+            selected = load_project_state(project)
+            adopted = next(item for item in load_manifest(project)['artifacts'] if item['artifact_id'] == args.artifact_id)
+            if adopted['artifact_id'] not in selected['current_artifacts'] or not artifact_is_adopted(adopted, selected, project):
+                raise StageContextError('采用后 manifest/state 准确回读未通过，不得进入下游')
+            adoption['artifact'] = adopted
         if frozen is not None:
             try:
                 from .canvas_readback import validate_submission
@@ -366,7 +376,7 @@ def accept_artifact(args: argparse.Namespace) -> dict[str, Any]:
             try:
                 preflight = validate_submission(frozen, project, formal_delivery=True, preflight=True)
             except (ValueError, OSError, KeyError, TypeError, RuntimeError) as exc:
-                return {'ok': False, 'adoption_completed': True, 'artifact_id': adopted['artifact_id'],
+                return {'ok': False, 'adoption_completed': True, 'artifact_id': args.artifact_id,
                         'transaction': adoption.get('transaction'), 'preflight': {'ok': False, 'error': str(exc)},
                         'notice': '采用及状态登记已完成；修正原单段计划后续用同一命令，不重新采用或生成'}
             adoption['preflight'] = {key: preflight[key] for key in (
@@ -548,9 +558,9 @@ def _revision_summary(project: Path, change_id: str | None, target_ids: list[str
     }
 
 
-def _tombstone_fingerprints(vault: Path, policy: dict[str, Any]) -> set[str]:
+def _tombstone_fingerprints(vault: Path, policy: dict[str, Any], *, verified_manifest=None) -> set[str]:
     if is_bundled_root(vault):
-        manifest = verify_bundle(vault)
+        manifest = verify_bundle(vault) if verified_manifest is None else verified_manifest
         if not manifest["dynamic_rule_ids"]:
             return set()
     relative = (policy.get("discovery") or {}).get("tombstones")
@@ -558,7 +568,7 @@ def _tombstone_fingerprints(vault: Path, policy: dict[str, Any]) -> set[str]:
     if is_bundled_root(vault) and path is not None:
         if relative not in {entry["path"] for entry in manifest["files"]}:
             return set()  # Not packaged; no assertion about upstream history.
-        path = verify_selected_file(vault, relative)
+        path = verify_selected_files(vault, (relative,), verified_manifest=manifest)[relative]
     if path is None or not path.is_file():
         return set()
     result: set[str] = set()
@@ -903,13 +913,15 @@ def _current_handoff_text(project: Path, target_skill: str, snapshot: dict[str, 
     inputs = [indexed[ident] for ident in selected_ids]
     testing = bool(snapshot.get("candidate_test"))
     scoped = snapshot.get("artifact_scope") == "declared"
-    if not testing and not inputs and not scoped:
+    routed = _routed_handoff_scope(text)
+    initial_creative = routed and routed["action"] == "creative" and not routed.get("artifact_ids")
+    if not testing and not inputs and not scoped and not initial_creative:
         raise StageContextError("项目没有可交接的当前有效产物 ID")
     if testing != ("execution_mode: candidate_test" in text):
         raise StageContextError("交接卡运行模式与项目不一致；重新 handoff")
     hash_pattern = r"(?m)^  - (?:candidate_)?sha256：`([a-f0-9]{64})`$"
     has_hashes = bool(re.search(hash_pattern, text))
-    if scoped:
+    if scoped and not routed:
         # Existing cards list every current input. Consume and show only rows
         # relevant to the new task, leaving the original card untouched.
         selected = set(selected_ids)
@@ -917,15 +929,37 @@ def _current_handoff_text(project: Path, target_skill: str, snapshot: dict[str, 
                       lambda row: row[0] if row[1] in selected else "", text)
     records = [(*record[:-1], str(project_path(project, record[-1])))
                for record in re.findall(pattern, text)]
+    if routed:
+        declared = set(routed.get("artifact_ids", []))
+        if declared != {record[0] for record in records} or not declared.issubset(selected_ids):
+            raise StageContextError("本轮准备未绑定程序交接卡指定的全部产物；按原交接范围准备。")
+        inputs = [fact for fact in inputs if fact["record"]["artifact_id"] in declared]
     expected = [tuple(str(fact["record"].get(field, "")) for field in fields[:-1])
                 + (fact["file"]["path"],) for fact in inputs]
     if sorted(records) != sorted(expected):
         raise StageContextError("已有交接卡的产物、版本或路径已过期；先按当前确认输入重新运行 handoff。")
     if testing or has_hashes:
-        ordered = [indexed[record[0]] for record in records] if scoped else inputs
+        ordered = [indexed[record[0]] for record in records] if scoped or routed else inputs
         if re.findall(hash_pattern, text) != [fact["file"]["sha256"] for fact in ordered]:
             raise StageContextError("交接卡来源字节已改变；重新核对并 handoff")
     return text
+
+
+def _routed_handoff_scope(text: str) -> dict[str, Any] | None:
+    match = re.search(r"(?m)^- 程序交接范围：(.+)$", text)
+    if not match:
+        return None
+    try:
+        scope = json.loads(match[1])
+    except ValueError as exc:
+        raise StageContextError("程序交接范围无法读取；重新运行 handoff。") from exc
+    if (not isinstance(scope, dict) or not isinstance(scope.get("action"), str)
+            or ("workflow" in scope and scope["workflow"] != RECREATION_WORKFLOW)
+            or any(not isinstance(scope.get(key, []), list)
+                   or any(not isinstance(ident, str) or not ident for ident in scope.get(key, []))
+                   for key in _ROUTED_HANDOFF_SCOPE[1:])):
+        raise StageContextError("程序交接范围无效；重新运行 handoff。")
+    return scope
 
 
 def _handoff_scope(text: str) -> dict[str, Any] | None:
@@ -936,8 +970,42 @@ def _handoff_scope(text: str) -> dict[str, Any] | None:
         return {"sha256": _identity_hash(text.strip())}  # Do not assume an unrecognized older card is unchanged.
     objective, stop_at = (value.strip() for value in match.groups())
     bindings = _asset_batch_binding_entries(text)
+    routed = _routed_handoff_scope(text)
     return {"objective": objective, "stop_at": stop_at,
+            **({"routed": routed} if routed else {}),
             **({"asset_batch_sha256": _identity_hash(sorted(bindings))} if bindings else {})}
+
+
+def _check_preparation_route(project, skill, request, routed, *, repair=False, asset_batch=False):
+    """Keep formal startup on the live route, including after a stale card or a restart."""
+    if repair or asset_batch or skill not in _ROUTED_SKILLS:
+        return
+    project_request = load_project_request(project)
+    if LEGACY_RULE in project_request.get("local_references", []):
+        return
+    if not routed and project_request.get("project_mode") != "new":
+        return
+    action = _ROUTED_SKILLS[skill][0]
+    if routed and routed["action"] != action:
+        raise StageContextError("交接卡步骤与本轮准备不一致")
+    requested_shots = request.get("source_shot_ids") if action == "visual" else None
+    route = require_production_handoff(project, action, shot_ids=requested_shots)
+    if routed:
+        if action != "assets" and routed.get("workflow") != route.get("workflow"):
+            raise StageContextError("制作路线已变化；重新运行 handoff")
+        if not set(routed.get("artifact_ids", [])).issubset(route.get("artifact_ids", [])):
+            raise StageContextError("程序交接输入已改版；重新运行 handoff")
+        if (requested_shots is not None and not set(requested_shots).issubset(routed.get("shot_ids", []))
+                or any(not set(routed.get(field, [])).issubset(route.get(field, []))
+                       for field in ("asset_ids", "output_ids", "shot_ids")
+                       if field != "shot_ids" or requested_shots is None)):
+            raise StageContextError("程序交接范围已变化；重新运行 handoff 核对就绪范围")
+    if action == "assets" and (targets := request.get("image_targets")):
+        if "output_ids" not in route:
+            raise StageContextError("资产交接范围为盘点和复用；出图目标须先登记当前制作授权")
+        if (not {target.partition("@")[0] for target in targets}.issubset(route.get("asset_ids", []))
+                or route.get("output_ids") and not set(targets).issubset(route["output_ids"])):
+            raise StageContextError("图片目标超出程序交接范围")
 
 
 def _coordinator_objective(skill: str, context_id, scope, testing=False) -> str | None:
@@ -1162,6 +1230,11 @@ def _semantic_request(request: dict[str, Any], skill: str) -> dict[str, Any]:
     # The people writing the story and shot plan never submit image jobs.
     if skill in {"creative-director", "storyboard-planner"} and isinstance(kickoff, dict):
         semantic["kickoff"] = {key: value for key, value in kickoff.items() if key != "image_generation"}
+    elif skill == "asset-image-assistant" and isinstance(kickoff, dict):
+        creation = kickoff.get("creation")
+        if isinstance(creation, dict) and "workflow" in creation:
+            semantic["kickoff"] = {**kickoff, "creation": {key: value for key, value in creation.items()
+                                                            if key != "workflow"}}
     return semantic
 
 
@@ -1310,7 +1383,7 @@ def _input_snapshot(project: Path, inputs: dict[str, Any], state: dict[str, Any]
 def _task_source_roles(skill: str, request: dict[str, Any]) -> list[str]:
     """Include upstream packages that the selected phase uses by contract."""
     roles = []
-    if (skill == "asset-image-assistant" and request.get("image_targets")) or request.get("material_output_ids"):
+    if skill == "asset-image-assistant" or request.get("material_output_ids"):
         roles.append("narrative.package")
     if skill == "storyboard-director" and (request.get("source_shot_ids") or request.get("supplement_request_paths")):
         roles.append("storyboard.package")
@@ -1684,6 +1757,10 @@ def _validate_current_inputs(project: Path, basis: dict[str, Any], *, adopted_ca
     coordinator_goal = _coordinator_objective(basis["skill"], basis.get("context_id"), scope, current.get("candidate_test"))
     if scope != previous_scope or (coordinator_goal is not None and basis.get("objective") != coordinator_goal):
         raise StageContextError("交接目标、停止点或图片批次依据已改变；请重新 prepare 核对当前范围。")
+    if not current.get("candidate_test"):
+        _check_preparation_route(project, skill, frozen_request, (scope or {}).get("routed"),
+                                 repair=bool(basis.get("revision")),
+                                 asset_batch=bool((scope or {}).get("asset_batch_sha256")))
     standards = basis["standards"]
     profile = basis.get("knowledge_profile", {})
     if not isinstance(profile, dict) or not profile.get("path") or not profile.get("sha256"):
@@ -1729,9 +1806,9 @@ def _validate_current_inputs(project: Path, basis: dict[str, Any], *, adopted_ca
         adopted_candidates = evidence[1].get("adopted_candidates", []) if evidence else []
     records.extend(adopted_candidates)
     if records:
-        tombstones = _tombstone_fingerprints(knowledge_root, load_policy(ROOT))
+        tombstones = _tombstone_fingerprints(knowledge_root, load_policy(ROOT), verified_manifest=verified_bundle)
         for item in records:
-            block = _read_candidate_exact(knowledge_root, item)
+            block = _read_candidate_exact(knowledge_root, item, verified_manifest=verified_bundle)
             if block.fingerprint in tombstones:
                 raise StageContextError(f"当前知识已被禁用：{block.id}；请重新 prepare。")
     return {"current_input_validation": "matched_at_check", "execution_authorization": "not_granted",
@@ -1739,12 +1816,13 @@ def _validate_current_inputs(project: Path, basis: dict[str, Any], *, adopted_ca
                                        if item["confirmation_byte_binding"] == "legacy_unhashed"]}
 
 
-def _read_candidate_exact(vault: Path, record: dict[str, Any]) -> Any:
+def _read_candidate_exact(vault: Path, record: dict[str, Any], *, verified_manifest=None) -> Any:
     if is_bundled_root(vault):
-        manifest = verify_bundle(vault)
+        manifest = verify_bundle(vault) if verified_manifest is None else verified_manifest
         if record.get("id") not in manifest["dynamic_rule_ids"]:
             raise StageContextError("动态规则未列入内置知识 manifest 允许列表")
-        verify_selected_file(vault, record.get("vault_relative_path"))
+        relative = record.get("vault_relative_path")
+        verify_selected_files(vault, (relative,), verified_manifest=manifest)
     relative = record.get("vault_relative_path")
     if not isinstance(relative, str) or not relative or Path(relative).is_absolute() or ".." in Path(relative).parts:
         raise StageContextError("候选目录路径无效；请重新 prepare。")
@@ -1874,10 +1952,19 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
                                           request_snapshot=request_snapshot)
     kickoff = None if testing else load_kickoff(project)
     request = bind_stage_request(request, kickoff)
+    card = _handoff_path(project)
+    routed = None
+    if not testing and card.is_file():
+        card_text = card.read_text(encoding="utf-8")
+        if f"- 目标 Skill：`{args.skill}`\n" in card_text:
+            routed = _routed_handoff_scope(card_text)
     product_pack = resolve_product_pack(kickoff["product"]) if kickoff and args.skill in {
         "creative-director", "storyboard-planner", "asset-image-assistant", "storyboard-director",
     } else None
-    image_targets = _image_batch_targets(args.skill, request)
+    image_targets = _image_batch_targets(args.skill, request, routed=bool(routed and not asset_batch))
+    if not testing:
+        _check_preparation_route(project, args.skill, request, routed,
+                                 repair=bool(getattr(args, "change_id", None)), asset_batch=bool(asset_batch))
     try:
         output_requirements = check_output_plan(project, request, **({"candidate_test_mode": True} if testing else {})) if args.skill == "asset-image-assistant" else {}
     except ValueError as exc:
@@ -1897,15 +1984,20 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         key: value for key, value in request.items()
         if key.startswith("source_") or key in {"sources", "inputs", "material_output_ids", "supplement_request_paths"}
     })
+    if routed and routed.get("artifact_ids"):
+        ids = input_versions.get("source_artifact_ids", [])
+        if not isinstance(ids, list):
+            raise StageContextError("请求的 source_artifact_ids 必须是数组")
+        input_versions["source_artifact_ids"] = list(dict.fromkeys([*routed["artifact_ids"], *ids]))
     if product_pack:
         input_versions["product_reference_files"] = [product_pack["manifest_path"],
                                                      *(item["path"] for item in product_pack["references"])]
     raw_state = _state(project)
     summary = _state_summary(raw_state)
-    has_local_selection = any(request.get(key) for key in (
+    has_local_selection = args.skill == "asset-image-assistant" or any(request.get(key) for key in (
         "source_artifact_id", "source_artifact_ids", "source_shot_ids", "image_targets", "material_output_ids",
         "supplement_request_paths",
-    )) or bool(getattr(args, "change_id", None))
+    )) or bool(getattr(args, "change_id", None) or (routed or {}).get("artifact_ids"))
     snapshot = _input_snapshot(project, input_versions, raw_state,
                                prefer_declared_artifacts=has_local_selection,
                                source_roles=_task_source_roles(args.skill, request))
@@ -2249,16 +2341,71 @@ def _receive_asset_batch(project, args, target_skill, from_skill):
     return {"kind": "asset-batch-result", "context_id": context_id, **result}
 
 
+def _route_existing_project(args, project):
+    """Recalculate the next dispatch from committed business evidence on every run."""
+    if _test_request(args, project):
+        raise StageContextError("隔离候选交接须指定 --to-skill")
+    with project_lock(project):
+        state = _state(project)
+        manifest = load_manifest(project)
+        active_change, _, blockers = _handoff_revision_status(project)
+        if isinstance(active_change, dict):
+            blockers = blockers[1:]  # The resolver checks the active change against each transition's inputs.
+        if blockers:
+            return {"ok": True, "mode": "production", "project": str(project), "next_actions": [],
+                    "steps": [{"action": "revision", "status": "waiting", "reason": "；".join(blockers)}]}
+        flow = resolve_production_handoff(project, state=state, manifest=manifest)
+        if isinstance(active_change, dict):
+            flow["steps"].insert(0, {"action": "revision", "status": "waiting",
+                                    "reason": "沿原变更案继续核对、返修或确认",
+                                    "change_id": active_change.get("change_id")})
+        next_actions = []
+        file_digest = cache_file_digests(digest)
+        checked_dependencies = set()
+        for step in flow["steps"]:
+            if step["status"] != "ready":
+                continue
+            next_action = dict(step)
+            target_skill = step.get("skill")
+            if target_skill:
+                context_id = "handoff-" + step["action"]
+                token = _CONTEXT_ID.set(context_id)
+                try:
+                    ids = step.get("artifact_ids", [])
+                    inputs = []
+                    if ids:
+                        _, inputs = _confirmed_project_inputs(
+                            project, state, manifest=manifest, artifact_ids=ids,
+                            file_digest=file_digest, checked_dependencies=checked_dependencies,
+                        )
+                    card = _write_handoff_card(
+                        args, project, target_skill,
+                        step.get("from_skill") or state.get("current_stage") or "kickoff",
+                        inputs, routed=step,
+                    )
+                    next_action.update(context_id=context_id, handoff_path=card["path"])
+                except (OSError, ValueError) as exc:
+                    step.update(status="waiting", reason=str(exc))
+                    continue
+                finally:
+                    _CONTEXT_ID.reset(token)
+            next_actions.append(next_action)
+        return {**flow, "ok": True, "mode": "production", "project": str(project), "next_actions": next_actions}
+
+
 @_context_scoped
 def handoff(args: argparse.Namespace) -> dict[str, Any]:
     project = Path(args.project).expanduser().resolve()
     if not project.is_dir():
         raise StageContextError(f"项目目录不存在：{project}")
-    target_skill = str(args.to_skill or "").strip()
-    if not target_skill:
-        raise StageContextError("handoff 必须提供非空 --to-skill")
+    target_skill = str(getattr(args, "to_skill", None) or "").strip()
     from_skill = str(getattr(args, "from_skill", None) or "").strip()
     authorization_id = str(getattr(args, "authorization_id", None) or "").strip()
+    if not target_skill:
+        if from_skill or authorization_id or any(getattr(args, option, None) for option in (
+                "receive_batch", "request_json", "batch_receipt", "actor_id", "task_id", "context_id", "objective", "stop_at")):
+            raise StageContextError("程序交接只接收项目路径；已有明确目标的任务或批次绑定须提供 --to-skill")
+        return _route_existing_project(args, project)
     if bool(from_skill) != bool(authorization_id):
         raise StageContextError("协调方须同时提供 --from-skill 与已有的 --authorization-id")
     if from_skill and getattr(args, "candidate_test", False):
@@ -2266,6 +2413,12 @@ def handoff(args: argparse.Namespace) -> dict[str, Any]:
     if getattr(args, "receive_batch", False):
         return _receive_asset_batch(project, args, target_skill, from_skill)
     asset_batch = _asset_batch_handoff(project, args, target_skill)
+    default_flow = (target_skill in _ROUTED_SKILLS and not getattr(args, "candidate_test", False)
+                    and asset_batch is None and load_kickoff(project)
+                    and LEGACY_RULE not in load_project_request(project).get("local_references", []))
+    if default_flow:
+        with project_lock(project):
+            return _bind_routed_handoff(args, project, target_skill, authorization_id)
     # Declared transitions share the project writer lock. Inspect revision facts
     # before any write or recovery can change them.
     can_register_transition = from_skill or (
@@ -2273,6 +2426,35 @@ def handoff(args: argparse.Namespace) -> dict[str, Any]:
     )
     with file_lock(project / PROJECT_LOCK_RELATIVE) if can_register_transition else nullcontext():
         return _write_handoff(args, project, target_skill, from_skill, authorization_id, asset_batch=asset_batch)
+
+
+def _bind_routed_handoff(args, project, target_skill, authorization_id):
+    """Bind a runner to a legal route; an explicit Skill never authorizes a transition."""
+    _test_request(args, project)
+    state = _state(project)
+    if authorization_id:
+        require_workflow_authorization(project, authorization_id, target_skill, state=state)
+    actions = _ROUTED_SKILLS[target_skill]
+    if len(actions) == 1:
+        step = require_production_handoff(project, actions[0], state=state)
+    else:
+        action = (_CONTEXT_ID.get() or "").removeprefix("handoff-")
+        requested = {action} if action in actions else set(actions)
+        steps = resolve_production_handoff(project, state=state, actions=requested)["steps"]
+        ready = [step for step in steps if step["action"] in requested and step["status"] == "ready"]
+        if not ready:
+            reason = "；".join(step["reason"] for step in steps if step["action"] in actions or step["action"] == "kickoff")
+            raise StageContextError("视频或画布交接当前未就绪：" + reason)
+        if len(ready) > 1:
+            raise StageContextError("视频写稿和画布写入均有就绪范围；沿程序交接返回的对应 context_id 绑定")
+        step = ready[0]
+    from_skill = getattr(args, "from_skill", None)
+    if from_skill and step.get("from_skill") != from_skill:
+        raise StageContextError("交接来源不符合程序确定的阶段")
+    ids = step.get("artifact_ids", [])
+    inputs = _confirmed_project_inputs(project, state, artifact_ids=ids)[1] if ids else []
+    return _write_handoff_card(args, project, target_skill,
+                               step.get("from_skill") or state.get("current_stage") or "kickoff", inputs, routed=step)
 
 
 def _write_handoff(args, project, target_skill, from_skill, authorization_id, *, asset_batch=None):
@@ -2310,13 +2492,28 @@ def _write_handoff(args, project, target_skill, from_skill, authorization_id, *,
     current_stage = from_skill or str(state.get("current_stage") or "")
     if not current_stage:
         raise StageContextError("项目当前阶段为空，不能生成交接卡")
+    report = _write_handoff_card(args, project, target_skill, current_stage, inputs,
+                                 testing=testing, asset_batch=asset_batch)
+    if register_transition:
+        state.update(current_stage=from_skill, next_stage=target_skill)
+        write_project_state(project, state)
+    return report
+
+
+def _write_handoff_card(args, project, target_skill, current_stage, inputs, *, testing=False,
+                        asset_batch=None, routed=None):
+    scope_fields = (*_ROUTED_HANDOFF_SCOPE, "workflow")
     lines = [
         "# 下一阶段交接卡", "",
         f"- 来源阶段：`{current_stage}`",
         f"- 目标 Skill：`{target_skill}`",
-        f"- 本轮目标：{getattr(args, 'objective', None) or _HANDOFF_DEFAULT_OBJECTIVE}",
+        *([f"- 制作路线：复刻线。实读 `{ROOT / routed['workflow_entry']}`，沿本阶段现有交接和采用入口。"]
+          if routed and routed.get("workflow") == RECREATION_WORKFLOW else []),
+        f"- 本轮目标：{getattr(args, 'objective', None) or (routed or {}).get('reason') or _HANDOFF_DEFAULT_OBJECTIVE}",
         f"- 本轮停止点：{getattr(args, 'stop_at', None) or '完成本职自查并交回回执，遇缺来源、授权或预算停止相关动作'}",
-        ("- execution_mode: candidate_test；review_status: unreviewed；production_blocked: true。只试写，不生成、不发布、不采用。" if testing else "- 交接状态：上游当前输入的有效采用依据与依赖已核对；本卡不启动、路由或批准下一阶段。"), "",
+        ("- execution_mode: candidate_test；review_status: unreviewed；production_blocked: true。只试写，不生成、不发布、不采用。" if testing else "- 交接状态：上游当前输入的有效采用依据与依赖已核对。"),
+        *(["- 程序交接范围：" + json.dumps({key: routed[key] for key in scope_fields if key in routed},
+                                              ensure_ascii=False, separators=(",", ":"))] if routed else []), "",
         ("## 本轮未确认候选输入" if testing else "## 当前有效上游产物"), "",
         "- 语义自查：本卡未读取结论。沿用当前修订有效的检查结论，核对未决项及本阶段新增用途。独立审核仅在用户明确要求时执行。", "",
     ]
@@ -2351,6 +2548,8 @@ def _write_handoff(args, project, target_skill, from_skill, authorization_id, *,
         "- 停止点：完成本职目标和自查后交回准确版本、检查结果、未完成项与证据路径。",
         *([f"- 视频默认交已保存并回读的草稿。若本轮包含已明确授权的生成，按 `{ROOT / 'skills/voiceover-to-video-script/references/seedance-delivery-package.md'}#已授权生成的取证` 接续，复用有效授权。"]
           if not testing and target_skill == "voiceover-to-video-script" else []),
+        *(["- 草稿曾写入或写入结果不明时，先沿原计划和准确画布只读核对原节点；找到原草稿就接续其回读，确认该段未保存才新建。"]
+          if routed and routed["action"] == "canvas" else []),
         f"- 工具报错：沿 `{ROOT / 'docs/rules/execution.md'}#工具报错与原处续作`，在现有任务记录交回原操作、失败位置、最后可信结果和待恢复步骤。",
         f"- 等待及接收：执行前实读 `{ROOT / 'docs/rules/execution.md'}#等待与工具回传` 的宿主参数；沿原任务续等，完成后只交本轮身份、结论、差异及证据路径。原图由执行者实看，协调方按争议定向取图，不整份回传 JSON、日志或图组。",
         "", "## 接收约束", "",
@@ -2371,9 +2570,6 @@ def _write_handoff(args, project, target_skill, from_skill, authorization_id, *,
     if len(content.encode("utf-8")) > LIMITS["handoff"]:
         content = "\n".join(relative_paths.get(line, line) for line in lines)
     report = validate_text("handoff", output, content)
-    if register_transition:
-        state.update(current_stage=from_skill, next_stage=target_skill)
-        write_project_state(project, state)
     write_text_if_changed(output, content)
     report["from_stage"] = current_stage
     report["to_skill"] = target_skill
@@ -2798,9 +2994,11 @@ def _record_method_reading(args: argparse.Namespace, *, file_digest=None) -> dic
     reasons = manifest.get("candidate_reasons", {})
     if any(str(reasons.get(rule, "")).startswith("skill_boundary:") and rule not in scopes for rule in requested_candidates):
         raise StageContextError("跨职责候选只能采用本职内容；须用 --candidate-scope ID=本职适用范围 声明，范围外实现项不成为产出要求。")
-    adopted = [_read_candidate_exact(vault, catalog[rule]) for rule in requested_candidates]
+    verified_bundle = verify_bundle(vault) if requested_candidates and is_bundled_root(vault) else None
+    adopted = [_read_candidate_exact(vault, catalog[rule], verified_manifest=verified_bundle)
+               for rule in requested_candidates]
     if adopted:
-        tombstones = _tombstone_fingerprints(vault, load_policy(ROOT))
+        tombstones = _tombstone_fingerprints(vault, load_policy(ROOT), verified_manifest=verified_bundle)
         if any(item.fingerprint in tombstones for item in adopted):
             raise StageContextError("候选知识已被墓碑禁用；请重新 prepare。")
     records = [_candidate_record(item) for item in adopted]
@@ -2952,7 +3150,7 @@ def parser() -> argparse.ArgumentParser:
     handoff_cmd = commands.add_parser("handoff")
     handoff_cmd.add_argument("--candidate-test", action="store_true")
     handoff_cmd.add_argument("--project", required=True)
-    handoff_cmd.add_argument("--to-skill", required=True)
+    handoff_cmd.add_argument("--to-skill", help="绑定已有目标的具体执行者、批次或兼容交接；默认由程序解析")
     handoff_cmd.add_argument("--from-skill", help="协调方显式登记已到达的来源阶段，须同时引用现有流程授权")
     handoff_cmd.add_argument("--authorization-id", help="显式登记正式流转时使用的现有流程授权 ID")
     handoff_cmd.add_argument("--objective", help="本轮准确目标，写入现有交接卡")

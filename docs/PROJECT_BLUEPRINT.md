@@ -6,7 +6,7 @@
 
 ## 一、这是什么
 
-- 它是**你个人做 AI 短剧的工具**：把一个故事 → 分镜 → 资产 → 视频脚本 → 成片。
+- 它是**你个人做 AI 短剧的工具**：编导稿采用后，资产与导演可并行，分镜按需使用确认图，再交视频脚本与成片。
 - 它**不是一个框架**：不追求功能全、不做通用平台、**不为「维护工具本身」而存在**。
 - 一句话：**顺手、轻、能出片。** 只有你一个用户，你的手感就是标准。
 
@@ -18,11 +18,11 @@
 |---|---|---|
 | 0 | `init_desktop_project` | 建 9 目录 + project_state.json |
 | 1 | `creative-director` 编导 | 叙事 JSON（Markdown 按需导出） |
-| 2 | `storyboard-planner` 分镜 | 导演 JSON（Markdown 按需导出） |
-| 3 | `asset-image-assistant` 资产 | 人物/场景/道具/产品母版图 |
-| 4 | `voice-reference-manager` 声音（可选·已有导入/绑定 CLI，按当前输入验收） | 声音参考库 |
-| 5 | `storyboard-director` 画面（按需） | 正式分镜图 |
-| 6 | `voiceover-to-video-script` 视频脚本 | 已确认导演包、原文对白与真实素材 → 完整分段 JSON 提示词（Markdown 按需导出） → 画布草稿（由你点击生成） |
+| 2（可并行） | `asset-image-assistant` 资产 | 按编导的需求复用或制作人物、场景、道具及产品图 |
+| 2（可并行） | `storyboard-planner` 导演规划 | 导演 JSON（Markdown 按需导出） |
+| 3 | `voice-reference-manager` 声音（可选·已有导入/绑定 CLI，按当前输入验收） | 声音参考库 |
+| 4 | `storyboard-director` 视频写词前视觉必查 | 按镜号登记实看依据及复用／缺口，确有缺口时补分镜图 |
+| 5 | `voiceover-to-video-script` 视频脚本 | 已确认导演包、原文对白与真实素材 → 完整分段 JSON 提示词（Markdown 按需导出） → 画布草稿（由你点击生成） |
 
 - **每步之间**：除 `voiceover-to-video-script` 外使用 `stage_context_cli` 的 `prepare` / `ensure-prepared` / `handoff` / `validate`（入口全集以 `PROJECT_RULES.md`「工作边界」为准）；`review-pack` 仅在用户明确要求独立审核时使用；视频提示词按其 Skill 入口直接读取和自查。
 - **生产与审核**：默认流程（哪些阶段走网站人工审核、通过后如何流转、完成点在哪）以 `PROJECT_RULES.md`「网站审核到画布的统一入口」为准，不在本蓝图复述；独立审核只在用户明确要求时启动，返修回当前执行者，复审回原审核者。

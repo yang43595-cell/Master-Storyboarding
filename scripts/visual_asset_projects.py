@@ -966,25 +966,49 @@ class Projects:
                 receipt['dependency_confirmations'] != self.dependency_basis(job, step)):
             raise ValueError('前置图片的确认版本已变化，请重新核对此制作项：' + step['name'])
 
-    def validate_export_basis(self, project, *, file_digest=None):
+    def validate_export_basis(self, project, *, partial=None, file_digest=None):
+        pending = {}
+        if partial is not None:
+            for ast_id, output_id, confirmation_id in partial.get('items', []):
+                pending.setdefault(ast_id, {})[output_id] = confirmation_id
+            if not pending or sum(map(len, pending.values())) != partial['count']:
+                raise ValueError('部分导出缺准确的逐图确认登记，请重新核对交接')
         for row in project['rows']:
+            ast_id = row['requirement']['asset_id']
+            expected = pending.pop(ast_id, None)
+            if partial is not None and expected is None:
+                continue
             if not row.get('job_id'):
-                raise ValueError('尚未完成：' + row['requirement']['asset_id'])
+                raise ValueError('尚未完成：' + ast_id)
             job = self.lib.get(row['job_id'], 'jobs')
             if job.get('project_id') != project['id'] or job.get('project_stale'):
                 raise ValueError('此制作项属于旧版需求，请使用当前需求表')
             for step in job['steps']:
                 if step.get('required') is False:
                     continue
+                if expected is not None:
+                    confirmation_id = expected.pop(step_output_id(step), None)
+                    if confirmation_id is None:
+                        continue
+                    if (step.get('project_confirmation') or {}).get('id') != confirmation_id:
+                        raise ValueError('已导出图片的确认已变化：' + ast_id + ' / ' + step['name'])
                 if step['status'] != 'confirmed' or not step.get('project_confirmation'):
-                    raise ValueError('尚未逐项确认：' + job['ast_id'] + ' / ' + step['name'])
+                    raise ValueError('尚未逐项确认：' + ast_id + ' / ' + step['name'])
                 self.dependencies(job, step, file_digest=file_digest)
                 asset = self.lib.get(step['selected'], require_file=True, file_digest=file_digest)
+                if expected is not None and (asset.get('trashed_at') or not self._has_current_confirmation(
+                        project, job, step, asset, file_digest=file_digest or digest)):
+                    raise ValueError('已导出图片的选图或确认已失效：' + ast_id + ' / ' + step['name'])
                 if asset.get('backup', {}).get('status') == 'saved':
                     verify_image_confirmation(asset['backup']['path'], step['project_confirmation'],
                                               file_digest=file_digest)
-        if project.get('export'):
-            self.validate_export_snapshot(project, project['export'], complete=True, file_digest=file_digest)
+            if expected:
+                raise ValueError('缺已导出的制作项：' + ast_id + ' / ' + '、'.join(expected))
+        if pending:
+            raise ValueError('缺已导出的资产需求：' + '、'.join(pending))
+        exported = project.get('export') if partial is None else partial
+        if exported:
+            self.validate_export_snapshot(project, exported, complete=partial is None, file_digest=file_digest)
 
     def validate_export_snapshot(self, project, exported, *, complete, file_digest=None):
         # The project copy is independent of the Vault original. Check its
@@ -997,7 +1021,8 @@ class Projects:
         if (len(entries) != 1 or entries[0].get('logical_id') != 'visual.asset.manifest'
                 or entries[0]['artifact_id'] not in state['current_artifacts']
                 or not artifact_is_adopted(entries[0], state, root)):
-            raise ValueError('资产导出登记已失效或缺少整表确认，请重新核对交接')
+            confirmation = '整表确认' if complete else '逐图确认'
+            raise ValueError(f'资产导出登记已失效或缺少{confirmation}，请重新核对交接')
         path = project_path(root, exported['manifest'])
         if (project_path(root, entries[0]['path_or_url']) != path or not path.is_file()
                 or (entries[0].get('checksum') and digest(path) != entries[0]['checksum'])):
@@ -2545,10 +2570,35 @@ class Projects:
     def continue_project(self, ident):
         p = self.get(ident)
         self.fresh(p)
-        if not p.get('export'):
-            raise ValueError('请先完成必需图片的审核和导出')
-        self.validate_export_basis(p)
-        state = load_project_state(Path(p['path']))
+        root = Path(p['path'])
+        request = load_project_request(root)
+        routed_project = 'kickoff' in request and 'docs/rules/legacy-review.md' not in request.get('local_references', [])
+        complete = p.get('export')
+        partial = p.get('partial_export') if routed_project and not complete else None
+        exported = complete or partial
+        if not exported:
+            message = ('当前没有已确认且已导出的图片可交接' if routed_project
+                       else '请先完成必需图片的审核和导出')
+            raise ValueError(message)
+        self.validate_export_basis(p, partial=partial, file_digest=_ExportImages().digest)
+        if routed_project:
+            result = subprocess.run([sys.executable, str(ROOT / 'scripts/stage_context_cli.py'), 'handoff',
+                '--project', p['path']], capture_output=True, encoding='utf-8', errors='replace',
+                timeout=90, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            if result.returncode:
+                raise ValueError('程序交接未完成：' + (result.stderr or result.stdout).strip()[-500:])
+            routed = json.loads(result.stdout)
+            handoff = exported['handoff']
+            return {
+                'handoff': handoff,
+                'content': Path(handoff).read_text(encoding='utf-8')
+                + f'\n- 正式清单产物 ID: {exported["artifact_id"]}\n',
+                'instruction': '按程序返回的交接范围与交接卡继续；等待项沿原审核或补核入口处理。',
+                'warning': '' if routed['next_actions'] else '其他交接条件尚未满足，请核对等待项。',
+                'next_actions': routed['next_actions'],
+                'steps': routed['steps'],
+            }
+        state = load_project_state(root)
         target = state.get('next_stage')
         handoff = p['export']['handoff']
         warning = ''

@@ -17,7 +17,7 @@ if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.canvas_readback import compare, compare_baseline, digest, rows_by_id, validate_submission
-from scripts.core.artifacts import load_manifest, project_path
+from scripts.core.artifacts import cache_file_reads, load_manifest, project_path
 from scripts.core.io import read_json, write_json
 from scripts.core.native_references import redframe_reference_labels
 from scripts.core.quality_evidence import draft_binding, fingerprint
@@ -91,14 +91,23 @@ def measured_placements(graph, sizes, target_ids):
     return {ident: rectangles[ident] for ident in target_ids}
 
 
-def source_capabilities(project, frozen):
+def source_capabilities(project, frozen, read_json_bytes=None):
     registered = {item['artifact_id']: item for item in load_manifest(project)['artifacts']}
-    source, = (registered[ref['artifact_id']] for ref in frozen['source_artifacts']
-               if registered[ref['artifact_id']]['logical_id'] == 'video.prompt')
-    model = read_json(project_path(project, source['path_or_url']))['selected_video_model']
+    ref, = (ref for ref in frozen['source_artifacts']
+            if registered[ref['artifact_id']]['logical_id'] == 'video.prompt')
+    source = registered[ref['artifact_id']]
+    read_bytes = Path.read_bytes if read_json_bytes is None else read_json_bytes
+
+    def checked_json(path, expected):
+        raw = read_bytes(project_path(project, path))
+        if hashlib.sha256(raw).hexdigest() != expected:
+            raise ValueError('视频源或模型能力证据在写前已偏离登记字节')
+        return json.loads(raw.decode('utf-8-sig'))
+
+    model = checked_json(source['path_or_url'], ref['sha256'])['selected_video_model']
     by_mode = model.get('reference_mode_evidence') or {model['reference_mode']: model['capability_evidence']}
-    return {mode: (model['id'], read_json(project_path(project, ref['path']))['model'])
-            for mode, ref in by_mode.items()}
+    return {mode: (model['id'], checked_json(proof['path'], proof['sha256'])['model'])
+            for mode, proof in by_mode.items()}
 
 
 def _draft_data(node, node_id):
@@ -286,10 +295,13 @@ class RedframeVideoDraftUI(RedframeImageUI):
         return source_id
 
     def connect_reference(self, source_id, node_id):
-        self._draft_locator(node_id)
+        def validate_target(graph, target_id):
+            _draft_data(canvas_nodes(graph).get(target_id), target_id)
+
         self.close_dialog()
         self._click(self.page.get_by_role('button', name='适应视图', exact=True), 'fit video reference ports')
-        self._connect(source_id, node_id, 'remote-videoGenerationNode', save_timeout=35)
+        self._connect(source_id, node_id, 'remote-videoGenerationNode', save_timeout=35,
+                      validate_target=validate_target)
 
     def drag_duration(self, node_id, seconds):
         if type(seconds) is not int:
@@ -404,9 +416,12 @@ def run_new_draft_batch(project, plan, write, *, host_browser, check_layout, col
         raise ValueError('认证源卡槽须提供本批真实连线、原件和认证回读')
     if any(draft.get('native_identity_mode', 'media_id') != 'media_id' for draft in drafts.values()):
         raise ValueError('该批次入口只接收原生媒体 ID 回读')
-    preflight = validate_submission(plan, project, formal_delivery=True, preflight=True)
+    read_json_bytes = cache_file_reads(Path.read_bytes)
+    preflight = validate_submission(plan, project, formal_delivery=True, preflight=True,
+                                    read_json_bytes=read_json_bytes)
     direct = [segment for segment in drafts if segment not in linked]
-    models = source_capabilities(project, plan)
+    models = source_capabilities(project, plan, read_json_bytes)
+    del read_json_bytes
     target, project_id = plan['target_url'], plan['target_project_id']
     segment_nodes, expected = {}, {}
     tick = time.monotonic()
@@ -484,8 +499,10 @@ def before_write_readback(graph, baseline, targets, models):
 
 def retest(project, frozen, baseline, trusted_graph, dimensions, *, resave=False):
     """Run one existing-node batch, with optional authorized identical resave."""
-    validate_submission(frozen, project, formal_delivery=True, preflight=True)
-    models = source_capabilities(project, frozen)
+    read_json_bytes = cache_file_reads(Path.read_bytes)
+    validate_submission(frozen, project, formal_delivery=True, preflight=True, read_json_bytes=read_json_bytes)
+    models = source_capabilities(project, frozen, read_json_bytes)
+    del read_json_bytes
     targets = rows_by_id(frozen['drafts'])
     reference = canvas_nodes(trusted_graph)
     expected = {ident: reference[ident] for ident in targets}

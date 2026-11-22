@@ -102,7 +102,7 @@ with open_workspace(task_browser, target_url, project_id) as workspace:
 
 测试入口使用原生素材卡、端口和时长轨道。回执包含刷新后的草稿 ID、实际秒数、源卡/连线身份和参考原件哈希。正式草稿仍走下文的写前预检、原生正文引用和整节点验收。
 
-1. 上传前按[写实人脸认证](../voiceover-to-video-script/references/redframe-canvas-usage.md#写实人脸认证)确认首槽路径及可复用范围，再按[上传前计划](#新建直传计划和回读)冻结每槽方式。批次入口在开浏览器前核当前正式采用、实际目标和本批冻结 JSON。需独立诊断或使用兼容路径时，沿[正式预检 `--delivery --preflight`](../../docs/development/delivery-snapshot-checks.md#操作与采用)查具体缺口。缺图的段记下具体依赖，等生图回执齐备后另批；素材齐备的独立段先写。更新走[最后可信基线和实际写前读数](#更新前核已有编辑)。
+1. 上传前按[写实人脸认证](../voiceover-to-video-script/references/redframe-canvas-usage.md#写实人脸认证)确认首槽路径和可复用范围，再按[上传前计划](#新建直传计划和回读)冻结每槽方式。同目标、同版来源和同一批就绪段合用一份计划，首次写入调用 `scripts.redframe_draft.run_new_draft_batch`。采用用 `accept-artifact`，由批次入口在打开一次后台会话前执行整批预检。独立排障或已有刷新证据按需使用[正式预检 `--delivery --preflight`](../../docs/development/delivery-snapshot-checks.md#操作与采用)或单段采用附带的 `--preflight-json`。缺图段登记具体依赖，素材齐备的独立段先写。更新走[最后可信基线和实际写前读数](#更新前核已有编辑)。
 2. 同一批次沿用同一份通过的预检。目标、正文、参数、镜号或引用来源／顺序变化时，只重跑受影响段。素材区复用已核卡片，缺需认证或审阅的卡片才按[素材区上传](../voiceover-to-video-script/references/redframe-canvas-usage.md#素材区上传)补。各草稿从自己的原生「上传参考」控件按序直传，每槽发起一次上传。已核实须用认证源卡的槽走[写实人脸认证与接线](../voiceover-to-video-script/references/redframe-canvas-usage.md#写实人脸认证)。用持久画布的槽数和有序槽 ID 确认就绪，再写原生 `@` 和参数。异常先读原节点，定位缺失槽后才补。后台命令有界续等，输出仅留段号、状态及异常，完成时交一次回执。
 3. 用 `verify_placements` 按实际尺寸一次核本批预留位置。新建用 `RedframeVideoDraftUI.create_video_draft` 的「视频」菜单，保留旧节点、任务和成片，旧结果归位按[批量修改节点](../voiceover-to-video-script/references/redframe-canvas-usage.md#批量修改节点)执行。新节点持久化后核原生 ID 及 `videoTask`、`outputs`、`draft`、`draftHistory` 均无生成记录，再继续写入。节点未读到时按原 ID 只读回查。参数以工作区原生字段为准，按[整节点字段](#红帧整节点的源连线用途与时间)准备并核对。
 4. 保存收到回执后，用 `verify_saved` 核实际写入的节点内容，含正文、参数和原生槽。批内中间检查只读这些字段。发现旧值按原节点处理受影响段，布局有偏差先修正，然后在原后台会话刷新，核准确节点及最终布局并截图。布局收口后的同一次刷新采集整批受影响节点，用 `RedframeWorkspace.digest_slots` 一次读取当前各槽原件并计算 SHA-256。工具只重试暂态失败槽一次。已取得的成功槽沿本轮刷新证据交付；仍失败时留下准确槽和错误，后续定向补核该槽，发现原生槽身份、顺序或路径变动才重查其影响范围。批次入口一次绑定实际槽并返回冻结交付、实采回读和正式检查；已有同一批真实采集时可用 [`finalize-new`](#新建直传计划和回读) 独立收口。已有节点同值复测沿用[写前基线和当前读数](#更新前核已有编辑)，只在授权内保存一次。相同故障持续时保留原节点 ID、最后可信快照和最小复现。
@@ -113,7 +113,7 @@ with open_workspace(task_browser, target_url, project_id) as workspace:
 
 ### 新建直传计划和回读
 
-红帧正式草稿写入执行者用[正式预检命令](../../docs/development/delivery-snapshot-checks.md#操作与采用)核本批实际目标、已采用视频稿及导演稿、来源编导的确认和本段各引用的采用依据。尚未取得平台身份时，段内保留 `reference_checks` 的准确文件身份、用途和顺序，填写 `edges: []`、`source_nodes: []`，省略 `ordered_media`，`node_id` 暂用唯一的计划标识。含图片或视频参考的段在实看后列 `realistic_face_slots`（槽号从 1 开始，无写实人脸填 `[]`）。图片认证槽在对应 `canvas_binding` 填 `mode: edge`、`source_port: image`、`target_port: in`，普通槽按其计划走直传。`upload_mapping_pending_nodes` 标记仍待平台身份的节点，`face_source_card_slots` 标记按段计划走认证源卡的槽。合法无媒体段明确使用 `ordered_media: []`。
+`run_new_draft_batch` 的 `write` 和 `check_layout` 使用同一个工作区，认证源卡批次再传同次刷新取证的 `collect_linked`。入口核实际目标、准确编导和导演、已采用视频稿及各槽来源，最后返回 `frozen`、`observed` 和 `formal_readback`，按现有交付目录保存。尚未取得平台身份时，段内保留 `reference_checks` 的准确文件身份、用途和顺序，填写 `edges: []`、`source_nodes: []`，省略 `ordered_media`，`node_id` 暂用唯一的计划标识。含图片或视频参考的段在实看后列 `realistic_face_slots`（槽号从 1 开始，无写实人脸填 `[]`）。图片认证槽在对应 `canvas_binding` 填 `mode: edge`、`source_port: image`、`target_port: in`，普通槽按其计划走直传。`upload_mapping_pending_nodes` 标记仍待平台身份的节点，`face_source_card_slots` 标记按段计划走认证源卡的槽。合法无媒体段明确使用 `ordered_media: []`。
 
 含认证源卡的段先核同字节源卡认证或按原授权补卡，经认证后接线，普通槽再按冻结顺序对应直传。保留 `realistic_face_slots`，绑定实际节点与槽身份，按[整节点回读](#既有连线草稿)校验实际连线、源卡认证、原件字节及原生 `@`。预检的槽号只表示计划路径。下述 `finalize-new` 用于纯直传段。
 

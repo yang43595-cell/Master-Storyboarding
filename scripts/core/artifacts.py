@@ -351,7 +351,7 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
         if not reading_existing:
             from .asset_refs import resolve_final_images
             from .delivery_files import declared_input_roots, discover_dependencies
-            from .visual_readiness import require_visual_readiness
+            from .production_handoff import require_handoff_visual_inputs
             scope = payload.get("scope")
             if (payload.get("production_blocked") is True
                     or isinstance(scope, dict) and scope.get("unwritten_shot_ids")):
@@ -365,9 +365,9 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
                                                           director, known_shots, state)
             content_segment_ids = [row['segment_id'] for row in visual_rows]
             if visual_rows:
-                require_visual_readiness(root, storyboard, director,
+                require_handoff_visual_inputs(root, storyboard, director,
                                               {shot for row in visual_rows for shot in source_shot_ids(row)},
-                                              rows=visual_rows, manifest=manifest)
+                                              rows=visual_rows, manifest=manifest, state=state)
             asset_references = []
             for row in segments:
                 if (row.get("production_blocked") is True or row.get("submit_ready") is False
@@ -544,7 +544,7 @@ def adopt_initial_agent_artifact(project_root: Path, artifact_id: str, report_pa
                                  *, expected_checksum: str | None = None) -> dict[str, Any]:
     """Adopt authorized downstream work without minting a human confirmation."""
     from .candidate_test import require_production
-    from .agent_acceptance import build_agent_acceptance, validate_agent_acceptance, skill_for_artifact
+    from .agent_acceptance import read_agent_acceptance, skill_for_artifact, validate_agent_acceptance
     from . import revision_control
     root = Path(project_root).resolve()
     with project_lock(root):
@@ -568,8 +568,7 @@ def adopt_initial_agent_artifact(project_root: Path, artifact_id: str, report_pa
             raise ValueError("自主采用候选实际字节与单段预检来源的 sha256 不符")
         entry["checksum"] = actual
         state = load_project_state(root)
-        entry["agent_acceptance"] = build_agent_acceptance(root, entry, report_path, state=state)
-        report = validate_agent_acceptance(root, entry, state=state)
+        entry["agent_acceptance"], report = read_agent_acceptance(root, entry, report_path, state=state)
         if validate_agent_submission(root, entry, manifest, report) != actual or digest(path) != actual:
             raise ValueError("候选在自主采用检查期间发生变化")
         validate_agent_acceptance(root, entry, state=state)
@@ -580,8 +579,10 @@ def adopt_initial_agent_artifact(project_root: Path, artifact_id: str, report_pa
             root / MANIFEST_PATH: manifest,
             root / "00_项目管理" / "project_state.json": state,
         }, reason="adopt initial agent-accepted artifact")
-        adopted = next(item for item in load_manifest(root)["artifacts"] if item.get("artifact_id") == artifact_id)
-        if not artifact_is_adopted(adopted, load_project_state(root), root):
+        adopted = next((item for item in load_manifest(root)["artifacts"] if item.get("artifact_id") == artifact_id), None)
+        selected = load_project_state(root)
+        if (adopted is None or artifact_id not in selected["current_artifacts"]
+                or not artifact_is_adopted(adopted, selected, root)):
             raise ValueError("自主采用事务已提交但验收回读未通过；不得交付或进入下游")
         return {"artifact": adopted, "agent_acceptance": entry["agent_acceptance"], "transaction": transaction}
 
@@ -947,25 +948,28 @@ def digest(path):
 
 def cache_file_digests(read_digest=None, *, check_for_changes=False):
     """Reuse file digests within one operation, optionally rechecking file identity."""
-    if read_digest is None:
-        read_digest = digest
-    hashes = {}
+    return cache_file_reads(digest if read_digest is None else read_digest, check_for_changes=check_for_changes)
+
+
+def cache_file_reads(read_file, *, check_for_changes=True):
+    """Reuse a read only while the file's identity and version still match."""
+    reads = {}
 
     def file_version(path):
         stat = path.stat()
         return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns
 
-    def file_digest(path):
+    def read(path):
         version = file_version(path) if check_for_changes else None
-        cached = hashes.get(path)
+        cached = reads.get(path)
         if cached is not None and cached[0] == version:
             return cached[1]
-        checksum = read_digest(path)
+        result = read_file(path)
         if not check_for_changes or version == file_version(path):
-            hashes[path] = (version, checksum)
-        return checksum
+            reads[path] = (version, result)
+        return result
 
-    return file_digest
+    return read
 
 
 def verify_image_confirmation(path, receipt, *, file_digest=None):
@@ -1057,26 +1061,37 @@ def _asset_review_receipt_valid(entry, root):
         return False
 
 
+def _eligible_agent_adoption(entry, state, root):
+    return (root is not None and entry.get('status') == 'current' and entry.get('user_approved') is False
+            and not (entry.get('candidate_test') or entry.get('production_blocked') or state.get('candidate_test')))
+
+
+def require_current_agent_acceptance(entry, state, root, *, file_digest=None):
+    """Return the validated report for a currently adopted, agent-accepted artifact."""
+    if (not _eligible_agent_adoption(entry, state, root) or entry.get('asset_review_sha256')
+            or not entry.get('agent_acceptance')):
+        raise ValueError('参考尚未确认、已返工失效或被新版替代')
+    from .agent_acceptance import validate_agent_acceptance
+
+    return validate_agent_acceptance(root, entry, state=state, file_digest=file_digest)
+
+
 def artifact_is_adopted(entry, state, root=None):
     """Read human adoption or separately authorized, byte-bound agent acceptance."""
     if artifact_is_confirmed(entry, state, root):
         return True
-    if (root is None or entry.get('status') != 'current' or entry.get('user_approved') is not False
-            or entry.get('candidate_test') or entry.get('production_blocked') or state.get('candidate_test')):
-        return False
     if entry.get('asset_review_sha256'):
-        return _asset_review_receipt_valid(entry, root)
+        return _eligible_agent_adoption(entry, state, root) and _asset_review_receipt_valid(entry, root)
     if not entry.get('agent_acceptance'):
         return False
-    from .agent_acceptance import validate_agent_acceptance
     try:
-        validate_agent_acceptance(root, entry, state=state)
+        require_current_agent_acceptance(entry, state, root)
     except (ValueError, OSError, KeyError, TypeError):
         return False
     return True
 
 
-def validate_current_dependencies(entry, manifest, state, root, *, checked=None, file_digest=None):
+def validate_current_dependencies(entry, manifest, state, root, *, checked=None, file_digest=None, read_payload=None):
     """Read-only consumption check; never resurrect historical files as current.
 
     Logical edges establish availability, not version equality. Existing explicit
@@ -1086,6 +1101,7 @@ def validate_current_dependencies(entry, manifest, state, root, *, checked=None,
     visiting = set()
     checked = set() if checked is None else checked
     file_digest = digest if file_digest is None else file_digest
+    read_payload = read_json if read_payload is None else read_payload
     def visit(item):
         ident = item.get('artifact_id')
         if ident in visiting:
@@ -1100,7 +1116,7 @@ def validate_current_dependencies(entry, manifest, state, root, *, checked=None,
         payload = {}
         if path.is_file() and path.suffix.lower() == '.json':
             try:
-                value = read_json(path)
+                value = read_payload(path)
                 if isinstance(value, dict):
                     payload = value
             except (OSError, ValueError) as exc:

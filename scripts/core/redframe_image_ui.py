@@ -249,12 +249,15 @@ class RedframeImageUI:
     def connect(self, source_id, target_id):
         return self._connect(source_id, target_id, 'remote-imageGenerationNode')
 
-    def _connect(self, source_id, target_id, target_kind, *, save_timeout=10):
+    def _connect(self, source_id, target_id, target_kind, *, save_timeout=10, validate_target=None):
         source_id, target_id = _ident(source_id), _ident(target_id)
         self.assert_target()
         graph = self.workspace.read_canvas()
         _one(graph['nodes'], source_id)
-        _one(graph['nodes'], target_id, {target_kind})
+        if validate_target is None:
+            _one(graph['nodes'], target_id, {target_kind})
+        else:
+            validate_target(graph, target_id)
         def linked(value):
             matches = [edge for edge in value['edges'] if edge.get('source') == source_id
                        and edge.get('sourceHandle') == 'image' and edge.get('target') == target_id

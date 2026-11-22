@@ -4,7 +4,7 @@
 
 `SKILL.md` 只保存触发、职责、输入输出、执行顺序和硬禁区；`modules/` 只保存稳定执行方法，不保存专业理论正文。制作时，专业方法通过 `knowledge-profile.json` 从仓库 `knowledge/runtime/` 选读，属于 Skill 第二层。随仓库提供的来源与案例属于第三层，按 Skill 的适用条件选读。读取与版本边界见 [独立仓库说明](docs/development/standalone-repository.md)。`skills/_shared/` 只保存用户确认、知识读取、产品参考与使用、路径交付、未确认稿生命周期和提示词语言等现有共享红线；具体边界以各文件适用范围为准，不以固定文件数判断过期。
 
-当前生产 Skill：`creative-director`、`storyboard-planner`、`asset-image-assistant`、`voice-reference-manager`、`storyboard-director`（仅按需视觉补充）、`voiceover-to-video-script`。`stage-reviewer` 只做阶段末只读审核。
+当前生产 Skill：`creative-director`、`storyboard-planner`、`asset-image-assistant`、`voice-reference-manager`、`storyboard-director`（视频写词前必查，按缺口补图）、`voiceover-to-video-script`。`stage-reviewer` 只做阶段末只读审核。
 
 [深度图视频复刻](skills/depth-guided-recreation/SKILL.md)（`depth-guided-recreation`）是编导整稿采用后可选的导演路线入口。它准备对齐的深度参考和逐镜素材用途，导演定产品操作及接缝，协调方继续现有生产阶段。
 

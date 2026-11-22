@@ -12,7 +12,7 @@
 | --- | --- |
 | 生产协调、创作执行、图片委派与自查 | [执行分工](docs/rules/execution.md)；不自动启动独立审核 |
 | 编写、返修、导出、采用或消费业务 JSON | [JSON 交付与按需导出](docs/rules/artifacts.md#json-交付与按需导出)及当前采用小节 |
-| 导演衔接资产、按需分镜或调整资产需求 | [视觉生产](docs/rules/visual-production.md)；声音默认关闭，分镜按需，分镜默认 9:16 |
+| 导演衔接资产、视频写词前视觉核对或调整资产需求 | [视觉生产](docs/rules/visual-production.md)。声音默认关闭。写词前必查，分镜图按缺口制作，默认 9:16 |
 | 新建业务项目或定位交付目录 | [项目目录](docs/rules/project-layout.md#项目目录按生产流程排列)；新业务项目放源码仓库之外 |
 | 明确选用旧人工逐段流程或处理历史网页审核 | [兼容流程](docs/rules/legacy-review.md)；不改变默认统一入口 |
 | 明确授权候选盲测、隔离资产实图试验或私有候选画布 | [隔离试验](docs/rules/experiments.md)；普通“测试”不自动启用，试验不取得正式采用或生成授权 |
@@ -59,12 +59,13 @@
 2026-11-04 用户明确采用本 SOP，新任务默认走本入口；既有业务项目不自动迁移。审核、流转和停点以本节为准，具体操作按[审核到画布导航](docs/development/review-to-canvas-entry.md)只读当前步骤。
 
 - **开工。** 编导开写前，协调方按[开工确认单](docs/rules/project-layout.md#开工确认单)登记已有决定，只补影响当前工作的缺项。画布和生图细节在依赖它们的工作启动前登记。
-- **人工审核。** 编导稿和资产图按项目已定通道走人审，默认用[审核工作台](https://review.yangyangyang.click/workbench/)，已获准时用对话。工作台资产发布依赖同版编导的网站通过。对话中明确通过的准确编导整稿（含同版网站待审稿）按[对话确认](docs/development/artifact-adoption.md#编导对话确认)采用，再继续已授权工作。资产对话审图按[批次确认](skills/asset-image-assistant/modules/project-web-mode.md#资产对话确认)办理。
+- **交接与续作。** 各阶段登记结果后，协调方运行[程序交接](docs/development/review-to-canvas-entry.md#阶段结束与恢复)。编导在现有叙事包写清人物、场景和道具需求，整稿采用后直接交资产 Skill。资产先核现有合用图，缺的输出按现有授权制作。导演路线的选择单独推进。导演和分镜按需取已确认的图，后续发现具体缺口时只处理相应镜号和用途。各分支核自身依赖，必要检查未完成时暂停受影响范围。
+- **人工审核。** 编导稿和资产图按项目已定通道走人审，默认用[审核工作台](https://review.yangyangyang.click/workbench/)，已获准时用对话。工作台资产发布依赖同版编导的网站通过。对话中明确通过的准确编导整稿（含同版网站待审稿）按[对话确认](docs/development/artifact-adoption.md#编导对话确认)采用，再继续已授权工作。获准在普通对话审图时，按[项目资产清单](skills/asset-image-assistant/references/05-asset-manifest-handoff-guide.md#状态规则)逐项登记确认。沿用项目 Web 任务包时，走[项目 Web 的确认接入](skills/asset-image-assistant/modules/project-web-mode.md#资产对话确认)。
 - **通过与暂停。** 网站通过绑定准确项目、产物、版本和范围，通过即确认并解锁该范围，无须回聊天重复确认。协调方主动查决定，跨轮与正式交付前复核。所需上游未通过、退回或确认失效时，暂停相关发布、采用和草稿写入；已采用版本保持至正式修订提交。同一有效编导下已逐项确认且不受意见影响的图片可继续用，依赖范围不清的镜段暂停，独立准备可继续。新版通过后先落账，再核直接影响。退回意见按[网站往返](docs/development/review-workbench-operations.md#网站往返)收齐后再改。
 - **下游自查与采用。** 导演稿、按需分镜图和视频提示词由本轮执行者做完整自查，不送网站、不默认启动独立审核或逐段等待。图片按[图片生产批次](docs/rules/execution.md#图片生产批次)生成并实看，有偏差按上文交用户决定。协调方核全片、依赖和证据。人审与自主验收分开记录，自主验收绑定授权、准确修订、原件字节和自查结果。按[首次采用](docs/development/artifact-adoption.md#首次自主采用)或[自主修订](docs/development/artifact-adoption.md#自主修订)办理，入口未接通时保留候选，不能补造人审或绕过门禁。
 - **代审。** 有明确授权才办理。编导可覆盖来源和归属已核、只待定措辞的新增或授权改写对白，须有同版 `CREATIVE-DIALOGUE` 通过。资产工作台接收已采用编导，按[逐图代审](skills/asset-image-assistant/modules/project-web-mode.md#资产代审)留证。网站发布仍核同版网站决定。
 - **画布与交付停点。** 同一剧情默认复用一张画布，首次依赖前登记，用户明确指定才另建。红帧图片用独立素材卡接真实端口，视频参考默认直传到草稿节点并用原生引用；已核实须由源卡携带人脸认证的槽按[认证与接线](skills/voiceover-to-video-script/references/redframe-canvas-usage.md#写实人脸认证)执行。操作查[审核到画布导航](docs/development/review-to-canvas-entry.md)。视频草稿按交付要求保存和回读，默认交由用户自行生成。用户已明确授权生成的范围，执行者按[已授权生成的取证](skills/voiceover-to-video-script/references/seedance-delivery-package.md#已授权生成的取证)接续提交，复用有效授权。
-- **范围。** 网站通过只解锁已覆盖的工作，红帧图片沿本文件持续制作规则，其他工具、模型、费用和平台按已有授权执行。分镜按需，声音参考仅在明确选用时进入。
+- **范围。** 网站通过只解锁已覆盖的工作，红帧图片沿本文件持续制作规则，其他工具、模型、费用和平台按已有授权执行。视频写词前按[视觉交接](docs/rules/visual-production.md#导演到视频的视觉交接)核本轮镜号，分镜图按实际缺口制作。声音参考仅在明确选用时进入。
 
 本入口优先于旧兼容流程及 Skill 中的旧逐段确认、导演网站送审等默认。
 

@@ -24,12 +24,6 @@ function Add-Issue {
 
 # 目录名常量
 $dirManage            = "项目管理"
-$dirScriptStoryboard  = "脚本与分镜文档"
-$dirOfficialImages    = "正式分镜图"
-$dirExecutionDocs     = "Seedance执行文档"
-$dirVideos            = "视频_正式片段"
-$dirReferences        = "参考帧与临时素材"
-$dirArchive           = "历史与废弃"
 
 # project_state.md 中必须包含的节标题
 $stateCurrentStage    = "当前阶段"
@@ -82,7 +76,6 @@ if (Test-Path -LiteralPath $voiceManifestPath -PathType Leaf) {
 }
 
 # 结构化状态固定门禁：新项目缺 project_state.json 报 ERROR，legacy 项目降 WARN。
-$structuredStateMode = "enforce_new_warn_legacy"
 
 # 项目模式：读 00_项目管理/project_request.json（缺省 new）。resume 项目保留 legacy 兼容。
 $projectMode = "new"
@@ -134,10 +127,10 @@ if ($hasStateJson) {
   }
 } elseif ($hasStateMd) {
   # 旧版状态：resume 项目保留兼容（历史项目未迁移）；新项目缺 project_state.json 违反结构化门禁。
-  if ($projectMode -ne "resume" -and $structuredStateMode -eq "enforce_new_warn_legacy") {
-    $issues.Add((Add-Issue "ERROR" "new project requires project_state.json (project_mode=$projectMode); run inspect-project to migrate"))
+  if ($projectMode -ne "resume") {
+    $issues.Add((Add-Issue "ERROR" "new project requires project_state.json (project_mode=$projectMode)"))
   } else {
-    $issues.Add((Add-Issue "WARN" "legacy state: 00_$dirManage/project_state.md without project_state.json; run inspect-project to migrate"))
+    $issues.Add((Add-Issue "WARN" "legacy state: 00_$dirManage/project_state.md without project_state.json"))
   }
   $stateText = Get-Content -LiteralPath $statePath -Raw -Encoding UTF8
   foreach ($requiredText in @($stateCurrentStage, $stateActiveAssets, $stateProductRefs, $stateStoryboardList, $stateSegmentList)) {

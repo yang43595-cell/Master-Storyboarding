@@ -9,7 +9,7 @@ from .artifacts import project_path, load_manifest
 from .io import sha256_file
 from .media_types import LOCAL_REFERENCE_EXTENSIONS
 from .product_reference_pack import resolve_product_pack
-from .project_kickoff import load_kickoff
+from .project_kickoff import REQUEST_PATH, load_kickoff
 from .quality_evidence import IMAGE_ASPECTS
 
 # Conservative transfer budget for this workflow, not a universal platform limit.
@@ -70,7 +70,7 @@ def declared_input_roots(payload: dict) -> list[Path]:
 
 
 def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=None, verify_hashes=False,
-                          json_projections=None):
+                          json_projections=None, read_json_bytes=None):
     """Follow selected JSON path fields and exact manifest IDs, never scan prose.
 
     Paths are project-relative, as in artifact manifests. Selected JSON from an
@@ -222,7 +222,8 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
             if path in expanded_files:
                 return
             try:
-                value = json.loads(path.read_text(encoding='utf-8-sig'))
+                raw_json = path.read_bytes() if read_json_bytes is None else read_json_bytes(path)
+                value = json.loads(raw_json.decode('utf-8-sig'))
                 if (manifest_file or path.name == 'manifest.json' and product_pack
                         and sha256_file(path) == product_pack['manifest_sha256']):
                     # The pack reader already verified entries relative to the
@@ -240,7 +241,7 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
                 expanded_files.add(path)
                 if str(path) in projections:
                     expected, selected = projections[str(path)]
-                    if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+                    if hashlib.sha256(raw_json).hexdigest() != expected:
                         raise ValueError('selected snapshot bytes changed')
                     value = selected
                 previous_project = document_project
@@ -362,6 +363,9 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
                 elif key == 'project_path':
                     # Context roots are directories; exact scope is checked by
                     # the consuming authority, not treated as a required file.
+                    continue
+                elif key == 'draft_readback' and location == f'{document_project / REQUEST_PATH}/video_platform_selection':
+                    # The canvas handoff checks saved output evidence separately.
                     continue
                 elif (key == 'request' and value.get('kind') == 'agent-review-api-receipt'
                       and isinstance(child, dict) and child.get('method') in {'GET', 'POST'}

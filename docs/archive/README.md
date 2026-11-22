@@ -25,6 +25,13 @@
 - candidate-changes.json — 机器溯源数据，非阅读材料，一字节未改：两条候选分支（编导 9 文件/导演 5 文件）的前后哈希与字符数。
 - source-provenance.json — 机器溯源数据，非阅读材料，一字节未改：源归档 SHA-256、固定来源引用与钉住文件的 blob 核对结果。
 
+### retired-test-probes/（原 scripts/tests/）
+
+这两份手工探针退役于 2026-11-22。原始脚本按原字节保存，供追溯历史断言。
+
+- [probe_contract_video_sources.py](retired-test-probes/probe_contract_video_sources.py) 原用于镜号别名、来源范围和跨段提交验证。旧探针会在现行夹具上同时写入冲突的镜号别名。
+- [replay_knowledge_review_boundaries.py](retired-test-probes/replay_knowledge_review_boundaries.py) 原用于隔离知识与审核回放。旧探针向 `prepare` 传入外部 `candidate_vault`，现行入口要求仓库内置知识包。
+
 ## 恢复包的证明范围（P5 边界声明）
 
 recovery/ 是 2026-10-13 的历史恢复基线留痕，不是生产版本。它能证明的是所含文件可按哈希恢复；不能证明找回了当时的生产 HEAD、未提交修改、画布/网站状态或外部知识库。任何人不得以本目录内容宣称"生产状态已恢复"。

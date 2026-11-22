@@ -348,7 +348,7 @@ def registered_output_snapshot(root: Path, entry: dict, *, file_digest=None) -> 
         return None
 
 
-def _legacy_confirmed_output(root: Path, asset: dict, confirmation_cache: dict) -> dict | None:
+def _legacy_confirmed_output(root: Path, asset: dict, confirmation_cache: dict, *, file_digest=None) -> dict | None:
     """Project a trustworthy pre-2.0 confirmed_asset into one main output."""
     asset_id = asset.get("asset_id")
     selected = asset.get("confirmed_asset")
@@ -377,7 +377,7 @@ def _legacy_confirmed_output(root: Path, asset: dict, confirmation_cache: dict) 
     if receipt is None or image_receipt is None:
         return None
     try:
-        verify_image_confirmation(image_path, image_receipt)
+        verify_image_confirmation(image_path, image_receipt, file_digest=file_digest)
     except (ValueError, OSError):
         return None
     return {
@@ -388,7 +388,7 @@ def _legacy_confirmed_output(root: Path, asset: dict, confirmation_cache: dict) 
     }
 
 
-def confirmed_images(root: Path, *, requests: Iterable[str] | None = None) -> dict[str, dict]:
+def confirmed_images(root: Path, *, requests: Iterable[str] | None = None, file_digest=None) -> dict[str, dict]:
     """Read current, explicitly confirmed outputs from the newest asset manifest.
 
     ``candidates`` are production history, not approved material.  Likewise a
@@ -461,7 +461,7 @@ def confirmed_images(root: Path, *, requests: Iterable[str] | None = None) -> di
         outputs = []
         if "confirmed_outputs" not in asset:
             if requested_outputs is None or "legacy-main" in requested_outputs:
-                legacy = _legacy_confirmed_output(root, asset, confirmation_cache)
+                legacy = _legacy_confirmed_output(root, asset, confirmation_cache, file_digest=file_digest)
                 if legacy is not None:
                     outputs.append(legacy)
         else:
@@ -474,7 +474,7 @@ def confirmed_images(root: Path, *, requests: Iterable[str] | None = None) -> di
                 ):
                     continue
                 confirmed = _confirmed_output(root, asset_id, output, confirmation_cache=confirmation_cache,
-                                              display_label=True)
+                                              display_label=True, file_digest=file_digest)
                 if confirmed is not None:
                     outputs.append(confirmed)
         if not outputs:
@@ -504,10 +504,10 @@ def confirmed_images(root: Path, *, requests: Iterable[str] | None = None) -> di
 
 
 def build_asset_list(root: Path, narrative: dict, choices: dict | None = None, *,
-                     image_requests: Iterable[str] | None = None) -> dict:
+                     image_requests: Iterable[str] | None = None, file_digest=None) -> dict:
     """当前资产清单：state + 在场区间 + 图片状态。"""
     choices = choices if choices is not None else read_choices(root)
-    images = confirmed_images(root, requests=image_requests)
+    images = confirmed_images(root, requests=image_requests, file_digest=file_digest)
     usage = load_usage(root, narrative)
     items = []
     for requirement in effective(narrative, choices):
@@ -556,13 +556,13 @@ def write_asset_list(root: Path, narrative: dict, choices: dict) -> Path:
 
 
 def load_asset_list(root: Path, narrative: dict | None = None, choices: dict | None = None, *,
-                    image_requests: Iterable[str] | None = None) -> dict:
+                    image_requests: Iterable[str] | None = None, file_digest=None) -> dict:
     if narrative is None:
         narrative = current_narrative(root)
     # The JSON file is a convenience snapshot, never an authority for image
     # confirmation.  Rebuild in memory so an old candidate-polluted snapshot
     # cannot be re-exported by a later tool invocation.
-    return build_asset_list(root, narrative, choices, image_requests=image_requests)
+    return build_asset_list(root, narrative, choices, image_requests=image_requests, file_digest=file_digest)
 
 
 def current_narrative(root: Path) -> dict:
@@ -601,7 +601,8 @@ def asset_index(asset_list: dict) -> dict[str, dict]:
     return {item["asset_id"]: item for item in asset_list["items"]}
 
 
-def director_location_readiness(root: Path, storyboard: dict, shot_ids: Iterable[str]) -> list[str]:
+def director_location_readiness(root: Path, storyboard: dict, shot_ids: Iterable[str], *,
+                                scoped=False, assets=None):
     """Find missing master images for required locations in the requested shots."""
     scope = set(shot_ids)
     shots_by_asset: dict[str, list[str]] = {}
@@ -614,19 +615,19 @@ def director_location_readiness(root: Path, storyboard: dict, shot_ids: Iterable
     if not shots_by_asset:
         return []
 
-    index = asset_index(load_asset_list(root))
+    index = asset_index(load_asset_list(root, image_requests=shots_by_asset)) if assets is None else assets
     problems = []
     for asset_id, shots in shots_by_asset.items():
         item = index.get(asset_id)
         if item is None:
-            problems.append(f"{asset_id}（{', '.join(shots)}）：导演引用的需求不在当前资产清单")
+            problems.append((shots, f"{asset_id}（{', '.join(shots)}）：导演引用的需求不在当前资产清单"))
             continue
         if item['state'] != 'needs_image' or item.get('category') != 'LOCATION':
             continue
         image = item.get('image', {})
         if image.get('status') != 'confirmed' or not image.get('outputs'):
-            problems.append(f"{asset_id}（{item['name']}，{', '.join(shots)}）：缺可用的已确认母版图片")
-    return problems
+            problems.append((shots, f"{asset_id}（{item['name']}，{', '.join(shots)}）：缺可用的已确认母版图片"))
+    return problems if scoped else [message for _, message in problems]
 
 
 def _aliases(item: dict) -> list[str]:
@@ -702,44 +703,49 @@ def scan_references(root: Path, asset_ids: list[str], asset_list: dict | None = 
               "source_narrative_revision": asset_list.get("source_narrative_revision"),
               "scanned_files": [str(p.relative_to(root)) for p in scanned],
               "assets": []}
+    targets = []
     for asset_id in asset_ids:
         item = index.get(asset_id, {"asset_id": asset_id, "name": "", "state": "unknown"})
-        references: list[dict] = []
-        names: list[dict] = []
-        name_total = 0
-        for path in scanned:
-            try:
-                lines = _document_fragments(path)
-            except (UnicodeDecodeError, OSError):
-                continue
+        action = {"needs_image": "keep", "excluded": "remove_reference",
+                  "split_parent": "replace_with_child", "unknown": "register_first"}.get(item["state"], "review")
+        hits = {"asset_id": asset_id, "name": item.get("name", ""), "state": item["state"],
+                "children": item.get("children", []), "action": action,
+                "image": item.get("image", {"status": "missing"}),
+                "reference_hits": [], "name_hit_total": 0, "name_hits": []}
+        report["assets"].append(hits)
+        targets.append((asset_id, _aliases(item) if item.get("name") else (), hits))
+    for path in scanned if targets else ():
+        try:
+            lines = _document_fragments(path)
+        except (UnicodeDecodeError, OSError):
+            continue
+        relative = str(path.relative_to(root))
+        for asset_id, aliases, hits in targets:
             for number, line, pointer in lines:
                 if asset_id in line:
                     is_reference = (line.lstrip().startswith("| 来源") or "资产：" in line
                                     or "source_asset_requirement_ids" in line
                                     or (pointer is not None and any(key in pointer.split("/") for key in ("asset_id", "asset_ids", "materials", "references", "reference_checks")))
                                     or re.match(r"^\s*[-|]\s*素材", line) is not None)
-                    references.append({"file": str(path.relative_to(root)), "line": number,
-                                       "kind": "reference" if is_reference else "mention",
-                                       **({"json_path": pointer} if pointer else {}),
-                                       "text": line.strip()[:200]})
+                    hits["reference_hits"].append({"file": relative, "line": number,
+                                                  "kind": "reference" if is_reference else "mention",
+                                                  **({"json_path": pointer} if pointer else {}),
+                                                  "text": line.strip()[:200]})
                     continue
-                if item.get("name") and any(alias in line for alias in _aliases(item)):
-                    name_total += 1
-                    if len(names) < name_hit_limit:
-                        names.append({"file": str(path.relative_to(root)), "line": number,
-                                      "kind": "name_hit", **({"json_path": pointer} if pointer else {}), "text": line.strip()[:200]})
-        action = {"needs_image": "keep", "excluded": "remove_reference",
-                  "split_parent": "replace_with_child", "unknown": "register_first"}.get(item["state"], "review")
-        report["assets"].append({"asset_id": asset_id, "name": item.get("name", ""), "state": item["state"],
-                                 "children": item.get("children", []), "action": action,
-                                 "image": item.get("image", {"status": "missing"}),
-                                 "reference_hits": references, "name_hit_total": name_total,
-                                 "name_hits": names})
+                if any(alias in line for alias in aliases):
+                    hits["name_hit_total"] += 1
+                    if len(hits["name_hits"]) < name_hit_limit:
+                        hits["name_hits"].append({"file": relative, "line": number,
+                                                 "kind": "name_hit", **({"json_path": pointer} if pointer else {}),
+                                                 "text": line.strip()[:200]})
     return report
 
 
 def scan_and_write(root: Path, narrative: dict, asset_ids: list[str], choices: dict | None = None) -> Path:
-    report = scan_references(root, [a for a in asset_ids if a], None)
+    return _write_scan_report(root, scan_references(root, [a for a in asset_ids if a]))
+
+
+def _write_scan_report(root: Path, report: dict) -> Path:
     folder = root / IMPACT_DIR
     folder.mkdir(parents=True, exist_ok=True)
     revision = report.get("adjustment_revision") or 0
@@ -869,7 +875,8 @@ def check_output_plan(root: Path, request: dict, *, candidate_test_mode: bool = 
     return requirements
 
 
-def _required_images(root: Path, requests: list[str], *, final: bool = False) -> tuple[dict[str, dict], list[str]]:
+def _required_images(root: Path, requests: list[str], *, final: bool = False,
+                     file_digest=None) -> tuple[dict[str, dict], list[str]]:
     """Validate and resolve selections in the same read of the current asset list."""
     from .revision_control import guard_action
     try:
@@ -885,7 +892,8 @@ def _required_images(root: Path, requests: list[str], *, final: bool = False) ->
             expanded.extend(f"{ast}@{output}" for output in requirements[ast])
         else:
             expanded.append(request)
-    index = asset_index(load_asset_list(root, image_requests=expanded))
+    digest_args = {'file_digest': file_digest} if file_digest is not None else {}
+    index = asset_index(load_asset_list(root, image_requests=expanded, **digest_args))
     selected = {}
     problems = final_output_problems(requirements, requests, {
         ast: item.get("image", {}).get("outputs", []) for ast, item in index.items()
@@ -933,13 +941,13 @@ def require_final_images(root: Path, requests: list[str]) -> tuple[bool, list[st
         return False, [str(exc)]
 
 
-def resolve_final_images(root: Path, requests: list[str]) -> dict[str, dict]:
+def resolve_final_images(root: Path, requests: list[str], *, file_digest=None) -> dict[str, dict]:
     """Resolve explicit AST@OUTPUT bindings for delivery through the ordinary gate."""
     if any(not re.fullmatch(r"[^@]+@[^@]+", request) for request in requests):
         raise ValueError("正式素材必须指定准确 AST@输出")
     if not requests:
         return {}
-    selected, problems = _required_images(root, requests, final=True)
+    selected, problems = _required_images(root, requests, final=True, file_digest=file_digest)
     if problems:
         raise ValueError("；".join(problems))
     for request, output in selected.items():
@@ -953,7 +961,8 @@ def require_images(root: Path, asset_ids: list[str]) -> tuple[bool, list[str]]:
     return not problems, problems
 
 
-def require_references(root: Path, artifact_ids: list[str], shot_ids: list[str] | None = None) -> tuple[bool, list[str]]:
+def require_references(root: Path, artifact_ids: list[str], shot_ids: list[str] | None = None,
+                       *, file_digest=None) -> tuple[bool, list[str]]:
     """Check exact registered supplemental images, without adopting anything.
 
     This proves file/version availability only; the caller must still inspect the
@@ -963,6 +972,9 @@ def require_references(root: Path, artifact_ids: list[str], shot_ids: list[str] 
         return False, ["未提供具体确认参考；身份/服装板不能替代场内比例或切点参考"]
     manifest = load_manifest(root)
     state = load_project_state(root)
+    from .artifacts import cache_file_digests, require_current_agent_acceptance, validate_current_dependencies
+
+    file_digest = cache_file_digests(check_for_changes=True) if file_digest is None else file_digest
     problems = []
     for ident in dict.fromkeys(artifact_ids):
         try:
@@ -973,11 +985,12 @@ def require_references(root: Path, artifact_ids: list[str], shot_ids: list[str] 
             permitted_shots = set()
             from .revision_control import guard_action
             guard_action(root, logical_ids=[entry['logical_id']])
+            uses_agent_acceptance = entry.get('agent_acceptance') is not None
             if (ident not in state['current_artifacts']
-                    or not artifact_is_adopted(entry, state, root)):
+                    or (not uses_agent_acceptance and not artifact_is_adopted(entry, state, root))):
                 raise ValueError('参考尚未确认、已返工失效或被新版替代')
             path = project_path(root, entry['path_or_url'])
-            if not entry.get('checksum') or not path.is_file() or digest(path) != entry['checksum']:
+            if not entry.get('checksum') or not path.is_file() or file_digest(path) != entry['checksum']:
                 raise ValueError('参考缺少可核对的登记指纹、文件丢失或内容已变化')
             if entry.get('type') != 'visual-supplement-image' or path.suffix.lower() not in {'.png', '.jpg', '.jpeg', '.webp'}:
                 raise ValueError('请引用具体确认分镜图；AST母图仍用 --require-image')
@@ -985,11 +998,9 @@ def require_references(root: Path, artifact_ids: list[str], shot_ids: list[str] 
             # a named member of a batch, or the revision-control adoption.
             from .confirmation_scope import is_whole_artifact, image_usage_shots
             from .artifacts import formal_adoption
-            if entry.get('agent_acceptance') is not None:
-                from .agent_acceptance import validate_agent_acceptance
-                from .artifacts import validate_current_dependencies
-                report = validate_agent_acceptance(root, entry, state=state)
-                validate_current_dependencies(entry, manifest, state, root)
+            if uses_agent_acceptance:
+                report = require_current_agent_acceptance(entry, state, root, file_digest=file_digest)
+                validate_current_dependencies(entry, manifest, state, root, file_digest=file_digest)
                 permitted_shots = set(image_usage_shots(report.get('usage'), required=True))
             else:
                 confirmation = entry.get('confirmation_ref')
@@ -1026,11 +1037,12 @@ def require_references(root: Path, artifact_ids: list[str], shot_ids: list[str] 
                     white = image.get('white_reference')
                     if white:
                         white_path = project_path(root, white['path'])
-                        if not white_path.is_file() or digest(white_path) != white.get('sha256'):
+                        if not white_path.is_file() or file_digest(white_path) != white.get('sha256'):
                             raise ValueError('本图历史确认引用的来源图已变化或缺失')
             from .quality_evidence import validate_image_evidence
             validate_image_evidence(root, path, entry.get('quality_evidence'), shot_ids,
-                                    product_reference=entry.get('product_reference'), artifact=entry, state=state)
+                                    product_reference=entry.get('product_reference'), artifact=entry, state=state,
+                                    file_digest=file_digest)
 
             if shot_ids and not set(shot_ids) <= permitted_shots:
                 raise ValueError('本图确认用途未覆盖这些镜头，不能自行扩用：' + ', '.join(sorted(set(shot_ids) - permitted_shots)))
@@ -1065,11 +1077,10 @@ def main() -> int:
         print(json.dumps({"assets": entries, "problems": problems}, ensure_ascii=False, indent=2))
         return 0 if not problems else 2
     if args.scan:
-        if args.write:
-            narrative = current_narrative(root)
-            path = scan_and_write(root, narrative, args.scan)
-            print(f"已写入 {path.relative_to(root)}")
         report = scan_references(root, args.scan)
+        if args.write:
+            path = _write_scan_report(root, report)
+            print(f"已写入 {path.relative_to(root)}")
         for asset in report["assets"]:
             print(f"{asset['asset_id']}（{asset['state']}／建议 {asset['action']}/"
                   f"图片={asset['image'].get('status')}）：引用位命中 {len(asset['reference_hits'])} 处、"

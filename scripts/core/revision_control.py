@@ -867,7 +867,7 @@ def _assert_workflow_authorization(project: Path, change: dict[str, Any], entry:
 def confirm_agent_candidate(project: Path, *, change_id: str, report_path: str) -> dict[str, Any]:
     """Accept the current self-checked revision, without recording human approval."""
     from .candidate_test import require_production
-    from .agent_acceptance import build_agent_acceptance, validate_agent_acceptance
+    from .agent_acceptance import read_agent_acceptance
     project = project.resolve()
     with project_lock(project):
         require_production(project)
@@ -890,13 +890,10 @@ def confirm_agent_candidate(project: Path, *, change_id: str, report_path: str) 
             raise RevisionControlError("自主候选与登记的身份、修订、路径或 hash 不一致")
         state = load_project_state(project)
         grant = _assert_workflow_authorization(project, change, item, state)
-        checked = dict(item)
-        checked["agent_acceptance"] = build_agent_acceptance(project, checked, report_path, state=state)
-        if checked["agent_acceptance"]["authorization_id"] != grant["id"]:
+        acceptance, report = read_agent_acceptance(project, item, report_path, state=state)
+        if acceptance["authorization_id"] != grant["id"]:
             raise RevisionControlError("自主验收报告不属于本变更流程授权")
-        report = validate_agent_acceptance(project, checked, state=state)
-        validate_agent_submission(project, checked, manifest, report)
-        acceptance = checked["agent_acceptance"]
+        validate_agent_submission(project, {**item, "agent_acceptance": acceptance}, manifest, report)
         change["candidate_acceptance"] = acceptance
         change["review"] = {
             "kind": "revision-agent-self-check", "change_id": change_id, "verdict": "approved",
@@ -1026,12 +1023,14 @@ def commit_change(project: Path, *, change_id: str, website_approval=None, chat_
                 raise RevisionControlError("自主验收不得同时制造候选人工确认")
             candidate_item["agent_acceptance"] = agent_acceptance
             acceptance_report = validate_agent_acceptance(project, candidate_item, state=state)
-            validate_agent_submission(project, candidate_item, manifest, acceptance_report)
         elif change.get("workflow_authorization"):
             raise RevisionControlError("自主变更缺少本版验收，不用人工确认旁路")
         try:
-            submission_sha256 = validate_candidate_submission(project, candidate_item, manifest,
-                                                              approval_receipt=change.get("candidate_confirmation"))
+            if agent_acceptance is not None:
+                submission_sha256 = validate_agent_submission(project, candidate_item, manifest, acceptance_report)
+            else:
+                submission_sha256 = validate_candidate_submission(
+                    project, candidate_item, manifest, approval_receipt=change.get("candidate_confirmation"))
             if candidate_item.get("logical_id") in {"narrative.package", "storyboard.package", "video.prompt"} and not submission_sha256:
                 raise ValueError("旧稿件/未识别结构不能正式提交；仅保留历史读取")
         except (ValueError, OSError, KeyError, TypeError) as exc:

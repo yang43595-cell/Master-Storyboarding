@@ -532,7 +532,7 @@ def prompt_scene_control(row, frozen, project, state, requirements, *, formal_de
 
 
 def validate_submission(frozen: dict, project: Path, *, private_preview: bool = False,
-                        formal_delivery: bool = False, preflight: bool = False) -> dict:
+                        formal_delivery: bool = False, preflight: bool = False, read_json_bytes=None) -> dict:
     """Check the existing frozen delivery JSON, using current project authority.
 
     Roles/states are explicit production decisions, not inferred visual facts.
@@ -542,14 +542,18 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         raise ValueError('画布预检需要含 target_url/drafts 的交付冻结快照，不能直接传入 video.prompt 源稿')
     import math
     try:
-        from .core.artifacts import (load_manifest, artifact_is_adopted, project_path, cache_file_digests,
-                                     validate_current_dependencies)
+        from .core.artifacts import (
+            load_manifest, artifact_is_adopted, project_path, cache_file_digests, cache_file_reads,
+            digest as artifact_digest, validate_current_dependencies,
+        )
         from .core.project_state import load_project_state
         from .core.candidate_test import require_production
         from .core.delivery_files import discover_dependencies
     except ImportError:
-        from core.artifacts import (load_manifest, artifact_is_adopted, project_path, cache_file_digests,
-                                    validate_current_dependencies)
+        from core.artifacts import (
+            load_manifest, artifact_is_adopted, project_path, cache_file_digests, cache_file_reads,
+            digest as artifact_digest, validate_current_dependencies,
+        )
         from core.project_state import load_project_state
         from core.candidate_test import require_production
         from core.delivery_files import discover_dependencies
@@ -596,11 +600,11 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             if issues:
                 raise ValueError(f"{row['node_id']}: " + '; '.join(issues))
     try:
-        from .core.quality_evidence import (validate_native_binding_claims, scene_state_requirements,
+        from .core.quality_evidence import (MAX_GENERATION_SEGMENT_SECONDS, validate_native_binding_claims, scene_state_requirements,
                                             validate_scene_state_references, reference_shot_ids, source_shot_ids, validate_scene_source_mapping,
                                             validate_shot_durations)
     except ImportError:
-        from core.quality_evidence import (validate_native_binding_claims, scene_state_requirements,
+        from core.quality_evidence import (MAX_GENERATION_SEGMENT_SECONDS, validate_native_binding_claims, scene_state_requirements,
                                            validate_scene_state_references, reference_shot_ids, source_shot_ids, validate_scene_source_mapping,
                                            validate_shot_durations)
     validate_native_binding_claims(frozen, project)
@@ -614,7 +618,21 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             raise ValueError('preview scope cannot be used by formal delivery')
     if not isinstance(frozen.get('revision'), str) or not frozen['revision'].strip():
         raise ValueError('submission revision required')
-    file_digest = cache_file_digests(check_for_changes=True)
+    # This cache is local to one validation phase. The refreshed compare creates a new one.
+    read_json_bytes = cache_file_reads(Path.read_bytes) if read_json_bytes is None else read_json_bytes
+
+    def read_evidence(path):
+        return read_json_bytes(path) if path.suffix.lower() == '.json' else path.read_bytes()
+
+    def hash_file(path):
+        if path.suffix.lower() == '.json':
+            return hashlib.sha256(read_json_bytes(path)).hexdigest()
+        return artifact_digest(path)
+
+    file_digest = cache_file_digests(hash_file, check_for_changes=True)
+
+    def read_payload(path):
+        return json.loads(read_json_bytes(path).decode('utf-8'))
 
     def authority(ref):
         if private_preview:
@@ -631,7 +649,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         if (not path.is_file() or path.stat().st_size == 0 or not item.get('checksum')
                 or item['checksum'] != ref.get('sha256') or file_digest(path) != ref['sha256']):
             raise ValueError('reference file/hash differs from current confirmed artifact')
-        validate_current_dependencies(item, manifest, state, project, file_digest=file_digest)
+        validate_current_dependencies(item, manifest, state, project, file_digest=file_digest, read_payload=read_payload)
         return path
     agent_reports = {}
     def agent_report(item):
@@ -643,7 +661,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                 from .core.agent_acceptance import validate_agent_acceptance
             except ImportError:
                 from core.agent_acceptance import validate_agent_acceptance
-            agent_reports[ident] = validate_agent_acceptance(project, item, state=state)
+            agent_reports[ident] = validate_agent_acceptance(project, item, state=state, file_digest=file_digest)
         return agent_reports[ident]
     sources = frozen.get('source_artifacts')
     if not isinstance(sources, list) or not sources:
@@ -660,7 +678,10 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
     for ref in sources:
         source_path = authority(ref)
         if source_path.suffix.lower() == '.json':
-            source_payload = json.loads(source_path.read_text(encoding='utf-8-sig'))
+            raw_source = read_json_bytes(source_path)
+            if not private_preview and hashlib.sha256(raw_source).hexdigest() != ref['sha256']:
+                raise ValueError('reference file/hash differs from current confirmed artifact')
+            source_payload = json.loads(raw_source.decode('utf-8-sig'))
             if isinstance(source_payload, dict):
                 scene_requirements.extend(scene_state_requirements(source_payload))
                 package_requirements.extend(packaging_requirements(source_payload))
@@ -677,7 +698,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             for path in declared_input_roots(source_payload)))
         dependencies = discover_dependencies(
             project, input_roots=input_roots, payload=frozen,
-            json_projections=projections)
+            json_projections=projections, read_json_bytes=read_json_bytes)
     if not dependencies['ok']:
         raise ValueError('Dependency readiness failed: ' + '; '.join(dependencies['errors'] + dependencies['uncheckable']))
     entries = {item['artifact_id']: item for item in manifest['artifacts']}
@@ -725,13 +746,13 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                 raise ValueError(f"{row['node_id']}: 正式红帧写入素材须逐槽匹配采用源段的顺序、身份和用途")
     external = validate_scene_source_mapping(
         frozen['drafts'], scene_sources, project, check_submitted_body=not private_preview,
-        delivery_platform='redframe' if formal_redframe else None,
+        delivery_platform='redframe' if formal_redframe else None, read_evidence=read_evidence,
     ) or {}
     if not private_preview:
         try:
-            from .core.visual_readiness import require_visual_readiness
+            from .core.production_handoff import require_handoff_visual_inputs
         except ImportError:
-            from core.visual_readiness import require_visual_readiness
+            from core.production_handoff import require_handoff_visual_inputs
         submitted_shots = {shot for row in drafts.values() for shot in source_shot_ids(row)}
         for ref, _, payload in scene_sources:
             source = entries[ref['artifact_id']]
@@ -740,8 +761,9 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             shots = submitted_shots.intersection(
                 shot['shot_id'] for scene in payload['scenes'] for shot in scene['shots'])
             if shots:
-                require_visual_readiness(project, payload, source, shots,
-                                         rows=drafts.values(), manifest=manifest)
+                require_handoff_visual_inputs(project, payload, source, shots,
+                                              rows=drafts.values(), manifest=manifest, state=state,
+                                              file_digest=file_digest)
     if set(contexts) != set(external):
         raise ValueError('partial delivery requires exact prior-node evidence for every source continuation')
     validation_rows, context_scopes = [], {}
@@ -763,6 +785,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
     if contexts:
         remaining = validate_scene_source_mapping(
             validation_rows, scene_sources, project, delivery_platform='redframe' if formal_redframe else None,
+            read_evidence=read_evidence,
         ) or {}
         if set(remaining) - set(context_scopes):
             raise ValueError('partial predecessor evidence leaves a current continuation unresolved')
@@ -841,7 +864,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             from .core.asset_refs import resolve_final_images
         except ImportError:
             from core.asset_refs import resolve_final_images
-        asset_outputs = resolve_final_images(project, sorted(exact_outputs))
+        asset_outputs = resolve_final_images(project, sorted(exact_outputs), file_digest=file_digest)
     endpoint_control_checks = {}
     prompt_state_control_checks = {}
     accepted_image_uses = []
@@ -875,6 +898,8 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         if not isinstance(row.get('prompt'), str) or not row['prompt'].strip():
             raise ValueError('complete submitted prompt body required')
         duration = seconds(row['parameters']['duration'])
+        if duration > MAX_GENERATION_SEGMENT_SECONDS:
+            raise ValueError(f"草稿 {row['node_id']} 的生成段超过 {MAX_GENERATION_SEGMENT_SECONDS} 秒")
         low, high = map(seconds, row['duration_bounds'])
         if low > high or not low <= duration <= high:
             raise ValueError('duration outside explicitly selected platform bounds')
@@ -1032,7 +1057,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                     from core.quality_evidence import validate_image_evidence, reference_shot_ids
                 image_check = validate_image_evidence(
                     project, path, item.get('quality_evidence'), reference_shot_ids(ref, row),
-                    reference=ref, artifact=item, state=state)
+                    reference=ref, artifact=item, state=state, file_digest=file_digest)
                 if image_check['accepted_deviations']:
                     accepted_image_uses.append({'node_id': row['node_id'], 'artifact_id': item['artifact_id'],
                                                 'source_shot_ids': reference_shot_ids(ref, row),

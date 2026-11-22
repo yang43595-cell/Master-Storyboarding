@@ -210,12 +210,12 @@ def register_workflow_authorization(project, *, authorization_id, authorization_
         return record
 
 
-def _binding(project, entry):
+def _binding(project, entry, *, file_digest=None):
     path = _file(project, entry.get("path_or_url"))
     if (not all(_text(entry.get(key)) for key in ("artifact_id", "logical_id", "type", "revision"))
             or not path.stat().st_size):
         raise ValueError("agent 验收产物身份、修订或文件为空")
-    checksum = _digest(path)
+    checksum = _digest(path) if file_digest is None else file_digest(path)
     # Registration may precede the first checksum; adoption pins it before
     # validating. Existing current/upstream records must already carry one.
     if (entry.get("checksum") and entry["checksum"] != checksum
@@ -225,12 +225,12 @@ def _binding(project, entry):
         "path": path.relative_to(project).as_posix(), "sha256": checksum}
 
 
-def acceptance_binding(project, entry):
+def acceptance_binding(project, entry, *, file_digest=None):
     """Return exact local bytes/direct upstreams for an actual self-check report."""
     from .artifacts import load_manifest
     project = Path(project).resolve()
     manifest = load_manifest(project)
-    own = _binding(project, entry)
+    own = _binding(project, entry, file_digest=file_digest)
     dependencies = entry.get("depends_on") or []
     if not isinstance(dependencies, list) or any(not _text(item) for item in dependencies):
         raise ValueError("agent 验收依赖必须是明确 logical_id 列表")
@@ -248,7 +248,7 @@ def acceptance_binding(project, entry):
                    if item.get("logical_id") == logical and item.get("status") == "current"]
         if len(matches) != 1 or not matches[0].get("checksum"):
             raise ValueError("验收上游缺唯一有效 current/hash：" + str(logical))
-        upstreams.append(_binding(project, matches[0]))
+        upstreams.append(_binding(project, matches[0], file_digest=file_digest))
     result = {"artifact": own, "upstreams": upstreams}
     if entry.get("type") == "visual-supplement-image":
         # Actual observations and packaging references live on the existing
@@ -279,7 +279,7 @@ def _unchanged_image_director(project, entry, report, expected, state):
             and unchanged_director_usage(project, baseline, current, supplement_director_shots(entry, report)))
 
 
-def _validate_report(project, entry, report, state, pointer=None):
+def _validate_report(project, entry, report, state, pointer=None, *, file_digest=None):
     from .candidate_test import require_production
     from .confirmation_scope import SCOPE_ID_FIELDS, image_usage_shots
     skill = skill_for_artifact(entry)
@@ -296,7 +296,7 @@ def _validate_report(project, entry, report, state, pointer=None):
     if pointer and (pointer.get("authorization_id") != authorization["id"]
                     or pointer.get("authorization_sha256") != _json_digest(authorization)):
         raise ValueError("自主验收所依据的流程授权已改变")
-    binding = acceptance_binding(project, entry)
+    binding = acceptance_binding(project, entry, file_digest=file_digest)
     if (pointer and entry.get("status") == "current" and skill == "storyboard-director"
             and report.get("upstreams") != binding["upstreams"]
             and _unchanged_image_director(project, entry, report, binding["upstreams"], state)):
@@ -336,7 +336,8 @@ def _validate_report(project, entry, report, state, pointer=None):
             raise ValueError("分镜图片验收必须绑定准确导演上游")
         validate_image_evidence(project, _file(project, entry["path_or_url"]),
                                 entry.get("quality_evidence"), shots,
-                                product_reference=entry.get("product_reference"), artifact=entry, state=state)
+                                product_reference=entry.get("product_reference"), artifact=entry, state=state,
+                                file_digest=file_digest)
     elif report.get("usage") is not None:
         raise ValueError("图片用途仅允许独立分镜图片登记")
     if "reference_groups" in report:
@@ -357,17 +358,23 @@ def _validate_report(project, entry, report, state, pointer=None):
 
 def build_agent_acceptance(project, entry, report_path, *, state=None):
     """Validate the actual self-check and return only its immutable pointer."""
+    return read_agent_acceptance(project, entry, report_path, state=state)[0]
+
+
+def read_agent_acceptance(project, entry, report_path, *, state=None):
+    """Return the acceptance pointer and the report validated from those exact bytes."""
     from .project_state import load_project_state
     project = Path(project).resolve()
     state = load_project_state(project) if state is None else state
     path = _file(project, str(report_path))
-    report = json.loads(path.read_text(encoding="utf-8-sig"))
+    raw = path.read_bytes()
+    report = json.loads(raw.decode("utf-8-sig"))
     authorization = _validate_report(project, entry, report, state)
-    return {"report_path": path.relative_to(project).as_posix(), "report_sha256": _digest(path),
-            "authorization_id": authorization["id"], "authorization_sha256": _json_digest(authorization)}
+    return {"report_path": path.relative_to(project).as_posix(), "report_sha256": hashlib.sha256(raw).hexdigest(),
+            "authorization_id": authorization["id"], "authorization_sha256": _json_digest(authorization)}, report
 
 
-def validate_agent_acceptance(project, entry, *, state=None):
+def validate_agent_acceptance(project, entry, *, state=None, file_digest=None):
     """Recheck immutable evidence for consumption; never produces confirmation."""
     from .project_state import load_project_state
     project = Path(project).resolve()
@@ -376,8 +383,9 @@ def validate_agent_acceptance(project, entry, *, state=None):
     if not isinstance(pointer, dict):
         raise ValueError("产物缺少独立的 agent 验收依据")
     path = _file(project, pointer.get("report_path"))
-    if _digest(path) != pointer.get("report_sha256"):
+    raw = path.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != pointer.get("report_sha256"):
         raise ValueError("agent 自查报告已改变，旧验收失效")
-    report = json.loads(path.read_text(encoding="utf-8-sig"))
-    _validate_report(project, entry, report, state, pointer)
+    report = json.loads(raw.decode("utf-8-sig"))
+    _validate_report(project, entry, report, state, pointer, file_digest=file_digest)
     return report

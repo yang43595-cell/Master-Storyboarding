@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .artifacts import load_manifest, project_path
+from .artifacts import cache_file_digests, load_manifest, project_path
 from .asset_refs import director_location_readiness, require_references, resolve_final_images
 from .media_types import MEDIA_EXTENSIONS
 from .quality_evidence import reference_shot_ids, source_shot_ids
@@ -46,7 +46,7 @@ def _carries(root, refs, path, checksum, *, artifact_id=None):
                for ref in refs)
 
 
-def _selected_relationship(root, request, manifest, shots):
+def _selected_relationship(root, request, manifest, shots, *, file_digest):
     """Resolve the selected, currently approved image, even in a mixed reference list."""
     selection = request['relationship_reference']
     refs = request['existing_references']
@@ -61,12 +61,12 @@ def _selected_relationship(root, request, manifest, shots):
         chosen = matches[0]
     key = chosen['ref_id']
     if chosen['kind'] == 'confirmed_asset':
-        image = resolve_final_images(root, [key])[key]
+        image = resolve_final_images(root, [key], file_digest=file_digest)[key]
         approved_path, checksum = image['path'], image['sha256']
         asset_id, output_id = key.split('@')
         identity = {'asset_id': asset_id, 'output_id': output_id}
     elif chosen['kind'] == 'confirmed_supplement':
-        ok, problems = require_references(root, [key], sorted(shots))
+        ok, problems = require_references(root, [key], sorted(shots), file_digest=file_digest)
         if not ok:
             raise ValueError('；'.join(problems))
         image = next(entry for entry in manifest['artifacts'] if entry['artifact_id'] == key)
@@ -102,13 +102,29 @@ def _available_images(root, manifest, request_path):
             yield entry, set(evidence.get('source_shot_ids', []))
 
 
+def _supplement_coverage(root, options, shots, row, file_digest):
+    covered = set()
+    for entry, allowed in options:
+        used = shots & allowed
+        if row is not None:
+            image = project_path(root, entry['path_or_url'])
+            used = {shot for shot in used if _carries(
+                root, _references_for_shot(row, shot), image, entry['checksum'],
+                artifact_id=entry['artifact_id'])}
+        if used and require_references(root, [entry['artifact_id']], sorted(used), file_digest=file_digest)[0]:
+            covered.update(used)
+    return covered
+
+
 def require_visual_readiness(root, storyboard, source, shot_ids, *, rows=None, manifest=None,
-                             require_review=False):
+                             require_review=False, collect_blockers=False, assets=None, file_digest=None):
     """Read the exact director's existing requests and report only in-scope gaps.
 
     The handoff entry point requires an explicit review of each requested shot.
     With rows, a matching adopted supplement must be selected in each segment
     that uses its shots. This checks records and bytes, not the image contents.
+    Handoff routing also distinguishes missing visual work from an upstream
+    decision or a reference missing from the video manuscript.
     """
     root = Path(root).resolve()
     known = {shot['shot_id'] for scene in storyboard.get('scenes', []) for shot in scene['shots']}
@@ -119,9 +135,12 @@ def require_visual_readiness(root, storyboard, source, shot_ids, *, rows=None, m
     for gap in storyboard.get('asset_gaps', []):
         affected = shots & set(gap['affected_shot_ids'])
         if affected and gap.get('return_required'):
-            errors.append(f"{gap['gap_id']}（{'、'.join(sorted(affected))}）：{gap['missing_information']}")
+            errors.append(('upstream', affected,
+                           f"{gap['gap_id']}（{'、'.join(sorted(affected))}）：{gap['missing_information']}"))
     manifest = load_manifest(root) if manifest is None else manifest
     requests = list(_requests(root, manifest, source, shots))
+    # Share only unchanged bytes. Confirmation and use still get checked per reference.
+    file_digest = cache_file_digests(check_for_changes=True) if file_digest is None else file_digest
     ids, reviewed = set(), set()
     for path, request, affected in requests:
         ident = request['request_id']
@@ -135,27 +154,27 @@ def require_visual_readiness(root, storyboard, source, shot_ids, *, rows=None, m
             if review['storyboard_sha256'] == source.get('checksum'):
                 reviewed.update(affected)
             else:
-                errors.append(f'{label}：视觉检查记录对应的导演稿字节已变，须复核本范围')
+                errors.append(('visual', affected, f'{label}：视觉检查记录对应的导演稿字节已变，须复核本范围'))
         decision = request['decision']
         if decision == 'no_supplement':
             continue
         if decision == 'return_upstream':
-            errors.append(f"{label}：{request['return_upstream']['reason']}")
+            upstream = request['return_upstream']
+            errors.append(('upstream', affected, f"{label}：退回 {upstream['target']}，{upstream['reason']}"))
             continue
         if decision == 'reuse_existing':
             if request.get('relationship_reference'):
                 try:
-                    selection = _selected_relationship(root, request, manifest, affected)
+                    selection = _selected_relationship(root, request, manifest, affected, file_digest=file_digest)
                 except ValueError as exc:
-                    errors.append(f'{label}：{exc}')
+                    errors.append(('visual', affected, f'{label}：{exc}'))
                     continue
-                if rows is not None and any(
-                    not _carries_relationship(root, refs, *selection)
-                    for refs in _segment_references(rows, affected)
-                ):
+                missing = {shot for shot, refs in _segment_references(rows or (), affected)
+                           if not _carries_relationship(root, refs, *selection)}
+                if missing:
                     key = request['relationship_reference']
                     ref_id = request['existing_references'][0]['ref_id'] if key is True else key['ref_id']
-                    errors.append(f'{label}：缺本镜实际选用的既有关系图 {ref_id} 或空间用途')
+                    errors.append(('video', missing, f'{label}：缺本镜实际选用的既有关系图 {ref_id} 或空间用途'))
             continue
 
         options = list(_available_images(root, manifest, path))
@@ -165,28 +184,42 @@ def require_visual_readiness(root, storyboard, source, shot_ids, *, rows=None, m
             uses = [(set(source_shot_ids(row)) & affected, row) for row in rows
                     if set(source_shot_ids(row)) & affected]
         missing = set()
+        row_shots = set()
         for needed, row in uses:
-            covered = set()
-            for entry, allowed in options:
-                used = needed & allowed
-                if row is not None:
-                    image = project_path(root, entry['path_or_url'])
-                    used = {shot for shot in used if _carries(
-                        root, _references_for_shot(row, shot), image, entry['checksum'],
-                        artifact_id=entry['artifact_id'])}
-                if used and require_references(root, [entry['artifact_id']], sorted(used))[0]:
-                    covered.update(used)
-            missing.update(needed - covered)
+            row_shots.update(needed)
+            missing.update(needed - _supplement_coverage(root, options, needed, row, file_digest))
+        if collect_blockers:
+            # Missing rows need the same visual prerequisites as a new video
+            # draft. Check unresolved shots individually since the same image
+            # may be adopted for only part of the requested scope.
+            missing.update(affected - row_shots)
+            if rows is not None or len(affected) > 1:
+                available = {shot for shot in missing
+                             if _supplement_coverage(root, options, {shot}, None, file_digest)}
+                if rows is not None and (needs_binding := available & row_shots):
+                    errors.append(('video', needs_binding, f'{label}：已采用的分镜图尚未在视频稿中实际选用'))
+                missing.difference_update(available)
         if missing:
-            errors.append(f"{ident}（{'、'.join(sorted(missing))}）：缺已采用并覆盖本用途的分镜图")
+            errors.append(('visual', missing, f"{ident}（{'、'.join(sorted(missing))}）：缺已采用并覆盖本用途的分镜图"))
     unchecked = shots - reviewed
     if require_review and unchecked:
-        errors.insert(0, '缺本版视觉检查结论：' + '、'.join(sorted(unchecked)))
-    errors.extend(director_location_readiness(root, storyboard, shots))
-    if errors:
-        raise ValueError('视觉前序未就绪：' + '；'.join(errors))
-    return {'source_shot_ids': sorted(shots), 'request_ids': sorted(ids),
-            'reviewed_shot_ids': sorted(reviewed)}
+        errors.insert(0, ('visual', unchecked, '缺本版视觉检查结论：' + '、'.join(sorted(unchecked))))
+    errors.extend(('upstream', set(scope), message)
+                  for scope, message in director_location_readiness(root, storyboard, shots, scoped=True, assets=assets))
+    if errors and not collect_blockers:
+        raise ValueError('视觉前序未就绪：' + '；'.join(message for _, _, message in errors))
+    result = {'source_shot_ids': sorted(shots), 'request_ids': sorted(ids),
+              'reviewed_shot_ids': sorted(reviewed)}
+    if collect_blockers:
+        blockers = {}
+        blockers_by_stage = {'visual': {}, 'upstream': {}, 'video': {}}
+        for stage, scope, message in errors:
+            for shot in sorted(scope):
+                blockers.setdefault(shot, []).append(message)
+                blockers_by_stage[stage].setdefault(shot, []).append(message)
+        result['blocked_shot_ids'] = blockers
+        result['blockers_by_stage'] = blockers_by_stage
+    return result
 
 
 def _references_for_shot(row, shot):
@@ -197,4 +230,4 @@ def _references_for_shot(row, shot):
 def _segment_references(rows, shots):
     for row in rows:
         for shot in sorted(shots & set(source_shot_ids(row))):
-            yield _references_for_shot(row, shot)
+            yield shot, _references_for_shot(row, shot)

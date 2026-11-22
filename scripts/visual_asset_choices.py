@@ -59,7 +59,7 @@ def _apply_production_spec(requirement, specification):
             raise ValueError('造型标签对应须明确外观未变化；实际换装不能继承原图确认')
         states = result.get('wardrobe_states')
         if (result.get('category') != 'CHARACTER' or not isinstance(states, list)
-                or not states or not isinstance(names, dict)
+                or not states
                 or not set(names) <= {s['name'] for s in states}
                 or any(not isinstance(v, str) or not v.strip() for v in names.values())):
             raise ValueError('造型标签对应须引用已有明确服装槽位，不能新增换装或修改人物身份')

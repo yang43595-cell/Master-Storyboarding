@@ -32,9 +32,9 @@
 
 按场景、连续事件和原镜头顺序理解内容。同一事件、状态可衔接且所选模型一次能忠实承载时合为一段；景别变化或普通切镜不自动拆段。单镜独立成段须有独立事件或真实能力限制的理由，不默认全片一镜一段，也不为减少段数强行合并。来源动作、对白与时间范围按原顺序完整且恰好覆盖一次，不改变导演的机位、调度、切点与剧情。同一连续长镜头确受模型承载限制时，可由多个生成段分别承载连续子范围，在现有制作备注写清动作前后态和各段所含原文；同一来源镜号再次出现本身不算重复。不得为平台任务另造 Shot 或新增剪辑意图；无法保持拍法与接缝状态时返回导演。
 
-项目单个生成段最长 30 秒，实际入口上限更低时按已核的较低上限。复刻线从开工记录识别，实读[复刻执行方法](../../depth-guided-recreation/modules/recreation-method.md)。以已经采用的导演稿为准，复刻镜头对齐原片时间、镜头边界与动作，产品使用承接导演单独编排的拍法和真实参考。
-
 先依据自然对白和必要动作估算待承载内容，按导演明确的同时关系扣除重叠，再核实际模型、参考模式和平台的时长上下限。先处理短于下限的独立候选，再确定生成边界。合并后保留原镜头顺序、切点、对白和成片时长，并核生成上限、参考容量和场景状态。把独立短段的生成参数直接设为最低秒数仍无法通过检查。
+
+项目单个生成段最长 30 秒，实际入口上限更低时按已核的较低上限。复刻线从开工记录识别，实读[复刻执行方法](../../depth-guided-recreation/modules/recreation-method.md)。以已经采用的导演稿为准，复刻镜头对齐原片时间、镜头边界与动作，产品使用承接导演单独编排的拍法和真实参考。
 
 ## 红帧短镜优先并入下一段
 
@@ -44,7 +44,7 @@
 
 ## 超限时寻找原切点
 
-超过上限时，在本段可容纳的范围内，按以下优先级寻找原导演已有的边界；不为了等待高优先级边界超时，也不为了填满时长跨过合适的结束点：
+需要分段时，在有效上限内按以下优先级选择导演已有的边界。复刻线优先沿源片原有的场景切换，复刻镜头和产品段相接时同时核动作接续与参考容量。
 
 | 优先级 | 分段边界 |
 |---|---|
@@ -60,7 +60,7 @@
 
 每段沿用 `source_shot_ids` / `source_shots` 映射，场景取自导演，不按片段标题猜。相邻段的边界落在同一来源场景时，在后段现有 JSON 内记 `same_scene_split`：`from_segment_id`、`reason`、具体 `evidence`，以及 `source_boundary` 的准确 `shot_id`、`field`、`quote`。字段可定位动作、节奏、切点或对白（如 `audio.dialogue.0.text`），不得为了填字段改导演。
 
-- `model_duration_exceeded`：填连续待承载内容的 `estimated_scene_duration_seconds` 与 `timing_basis`。沿用 `selected_video_model`，记录用户已选 `id`、`confirmed_by_user`、实际 `platform` / `entry_point` / `reference_mode`、本轮核实的 `max_duration_seconds`；`capability_evidence` 指向项目内保留的真实帮助/原生控件取证文件，写 `path` / `sha256` / `locator` / `checked_at`。两侧模型与参考模式均须匹配该能力依据；每段自己的生成时长字段须与该段参数相符，且各自不超过已核上限，不要求前后两段等长。未知能力不得填经验值。
+- `model_duration_exceeded`：待承载连续内容超出有效生成上限时使用。填 `estimated_scene_duration_seconds` 与 `timing_basis`。沿用 `selected_video_model`，记录用户已选 `id`、`confirmed_by_user`、实际 `platform` / `entry_point` / `reference_mode`、本轮核实的 `max_duration_seconds`；`capability_evidence` 指向项目内保留的真实帮助/原生控件取证文件，写 `path` / `sha256` / `locator` / `checked_at`。两侧模型与参考模式均须匹配该能力依据；每段的生成时长须与该段参数相符，各自不超过有效上限。实际平台能力按取证登记。
 - `execution_limit`：限有具体素材或执行限制，`limitation_evidence` 用同样四字段定位真实证据，不以“更稳妥”代替限制。它不豁免当前入口的模型/参数检查。
 - `event_complete` / `time_ellipsis`：仅限导演原文已有的完整事件或明确时间省略，不把普通切镜、话题变化或同镜对白中途当成新事件。程序只核原文定位，不判定语义成立。
 
