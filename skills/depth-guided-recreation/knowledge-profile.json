@@ -1,0 +1,6 @@
+{
+  "schema_version": "1.0",
+  "skill": "depth-guided-recreation",
+  "topics": ["reference-video", "depth-video", "shot-continuity", "asset-driven-video"],
+  "professional_methods": []
+}

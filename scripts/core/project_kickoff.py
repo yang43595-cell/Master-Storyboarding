@@ -10,6 +10,11 @@ from .product_reference_pack import current_product_pack_revision, resolve_produ
 
 REQUEST_PATH = Path("00_项目管理/project_request.json")
 REDFRAME_MODEL = "Seedance 2.5"
+CREATIVE_WORKFLOW = "creative"
+RECREATION_WORKFLOW = "depth-guided-recreation"
+PENDING_WORKFLOW = "pending"
+RECREATION_ENTRY = f"skills/{RECREATION_WORKFLOW}/SKILL.md"
+RECREATION_METHOD = f"skills/{RECREATION_WORKFLOW}/modules/recreation-method.md"
 PRODUCT_MODES = {"none", "retain", "replace", "insert"}
 IMAGE_PROVIDERS = {"imagegen", "dreamina", "chatgpt", "redframe"}
 IMAGE_SCOPES = ("required_asset_outputs", "required_assets_and_supplements")
@@ -32,6 +37,14 @@ def _normalize_product_id(record):
 
 def _text(value):
     return isinstance(value, str) and bool(value.strip())
+
+
+def production_workflow(kickoff):
+    creation = (kickoff or {}).get("creation")
+    workflow = creation.get("workflow", CREATIVE_WORKFLOW) if isinstance(creation, dict) else CREATIVE_WORKFLOW
+    if workflow not in (CREATIVE_WORKFLOW, RECREATION_WORKFLOW, PENDING_WORKFLOW):
+        raise ValueError("creation.workflow 须选 creative、depth-guided-recreation 或 pending")
+    return workflow
 
 
 def _positive_seconds(value):
@@ -93,6 +106,7 @@ def load_kickoff(project):
 def validate_kickoff(kickoff, *, for_registration=False):
     if not isinstance(kickoff, dict) or not _text(kickoff.get("decision_ref")):
         raise ValueError("开工决定须登记 decision_ref")
+    production_workflow(kickoff)
     product = kickoff.get("product")
     if not isinstance(product, dict) or not _text(product.get("mode")) or product["mode"] not in PRODUCT_MODES:
         raise ValueError("开工产品须明确选择 none / retain / replace / insert")

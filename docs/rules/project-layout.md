@@ -32,6 +32,7 @@
 协调方先查本轮指令和项目现有记录，集中确认影响当前工作的缺项。将已确认决定通过 `python scripts/stage_context_cli.py kickoff --project <业务项目> --answers-json -` 从标准输入登记到 `00_项目管理/project_request.json` 的 `kickoff`。命令使用仓库虚拟环境中的 Python。已有答案文件可直接传路径，省略 `--answers-json` 只读。编导来源可在同一项目需求的顶层用 `source_files` 登记，`prepare --request-json` 指向这份项目需求。
 
 - `decision_ref` 记录准确用户依据。创作范围、来源、时长和参考选择随本轮决定记录。对标改编把原片在 `creation.reference_scope` 中记为剧情、字幕和镜头的核对依据。把对标裁片或截帧用于生成节点须有本轮明确依据，并按对应资产用途核验。速推沿用现有审核和采用依据，在已授权范围内并行。确有新事实、冲突或授权范围变化时，只补问受影响事项。
+- 对标项目先在 `creation.workflow` 登记 `pending`，按既有流程还原剧情、对白和动作。整稿采用后，在导演开始前更新为 `creative`（导演重拍）或 `depth-guided-recreation`（[按原片结构复刻](../../skills/depth-guided-recreation/SKILL.md)）。缺字段的项目按创作线续作。复刻线的导演和分镜准备自动纳入该路线的方法文件。补记时用 `kickoff --answers-json` 提交完整的开工对象。
 - `product.mode` 选择 `none`、`retain`、`replace` 或 `insert`。广告涉及的准确商品填 `product_id`，展示填 `product_usage: "display"`，真实使用填 `"real_use"`。编导和导演的 `prepare` 直接带入产品和用途供已有方法选择。并行改编若使用不同商品，分别以各业务项目的需求为准。包装、动作参考与宣称仍须核实。
 - 真实使用受固定时长约束时，编导定稿前做[产品演示窗粗查](#核对真实使用的固定演示窗)。
 - 有活动时，将用户确认的原句存入 `product.promotion_copy`，用 `product.promotion_decision_ref` 记录确认依据。口播如经用户确认改写，另存完整的 `product.promotion_dialogue`，确认依据一并注明。编导送审和新稿采用时会检查实际对白中同一说话人连续说出的活动口播，只忽略标点和空白。其他对白里的优惠机制、赠品和数量仍由编导逐句核对。

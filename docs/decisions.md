@@ -58,6 +58,10 @@
 - **背景与决定**。《老板娘 AI 酸》曾广域搜索猜挂载路径，抽帧后又猜文件名导致重抽。现行入口从已登记原片和参考开始，旧盘符沿核实的挂载和现有映射定位。指定本地原片、取证输出目录及时间点后，抽帧命令一次返回帧路径、实际取帧时间和联系表。同一输入只复用经指纹核验的完整结果，缺损保留并另存。用帧定位后沿原有方法连续核对声画。[素材定位](rules/project-layout.md#定位原片与参考素材) · [本地抽帧](../scripts/extract_video_frames.py)
 - **验证**。定位测试覆盖两份真实项目的来源登记、旧盘符、重名、缺卷、缺文件、路径越界及仅有网址。两份历史原片均复测非整帧时间与倒序重跑复用，短片回归覆盖变帧率、起始偏移、片尾无帧、变更原片、缺损输出、中断及并发。
 
+### 深度图视频复刻依附现有制作交接（2026-11-22）
+
+- **返修片段的桌面与物理状态交接（2026-11-22）**。《老板娘 AI 酸》D2 至 P3 五段连看中，P1 在揭盒前已有白管，搅拌时出现第二把刷。闭盒、碗、刷各有外观参考，缺同台面的静态摆放参考。P2 尾镜碗内有白料且刷头在碗内，P3 首镜碗接近空且刷头在碗外。正文原已交接碗刷和桌位，但遗漏了可见余料和刷的放置状态。以既有视觉补充、导演前后镜和视频起尾态交接补这两类输入。实际提交已正确表达且参考一致的成片偏差保留看片观察。本轮依据为实际串看、提交正文和素材核对，适用规则已更新，规则应用后的新出片效果待验。[桌面关系参考](../skills/storyboard-director/modules/storyboard-method.md#场景关系参考的交付约定) · [产品段状态交接](../skills/voiceover-to-video-script/modules/video-method.md#分段证据与连续性) · [复刻成片核对](../skills/depth-guided-recreation/modules/recreation-method.md#样片核对)
+
 ### 视频提示词的时长只记制作参数（2026-11-19）
 
 - **定位**：`video-script-template.md`、`video-method.md`、`generation_boundaries.py`、`canvas_readback.py`、`prompt_body.py`、`validate_shot_durations`、`shot_durations`、`parameters.duration`。

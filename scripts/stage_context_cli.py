@@ -39,8 +39,9 @@ try:
     from .core.method_documents import MethodDocumentError, render_method_packet, resolve_method_documents
     from .core.product_reference_pack import resolve_product_pack
     from .core.project_state import load_project_state, normalize_project_state, write_project_state
-    from .core.project_kickoff import (REQUEST_PATH, bind_stage_request, load_kickoff,
-                                       product_demo_timing_advisory, validate_kickoff)
+    from .core.project_kickoff import (REQUEST_PATH, RECREATION_ENTRY, RECREATION_METHOD, RECREATION_WORKFLOW,
+                                       bind_stage_request, load_kickoff, product_demo_timing_advisory,
+                                       production_workflow, validate_kickoff)
     from .core.review_publication import ChatScriptApproval, is_recorded_website_script_approval, require_script_approval
     from .core.io import PROJECT_LOCK_RELATIVE, file_lock, project_lock, write_json
     from .core.revision_control import RevisionControlError, commit_change, guard_action, show_change
@@ -68,8 +69,9 @@ except ImportError:  # direct CLI execution
     from core.method_documents import MethodDocumentError, render_method_packet, resolve_method_documents
     from core.product_reference_pack import resolve_product_pack
     from core.project_state import load_project_state, normalize_project_state, write_project_state
-    from core.project_kickoff import (REQUEST_PATH, bind_stage_request, load_kickoff,
-                                      product_demo_timing_advisory, validate_kickoff)
+    from core.project_kickoff import (REQUEST_PATH, RECREATION_ENTRY, RECREATION_METHOD, RECREATION_WORKFLOW,
+                                      bind_stage_request, load_kickoff, product_demo_timing_advisory,
+                                      production_workflow, validate_kickoff)
     from core.review_publication import ChatScriptApproval, is_recorded_website_script_approval, require_script_approval
     from core.io import PROJECT_LOCK_RELATIVE, file_lock, project_lock, write_json
     from core.revision_control import RevisionControlError, commit_change, guard_action, show_change
@@ -1458,6 +1460,9 @@ def _local_standard_documents(skill_dir: Path, request: dict[str, Any] | None = 
     local = [skill_dir / "SKILL.md", *sorted((skill_dir / "modules").glob("*.md")),
              *sorted((skill_dir / "references").glob("*.md"))]
     local = [_local_knowledge_path(path) for path in local if path.resolve() not in excluded]
+    if (skill_dir.name in {"storyboard-planner", "storyboard-director"}
+            and production_workflow(request.get("kickoff")) == RECREATION_WORKFLOW):
+        local.extend(_local_knowledge_path(ROOT / path) for path in (RECREATION_ENTRY, RECREATION_METHOD))
     extra = request.get("local_references", [])
     if not isinstance(extra, list):
         raise StageContextError("local_references 必须是本轮实际采用的仓库相对规范路径数组。")
@@ -2084,6 +2089,8 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         f"- Skill：`{args.skill}`",
         f"- 目标：{objective}",
         *([f"- 本轮开工决定：`{project / REQUEST_PATH}` 的 `kickoff` 按本阶段适用范围纳入任务依据。"] if kickoff else []),
+        *([f"- 复刻线按冻结的 `{ROOT / RECREATION_METHOD}` 执行，编导确认和本阶段采用依旧沿统一入口。"]
+          if ROOT / RECREATION_METHOD in local_documents else []),
         *([f"- 产品参考包：`{product_pack['manifest_path']}`，用 `kickoff --project` 读取本轮用途的准确文件、职责与缺口；逐镜选用。"] if product_pack else []),
         *(["- execution_mode: candidate_test；review_status: unreviewed；production_blocked: true。仅候选文本/结构试跑，不生成、不发布、不正式采用。"] if testing else []),
         f"- 本轮唯一任务依据：`{_task_basis_path(project)}`（机器完整记录；通过 ensure-prepared --show-task-basis 读取目标、输入与冻结验收项，不整份打印后台目录）",
@@ -3008,7 +3015,8 @@ def main(argv: list[str] | None = None) -> int:
                     raise StageContextError("已有项目锁定的同一参考包版本字节已变化，请还原文件或选择新版本")
                 write_json(path, {**request, "kickoff": answers})
         kickoff = load_kickoff(project)
-        result = {"ok": kickoff is not None, "path": str(project / REQUEST_PATH), "kickoff": kickoff}
+        result = {"ok": kickoff is not None, "path": str(project / REQUEST_PATH), "kickoff": kickoff,
+                  "workflow": production_workflow(kickoff)}
         if (timing := product_demo_timing_advisory(kickoff)) is not None:
             result["product_demo_timing"] = timing
         if kickoff and (pack := resolve_product_pack(kickoff["product"])):
