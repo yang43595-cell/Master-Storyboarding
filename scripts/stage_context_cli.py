@@ -37,7 +37,7 @@ try:
     from .core.knowledge_selector import render_knowledge_bundle, render_knowledge_candidates, render_candidate_trial_bundle, select_knowledge
     from .core.candidate_source_snapshot import CandidateSnapshotError, inspect_candidate_snapshot, load_candidate_snapshot_rules
     from .core.method_documents import MethodDocumentError, render_method_packet, resolve_method_documents
-    from .core.product_reference_pack import resolve_product_pack
+    from .core.product_reference_pack import product_catalog, resolve_product_pack
     from .core.project_state import load_project_state, normalize_project_state, write_project_state
     from .core.production_handoff import LEGACY_RULE, require_production_handoff, resolve_production_handoff
     from .core.project_kickoff import (REQUEST_PATH, RECREATION_ENTRY, RECREATION_METHOD, RECREATION_WORKFLOW,
@@ -68,7 +68,7 @@ except ImportError:  # direct CLI execution
     from core.knowledge_selector import render_knowledge_bundle, render_knowledge_candidates, render_candidate_trial_bundle, select_knowledge
     from core.candidate_source_snapshot import CandidateSnapshotError, inspect_candidate_snapshot, load_candidate_snapshot_rules
     from core.method_documents import MethodDocumentError, render_method_packet, resolve_method_documents
-    from core.product_reference_pack import resolve_product_pack
+    from core.product_reference_pack import product_catalog, resolve_product_pack
     from core.project_state import load_project_state, normalize_project_state, write_project_state
     from core.production_handoff import LEGACY_RULE, require_production_handoff, resolve_production_handoff
     from core.project_kickoff import (REQUEST_PATH, RECREATION_ENTRY, RECREATION_METHOD, RECREATION_WORKFLOW,
@@ -3187,6 +3187,14 @@ def main(argv: list[str] | None = None) -> int:
                 previous = request.get("kickoff")
                 existing = previous.get("product") if isinstance(previous, dict) else None
                 selected = answers["product"]
+                if "reference_pack_revision" in selected:
+                    choice = next((item for item in product_catalog()
+                                   if item["product_id"] == selected["product_id"]), None)
+                    current = {item["revision"] for item in (choice or {}).get("versions", [])}
+                    lock_fields = ("product_id", "reference_pack_revision", "reference_pack_sha256")
+                    if (choice and selected["reference_pack_revision"] not in current
+                            and any((existing or {}).get(key) != selected[key] for key in lock_fields)):
+                        raise StageContextError("历史产品包仅供已有同版本锁定的项目续用；请从当前版本选择")
                 if (isinstance(existing, dict) and existing.get("reference_pack_sha256")
                         and selected.get("reference_pack_sha256")
                         and (existing.get("product_id"), existing.get("reference_pack_revision"))
@@ -3197,6 +3205,9 @@ def main(argv: list[str] | None = None) -> int:
         kickoff = load_kickoff(project)
         result = {"ok": kickoff is not None, "path": str(project / REQUEST_PATH), "kickoff": kickoff,
                   "workflow": production_workflow(kickoff)}
+        if kickoff is None:
+            result["product_choices"] = product_catalog()
+            result["product_choice_prompt"] = "请用户选择本项目使用哪款产品、提供其他准确商品，或明确无产品"
         if (timing := product_demo_timing_advisory(kickoff)) is not None:
             result["product_demo_timing"] = timing
         if kickoff and (pack := resolve_product_pack(kickoff["product"])):

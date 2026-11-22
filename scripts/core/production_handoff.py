@@ -17,6 +17,7 @@ from .project_kickoff import (CREATIVE_WORKFLOW, PENDING_WORKFLOW, RECREATION_EN
                               load_kickoff, load_project_request, production_workflow)
 from .project_state import load_project_state
 from .quality_evidence import source_shot_ids
+from .product_reference_pack import product_catalog
 from .review_publication import is_recorded_website_script_approval
 from .revision_control import guard_action, inspect_revision_status
 from .visual_readiness import require_visual_readiness
@@ -320,7 +321,8 @@ def _resolve(project, manifest, state, kickoff, *, actions=None, shot_scope=None
         return [_step('kickoff', 'waiting', '本轮选用兼容人工流程，沿原交接步骤执行')]
     narrative_entry, narrative = _package(project, manifest, state, NARRATIVE)
     if kickoff is None and narrative_entry is None:
-        return [_step('kickoff', 'waiting', '缺当前开工决定；登记确认的来源、范围和产品安排')]
+        return [_step('kickoff', 'waiting', '登记来源和范围；请用户选择准确商品或明确无产品',
+                      product_choices=product_catalog())]
     steps = [_step('kickoff', 'complete', '开工决定已登记' if kickoff else '沿已有正式采用记录续作')]
     if narrative_entry is None:
         if candidates := _candidates(manifest, NARRATIVE):

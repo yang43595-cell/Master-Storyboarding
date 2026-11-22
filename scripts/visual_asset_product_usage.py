@@ -3,9 +3,7 @@ import copy
 import hashlib
 import json
 import re
-import shutil
 import subprocess
-import tempfile
 import threading
 from uuid import uuid4
 from pathlib import Path
@@ -340,36 +338,23 @@ def project_reference(service, project, asset):
     if not asset.get('reference_pack_sha256'):
         return {'project_path': str(service.copy_to_project(project, service.lib.get(asset['asset_id'])))}
     source = Path(asset['original'])
-    root = Path(project['path']).resolve()
     checksum = asset['sha256']
-    destination = root / '04_资产' / '项目产品参考' / checksum / source.name
-    if not destination.resolve().is_relative_to(root):
-        raise ValueError('项目产品参考路径越界')
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    if not destination.exists():
-        with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as file:
-            temporary = Path(file.name)
-        try:
-            shutil.copyfile(source, temporary)
-            if sha256_file(temporary) != checksum:
-                raise ValueError(f'产品参考复制时校验失败：{source}')
-            temporary.replace(destination)
-        finally:
-            temporary.unlink(missing_ok=True)
-    if sha256_file(destination) != checksum:
-        raise ValueError(f'项目产品参考副本校验失败：{destination}')
-    return {'project_path': str(destination), 'pack_reference': True, 'sha256': checksum}
+    if sha256_file(source) != checksum:
+        raise ValueError(f'产品包原件校验失败：{source}')
+    return {'project_path': str(source), 'pack_reference': True, 'sha256': checksum}
 
 
 def preview_path(project, asset_id):
-    usage = load_usage(Path(project['path']), project['narrative'])
+    root = Path(project['path']).resolve()
+    usage = load_usage(root, project['narrative'])
     for row in usage.get('references', []) + usage.get('material_references', []):
         if row.get('pack_reference') and row.get('asset_id') == asset_id:
-            path = Path(row['project_path']).resolve()
-            root = Path(project['path']).resolve() / '04_资产' / '项目产品参考'
-            if path.is_relative_to(root) and path.is_file() and sha256_file(path) == row['sha256']:
-                return path
-    raise ValueError('找不到有效的项目产品参考副本')
+            kickoff = load_kickoff(root)
+            pack = resolve_product_pack(kickoff['product'] if kickoff else {})
+            for item in (pack or {}).get('references', []):
+                if item['id'] == asset_id and item['sha256'] == row['sha256']:
+                    return Path(item['path'])
+    raise ValueError('找不到项目锁定的产品包原件')
 
 
 def persist_matches(service, project, inventory, result, sig):
@@ -420,11 +405,11 @@ def append_table(root, usage):
     def cell(value):
         return str(value).replace('|', '／').replace('\n', ' ')
     rows = ['','## 产品使用参考自动对接', '', '动作参考只约束产品、工具、操作与质地，不改写剧情，不继承手模、背景、服装。', '',
-            '| 产品编号 | 动作参考 | 剧情段落 | 原文依据 | 项目副本 | 状态 |', '|---|---|---|---|---|---|']
+            '| 产品编号 | 动作参考 | 剧情段落 | 原文依据 | 参考文件 | 状态 |', '|---|---|---|---|---|---|']
     for r in usage.get('references', []):
         rows.append('| ' + ' | '.join(map(cell, [r['product_ast_id'], r['name'], '；'.join(r['paragraph_ids']),
             r['evidence'], r.get('project_path') or '', '已自动补入' if r.get('asset_id') else '缺少，留空由用户补充'])) + ' |')
-    rows += ['', '### 配套产品参考', '', '| 名称 | 项目副本 |', '|---|---|']
+    rows += ['', '### 配套产品参考', '', '| 名称 | 参考文件 |', '|---|---|']
     for r in usage.get('material_references', []):
         rows.append('| ' + cell(r['name']) + ' | ' + cell(r['project_path']) + ' |')
     rows += ['', '### 产品使用参考候选判断（不代表图片或生成授权）', '',

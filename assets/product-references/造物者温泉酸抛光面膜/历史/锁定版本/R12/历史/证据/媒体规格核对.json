@@ -1,0 +1,393 @@
+{
+  "R04": {
+    "images": [
+      {
+        "id": "BOX-GOLD-EMBLEM",
+        "path": "图片/造物者温泉酸-礼盒外观.png",
+        "size": [
+          786,
+          421
+        ],
+        "aspect_ratio": 1.867,
+        "use": "archive"
+      },
+      {
+        "id": "TUBES-AB",
+        "path": "图片/造物者温泉酸-A与B双剂外观.png",
+        "size": [
+          1440,
+          2160
+        ],
+        "aspect_ratio": 0.6667,
+        "use": "archive"
+      },
+      {
+        "id": "MIX-BOWL",
+        "path": "图片/造物者温泉酸-透明面膜碗.png",
+        "size": [
+          743,
+          424
+        ],
+        "aspect_ratio": 1.7524,
+        "use": "archive"
+      },
+      {
+        "id": "BRISTLE-BRUSH",
+        "path": "图片/造物者温泉酸-毛刷_白底电商.png",
+        "size": [
+          793,
+          1983
+        ],
+        "aspect_ratio": 0.3999,
+        "use": "archive"
+      },
+      {
+        "id": "TUBES-HAND-SCALE",
+        "path": "图片/手持效果/02_AB双剂_手持.png",
+        "size": [
+          1536,
+          1024
+        ],
+        "aspect_ratio": 1.5,
+        "use": "active_product_image"
+      },
+      {
+        "id": "TUBES-TABLETOP",
+        "path": "图片/造物者温泉酸-A与B双剂_桌面平放.png",
+        "size": [
+          1536,
+          1024
+        ],
+        "aspect_ratio": 1.5,
+        "use": "active_product_image"
+      },
+      {
+        "id": "FILM-LIN-FULL",
+        "path": "图片/上脸膜态/林奕希_全脸膜态.png",
+        "size": [
+          2160,
+          3840
+        ],
+        "aspect_ratio": 0.5625,
+        "use": "film_state"
+      },
+      {
+        "id": "HAND-BOWL",
+        "path": "图片/手持效果/03_透明面膜碗_手持.png",
+        "size": [
+          1086,
+          1448
+        ],
+        "aspect_ratio": 0.75,
+        "use": "active_product_image"
+      },
+      {
+        "id": "HAND-BRISTLE-BRUSH",
+        "path": "图片/手持效果/04_毛刷_手持.png",
+        "size": [
+          1448,
+          1086
+        ],
+        "aspect_ratio": 1.3333,
+        "use": "active_product_image"
+      },
+      {
+        "id": "BOX-HAND-REFERENCE",
+        "path": "图片/手持效果/01_礼盒_手持.png",
+        "size": [
+          1536,
+          1024
+        ],
+        "aspect_ratio": 1.5,
+        "use": "active_product_image"
+      }
+    ],
+    "videos": [
+      {
+        "id": "ACTION-01",
+        "path": "视频/分动作/01_开盒.mp4",
+        "size": [
+          720,
+          1280
+        ],
+        "fps": "30/1",
+        "duration_seconds": 2.3,
+        "decoded_frames": 69,
+        "strictly_over_2s": true,
+        "use": "action_reference",
+        "r05_path": "视频/产品展示/01_开盒.mp4",
+        "r05_group": "产品展示"
+      },
+      {
+        "id": "ACTION-02",
+        "path": "视频/分动作/02_掰白管.mp4",
+        "size": [
+          720,
+          1280
+        ],
+        "fps": "30/1",
+        "duration_seconds": 2.433333,
+        "decoded_frames": 73,
+        "strictly_over_2s": true,
+        "use": "action_reference",
+        "r05_path": "视频/产品展示/02_掰白管.mp4",
+        "r05_group": "产品展示"
+      },
+      {
+        "id": "ACTION-03",
+        "path": "视频/分动作/03_挤白管.mp4",
+        "size": [
+          720,
+          1280
+        ],
+        "fps": "30/1",
+        "duration_seconds": 2.3,
+        "decoded_frames": 69,
+        "strictly_over_2s": true,
+        "use": "action_reference",
+        "r05_path": "视频/产品展示/03_挤白管.mp4",
+        "r05_group": "产品展示"
+      },
+      {
+        "id": "ACTION-04",
+        "path": "视频/分动作/04_掰金管.mp4",
+        "size": [
+          720,
+          1280
+        ],
+        "fps": "30/1",
+        "duration_seconds": 2.433333,
+        "decoded_frames": 73,
+        "strictly_over_2s": true,
+        "use": "action_reference",
+        "r05_path": "视频/产品展示/04_掰金管.mp4",
+        "r05_group": "产品展示"
+      },
+      {
+        "id": "ACTION-05",
+        "path": "视频/分动作/05_挤金管.mp4",
+        "size": [
+          720,
+          1280
+        ],
+        "fps": "30/1",
+        "duration_seconds": 2.3,
+        "decoded_frames": 69,
+        "strictly_over_2s": true,
+        "use": "action_reference",
+        "r05_path": "视频/产品展示/05_挤金管.mp4",
+        "r05_group": "产品展示"
+      },
+      {
+        "id": "ACTION-06",
+        "path": "视频/分动作/06A_起手搅拌两色混合.mp4",
+        "size": [
+          720,
+          1280
+        ],
+        "fps": "30/1",
+        "duration_seconds": 4.2,
+        "decoded_frames": 126,
+        "strictly_over_2s": true,
+        "use": "action_reference",
+        "r05_path": "视频/沉浸式/06A_起手搅拌两色混合.mp4",
+        "r05_group": "沉浸式"
+      },
+      {
+        "id": "ACTION-06-LIFT",
+        "path": "视频/分动作/06B_完全起泡后提刷.mp4",
+        "size": [
+          720,
+          1280
+        ],
+        "fps": "30/1",
+        "duration_seconds": 5.4,
+        "decoded_frames": 162,
+        "strictly_over_2s": true,
+        "use": "action_reference",
+        "r05_path": "视频/沉浸式/06B_完全起泡后提刷.mp4",
+        "r05_group": "沉浸式"
+      },
+      {
+        "id": "ACTION-07",
+        "path": "视频/分动作/07_净脸第一颊起手.mp4",
+        "size": [
+          720,
+          1280
+        ],
+        "fps": "30/1",
+        "duration_seconds": 4.9,
+        "decoded_frames": 147,
+        "strictly_over_2s": true,
+        "use": "action_reference",
+        "r05_path": "视频/沉浸式/07_净脸第一颊起手.mp4",
+        "r05_group": "沉浸式"
+      },
+      {
+        "id": "ACTION-08",
+        "path": "视频/分动作/08_另一颊开始刷涂.mp4",
+        "size": [
+          720,
+          1280
+        ],
+        "fps": "30/1",
+        "duration_seconds": 2.8,
+        "decoded_frames": 84,
+        "strictly_over_2s": true,
+        "use": "action_reference",
+        "r05_path": "视频/沉浸式/08_另一颊开始刷涂.mp4",
+        "r05_group": "沉浸式"
+      },
+      {
+        "id": "ACTION-09",
+        "path": "视频/分动作/09_额头铺开.mp4",
+        "size": [
+          720,
+          1280
+        ],
+        "fps": "30/1",
+        "duration_seconds": 2.866667,
+        "decoded_frames": 86,
+        "strictly_over_2s": true,
+        "use": "action_reference",
+        "r05_path": "视频/沉浸式/09_额头铺开.mp4",
+        "r05_group": "沉浸式"
+      },
+      {
+        "id": "ACTION-10",
+        "path": "视频/分动作/10_下巴铺开.mp4",
+        "size": [
+          720,
+          1280
+        ],
+        "fps": "30/1",
+        "duration_seconds": 2.866667,
+        "decoded_frames": 86,
+        "strictly_over_2s": true,
+        "use": "action_reference",
+        "r05_path": "视频/沉浸式/10_下巴铺开.mp4",
+        "r05_group": "沉浸式"
+      },
+      {
+        "id": "ACTION-11",
+        "path": "视频/分动作/11_鼻周轻刷.mp4",
+        "size": [
+          720,
+          1280
+        ],
+        "fps": "30/1",
+        "duration_seconds": 3.166667,
+        "decoded_frames": 95,
+        "strictly_over_2s": true,
+        "use": "action_reference",
+        "r05_path": "视频/沉浸式/11_鼻周轻刷.mp4",
+        "r05_group": "沉浸式"
+      },
+      {
+        "id": "ACTION-12",
+        "path": "视频/分动作/12_补涂并展示全脸薄膜.mp4",
+        "size": [
+          720,
+          1280
+        ],
+        "fps": "30/1",
+        "duration_seconds": 2.275,
+        "decoded_frames": 69,
+        "strictly_over_2s": true,
+        "use": "action_reference",
+        "r05_path": "视频/沉浸式/12_补涂并展示全脸薄膜.mp4",
+        "r05_group": "沉浸式"
+      },
+      {
+        "id": "ACTION-13",
+        "path": "视频/分动作/13_纸巾从鼻侧向外擦过一侧脸颊.mp4",
+        "size": [
+          720,
+          1280
+        ],
+        "fps": "30/1",
+        "duration_seconds": 2.433008,
+        "decoded_frames": 73,
+        "strictly_over_2s": true,
+        "use": "action_reference",
+        "r05_path": "视频/沉浸式/13_纸巾从鼻侧向外擦过一侧脸颊.mp4",
+        "r05_group": "沉浸式"
+      },
+      {
+        "id": "ORDERED-MONTAGE",
+        "path": "视频/温泉酸_使用动作顺序参考.mp4",
+        "size": [
+          720,
+          1280
+        ],
+        "fps": "30/1",
+        "duration_seconds": 42.63333,
+        "decoded_frames": 1280,
+        "strictly_over_2s": true,
+        "use": "historical_removed_from_R05"
+      }
+    ],
+    "evidence_images": [
+      {
+        "path": "证据/手持实拍/开盒_实拍双手.png",
+        "size": [
+          1080,
+          1920
+        ],
+        "use": "source_evidence"
+      },
+      {
+        "path": "证据/手持实拍/白A管_实拍手指.png",
+        "size": [
+          1080,
+          1920
+        ],
+        "use": "source_evidence"
+      },
+      {
+        "path": "证据/手持实拍/金B管_实拍手指.png",
+        "size": [
+          1080,
+          1920
+        ],
+        "use": "source_evidence"
+      },
+      {
+        "path": "证据/生图输入/闭盒_0.30秒.png",
+        "size": [
+          1080,
+          1920
+        ],
+        "use": "source_evidence"
+      },
+      {
+        "path": "证据/生图输入/开盒_1.68秒.png",
+        "size": [
+          1080,
+          1920
+        ],
+        "use": "source_evidence"
+      },
+      {
+        "path": "证据/生图输入/毛刷_用户实拍.png",
+        "size": [
+          286,
+          717
+        ],
+        "use": "source_evidence"
+      },
+      {
+        "path": "证据/手持实拍/透明碗_原片0.12秒.png",
+        "size": [
+          1080,
+          1920
+        ],
+        "use": "source_evidence"
+      }
+    ]
+  },
+  "default_image_use": {
+    "product_appearance": "handheld_or_tabletop",
+    "film_state": "original_frame"
+  }
+}

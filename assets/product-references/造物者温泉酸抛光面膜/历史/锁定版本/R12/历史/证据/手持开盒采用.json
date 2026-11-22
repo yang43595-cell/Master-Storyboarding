@@ -1,0 +1,18 @@
+{
+  "product_id": "creator-polishing-mask-2",
+  "revision": "R09",
+  "approval_date": "2026-11-23",
+  "id": "HANDHELD-OPEN-BOX",
+  "path": "图片/手持效果/05_礼盒打开_手持.png",
+  "source_candidate": "R05/候选/桌面补图/05_礼盒打开_手持_R06_红帧5.5.png",
+  "source_receipt": "R05/候选/桌面补图/红帧5.5_手持开盒软管尺寸_R06回执.json",
+  "sha256": "76a0abb78515478f91da85ca48ca28c39a83b177ff173a6cc0d6ea649545300a",
+  "user_feedback": "这张手持开盒通过，放进产品包。再检查一下礼盒四张图是不是都齐了。",
+  "model": "Doubao Seedream 5.5",
+  "scope": "正式手持开盒外观、双层内托、软管相对比例和双手托持参考",
+  "dimensions": [
+    1584,
+    2816
+  ],
+  "platform_watermark_visible": true
+}

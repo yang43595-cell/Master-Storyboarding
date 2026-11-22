@@ -1,0 +1,35 @@
+{
+  "source_revision": "R04",
+  "status": "historical_only",
+  "items": [
+    {
+      "id": "BOX-GOLD-EMBLEM",
+      "path": "历史/电商与白底外观/造物者温泉酸-礼盒外观.png",
+      "source": "图片/造物者温泉酸-礼盒外观.png",
+      "sha256": "5068c644d0e9adb0e67e689767988491276f4031602f23d561048202bc89713b",
+      "previous_archive_path": "R05/history/电商与白底外观/造物者温泉酸-礼盒外观.png"
+    },
+    {
+      "id": "TUBES-AB",
+      "path": "历史/电商与白底外观/造物者温泉酸-A与B双剂外观.png",
+      "source": "图片/造物者温泉酸-A与B双剂外观.png",
+      "sha256": "cada2ea9093aff8ba3f884d9ba7c89c4f04f72b50aaccb346274846cf2ccb807",
+      "previous_archive_path": "R05/history/电商与白底外观/造物者温泉酸-A与B双剂外观.png"
+    },
+    {
+      "id": "MIX-BOWL",
+      "path": "历史/电商与白底外观/造物者温泉酸-透明面膜碗.png",
+      "source": "图片/造物者温泉酸-透明面膜碗.png",
+      "sha256": "6074e2f1ed5113cf8cbbb6755d545330fe9afa9ed4f5b3551dea1e000763b4ac",
+      "previous_archive_path": "R05/history/电商与白底外观/造物者温泉酸-透明面膜碗.png"
+    },
+    {
+      "id": "BRISTLE-BRUSH",
+      "path": "历史/电商与白底外观/造物者温泉酸-毛刷_白底电商.png",
+      "source": "图片/造物者温泉酸-毛刷_白底电商.png",
+      "sha256": "fbc347d4ce569c267d142d84bbe8576fa205db8c55bb713aa912eb1fc6e3a429",
+      "previous_archive_path": "R05/history/电商与白底外观/造物者温泉酸-毛刷_白底电商.png"
+    }
+  ],
+  "archive_source": "R05/history/电商与白底外观"
+}

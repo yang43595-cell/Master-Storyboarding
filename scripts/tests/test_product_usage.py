@@ -81,7 +81,7 @@ class ProductUsageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             product_id = 'creator-polishing-mask-2'
-            pack = root / 'packs' / product_id / 'R01'
+            pack = root / 'packs' / '造物者温泉酸抛光面膜'
             pack.mkdir(parents=True)
             entries = []
             for ident, filename, role, key in (
@@ -105,6 +105,7 @@ class ProductUsageTests(unittest.TestCase):
             request = root / 'project' / '00_项目管理' / 'project_request.json'
             project = {'path': str(request.parent.parent), 'narrative': self.narrative, 'source': {'revision': 'R02'}}
             with patch.object(product_reference_pack, 'PACK_ROOT', root / 'packs'):
+                self.assertEqual(product_reference_pack.product_catalog()[0]['product_id'], product_id)
                 for scope, ids in [('display', ['BOX']), ('real_use', ['BOX', 'STIR'])]:
                     kickoff['product']['product_usage'] = scope
                     write_json(request, {'kickoff': kickoff})
@@ -113,8 +114,9 @@ class ProductUsageTests(unittest.TestCase):
                     result = self.matches if scope == 'real_use' else {'references': [], 'effects': []}
                     saved = usage.persist_matches(None, project, inventory, result, 'fixture')
                     write_json(Path(project['path']) / usage.FILE, saved)
-                    self.assertEqual(usage.preview_path(project, ids[-1]).read_bytes(),
-                                     (pack / ('stir.mp4' if scope == 'real_use' else 'box.png')).read_bytes())
+                    self.assertEqual(usage.preview_path(project, ids[-1]),
+                                     (pack / ('stir.mp4' if scope == 'real_use' else 'box.png')).resolve())
+                    self.assertFalse((Path(project['path']) / '04_资产' / '项目产品参考').exists())
                     with self.assertRaises(ValueError):
                         usage.preview_path(project, 'MONTAGE')
 
@@ -123,8 +125,12 @@ class ProductUsageTests(unittest.TestCase):
             root = Path(temp)
             project = root / 'project'
             manage = project / '00_项目管理'
-            pack = product_reference_pack.PACK_ROOT / 'creator-polishing-mask-2' / 'R04'
-            pack_path = pack / 'manifest.json'
+            selected = product_reference_pack.resolve_product_pack({
+                'mode': 'insert', 'product_id': 'creator-polishing-mask-2',
+                'product_usage': 'real_use', 'reference_pack_revision': 'R04',
+            }, for_registration=True)
+            pack_path = Path(selected['manifest_path'])
+            pack = pack_path.parent
             manifest = json.loads(pack_path.read_text(encoding='utf-8'))
             stir = next(ref for ref in manifest['references'] if ref['id'] == 'ACTION-06')
             story = [

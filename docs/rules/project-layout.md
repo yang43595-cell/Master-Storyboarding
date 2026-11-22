@@ -33,7 +33,8 @@
 
 - `decision_ref` 记录准确用户依据。创作范围、来源、时长和参考选择随本轮决定记录。对标改编把原片在 `creation.reference_scope` 中记为剧情、字幕和镜头的核对依据。把对标裁片或截帧用于生成节点须有本轮明确依据，并按对应资产用途核验。速推沿用现有审核和采用依据，在已授权范围内并行。确有新事实、冲突或授权范围变化时，只补问受影响事项。
 - 对标项目先在 `creation.workflow` 登记 `pending`，正常推进编导和审核。编导整稿采用后资产 Skill 直接接手。导演开始前，在已有开工记录更新为 `creative`（导演重新拍）或 `depth-guided-recreation`（[按原片结构复刻](../../skills/depth-guided-recreation/SKILL.md)）。原有缺字段项目按创作线续作。复刻线的导演和分镜准备自动纳入该路线的方法文件。`kickoff` 和程序 `handoff` 返回路线，依赖拍法的交接卡附本轮适用入口。补记时带回已有开工决定，`kickoff --answers-json` 提交完整的 `kickoff` 对象。
-- `product.mode` 选择 `none`、`retain`、`replace` 或 `insert`。广告涉及的准确商品填 `product_id`，展示填 `product_usage: "display"`，真实使用填 `"real_use"`。编导和导演的 `prepare` 直接带入产品和用途供已有方法选择。并行改编若使用不同商品，分别以各业务项目的需求为准。包装、动作参考与宣称仍须核实。
+- 开工时先问用户本项目用哪款产品。按 `kickoff --project` 或 `handoff --project` 返回的 `product_choices` 列出当前可选商品，也允许用户提供其他准确商品或明确无产品。即使目录只有一款，也须等用户明确选择；用户已明确指定的商品和用途直接登记，`decision_ref` 引用该决定。原片出现的商品是来源事实，保留还是替换由用户决定。同一品牌有不同款式时核准确商品和参考包。
+- `product.mode` 选择 `none`、`retain`、`replace` 或 `insert`。准确商品填 `product_id`，展示填 `product_usage: "display"`，真实使用填 `"real_use"`。商品确认后锁定参考包版本及清单 SHA-256，目录有多个版本时明确选版。目录外商品按本项目登记同款实物包装和实际操作参考的来源与字节依据。编导和导演的 `prepare` 直接带入产品和用途。并行改编分别登记各业务项目的决定。
 - 真实使用受固定时长约束时，编导定稿前做[产品演示窗粗查](#核对真实使用的固定演示窗)。
 - 有活动时，将用户确认的原句存入 `product.promotion_copy`，用 `product.promotion_decision_ref` 记录确认依据。口播如经用户确认改写，另存完整的 `product.promotion_dialogue`，确认依据一并注明。编导送审和新稿采用时会检查实际对白中同一说话人连续说出的活动口播，只忽略标点和空白。其他对白里的优惠机制、赠品和数量仍由编导逐句核对。
 - 新任务只说「用造物者温泉酸面膜」即可选用项目里当前的参考包。开工登记将品名解析为 `creator-polishing-mask-2`，自动写入实际包版本及清单 SHA-256。展示或实际使用仍按本轮内容确定。需要指定某版时填 `product.reference_pack_revision`。
@@ -54,7 +55,18 @@
 
 ## 使用已选产品参考包
 
-参考包放在仓库 `assets/product-references/<product_id>/<版本>/`，由 `manifest.json` 记录文件、来源、SHA-256、用途及缺口。每个产品保留一个当前包。更新时先核新版和仍依赖旧版的任务。造物者温泉酸抛光面膜 R04 随仓提供，实际外观和参考取法见[包内商品说明](../../assets/product-references/creator-polishing-mask-2/R04/PRODUCT_BRIEF.md)。
+参考包放在仓库 `assets/product-references/<产品名>/`，一个产品保留一个入库目录。新封装的产品包按「视频 → 图片 → 使用参考 → 历史」组织。根目录的 `manifest.json` 登记稳定产品 ID、当前版本、包内相对路径、来源、SHA-256、用途及缺口。
+
+| 文件夹 | 收录内容 |
+| --- | --- |
+| `视频/` | 当前可用的单条视频。按内容放入 `产品展示/` 或 `沉浸式/`，顺序和源片定位随视频登记。开盒、出料、搅拌起泡和提刷属于产品展示。 |
+| `图片/` | 当前可用的商品手持、桌面、实拍膜态等图片。按所需状态选择。 |
+| `使用参考/` | 可复用的产品说明、使用方式、成分、解决的用户痛点、适用的宣称、活动口播和对应来源。活动口播标明适用活动、渠道和有效期，缺少来源或未确认的内容标明状态。 |
+| `历史/` | 旧电商和白底图、需要保留的旧版本材料、原始取证和确认凭据。按溯源用途保存。 |
+
+业务项目从锁定的产品包直接引用原件。项目目录记录本项目的选用、镜号、素材绑定和实际交付。通用文字、媒体和可复用的产品参考统一维护在产品包。只有历史交付必须按原路径读取时保留兼容路径。
+
+开工目录只显示当前版本。旧项目仍锁定的版本按原清单和文件哈希放在包内 `历史/锁定版本/`，供历史项目回读。造物者温泉酸抛光面膜当前包见 [使用参考](../../assets/product-references/造物者温泉酸抛光面膜/使用参考/PRODUCT_BRIEF.md)。
 
 运行 `python scripts/stage_context_cli.py kickoff --project <业务项目>`，从 `product_reference_pack.references` 取得已校验的包内文件和适用范围。按[产品使用参考](../../skills/_shared/product-usage-contract.md#广告中的产品展示与使用)选择 `display` 或 `real_use` 的文件。清单中的原片路径和时间码用于追溯。资产所需实物图沿 `reference_paths` 登记。视频需要核外置原件可达性时，按[直接读取的文件边界](../development/delivery-snapshot-checks.md#正式交付的文件依赖)传准确文件及所属根目录。
 

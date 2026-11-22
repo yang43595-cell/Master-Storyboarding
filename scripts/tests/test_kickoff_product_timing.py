@@ -5,6 +5,8 @@ import json
 import pytest
 
 from scripts import stage_context_cli
+from scripts.core import product_reference_pack
+from scripts.core.artifacts import digest
 from scripts.core.io import write_json
 from scripts.core.project_kickoff import load_kickoff, product_demo_timing_advisory
 from scripts.init_desktop_project import initialize
@@ -105,3 +107,75 @@ def test_product_timing_reaches_kickoff_and_the_frozen_creative_task(tmp_path, c
     assert task_basis["kickoff"] == kickoff
     assert task_basis["product_demo_timing"] == result["product_demo_timing"]
     assert task_basis["input_versions"]["source_files"] == [source]
+
+
+@pytest.mark.parametrize("another_product", [False, True])
+def test_kickoff_lists_products_and_only_pins_the_users_choice(tmp_path, capsys, monkeypatch, kickoff, another_product):
+    catalog = tmp_path / "catalog"
+    monkeypatch.setattr(product_reference_pack, "PACK_ROOT", catalog)
+    options = [("cream", "面霜")]
+    if another_product:
+        options.append(("mask", "面膜"))
+    for ident, name in options:
+        path = catalog / ident / "R01"
+        path.mkdir(parents=True)
+        media = path / "box.jpg"
+        media.write_text(name)
+        write_json(path / "manifest.json", dict(
+            product_id=ident, product_name=name, revision="R01",
+            references=[dict(id="box", role="packaging", usages=["real_use"], path=media.name,
+                             source="fixture", coverage="wrapper", sha256=digest(media))]))
+    project = initialize(tmp_path / "project")
+    args = ["kickoff", "--project", str(project)]
+    assert stage_context_cli.main(args) == 2
+    pending = json.loads(capsys.readouterr().out)
+    assert pending["kickoff"] is None
+    assert [p["product_id"] for p in pending["product_choices"]] == [ident for ident, _ in options]
+    assert load_kickoff(project) is None
+    assert stage_context_cli.main(["handoff", "--project", str(project)]) == 0
+    handoff = json.loads(capsys.readouterr().out)
+    assert handoff["steps"][0]["product_choices"] == pending["product_choices"]
+    assert handoff["next_actions"] == []
+    kickoff["product"]["product_id"] = "cream"
+    monkeypatch.setattr("sys.stdin", StringIO(json.dumps(kickoff)))
+    assert stage_context_cli.main([*args, "--answers-json", "-"]) == 0
+    selected = json.loads(capsys.readouterr().out)
+    assert selected["product_reference_pack"]["product_id"] == "cream"
+    assert load_kickoff(project)["product"]["reference_pack_revision"] == "R01"
+
+
+def test_superseded_pack_is_hidden_for_new_projects_and_remains_resolvable(tmp_path, capsys, monkeypatch, kickoff):
+    catalog = tmp_path / "catalog"
+    monkeypatch.setattr(product_reference_pack, "PACK_ROOT", catalog)
+    project = initialize(tmp_path / "existing")
+    kickoff["product"]["product_id"] = "mask"
+
+    def make_pack(revision, previous=None):
+        folder = catalog / "mask" / revision
+        folder.mkdir(parents=True)
+        photo = folder / "box.jpg"
+        photo.write_text(revision)
+        manifest = dict(product_id="mask", revision=revision, product_name="测试商品",
+                        references=[dict(id="box", role="packaging", usages=["real_use"],
+                                         path=photo.name, source="fixture", coverage="wrapper", sha256=digest(photo))])
+        if previous:
+            manifest["supersedes_for_new_selection"] = previous
+        write_json(folder / "manifest.json", manifest)
+
+    def register(root, answers):
+        monkeypatch.setattr("sys.stdin", StringIO(json.dumps(answers)))
+        return stage_context_cli.main(["kickoff", "--project", str(root), "--answers-json", "-"])
+
+    make_pack("R04")
+    assert register(project, kickoff) == 0
+    locked = json.loads(capsys.readouterr().out)["kickoff"]
+    assert locked["product"]["reference_pack_revision"] == "R04"
+    make_pack("R05", "R04")
+    assert [v["revision"] for v in product_reference_pack.product_catalog()[0]["versions"]] == ["R05"]
+    assert register(project, locked) == 0
+    assert json.loads(capsys.readouterr().out)["product_reference_pack"]["revision"] == "R04"
+    fresh = initialize(tmp_path / "fresh")
+    with pytest.raises(stage_context_cli.StageContextError, match="历史产品包"):
+        register(fresh, locked)
+    assert register(fresh, kickoff) == 0
+    assert json.loads(capsys.readouterr().out)["product_reference_pack"]["revision"] == "R05"
