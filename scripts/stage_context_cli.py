@@ -45,7 +45,7 @@ try:
                                        product_demo_timing_advisory, production_workflow, validate_kickoff)
     from .core.review_publication import ChatScriptApproval, is_recorded_website_script_approval, require_script_approval
     from .core.io import PROJECT_LOCK_RELATIVE, file_lock, project_lock, write_json
-    from .core.revision_control import RevisionControlError, commit_change, guard_action, show_change
+    from .core.revision_control import RevisionControlError, commit_change, guard_action, inspect_revision_status, show_change
     from .core.review_delta import fingerprint, revision_delta, lightweight_revision
     from .session_usage import checkpoint
 except ImportError:  # direct CLI execution
@@ -76,7 +76,7 @@ except ImportError:  # direct CLI execution
                                       product_demo_timing_advisory, production_workflow, validate_kickoff)
     from core.review_publication import ChatScriptApproval, is_recorded_website_script_approval, require_script_approval
     from core.io import PROJECT_LOCK_RELATIVE, file_lock, project_lock, write_json
-    from core.revision_control import RevisionControlError, commit_change, guard_action, show_change
+    from core.revision_control import RevisionControlError, commit_change, guard_action, inspect_revision_status, show_change
     from core.review_delta import fingerprint, revision_delta, lightweight_revision
     from session_usage import checkpoint
 
@@ -616,50 +616,11 @@ def _handoff_path(project: Path) -> Path:
     return _context_dir(project, "next_stage_handoff.md")
 
 
-def _handoff_revision_status(project: Path) -> tuple[dict[str, Any] | None | str, list[dict], list[str]]:
-    """Share actual revision/transaction blockers between status and handoff."""
-    blockers: list[str] = []
-    try:
-        active_change = show_change(project)["active_change"]
-    except (OSError, ValueError) as exc:
-        active_change = "unknown"
-        blockers.append(f"活动变更状态未知：{exc}")
+def _legacy_revision_blockers(active_change, blockers):
     if isinstance(active_change, dict):
-        blockers.append(f"活动变更案未完成：{active_change.get('change_id', 'unknown')} ({active_change.get('status', 'unknown')})")
-    transaction_rows = []
-    tx_root = project / "00_项目管理" / "revision_transactions"
-    if tx_root.exists() and not tx_root.is_dir():
-        blockers.append("revision_transactions 不是目录；事务状态未知")
-    elif tx_root.is_dir():
-        for folder in sorted(tx_root.iterdir()):
-            if not folder.is_dir():
-                continue
-            row = {"transaction_id": folder.name, "state": "unknown", "anomalies": []}
-            try:
-                transaction = _read_json(folder / "transaction.json", default=None)
-                intent = _read_json(folder / "commit_intent.json", default=None)
-                result = _read_json(folder / "result.json", default=None)
-                if not isinstance(transaction, dict):
-                    row["anomalies"].append("transaction.json 缺失/无效")
-                if intent is not None and not isinstance(intent, dict):
-                    row["anomalies"].append("commit_intent.json 无效")
-                if isinstance(intent, dict) and not isinstance(result, dict):
-                    row["anomalies"].append("已有 commit intent 但无 result；需显式恢复")
-                if result is None and intent is None:
-                    row["state"] = "prepared_without_intent"
-                elif isinstance(result, dict) and result.get("state") == "aborted" and intent is None:
-                    row["state"] = "aborted"
-                elif isinstance(result, dict) and result.get("state") == "committed" and isinstance(intent, dict):
-                    row["state"] = "committed"
-                else:
-                    row["anomalies"].append("事务结果与提交意图不一致")
-            except (OSError, StageContextError, UnicodeError) as exc:
-                row["anomalies"].append(f"事务记录不可读：{exc}")
-            if row["anomalies"]:
-                row["state"] = "anomalous"
-                blockers.extend(f"事务 {folder.name}：{problem}" for problem in row["anomalies"])
-            transaction_rows.append(row)
-    return active_change, transaction_rows, blockers
+        pending = f"活动变更案未完成：{active_change.get('change_id', 'unknown')} ({active_change.get('status', 'unknown')})"
+        return [pending, *blockers]
+    return blockers
 
 
 def _confirmed_handoff_inputs(project: Path, target_skill: str, *, state=None) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -672,8 +633,8 @@ def _confirmed_handoff_inputs(project: Path, target_skill: str, *, state=None) -
         raise StageContextError("project_state.next_stage 为空；下一阶段未知，不能生成正式交接")
     if expected != target_skill:
         raise StageContextError(f"目标 Skill 与项目下一阶段不一致：state={expected}, requested={target_skill}")
-    _, _, blockers = _handoff_revision_status(project)
-    if blockers:
+    active_change, _, blockers = inspect_revision_status(project)
+    if blockers := _legacy_revision_blockers(active_change, blockers):
         raise StageContextError("正式交接被修订状态阻止：" + "；".join(blockers))
     return _confirmed_project_inputs(project, state)
 
@@ -685,8 +646,8 @@ def _first_director_handoff(project, state):
             and a.get("status") == "current" and a.get("agent_acceptance")
             and a.get("artifact_id") in state["current_artifacts"] for a in manifest["artifacts"]):
         raise StageContextError("project_state.next_stage 为空；没有编导整稿的正式采用记录")
-    _, _, blockers = _handoff_revision_status(project)
-    if blockers:
+    active_change, _, blockers = inspect_revision_status(project)
+    if blockers := _legacy_revision_blockers(active_change, blockers):
         raise StageContextError("正式交接被修订状态阻止：" + "；".join(blockers))
     _, inputs = _confirmed_project_inputs(project, state, manifest=manifest)
     for entry in inputs:
@@ -706,6 +667,11 @@ def _first_director_handoff(project, state):
                 continue
             return inputs
     raise StageContextError("project_state.next_stage 为空；缺少当前准确编导整稿的采用依据或已有导演流程授权")
+
+
+def _uses_routed_handoff(project):
+    request = load_project_request(project)
+    return "kickoff" in request and LEGACY_RULE not in request.get("local_references", [])
 
 
 def status(args: argparse.Namespace) -> dict[str, Any]:
@@ -738,14 +704,15 @@ def status(args: argparse.Namespace) -> dict[str, Any]:
         blockers.append("artifact_manifest.json 缺失；产物版本/失效状态未知")
     else:
         try:
-            manifest = _read_json(manifest_path, default=None)
-        except StageContextError as exc:
+            manifest = load_manifest(project)
+        except (OSError, ValueError, TypeError, KeyError) as exc:
             manifest = None
             blockers.append(f"artifact_manifest.json 不可读；产物版本状态未知：{exc}")
         if not isinstance(manifest, dict) or not isinstance(manifest.get("artifacts"), list):
             blockers.append("artifact_manifest.json 结构无效；产物版本/失效状态未知")
             manifest = None
     artifacts = []
+    artifact_blockers = []
     if manifest is not None:
         for item in manifest["artifacts"]:
             if not isinstance(item, dict):
@@ -757,19 +724,19 @@ def status(args: argparse.Namespace) -> dict[str, Any]:
             except (OSError, ValueError) as exc:
                 path = None
                 exists = None
-                blockers.append(f"产物路径无效，版本状态未知：{item.get('artifact_id', 'unknown')}: {exc}")
+                artifact_blockers.append(f"产物路径无效，版本状态未知：{item.get('artifact_id', 'unknown')}: {exc}")
             checksum_ok = None
             if exists is True and item.get("checksum"):
                 checksum_ok = digest(path) == item["checksum"]
             if item.get("status") == "current" and (exists is not True or checksum_ok is False):
-                blockers.append(f"current 产物缺失或哈希漂移：{item.get('artifact_id', 'unknown')}")
+                artifact_blockers.append(f"current 产物缺失或哈希漂移：{item.get('artifact_id', 'unknown')}")
             artifacts.append({"artifact_id": item.get("artifact_id"), "logical_id": item.get("logical_id"),
                 "revision": item.get("revision"), "status": item.get("status"),
                 "path": str(path) if path else None, "exists": exists, "checksum_ok": checksum_ok})
-    active_change, transaction_rows, revision_blockers = _handoff_revision_status(project)
+    revision_status = inspect_revision_status(project)
+    active_change, transaction_rows, revision_blockers = revision_status
     if candidate_mode and active_change is None:
         active_change = "not_applicable_candidate_test"
-    blockers.extend(revision_blockers)
     repo = {"root": str(ROOT), "branch": None, "revision": None,
             "baseline_branch": "main", "baseline_revision": None, "working_tree_clean": None}
     try:
@@ -781,6 +748,35 @@ def status(args: argparse.Namespace) -> dict[str, Any]:
                     working_tree_clean=not bool(dirty.strip()))
     except (OSError, subprocess.CalledProcessError):
         blockers.append("代码仓库分支/当前 revision 无法读取；未知")
+
+    facts = {"read_only": True, "project": str(project), "repo": repo,
+             "current_stage": state.get("current_stage") if state is not None else None,
+             "current_artifacts": state.get("current_artifacts") if state is not None else None,
+             "artifacts": artifacts, "stale_artifacts": [a["artifact_id"] for a in artifacts if a["status"] == "stale"],
+             "active_change": active_change, "transactions": transaction_rows}
+    try:
+        routed = not candidate_mode and _uses_routed_handoff(project)
+    except ValueError as exc:
+        blockers.append(str(exc))
+        routed = False
+    if routed:
+        flow = (resolve_production_handoff(project, manifest=manifest, state=state, revision_status=revision_status)
+                if manifest is not None and state is not None else {"steps": []})
+        if not flow["steps"]:
+            blockers.extend(revision_blockers)
+        next_actions = [step for step in flow["steps"] if step["status"] == "ready"] if not blockers else []
+        if not next_actions:
+            blockers.extend(step["reason"] for step in flow["steps"] if step["status"] == "waiting")
+        next_skills = {step["skill"] for step in next_actions if "skill" in step}
+        production_ok = bool(next_actions)
+        return {**facts, **flow, "mode": "production", "next_actions": next_actions,
+                "next_allowed_stage": next(iter(next_skills)) if len(next_skills) == 1 else None,
+                "next_stage_note": "当前可执行范围见 next_actions；等待项见 steps。",
+                "production_allowed": production_ok, "production_ok": production_ok,
+                "blockers": blockers, "ok": production_ok}
+
+    blockers.extend(artifact_blockers)
+    blockers.extend(_legacy_revision_blockers(active_change, revision_blockers))
     next_stage = state.get("next_stage") if isinstance(state, dict) else None
     if not isinstance(next_stage, str) or not next_stage.strip():
         blockers.append("next_stage 为空；下一允许阶段未知")
@@ -819,11 +815,7 @@ def status(args: argparse.Namespace) -> dict[str, Any]:
         if candidate_context is None:
             candidate_test_blockers.append("候选测试运行身份未知")
         candidate_test_ok = not candidate_test_blockers
-        return {"read_only": True, "mode": "candidate_test", "project": str(project), "repo": repo,
-            "current_stage": state.get("current_stage") if isinstance(state, dict) else None,
-            "current_artifacts": state.get("current_artifacts") if isinstance(state, dict) else None,
-            "artifacts": artifacts, "stale_artifacts": [a["artifact_id"] for a in artifacts if a["status"] == "stale"],
-            "active_change": active_change, "transactions": transaction_rows,
+        return {**facts, "mode": "candidate_test",
             "next_allowed_stage": next_stage,
             "next_stage_note": ("候选测试隔离有效；next_stage 为空时可显式选择 --to-skill，候选流程不放行正式生产。"
                                 if candidate_test_ok and next_stage is None else
@@ -834,11 +826,7 @@ def status(args: argparse.Namespace) -> dict[str, Any]:
             "candidate_test": {"run_id": candidate_context.get("run_id") if candidate_context else None,
                                "input_artifact_ids": candidate_context.get("input_artifact_ids") if candidate_context else None},
             "blockers": candidate_test_blockers, "ok": candidate_test_ok}
-    return {"read_only": True, "mode": "production", "project": str(project), "repo": repo,
-        "current_stage": state.get("current_stage") if isinstance(state, dict) else None,
-        "current_artifacts": state.get("current_artifacts") if isinstance(state, dict) else None,
-        "artifacts": artifacts, "stale_artifacts": [a["artifact_id"] for a in artifacts if a["status"] == "stale"],
-        "active_change": active_change, "transactions": transaction_rows,
+    return {**facts, "mode": "production",
         "next_allowed_stage": next_stage,
         "next_stage_note": "上游版本确认后仍需该 Skill 自身输入门禁；状态命令不会启动阶段。" if next_stage else "阻塞或状态未知，不猜下一阶段。",
         "production_allowed": production_ok, "production_ok": production_ok,
@@ -2345,20 +2333,10 @@ def _route_existing_project(args, project):
     """Recalculate the next dispatch from committed business evidence on every run."""
     if _test_request(args, project):
         raise StageContextError("隔离候选交接须指定 --to-skill")
-    with project_lock(project):
+    with file_lock(project / PROJECT_LOCK_RELATIVE):
         state = _state(project)
         manifest = load_manifest(project)
-        active_change, _, blockers = _handoff_revision_status(project)
-        if isinstance(active_change, dict):
-            blockers = blockers[1:]  # The resolver checks the active change against each transition's inputs.
-        if blockers:
-            return {"ok": True, "mode": "production", "project": str(project), "next_actions": [],
-                    "steps": [{"action": "revision", "status": "waiting", "reason": "；".join(blockers)}]}
         flow = resolve_production_handoff(project, state=state, manifest=manifest)
-        if isinstance(active_change, dict):
-            flow["steps"].insert(0, {"action": "revision", "status": "waiting",
-                                    "reason": "沿原变更案继续核对、返修或确认",
-                                    "change_id": active_change.get("change_id")})
         next_actions = []
         file_digest = cache_file_digests(digest)
         checked_dependencies = set()
@@ -2414,11 +2392,15 @@ def handoff(args: argparse.Namespace) -> dict[str, Any]:
         return _receive_asset_batch(project, args, target_skill, from_skill)
     asset_batch = _asset_batch_handoff(project, args, target_skill)
     default_flow = (target_skill in _ROUTED_SKILLS and not getattr(args, "candidate_test", False)
-                    and asset_batch is None and load_kickoff(project)
-                    and LEGACY_RULE not in load_project_request(project).get("local_references", []))
+                    and asset_batch is None and _uses_routed_handoff(project))
     if default_flow:
-        with project_lock(project):
-            return _bind_routed_handoff(args, project, target_skill, authorization_id)
+        with file_lock(project / PROJECT_LOCK_RELATIVE):
+            try:
+                return _bind_routed_handoff(args, project, target_skill, authorization_id)
+            except StageContextError:
+                raise
+            except ValueError as exc:
+                raise StageContextError(str(exc)) from exc
     # Declared transitions share the project writer lock. Inspect revision facts
     # before any write or recovery can change them.
     can_register_transition = from_skill or (
@@ -2443,7 +2425,7 @@ def _bind_routed_handoff(args, project, target_skill, authorization_id):
         steps = resolve_production_handoff(project, state=state, actions=requested)["steps"]
         ready = [step for step in steps if step["action"] in requested and step["status"] == "ready"]
         if not ready:
-            reason = "；".join(step["reason"] for step in steps if step["action"] in actions or step["action"] == "kickoff")
+            reason = "；".join(step["reason"] for step in steps if step["status"] == "waiting")
             raise StageContextError("视频或画布交接当前未就绪：" + reason)
         if len(ready) > 1:
             raise StageContextError("视频写稿和画布写入均有就绪范围；沿程序交接返回的对应 context_id 绑定")
@@ -2475,8 +2457,8 @@ def _write_handoff(args, project, target_skill, from_skill, authorization_id, *,
         current, expected = state["current_stage"], state["next_stage"]
         if expected != from_skill and (current not in ("", from_skill) or expected not in (None, "", target_skill)):
             raise StageContextError("协调方提供的流转与已登记阶段冲突，请先核对当前阶段及已允许的下一步")
-        _, _, blockers = _handoff_revision_status(project)
-        if blockers:
+        active_change, _, blockers = inspect_revision_status(project)
+        if blockers := _legacy_revision_blockers(active_change, blockers):
             raise StageContextError("正式交接被修订状态阻止：" + "；".join(blockers))
         state, inputs = _confirmed_project_inputs(project, state)
         register_transition = (current, expected) != (from_skill, target_skill)

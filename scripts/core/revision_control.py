@@ -1111,3 +1111,48 @@ def guard_action(
 def show_change(project: Path) -> dict[str, Any]:
     project = project.resolve()
     return _load_control(project)
+
+
+def inspect_revision_status(project: Path) -> tuple[dict[str, Any] | None | str, list[dict], list[str]]:
+    """Read revision and transaction facts without recovering or writing state."""
+    blockers: list[str] = []
+    try:
+        active_change = _load_control(project)["active_change"]
+    except (OSError, ValueError) as exc:
+        active_change = "unknown"
+        blockers.append(f"活动变更状态未知：{exc}")
+    transaction_rows = []
+    tx_root = project / TRANSACTION_ROOT
+    if tx_root.exists() and not tx_root.is_dir():
+        blockers.append("revision_transactions 不是目录；事务状态未知")
+    elif tx_root.is_dir():
+        for folder in sorted(tx_root.iterdir()):
+            if not folder.is_dir():
+                continue
+            row = {"transaction_id": folder.name, "state": "unknown", "anomalies": []}
+            try:
+                transaction, intent, result = (
+                    read_json(path) if path.is_file() else None
+                    for path in (folder / name for name in ("transaction.json", "commit_intent.json", "result.json"))
+                )
+                if not isinstance(transaction, dict):
+                    row["anomalies"].append("transaction.json 缺失/无效")
+                if intent is not None and not isinstance(intent, dict):
+                    row["anomalies"].append("commit_intent.json 无效")
+                if isinstance(intent, dict) and not isinstance(result, dict):
+                    row["anomalies"].append("已有 commit intent 但无 result；需显式恢复")
+                if result is None and intent is None:
+                    row["state"] = "prepared_without_intent"
+                elif isinstance(result, dict) and result.get("state") == "aborted" and intent is None:
+                    row["state"] = "aborted"
+                elif isinstance(result, dict) and result.get("state") == "committed" and isinstance(intent, dict):
+                    row["state"] = "committed"
+                else:
+                    row["anomalies"].append("事务结果与提交意图不一致")
+            except (OSError, ValueError) as exc:
+                row["anomalies"].append(f"事务记录不可读：{exc}")
+            if row["anomalies"]:
+                row["state"] = "anomalous"
+                blockers.extend(f"事务 {folder.name}：{problem}" for problem in row["anomalies"])
+            transaction_rows.append(row)
+    return active_change, transaction_rows, blockers

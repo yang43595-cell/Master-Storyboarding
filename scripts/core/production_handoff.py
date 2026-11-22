@@ -18,7 +18,7 @@ from .project_kickoff import (CREATIVE_WORKFLOW, PENDING_WORKFLOW, RECREATION_EN
 from .project_state import load_project_state
 from .quality_evidence import source_shot_ids
 from .review_publication import is_recorded_website_script_approval
-from .revision_control import guard_action
+from .revision_control import guard_action, inspect_revision_status
 from .visual_readiness import require_visual_readiness
 from .web_content import source_review_segments
 
@@ -497,16 +497,24 @@ def _resolve(project, manifest, state, kickoff, *, actions=None, shot_scope=None
     return steps
 
 
-def resolve_production_handoff(project_root, *, manifest=None, state=None, actions=None, shot_scope=None):
+def resolve_production_handoff(project_root, *, manifest=None, state=None, actions=None, shot_scope=None,
+                               revision_status=None):
     """Report the full flow or check only the named actions and their prerequisites."""
     project = Path(project_root).resolve()
     workflow = CREATIVE_WORKFLOW
     try:
+        active_change, _, blockers = (inspect_revision_status(project) if revision_status is None
+                                      else revision_status)
+        if blockers:
+            return {'workflow': workflow, 'steps': [_step('revision', 'waiting', '；'.join(blockers))]}
         manifest = load_manifest(project) if manifest is None else manifest
         state = load_project_state(project) if state is None else state
         kickoff = None if state.get('candidate_test') else load_kickoff(project)
         workflow = production_workflow(kickoff)
         steps = _resolve(project, manifest, state, kickoff, actions=actions, shot_scope=shot_scope)
+        if isinstance(active_change, dict) and actions is None:
+            steps.insert(0, _step('revision', 'waiting', '沿原变更案继续核对、返修或确认',
+                                  change_id=active_change.get('change_id')))
     except EVIDENCE_ERRORS as exc:
         steps = [_step('kickoff', 'waiting', f'现有项目证据待核对：{exc}')]
     if workflow == RECREATION_WORKFLOW:
