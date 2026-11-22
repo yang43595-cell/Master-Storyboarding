@@ -702,6 +702,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
     if not dependencies['ok']:
         raise ValueError('Dependency readiness failed: ' + '; '.join(dependencies['errors'] + dependencies['uncheckable']))
     entries = {item['artifact_id']: item for item in manifest['artifacts']}
+    depth_materials_by_segment = {}
     reuse_source_review = False
     product_pack = None
     product_requirements = []
@@ -730,6 +731,11 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             product_requirements = [asset for ref, _, payload in scene_sources if ref['artifact_id'] == narrative_id
                                     for asset in payload.get('asset_requirements', [])]
         source_segments = {row['segment_id']: row for row in source_review_segments(videos[0])}
+        if kickoff.get('creation', {}).get('workflow') == 'depth-guided-recreation':
+            depth_materials_by_segment = {
+                ident: source.get('materials', source.get('candidate_upload_order', []))
+                for ident, source in source_segments.items() if source.get('route') == 'depth'
+            }
         for row in drafts.values():
             source = source_segments.get(row.get('source_segment_id'))
             if not source or not submitted_prompt_body(source):
@@ -939,7 +945,27 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             if direct_slot and (media_item['node_id'] != row['node_id']
                                 or media_item['sha256'] != ref.get('sha256')):
                 raise ValueError('direct upload slot does not match the exact draft node and source bytes')
-            if packed:
+            depth_id = ref.get('source_depth_reference_id')
+            if depth_id is not None:
+                planned = depth_materials_by_segment.get(row.get('source_segment_id'))
+                material = planned[slot - 1] if isinstance(planned, list) and slot <= len(planned) else None
+                if (not isinstance(depth_id, str) or not depth_id or not isinstance(material, dict)
+                        or depth_id != material.get('reference_id')
+                        or material.get('kind') != 'video' or material.get('roles') != ['action']
+                        or ref.get('kind') != 'video' or ref.get('sha256') != material.get('sha256')
+                        or packed or output is not None or face_slot or ref.get('artifact_id')
+                        or ref.get('roles') != material['roles']
+                        or ref.get('source_shot_ids') != material.get('source_shot_ids')
+                        or ref.get('path') != material.get('path')
+                        or ref.get('canvas_binding', {}).get('mode') != 'direct'
+                        or not (before_upload or direct_slot)):
+                    raise ValueError('红帧深度参考须匹配已采用复刻源段中的准确视频、镜号及直传用途')
+                path = project_path(project, material['path']).resolve()
+                if (not path.is_relative_to(project) or not path.is_file()
+                        or material['sha256'] != file_digest(path)):
+                    raise ValueError('红帧深度参考的本地原件路径或字节与采用源稿不符')
+                item = {}
+            elif packed:
                 if output is not None:
                     raise ValueError('产品包参考须使用唯一的产品包原件身份')
                 if face_slot:
@@ -972,7 +998,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                 path = row_authority(ref)
             if private_preview:
                 row_preview_usage(row, ref, media_item, slot)
-            elif output is None and not packed:
+            elif output is None and not packed and depth_id is None:
                 item = next(a for a in manifest['artifacts'] if a['artifact_id'] == ref['artifact_id'])
                 if item.get('type') == 'visual-supplement-image' and item.get('agent_acceptance') is not None:
                     try:
@@ -1057,7 +1083,8 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                     from core.quality_evidence import validate_image_evidence, reference_shot_ids
                 image_check = validate_image_evidence(
                     project, path, item.get('quality_evidence'), reference_shot_ids(ref, row),
-                    reference=ref, artifact=item, state=state, file_digest=file_digest)
+                    reference=ref, artifact=item, state=state, file_digest=file_digest,
+                    allow_narrower_use=formal_redframe and bool(item.get('agent_acceptance')))
                 if image_check['accepted_deviations']:
                     accepted_image_uses.append({'node_id': row['node_id'], 'artifact_id': item['artifact_id'],
                                                 'source_shot_ids': reference_shot_ids(ref, row),
@@ -1083,7 +1110,13 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             if set(assigned) & {'start_frame', 'end_frame', 'scale', 'layout', 'state_reference'} and kind != 'image':
                 raise ValueError('frame/identity/scale/layout roles require image')
             if 'state_reference' in assigned and not ref.get('state_id'):
-                raise ValueError('state reference requires explicit state_id; not a hard frame')
+                scene_entities = {state['entity_id'] for state in scene_requirements
+                                  if set(state['source_shot_ids']) & set(source_shot_ids(row))}
+                adopted_shot_state = (formal_redframe and output is None and not packed
+                                      and item.get('type') == 'visual-supplement-image'
+                                      and not scene_entities.intersection(ref.get('entity_ids', [])))
+                if not adopted_shot_state:
+                    raise ValueError('state reference requires explicit state_id; not a hard frame')
             entities = ref.get('entity_ids')
             if not isinstance(entities, list) or not entities or any(not isinstance(e,str) or not e for e in entities):
                 raise ValueError('reference requires explicit actual entity_ids')

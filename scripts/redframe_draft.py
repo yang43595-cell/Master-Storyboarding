@@ -119,7 +119,7 @@ def _draft_data(node, node_id):
     return data
 
 
-def _native_content(ident, data, media, kinds, models):
+def _native_content(ident, data, media, kinds, models, *, linked=False):
     if data.get('outputs') != {}:
         raise ValueError(f'{ident} 缺少草稿节点的空输出字段')
     mode = data['videoMode']
@@ -130,18 +130,32 @@ def _native_content(ident, data, media, kinds, models):
     names = dict(enumerate(redframe_reference_labels(kinds), 1))
     token_pattern = r'\{\{ref (\d+)\}\}'
     mentions = []
+    slots_by_identity = {(item['node_id'], item['media_id']): slot
+                         for slot, item in enumerate(media, 1)}
+    if len(slots_by_identity) != len(media):
+        raise ValueError(f'{ident} 的实际参考身份重复')
+    native_to_source = {}
+    prompt_indices = []
     for line in data['promptModel']:
         for token in line:
             if token['type'] != 'Custom':
                 continue
             ((node_id, media_id), value), = NativeTag(token['html']).refs
             index = int(re.fullmatch(token_pattern, value)[1])
-            if (not 1 <= index <= len(media)
-                    or (node_id, media_id) != (media[index-1]['node_id'], media[index-1]['media_id'])):
+            slot = slots_by_identity.get((node_id, media_id))
+            if (not 1 <= index <= len(media) or slot is None
+                    or (not linked and slot != index)
+                    or native_to_source.get(index, slot) != slot):
                 raise ValueError(f'{ident} 的原生提示词引用和实际槽不符')
+            native_to_source[index] = slot
+            prompt_indices.append(str(index))
             mentions.append({'node_id': node_id, 'media_id': media_id, 'entity_type': 'reference',
                              'native_noneditable_entity': True})
-    prompt = re.sub(token_pattern, lambda m: names[int(m[1])], data['prompt']).replace('\ufeff', '')
+    if (len(set(native_to_source.values())) != len(native_to_source)
+            or re.findall(token_pattern, data['prompt']) != prompt_indices):
+        raise ValueError(f'{ident} 的正文原生编号与实际引用实体不一致')
+    prompt = re.sub(token_pattern, lambda m: names[native_to_source[int(m[1])]],
+                    data['prompt']).replace('\ufeff', '')
     parameters = {'model': model_name, 'aspect_ratio': data['ratio'],
                   'resolution': data['resolution'].lower(), 'duration': data['duration'],
                   'reference_mode': mode}
@@ -294,14 +308,14 @@ class RedframeVideoDraftUI(RedframeImageUI):
         self.rename(source_id, label)
         return source_id
 
-    def connect_reference(self, source_id, node_id):
+    def connect_reference(self, source_id, node_id, *, source_port='image'):
         def validate_target(graph, target_id):
             _draft_data(canvas_nodes(graph).get(target_id), target_id)
 
         self.close_dialog()
         self._click(self.page.get_by_role('button', name='适应视图', exact=True), 'fit video reference ports')
-        self._connect(source_id, node_id, 'remote-videoGenerationNode', save_timeout=35,
-                      validate_target=validate_target)
+        self._connect(source_id, node_id, 'remote-videoGenerationNode', source_port=source_port,
+                      save_timeout=35, validate_target=validate_target)
 
     def drag_duration(self, node_id, seconds):
         if type(seconds) is not int:
@@ -309,8 +323,8 @@ class RedframeVideoDraftUI(RedframeImageUI):
         self.close_dialog()
         locator = self._draft_locator(node_id)
         self._click(locator.locator('.labelText'), 'focus video draft', node_id=node_id)
-        self._click(locator.get_by_role('button', name='选择视频生成时长', exact=True), 'open video duration',
-                    node_id=node_id)
+        duration_control = locator.get_by_role('button', name='选择视频生成时长', exact=True)
+        self._unique(duration_control, 'open video duration').evaluate('(control) => control.click()')
         slider = self.page.locator('input[type="range"][aria-label="视频时长滑块"]:visible')
         slider.wait_for(state='visible', timeout=self.timeout)
         value = self._unique(slider, 'video duration track').evaluate('''input => {
@@ -374,7 +388,7 @@ def _check_linked_observation(graph, nodes, row, draft, direct_slots, models):
         raise ValueError(f'{node_id} 连线回读与刷新的持久画布不符')
     kinds = [ref['kind'] for ref in draft['reference_checks']]
     prompt, parameters, mentions = _native_content(
-        node_id, nodes[node_id]['data'], row['ordered_media'], kinds, models)
+        node_id, nodes[node_id]['data'], row['ordered_media'], kinds, models, linked=True)
     actual_mentions = [(entry['node_id'], entry['media_id']) for entry in row['native_mentions']]
     if (row['prompt'] != prompt or row['parameters'] != parameters
             or actual_mentions != [(entry['node_id'], entry['media_id']) for entry in mentions]):

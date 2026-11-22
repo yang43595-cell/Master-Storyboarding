@@ -155,7 +155,8 @@ def _accepted_image_checks(root, image_path, evidence, shot_ids, reference, arti
 
 
 def validate_image_evidence(root, image_path, evidence, shot_ids, *, allowed_roots=(), reference=None,
-                            product_reference=None, artifact=None, state=None, file_digest=None):
+                            product_reference=None, artifact=None, state=None, file_digest=None,
+                            allow_narrower_use=False):
     """Require exact image/source bytes and explicit observations for this use."""
     path = Path(image_path).resolve()
     root = Path(root).resolve()
@@ -189,7 +190,14 @@ def validate_image_evidence(root, image_path, evidence, shot_ids, *, allowed_roo
     if reference is not None:
         expected = image_use(reference, shot_ids)
         uses = evidence.get('uses')
-        if not isinstance(uses, list) or expected not in uses:
+        def matches(use):
+            if use == expected:
+                return True
+            return (allow_narrower_use and isinstance(use, dict)
+                    and isinstance(use.get('source_shot_ids'), list)
+                    and set(shot_ids) <= set(use['source_shot_ids'])
+                    and {**use, 'source_shot_ids': expected['source_shot_ids']} == expected)
+        if not isinstance(uses, list) or not any(matches(use) for use in uses):
             raise ValueError('quality_evidence: 本镜参考职责/实体/状态用途未核或已变化，旧图审失效')
     product = reference.get('product_reference') if reference is not None else product_reference
     if isinstance(product, dict) and product.get('reference_role') == 'packaging':
@@ -969,6 +977,10 @@ def validate_scene_source_mapping(rows, sources, project, *, check_submitted_bod
             segment_id = row.get('source_segment_id', row.get('node_id'))
             source, _ = delivery_sources[segment_id]
             body = submitted_prompt_body(source)
+            if body and delivery_platform == 'redframe':
+                from .native_references import redframe_source_prompt
+                materials = source.get('materials', source.get('candidate_upload_order', []))
+                body = redframe_source_prompt(body, materials)
             if body and submitted_prompt_body(row) != body:
                 raise ValueError(f'{segment_id}: 冻结正文与采用源段不一致；正文与原生引用分别核对')
     return {node: {'previous_segment_id': ident, 'source': video_origins[ident]}

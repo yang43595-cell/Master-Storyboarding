@@ -16,7 +16,7 @@
 
 复用既有 `drafts`、`prompt`、`parameters`、`ordered_media`。业务修订写在顶层 `revision`，来源写 `source_artifacts`（每项准确 artifact_id、revision、sha256）。网页目标用准确 `target_url`。开工或冻结快照登记了平台 `target_project_id` 时，正式回读也须提供刷新后实际读取的同一 ID，纯文本和带素材草稿都适用。历史无 revision 的快照继续按原范围只读比较，返回 submission_checks=not_checked，不得据此宣称完整提交检查或用于新交付采用。
 
-正式交付的冻结正文须逐字匹配已采用来源段正文。平台原生引用按独立实体核对，回读正文取编辑器的实际可提交文字，引用芯片单独采集。修订对白或其他正文应先修订来源稿，不能靠将已改文字同时写入冻结稿和编辑器通过比对。
+正式交付的冻结正文须逐字匹配已采用来源段正文。红帧源稿按素材槽逐项声明唯一引用名时，先按已采用的有序素材把声明的引用名换成平台编号，再逐字比较。平台将连线卡和直传素材分组显示时，回读按实际引用实体对应回源稿顺序，并各自核原件、端口和编号。修订对白或其他正文应先修订来源稿，不能靠将已改文字同时写入冻结稿和编辑器通过比对。
 
 外置输入范围只从准确、现行且已采用的 `source_artifacts` 正文 `input_roots` 读取，沿源稿原字节绑定；冻结快照自行列出目录不能扩大输入范围。未声明的外置来源、相对路径越界和源字节变化仍拒绝。
 
@@ -28,6 +28,7 @@
 - `shot_durations: [seconds, ...]`：按提交顺序保存实际承载的时间，合计等于 `parameters.duration`。数组须非空且各项为有限正数。源稿同时声明逐镜安排和生成总时长时，分段检查、正式采用和画布预检共用同一合计校验，时长别名相互冲突时拒绝。源稿尚无生成总时长时仍可核逐镜安排，正式画布继续要求平台参数。
 - `required_entities: [entity_id, ...]` 与 `required_reference_roles: {entity_id: [role, ...]}`：实际需要参考覆盖的实体及职责。没有独立参考的剧情实体不虚造参考。
 - `reference_checks`：与 ordered_media 一一对应，按实际上传顺序保存每份参考的 artifact_id、revision、sha256、kind（image/video/audio）、roles 职责集合、entity_ids（兼容旧单值 role）；不省掉未在提示词中显式提及的上传素材。role 为 identity/appearance/start_frame/end_frame/action/scale/layout/voice。首尾帧同时保存明确 state_id；action 须为视频，duration 与本地 ffprobe 实际时长核对。此入口要求参考作为具体已确认产物登记，不能以旧快照的 confirmed 字样或文件名替代确认。AST 母图仍先走现有 asset_refs 的具体 output 检查，不伪造通用登记来绕过。
+- 红帧复刻线的深度段可用 `source_depth_reference_id` 绑定已采用视频源同一槽的动作视频。只收项目内准确原件，核源段、路径、镜号、用途、原件哈希和直传槽回读。续写时，按已登记前段节点与同版源段核对前段深度引用。独立已采用分镜图可以在同一已核用途内缩小镜号；角色、状态、用途变化或扩大范围仍须核对应图证据。持续场景状态图沿下文明确登记状态 ID。
 - `continuity: {event_id, previous_node_id?}`：真实连续事件保持相同 event_id；确因时长拆段时，后段准确指向实际前段，并同时提供前段 end_frame 与后段 start_frame。沿每个事件的前驱链核对，不要求两个段落在全片列表中相邻。重复出现的事件必须指向同事件上一片段，拒绝漏前驱、断链、环、分叉或跨事件引用。边界 state_id、entity_ids 必须相同；可共用确认图，也可使用下述准确获准的不同机位参考组。
 - `native_entity_type`：有媒体引用时，填写本轮平台实际原生引用实体类型；回读 native_mentions 逐项提供准确 node_id/media_id、相同 entity_type 及 native_noneditable_entity=true。纯文本同名标签或图边不足。合法无媒体文字稿（ordered_media=[]）不编造实体类型，但仍须实际回读 native_mentions=[]；缺少回读或多出引用均失败。仅此空引用状态记 native_reference_checks.status=not_applicable，不能用于有引用的稿件，也不代表获得生成许可。
 

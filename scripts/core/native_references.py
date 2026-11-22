@@ -25,6 +25,29 @@ def redframe_reference_labels(kinds):
     return labels
 
 
+def redframe_source_prompt(prompt, materials):
+    """Resolve a source manuscript's declared names to ordered Redframe labels."""
+    if not isinstance(materials, list) or any(not isinstance(material, dict) for material in materials):
+        raise ValueError('红帧源稿须提供明确的有序素材列表')
+    names = [material.get('candidate_mention') for material in materials]
+    if not any(names):
+        return prompt
+    if (not all(isinstance(name, str) and re.fullmatch(r'@[^\s@]+', name) for name in names)
+            or len(set(names)) != len(names)):
+        raise ValueError('红帧源稿须为每个素材槽提供唯一引用名')
+    native = redframe_reference_labels(material.get('kind') for material in materials)
+    if _REDFRAME_TEXT_LABEL.search(prompt) or _REDFRAME_RAW_TOKEN.search(prompt):
+        if names == native and _REDFRAME_TEXT_LABEL.findall(prompt) == native and not _REDFRAME_RAW_TOKEN.search(prompt):
+            return prompt
+        raise ValueError('红帧源稿引用名与原生编号混用')
+    by_name = dict(zip(names, native))
+    pattern = re.compile('|'.join(
+        re.escape(name) + r'(?=\s|$)' for name in sorted(names, key=len, reverse=True)))
+    if [match[0] for match in pattern.finditer(prompt)] != names:
+        raise ValueError('红帧源稿引用名须按素材槽逐项对应')
+    return pattern.sub(lambda match: by_name[match[0]], prompt)
+
+
 def validate_redframe_reference_labels(prompt, refs):
     """Check new-plan placeholders before any native references can be created."""
     if _REDFRAME_RAW_TOKEN.search(prompt):

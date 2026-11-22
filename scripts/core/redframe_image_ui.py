@@ -201,12 +201,17 @@ class RedframeImageUI:
         self.page.mouse.click(x, y, button='right')
         kind = 'remote-imageNode' if path else generation_kind
         try:
+            menu = self.page.locator('[role="menu"]:visible')
             if path:
+                upload = menu.get_by_text('上传', exact=True)
+                upload.wait_for(state='visible', timeout=self.timeout)
                 with self.page.expect_file_chooser(timeout=self.timeout) as chooser:
-                    self._click(self.page.get_by_text('上传', exact=True), 'upload source', mutation=True)
+                    self._click(upload, 'upload source', mutation=True)
                 chooser.value.set_files(str(path), timeout=self.timeout)
             else:
-                self._click(self.page.get_by_role('menuitem', name=menu_name, exact=True), 'create node', mutation=True)
+                create = menu.get_by_text(menu_name, exact=True)
+                create.wait_for(state='visible', timeout=self.timeout)
+                self._click(create, 'create node', mutation=True)
             def created(graph):
                 found = [node for node in graph['nodes'] if node['id'] not in before and node.get('type') == kind]
                 if len(found) > 1:
@@ -249,18 +254,25 @@ class RedframeImageUI:
     def connect(self, source_id, target_id):
         return self._connect(source_id, target_id, 'remote-imageGenerationNode')
 
-    def _connect(self, source_id, target_id, target_kind, *, save_timeout=10, validate_target=None):
+    def _connect(self, source_id, target_id, target_kind, *, source_port='image', save_timeout=10,
+                 validate_target=None):
+        source_kinds = {
+            'image': {'remote-imageNode', 'remote-imageGenerationNode'},
+            'video': {'remote-videoNode'},
+        }
+        if source_port not in source_kinds:
+            raise ValueError('需指定已核实的图像或视频源卡端口')
         source_id, target_id = _ident(source_id), _ident(target_id)
         self.assert_target()
         graph = self.workspace.read_canvas()
-        _one(graph['nodes'], source_id)
+        _one(graph['nodes'], source_id, source_kinds[source_port])
         if validate_target is None:
             _one(graph['nodes'], target_id, {target_kind})
         else:
             validate_target(graph, target_id)
         def linked(value):
             matches = [edge for edge in value['edges'] if edge.get('source') == source_id
-                       and edge.get('sourceHandle') == 'image' and edge.get('target') == target_id
+                       and edge.get('sourceHandle') == source_port and edge.get('target') == target_id
                        and edge.get('targetHandle') == 'in']
             if len(matches) > 1:
                 raise ImageUIError('wire reference', 'duplicate native edges', node_id=target_id)
@@ -269,7 +281,7 @@ class RedframeImageUI:
             return  # This exact edge is already persisted; do not draw another.
         self.close_dialog()
         ends = [self.page.locator(f'[data-nodeid="{ident}"][data-handleid="{handle}"]')
-                for ident, handle in [(source_id, 'image'), (target_id, 'in')]]
+                for ident, handle in [(source_id, source_port), (target_id, 'in')]]
         boxes = [self._unique(end, 'reference port').bounding_box(timeout=self.timeout) for end in ends]
         if not all(self._inside(box, self.page.viewport_size) for box in boxes):
             self._click(self.page.get_by_role('button', name='适应视图', exact=True), 'fit references')
