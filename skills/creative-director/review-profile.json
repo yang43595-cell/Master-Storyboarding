@@ -50,7 +50,7 @@
     },
     {
       "id": "CREATIVE-MANIFEST",
-      "text": "产物记录指向准确 JSON 修订。普通候选不登记 checksum，不登记导出为依赖。历史双文件的身份、revision、路径和依赖保持兼容。"
+      "text": "产物记录指向准确 JSON 修订。交稿时用对应通道的 prepare 登记准确候选与阅读稿，不登记导出为依赖。历史双文件的身份、revision、路径和依赖保持兼容。"
     },
     {
       "id": "CREATIVE-BOUNDARY",

@@ -34,7 +34,7 @@ class CreativeDirectorContractTests(unittest.TestCase):
             "STP-*",
             "DLG-*",
             "AST-*",
-            "普通候选不登记 checksum",
+            "交稿时用对应通道的 prepare 登记准确候选与阅读稿",
             "不自行设计景别、机位、构图、运镜、切点",
             "用户已锁定的开场或拍法属于输入约束",
             "原样连同来源保留",
