@@ -34,6 +34,21 @@ class CharacterOutputRequirementsTests(unittest.TestCase):
                          self.requirements)
         self.assertEqual((self.narrative, self.choices), before)
 
+    def test_same_outfit_can_have_an_authorized_second_final_board(self):
+        self.narrative['asset_requirements'][0].update(
+            character_output_kind='人物1x4', wardrobe_states=[
+                {'name': '同一套戏服', 'evidence': '原始服装确认', 'output_id': 'HOME-FINAL'},
+            ])
+        self.choices['additional_character_boards'] = {'AST-001': {
+            'source_revision': 'R04', 'evidence': '用户要求用已确认素颜照另拼同一套服装',
+            'outputs': {'HOME-BARE-FINAL': 'HOME-FINAL'},
+        }}
+        self.assertEqual(scoped_output_requirements(self.narrative, self.choices, ['AST-001']),
+                         {'AST-001': {'HOME-FINAL': '人物1x4', 'HOME-BARE-FINAL': '人物1x4'}})
+        self.choices['additional_character_boards']['AST-001']['outputs'] = {'HOME-FINAL': 'HOME-FINAL'}
+        with self.assertRaisesRegex(ValueError, '独立输出 ID'):
+            scoped_output_requirements(self.narrative, self.choices, ['AST-001'])
+
     def test_legacy_and_legal_single_or_nonhuman_assets_have_no_new_requirements(self):
         self.assertEqual(scoped_output_requirements(self.narrative, {}, ['AST-001']), {})
         self.assertEqual(scoped_output_requirements(self.narrative, self.choices, ['AST-002', 'AST-003']), {})

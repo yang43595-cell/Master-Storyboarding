@@ -70,6 +70,9 @@ def scoped_output_requirements(narrative, choices, asset_ids):
     records = choices.get('character_output_requirements', {})
     if not isinstance(records, dict):
         raise ValueError('character_output_requirements 必须按 AST-ID 登记')
+    additional = choices.get('additional_character_boards', {})
+    if not isinstance(additional, dict):
+        raise ValueError('additional_character_boards 必须按 AST-ID 登记')
     disabled = set(choices.get('excluded', {})) | set(choices.get('replaced', {}))
     assets = [*narrative.get('asset_requirements', []), *choices.get('added', [])]
     result = {}
@@ -112,7 +115,19 @@ def scoped_output_requirements(narrative, choices, asset_ids):
         if not uses_wardrobe(role):
             raise ValueError('人物1x4需求只适用于人类或人形角色：' + ast)
         if req.get('character_output_kind') == '人物1x4':
-            result[ast] = {output_id: '人物1x4' for output_id in board_outfit_ids(role).values()}
+            declared = dict.fromkeys(board_outfit_ids(role).values(), '人物1x4')
+            alternate = additional.get(ast)
+            if alternate is not None:
+                if (not isinstance(alternate, dict) or alternate.get('source_revision') != narrative.get('revision')
+                        or not isinstance(alternate.get('evidence'), str) or not alternate['evidence'].strip()
+                        or not isinstance(alternate.get('outputs'), dict) or not alternate['outputs']):
+                    raise ValueError('增加的最终人物板须绑定同版编导和用户决定：' + ast)
+                for output_id, base_id in alternate['outputs'].items():
+                    if (not _valid_output_id(output_id) or output_id in declared
+                            or not isinstance(base_id, str) or base_id not in declared):
+                        raise ValueError('增加的人物板须使用独立输出 ID，并对应既有服装：' + ast)
+                declared.update(dict.fromkeys(alternate['outputs'], '人物1x4'))
+            result[ast] = declared
             continue
         item = records[ast]
         if not isinstance(item, dict) or item.get('source_revision') != narrative.get('revision'):
