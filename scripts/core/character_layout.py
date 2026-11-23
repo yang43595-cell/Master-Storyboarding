@@ -10,7 +10,7 @@ CHARACTER_PROMPT_PATH = (_DIRECTORY.parents[1] / "skills" / "asset-image-assista
 BOARD_IMPORT_ONLY = "人物1×4不再生图；请将已确认大头照与对应服装三视图本地拼版后导入成图"
 _FILES = {
     "大头照": "大头照_通用灰模_3x4_R01.png",
-    "服装": "服装三视图_通用灰模_16x9_R01.png",
+    "服装": "服装三视图_通用灰模_4x3_R02.png",
 }
 _ALIASES = {"服装三视图": "服装"}
 _DESIGN_TEMPLATES = {"大头照": "大头照（无对标）", "服装": "服装（无对标）"}

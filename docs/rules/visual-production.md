@@ -28,8 +28,6 @@
 
 制作规格不符时，先核现有资产调整，不为工具标签回改已确认编导。`asset-choice` 的 `production-spec` 操作只接受明确的 `wardrobe_name_map`（原 `wardrobe_states` 旧名到同一造型槽位的新名，须明确 `unchanged_appearance: true`）或 `scene_state_coverage`（主状态到所覆盖的原 `required_states` 数组），并记录真实 `quote`、`decision_ref`、原需求摘要和来源修订。同一静态空间多次到访可用一张母图覆盖，须明确 `unchanged_static_space: true`；实际场景或物品持续变化不适用。标签对应保留原图片、输出 ID 与准确人审回执，不冒称用户重新审过新图；改服装实物、人物身份、故事出现位置或动作链仍走相应新需求／修订。原需求变化后旧规格失效，不能自动套用。
 
-制作规格不符时，先核现有资产调整，不为工具标签回改已确认编导。`asset-choice` 的 `production-spec` 操作只接受明确的 `wardrobe_name_map`（原 `wardrobe_states` 旧名到同一造型槽位的新名，须明确 `unchanged_appearance: true`）或 `scene_state_coverage`（主状态到所覆盖的原 `required_states` 数组），并记录真实 `quote`、`decision_ref`、原需求摘要和来源修订。同一静态空间多次到访可用一张母图覆盖，须明确 `unchanged_static_space: true`；实际场景或物品持续变化不适用。标签对应保留原图片、输出 ID 与准确人审回执，不冒称用户重新审过新图；改服装实物、人物身份、故事出现位置或动作链仍走相应新需求／修订。原需求变化后旧规格失效，不能自动套用。
-
 当前图片制作白名单由已确认叙事包和用户明确的资产调整共同决定。后续编导、导演、分镜和视频准备必须读取这份现行资产表；导出清单的 `asset_requirement_decisions` 和交接说明携带取消项、新增出现位置及拆分关系。新增只确认需求，不批准图片、生成费用或新的整段剧情；出现位置未核对时不能加入。上游变动使引用失效时停止相关项并核对。多个独立物品不得因用途相同合并成一个选图对象。
 
 当前资产清单 `04_资产/当前资产清单.json` 是下游唯一入口：状态（要出图／无需独立图／待定／用户不需要／已拆分）、在场区间和图片有无都从这里读。它是可重建的方便快照；读取和门禁以当前已确认叙事包及资产 manifest 重新派生的有效条目为准，不能让旧快照继续携带候选或已替换图片。素材必须引用具体 `confirmed_outputs`：有多个版本时写明 output ID，不能按文件名猜服装、状态或用途。取消资产图不删除故事物件：**已取消出图或被拆分的资产仍可作为故事事实保留引用，但不得作为素材或出图引用——素材清单只放状态为“要出图”且有已确认母版图片的资产，已拆分的改用子项，没有图的人物或物件只写在镜内过程或动作文字里。** 资产被取消、恢复或新增后，用 `python -m scripts.core.asset_refs --project <项目> --scan <AST-ID> --write` 产出受影响位置清单（只报告、不自动改稿），再按清单改当前候选；提交素材前用 `--require-final-image AST-ID@OUTPUT-ID` 核对实际选择，状态、确认输出或文件不符都直接阻塞。已登记最终人物板的造型还须通过最终规格检查。导演 Markdown 阶段用 `python -m scripts.core.story_sources --project <项目> --shot-plan <导演稿>` 核对引用可追溯性（已取消／已拆分告警，未知编号报错）。

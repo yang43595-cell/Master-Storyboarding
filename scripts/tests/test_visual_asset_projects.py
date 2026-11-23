@@ -192,6 +192,33 @@ class ProjectTests(unittest.TestCase):
     def job(self, row=0):
         return self.lib.projects.detail(self.p['id'])['rows'][row]['job']
 
+    def test_ast_original_images_reach_planning_and_generation_request(self):
+        repository = self.base / 'repository'
+        original = repository / 'assets' / 'original.png'
+        original.parent.mkdir(parents=True)
+        Image.new('RGB', (400, 300), 'green').save(original)
+        story = Path(self.p['path']) / 'narrative.json'
+        narrative = pmod.read(story)
+        narrative['asset_requirements'][0]['reference_paths'] = ['assets/original.png']
+        pmod.write(story, narrative)
+        update_narrative_checksum(story.parent)
+        service = self.lib.projects
+        with patch('visual_asset_source.REPOSITORY', repository):
+            service.sync(self.p['id'])
+            project = service.get(self.p['id'])
+            project['rows'][0]['reference_ids'] = []
+            project['planning'] = {'status': 'running', 'run_id': 'synthetic-original'}
+            service.save(project)
+            result = {'rows': [plan_result()['rows'][0]]}
+            with patch.object(service.skill, 'prepare', return_value=('synthetic rules', {})), \
+                    patch.object(service.bridge, 'plan_assets', return_value=result) as plan:
+                service._plan_worker('synthetic', project, [project['rows'][0]])
+            self.assertIn(str(original), plan.call_args.args[2]['reference_paths'])
+            request = service.request(self.job(), 0)
+        self.assertEqual(request['reference_paths'], [str(original)])
+        self.assertEqual(request['reference_records'][0]['sha256'], pmod.digest(original))
+        self.assertFalse(request['reference_records'][0]['project_confirmed'])
+
     def test_manual_attach_checks_current_project_and_active_state(self):
         job = self.job()
         source = self.base / 'manual-result.png'
@@ -442,6 +469,13 @@ class ProjectTests(unittest.TestCase):
         with patch.object(self.lib, 'save', wraps=self.lib.save) as save:
             self.lib.projects.sync(self.p['id'])
         save.assert_not_called()
+
+    def test_rebinding_existing_project_reuses_sync_source_check(self):
+        service = self.lib.projects
+        with patch.object(pmod, 'source_project', wraps=pmod.source_project) as load_source:
+            result = service.bind(self.p['path'])
+        self.assertEqual(result['id'], self.p['id'])
+        self.assertLessEqual(load_source.call_count, 2)
 
     def test_backup_lock_failure_then_retry_trash_and_restore(self):
         self.select_confirm(self.job(), 0)
@@ -936,6 +970,21 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertFalse(self.lib.projects.batch_running)
 
+    def test_new_project_without_kickoff_cannot_fall_back_to_legacy_review(self):
+        service = self.lib.projects
+        job = self.job()
+        root = Path(self.p['path'])
+        pmod.write(root / '00_项目管理/project_request.json', {'project_mode': 'new'})
+        selected = service.select({'job_id': job['id'], 'index': 0, 'asset_id': self.asset['id']})
+        before = self.lib.get(job['id'], 'jobs')
+        self.assertEqual(selected['review_workflow'], 'awaiting_kickoff')
+        with self.assertRaisesRegex(ValueError, '先登记开工决定'):
+            service.confirm({'job_id': job['id'], 'index': 0, 'confirm': True})
+        with self.assertRaisesRegex(ValueError, '先登记开工决定'):
+            service.export({'project_id': self.p['id'], 'confirm': True})
+        self.assertEqual(self.lib.get(job['id'], 'jobs'), before)
+        self.assertFalse(service.get(self.p['id']).get('export'))
+
     def test_project_kickoff_reuses_only_scoped_generation_and_requires_website_review(self):
         job = self.job()
         step = job['steps'][0]
@@ -1386,7 +1435,7 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(wardrobe_request['reference_paths'],
                          [str(head_image), character_layout_reference('服装')['original']])
 
-        wardrobe_image = select(job, wardrobe, 'wardrobe', '服装三视图', (160, 90), 'green')
+        wardrobe_image = select(job, wardrobe, 'wardrobe', '服装三视图', (160, 120), 'green')
         current_version = 'c' * 64
         wardrobe_publication = publish('wardrobe', wardrobe_image, current_version, job, wardrobe, ['head'])
         self.assertTrue(service.apply_website_review(ident, wardrobe_publication, client)['waiting_for_remaining_outputs'])
@@ -1397,7 +1446,7 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(pmod.step_output_id(job['steps'][final]), 'HOME-FINAL')
         self.assertNotEqual(job['steps'][final]['key'], 'HOME-FINAL')
 
-        final_image = select(job, final, 'board', '人物1x4', (910, 360), 'blue')
+        final_image = select(job, final, 'board', '人物1x4', (750, 360), 'blue')
         current_version = 'd' * 64
         final_publication = publish('board', final_image, current_version, job, final, ['head', 'wardrobe'])
         self.assertTrue(service.apply_website_review(ident, final_publication, client)['waiting_for_remaining_outputs'])

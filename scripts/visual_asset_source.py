@@ -120,11 +120,15 @@ def validate_asset_requirement_granularity(narrative):
             )
 
 
-def source_project(path):
-    """Read the adopted narrative and the same effective image requirements for Web and review."""
+def asset_project_root(path):
     if not str(path or '').strip():
         raise ValueError('请填写项目文件夹，或选择已连接项目')
-    root = Path(path).expanduser().resolve()
+    return Path(path).expanduser().resolve()
+
+
+def source_project(path):
+    """Read the adopted narrative and the same effective image requirements for Web and review."""
+    root = asset_project_root(path)
     if not (root / '00_项目管理/artifact_manifest.json').is_file():
         raise ValueError('所选目录没有项目产物登记表：' + str(root / '00_项目管理/artifact_manifest.json'))
     artifacts = load_manifest(root)['artifacts']

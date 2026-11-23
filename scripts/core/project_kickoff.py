@@ -70,16 +70,21 @@ def product_demo_timing_advisory(kickoff):
             "shortfall_seconds": round(estimate - window, 6) if conflict else 0}
 
 
-def load_kickoff(project):
+def load_project_request(project):
     path = Path(project) / REQUEST_PATH
     try:
         request = json.loads(path.read_text(encoding="utf-8-sig"))
     except FileNotFoundError:
-        return None
+        return {}
     except (OSError, ValueError) as exc:
         raise ValueError(f"无法读取项目需求：{path}") from exc
     if not isinstance(request, dict):
         raise ValueError(f"项目需求必须是 JSON 对象：{path}")
+    return request
+
+
+def load_kickoff(project):
+    request = load_project_request(project)
     if "kickoff" not in request:
         return None
     return validate_kickoff(request["kickoff"])

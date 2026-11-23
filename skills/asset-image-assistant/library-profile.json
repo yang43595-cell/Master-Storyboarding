@@ -31,7 +31,7 @@
     "服装": {
       "label": "服装三视图 · 正侧背三格",
       "category": "服装三视图",
-      "ratio": "16:9",
+      "ratio": "4:3",
       "guide": "02-character-master-guide.md",
       "steps": [
         "服装三视图"
