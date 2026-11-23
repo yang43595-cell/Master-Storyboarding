@@ -272,3 +272,30 @@ def test_canvas_read_can_use_remaining_outer_budget():
     page = PageReplies({'results': [{'status': 200, 'error': None, 'graph': graph}]})
     assert RedframeWorkspace(page, 'project').read_canvas(budget_ms=1500) == graph
     assert page.calls[0]['budget'] == 1500
+
+
+def test_local_draft_patch_preserves_cards_and_concurrent_unrelated_edits(monkeypatch):
+    draft = {"id": "draft", "type": "remote-videoGenerationNode", "data": {"prompt": "old"}}
+    card = {"id": "card", "data": {"label": "产品参考"}}
+    baseline = {"nodes": [draft, card], "edges": [], "toonflowCanvas": True}
+    current = deepcopy(baseline)
+    current["nodes"].append({"id": "another", "data": {"label": "另一个执行者的新卡"}})
+    workspace = RedframeWorkspace(None, "project")
+    monkeypatch.setattr(workspace, "read_canvas", lambda: current)
+    saves = []
+    monkeypatch.setattr(workspace, "write_canvas", lambda old, new: saves.append(deepcopy(new)))
+
+    def apply():
+        return workspace.save_draft_changes(baseline, {"draft": draft}, {"draft": {"prompt": "new"}},
+                                            protected_ids=["card"], staged_edges=[])
+
+    assert apply()["nodes"][1:] == current["nodes"][1:]
+    assert saves[0]["nodes"][0]["data"]["prompt"] == "new"
+    current["edges"].append({"id": "e", "source": "another", "target": "draft"})
+    with pytest.raises(ValueError, match="连线"):
+        apply()
+    current["edges"].clear()
+    current["nodes"].pop(1)
+    with pytest.raises(ValueError, match="素材卡"):
+        apply()
+    assert len(saves) == 1

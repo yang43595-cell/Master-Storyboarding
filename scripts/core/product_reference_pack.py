@@ -28,16 +28,50 @@ def _matches(pattern, value):
     return isinstance(value, str) and pattern.fullmatch(value) is not None
 
 
-def current_product_pack_revision(product_id):
-    """Find the sole installed version for a product with a kickoff default."""
-    product_root = PACK_ROOT / product_id
-    revisions = [path.parent.name for path in product_root.glob("*/manifest.json")
-                 if _matches(_COMPONENT, path.parent.name) and path.is_file()]
-    if not revisions:
-        raise ValueError(f"未安装默认产品参考包：{product_root}")
-    if len(revisions) != 1:
-        raise ValueError(f"默认产品参考包存在多个版本，请指定准确版本：{product_root}")
-    return revisions[0]
+def _named_packs():
+    """Read the identities of packages whose folder uses a display name."""
+    for path in sorted(PACK_ROOT.glob("*/manifest.json")):
+        if not path.resolve().is_relative_to(PACK_ROOT.resolve()):
+            raise ValueError(f"产品参考包目录越界：{path}")
+        manifest = json.loads(path.read_text(encoding="utf-8-sig"))
+        if not isinstance(manifest, dict):
+            raise ValueError(f"产品参考包清单须为对象：{path}")
+        product_id, revision = manifest.get("product_id"), manifest.get("revision")
+        if not all(_matches(_COMPONENT, value) for value in (product_id, revision)):
+            raise ValueError(f"产品参考包须登记稳定产品 ID 和版本：{path}")
+        yield path, manifest
+
+
+def product_catalog():
+    """List installed choices without selecting a product or loading media."""
+    products = {}
+    superseded = set()
+    manifests = list(_named_packs())
+    for path in sorted(PACK_ROOT.glob("*/*/manifest.json")):
+        product_id, revision = path.parent.parent.name, path.parent.name
+        if not all(_matches(_COMPONENT, value) for value in (product_id, revision)):
+            continue
+        manifest = json.loads(path.read_text(encoding="utf-8-sig"))
+        if (manifest["product_id"], manifest["revision"]) != (product_id, revision):
+            raise ValueError(f"商品目录与参考包身份不符：{path}")
+        manifests.append((path, manifest))
+    seen = set()
+    for path, manifest in manifests:
+        product_id, revision = manifest["product_id"], manifest["revision"]
+        if (product_id, revision) in seen:
+            raise ValueError(f"产品参考包有重复版本：{path}")
+        seen.add((product_id, revision))
+        product = products.setdefault(product_id, {"product_id": product_id, "versions": []})
+        product["versions"].append({"revision": revision, "product_name": manifest["product_name"]})
+        previous = manifest.get("supersedes_for_new_selection")
+        if _matches(_COMPONENT, previous) and previous != revision:
+            superseded.add((product_id, previous))
+    for product_id, product in products.items():
+        current = [row for row in product["versions"] if (product_id, row["revision"]) not in superseded]
+        if not current:
+            raise ValueError(f"产品参考包版本存在循环替代：{product_id}")
+        product["versions"] = current
+    return list(products.values())
 
 
 def validate_selection(product, *, for_registration=False):
@@ -77,7 +111,12 @@ def resolve_product_pack(product, *, for_registration=False, include_evidence=Fa
         return None
     product_id, revision, usage = (product[key] for key in ("product_id", "reference_pack_revision", "product_usage"))
     packs = PACK_ROOT.resolve()
-    root = (packs / product_id / revision).resolve()
+    named = [path.parent if manifest["revision"] == revision else path.parent / "历史" / "锁定版本" / revision
+             for path, manifest in _named_packs() if manifest["product_id"] == product_id]
+    named = [directory for directory in named if (directory / "manifest.json").is_file()]
+    if len(named) > 1:
+        raise ValueError(f"产品参考包有重复版本：{product_id}/{revision}")
+    root = (named[0] if named else packs / product_id / revision).resolve()
     if not root.is_relative_to(packs) or root == packs:
         raise ValueError(f"产品参考包目录越界：{product_id}/{revision}")
     path = _local_file(root, "manifest.json")
@@ -147,6 +186,10 @@ def resolve_product_pack(product, *, for_registration=False, include_evidence=Fa
     return result
 
 
+def _same_file(path, expected):
+    return path == expected or (path.is_file() and expected.is_file() and path.samefile(expected))
+
+
 def resolve_pack_media(project, pack, reference, asset_requirements):
     """Resolve an exact medium from the project-selected pack and approved product requirement."""
     identity = reference.get("product_reference_id")
@@ -155,7 +198,9 @@ def resolve_pack_media(project, pack, reference, asset_requirements):
         raise ValueError("参考素材须匹配已锁产品包的条目和文件字节")
     canonical = Path(entry["path"])
     path = (project / reference["path"]).resolve()
-    if path != canonical and (reference.get("source_pack_path") != str(canonical)
+    source = reference.get("source_pack_path")
+    same_source = isinstance(source, str) and _same_file(Path(source), canonical)
+    if not _same_file(path, canonical) and (not same_source
                               or not path.is_relative_to(project) or not path.is_file()
                               or sha256_file(path) != entry["sha256"]):
         raise ValueError("产品参考须为已锁产品包原件或来源和字节相同的项目副本")
@@ -163,7 +208,7 @@ def resolve_pack_media(project, pack, reference, asset_requirements):
     if pack.get("current_manifest_path"):
         selected_paths.add(Path(pack["current_manifest_path"]))
     if not any(asset.get("asset_id") == reference.get("asset_id") and asset.get("category") == "REAL_PRODUCT"
-               and any((project / raw).resolve() in selected_paths
+               and any(_same_file((project / raw).resolve(), selected) for selected in selected_paths
                        for raw in asset.get("reference_paths", []) if isinstance(raw, str))
                for asset in asset_requirements):
         raise ValueError("产品参考须对应已采用编导稿中选用本包的真实商品")

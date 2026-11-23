@@ -5,7 +5,7 @@ import math
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from .product_reference_pack import current_product_pack_revision, resolve_product_pack, validate_selection
+from .product_reference_pack import product_catalog, resolve_product_pack, validate_selection
 
 
 REQUEST_PATH = Path("00_项目管理/project_request.json")
@@ -126,9 +126,13 @@ def validate_kickoff(kickoff, *, for_registration=False):
     else:
         product = _normalize_product_id(product)
     if for_registration:
-        if (product.get("product_id") == _CREATOR_MASK_ID
-                and "reference_pack_revision" not in product and "reference_pack_sha256" not in product):
-            product = {**product, "reference_pack_revision": current_product_pack_revision(_CREATOR_MASK_ID)}
+        if product["mode"] != "none" and not {"reference_pack_revision", "reference_pack_sha256"} & product.keys():
+            selected = next((item for item in product_catalog() if item["product_id"] == product["product_id"]), None)
+            if selected:
+                versions = selected["versions"]
+                if len(versions) != 1:
+                    raise ValueError("该商品有多个参考包版本，须指定准确 reference_pack_revision")
+                product = {**product, "reference_pack_revision": versions[0]["revision"]}
         pack = resolve_product_pack(product, for_registration=True)
         if pack:
             product = {**product, "reference_pack_sha256": pack["manifest_sha256"]}

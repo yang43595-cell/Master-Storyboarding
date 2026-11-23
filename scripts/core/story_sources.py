@@ -520,7 +520,9 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
     require_schema(narrative, 'narrative-package.schema.json', label='编导包')
     if narrative.get('schema_version') != '2.0':
         raise ValueError('新段落引用要求编导包 2.0；旧事件包须按原稿重新整理，不能自动换编号')
-    if review_ready and (narrative.get('status') not in {'candidate', 'confirmed'} or narrative.get('open_questions')):
+    questions = narrative.get('open_questions') or []
+    review_dialogue_questions = bool(questions and prepare_chat_review and narrative.get('dialogue_evidence_path'))
+    if review_ready and (narrative.get('status') not in {'candidate', 'confirmed'} or (questions and not review_dialogue_questions)):
         raise ValueError('整稿送审须使用候选或已确认版本，并先关闭稿件中的未决问题')
     if review_ready:
         source_report = {'review_ready': True, 'awaiting_creative_approval_ids': [], 'awaiting_subtitle_approval_ids': [],
@@ -569,6 +571,9 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
                                  or (review_ready and prepare_chat_review))
                              else [])
         subtitle_eligible = report['subtitle_review_eligible_ids']
+        if review_dialogue_questions and (not subtitle_eligible or
+                any(question not in evidence.get('open_items', []) for question in questions)):
+            raise ValueError('对话审阅只可披露已登记在同版对白证据中的原声疑点')
         reused_chat_approval = False
         if chat_subtitle_review_ids:
             if not exact_human_approval or not set(chat_subtitle_review_ids) <= set(subtitle_eligible):
@@ -946,6 +951,8 @@ def render_markdown(package: dict, *, subtitle_review_ids=(), legacy_paragraph_h
                 reading += ['## ' + paragraph['paragraph_id'], paragraph['text']]
         else:
             reading = ['## 故事正文', *(paragraph['text'] for paragraph in paragraphs)]
+        if subtitle_review_ids and package.get('open_questions'):
+            reading += ['## 随整稿审阅的原声疑点', '\n'.join('- ' + q for q in package['open_questions'])]
         character_outputs = []
         for requirement in package['asset_requirements']:
             kind = requirement.get('character_output_kind')

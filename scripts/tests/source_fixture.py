@@ -34,7 +34,7 @@ _SOURCE_SUFFIXES = {
     ".py", ".md", ".json", ".js", ".cjs", ".mjs", ".ts", ".ps1",
     ".cmd", ".sh", ".txt", ".in", ".yaml", ".yml", ".ini", ".css", ".html",
 }
-_SOURCE_FILENAMES = {"LICENSE", ".env.example"}
+_SOURCE_FILENAMES = {"LICENSE", ".env.example", "recognize_subtitles.swift"}
 
 
 def _ignore_local_state(directory, names):

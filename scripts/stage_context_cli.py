@@ -37,7 +37,7 @@ try:
     from .core.knowledge_selector import render_knowledge_bundle, render_knowledge_candidates, render_candidate_trial_bundle, select_knowledge
     from .core.candidate_source_snapshot import CandidateSnapshotError, inspect_candidate_snapshot, load_candidate_snapshot_rules
     from .core.method_documents import MethodDocumentError, render_method_packet, resolve_method_documents
-    from .core.product_reference_pack import resolve_product_pack
+    from .core.product_reference_pack import product_catalog, resolve_product_pack
     from .core.project_state import load_project_state, normalize_project_state, write_project_state
     from .core.production_handoff import LEGACY_RULE, require_production_handoff, resolve_production_handoff
     from .core.project_kickoff import (REQUEST_PATH, RECREATION_ENTRY, RECREATION_METHOD, RECREATION_WORKFLOW,
@@ -68,7 +68,7 @@ except ImportError:  # direct CLI execution
     from core.knowledge_selector import render_knowledge_bundle, render_knowledge_candidates, render_candidate_trial_bundle, select_knowledge
     from core.candidate_source_snapshot import CandidateSnapshotError, inspect_candidate_snapshot, load_candidate_snapshot_rules
     from core.method_documents import MethodDocumentError, render_method_packet, resolve_method_documents
-    from core.product_reference_pack import resolve_product_pack
+    from core.product_reference_pack import product_catalog, resolve_product_pack
     from core.project_state import load_project_state, normalize_project_state, write_project_state
     from core.production_handoff import LEGACY_RULE, require_production_handoff, resolve_production_handoff
     from core.project_kickoff import (REQUEST_PATH, RECREATION_ENTRY, RECREATION_METHOD, RECREATION_WORKFLOW,
@@ -104,6 +104,7 @@ TASK_HANDOFF_SKILLS = {"creative-director", "storyboard-planner"}
 _HANDOFF_DEFAULT_OBJECTIVE = "按目标 Skill 完成本轮已授权工作"
 _ROUTED_HANDOFF_SCOPE = ("action", "artifact_ids", "asset_ids", "output_ids", "shot_ids", "segment_ids")
 _ROUTED_SKILLS = {
+    "depth-guided-recreation": ("recreation",),
     "creative-director": ("creative",),
     "storyboard-planner": ("director",),
     "asset-image-assistant": ("assets",),
@@ -985,7 +986,7 @@ def _check_preparation_route(project, skill, request, routed, *, repair=False, a
             raise StageContextError("程序交接输入已改版；重新运行 handoff")
         if (requested_shots is not None and not set(requested_shots).issubset(routed.get("shot_ids", []))
                 or any(not set(routed.get(field, [])).issubset(route.get(field, []))
-                       for field in ("asset_ids", "output_ids", "shot_ids")
+                       for field in ("asset_ids", "output_ids", "shot_ids", "segment_ids")
                        if field != "shot_ids" or requested_shots is None)):
             raise StageContextError("程序交接范围已变化；重新运行 handoff 核对就绪范围")
     if action == "assets" and (targets := request.get("image_targets")):
@@ -1972,6 +1973,10 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         key: value for key, value in request.items()
         if key.startswith("source_") or key in {"sources", "inputs", "material_output_ids", "supplement_request_paths"}
     })
+    if routed and args.skill == "storyboard-planner" and routed["action"] == "director":
+        bound_paths = re.findall(r"(?m)^- 导演已绑定输入：`([^`\n]+)`$", card_text)
+        if bound_paths:
+            input_versions["source_director_paths"] = bound_paths
     if routed and routed.get("artifact_ids"):
         ids = input_versions.get("source_artifact_ids", [])
         if not isinstance(ids, list):
@@ -2484,9 +2489,23 @@ def _write_handoff(args, project, target_skill, from_skill, authorization_id, *,
 
 def _write_handoff_card(args, project, target_skill, current_stage, inputs, *, testing=False,
                         asset_batch=None, routed=None):
+    director_paths = []
+    if target_skill == "storyboard-planner" and routed and routed["action"] == "director":
+        if __package__:
+            from .core.director_inputs import dispatch, sources
+        else:
+            from core.director_inputs import dispatch, sources
+        entry = next(item for item in inputs if item["logical_id"] == "narrative.package")
+        if routed.get("segment_ids"):
+            director_paths = dispatch(project, entry, routed["segment_ids"])
+        else:
+            path = _context_dir(project, "导演编导来源.json")
+            write_json(path, sources(project, entry))
+            director_paths = [str(path.relative_to(project))]
     scope_fields = (*_ROUTED_HANDOFF_SCOPE, "workflow")
     lines = [
         "# 下一阶段交接卡", "",
+        *[f"- 导演已绑定输入：`{path}`" for path in director_paths],
         f"- 来源阶段：`{current_stage}`",
         f"- 目标 Skill：`{target_skill}`",
         *([f"- 制作路线：复刻线。实读 `{ROOT / routed['workflow_entry']}`，沿本阶段现有交接和采用入口。"]
@@ -3187,6 +3206,14 @@ def main(argv: list[str] | None = None) -> int:
                 previous = request.get("kickoff")
                 existing = previous.get("product") if isinstance(previous, dict) else None
                 selected = answers["product"]
+                if "reference_pack_revision" in selected:
+                    choice = next((item for item in product_catalog()
+                                   if item["product_id"] == selected["product_id"]), None)
+                    current = {item["revision"] for item in (choice or {}).get("versions", [])}
+                    lock_fields = ("product_id", "reference_pack_revision", "reference_pack_sha256")
+                    if (choice and selected["reference_pack_revision"] not in current
+                            and any((existing or {}).get(key) != selected[key] for key in lock_fields)):
+                        raise StageContextError("历史产品包仅供已有同版本锁定的项目续用；请从当前版本选择")
                 if (isinstance(existing, dict) and existing.get("reference_pack_sha256")
                         and selected.get("reference_pack_sha256")
                         and (existing.get("product_id"), existing.get("reference_pack_revision"))
@@ -3197,6 +3224,9 @@ def main(argv: list[str] | None = None) -> int:
         kickoff = load_kickoff(project)
         result = {"ok": kickoff is not None, "path": str(project / REQUEST_PATH), "kickoff": kickoff,
                   "workflow": production_workflow(kickoff)}
+        if kickoff is None:
+            result["product_choices"] = product_catalog()
+            result["product_choice_prompt"] = "请用户选择本项目使用哪款产品、提供其他准确商品，或明确无产品"
         if (timing := product_demo_timing_advisory(kickoff)) is not None:
             result["product_demo_timing"] = timing
         if kickoff and (pack := resolve_product_pack(kickoff["product"])):
