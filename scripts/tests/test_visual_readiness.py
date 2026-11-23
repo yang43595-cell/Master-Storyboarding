@@ -50,6 +50,27 @@ def write_request(root, board, shots, *, request_id='VS-LAYOUT', decision='reque
     return path
 
 
+def test_write_entry_checks_required_visuals_only_for_selected_shots(tmp_path, capsys):
+    video_project(tmp_path, current_prompt=False)
+    manifest = artifacts.load_manifest(tmp_path)
+    board = next(entry for entry in manifest['artifacts'] if entry['logical_id'] == 'storyboard.package')
+    path = tmp_path / board['path_or_url']
+    payload = read_json(path)
+    payload['scenes'][0]['shots'][0]['required_visuals'] = [
+        {'prompt_clause': '她松开放在桌上的手。', 'min_seconds': 1},
+        {'prompt_clause': '物品留在桌面。', 'min_seconds': 2},
+    ]
+    write_json(path, payload)
+    board['checksum'] = artifacts.digest(path)
+    write_json(tmp_path / artifacts.MANIFEST_PATH, manifest)
+    write_request(tmp_path, board, ['S02-010'], decision='no_supplement')
+    args = ['--project', str(tmp_path), '--storyboard', board['path_or_url'], '--shot-id']
+    assert generation_boundaries.main([*args, 'S01-010']) == 1
+    assert 'required_visuals: S01-010' in json.loads(capsys.readouterr().out)['error']
+    assert generation_boundaries.main([*args, 'S02-010']) == 0
+    assert json.loads(capsys.readouterr().out)['reviewed_shot_ids'] == ['S02-010']
+
+
 def test_write_entry_and_formal_adoption_block_pending_request_by_shot(tmp_path, capsys):
     payload = video_project(tmp_path, current_prompt=False)
     manifest = artifacts.load_manifest(tmp_path)
@@ -172,12 +193,16 @@ def test_adopting_video_revision_rechecks_only_changed_visual_scope(tmp_path, sc
     changed = deepcopy(baseline)
     changed['revision'] = 'R02'
     revised = changed['generation_segments'][1]
-    revised['prompt'] = 'She turns back slowly.'
+    before_prompt = revised['prompt']
+    movement = revised['director_coverage'][0]['movement']
+    revised_movement = '机位保持眼高，固定中近景'
+    revised['prompt'] = before_prompt.replace(movement['prompt_quote'], revised_movement, 1)
+    movement['prompt_quote'] = revised_movement
     changed['segment_reconciliation'] = {
         'baseline': {'artifact_id': existing['artifact_id'], 'sha256': existing['checksum']},
-        'changes': [{'action': 'revise', 'segment_id': revised['segment_id'], 'reason': 'Adjust the turn.',
-                     'before_sha256': sha256(b'She turns back.').hexdigest(),
-                     'after_sha256': sha256(b'She turns back slowly.').hexdigest()}],
+        'changes': [{'action': 'revise', 'segment_id': revised['segment_id'], 'reason': 'Rephrase the fixed camera instruction.',
+                     'before_sha256': sha256(before_prompt.encode()).hexdigest(),
+                     'after_sha256': sha256(revised['prompt'].encode()).hexdigest()}],
     }
     if scenario == 'new_global_scope':
         changed['scope']['note'] = 'Different overall scope.'

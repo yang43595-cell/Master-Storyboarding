@@ -14,12 +14,54 @@ _INTERNAL_BODY = (
      "混入内部完成条件或自查清单；移到制作备注"),
 )
 
+QUOTED_TEXT_RE = re.compile(r'“[^”]*”|‘[^’]*’|「[^」]*」|『[^』]*』|《[^》]*》|"[^"\n]*"')
+_UNQUOTED_TEXT_TURN = re.compile(
+    r'(?:(?:说|问|答|喊|念)(?:道)?|旁白|画外音|自言自语)[：:]'
+    r'[ \t]*(?![ \t\0])[^。.!?！？；;\n]+'
+)
+_SENTENCE_END = '。.!?！？'
+_QUALITY_HEADING = r'(?:整体风格|风格(?:要求)?|画质(?:要求)?|动作(?:要求)?|表演要求)[：:][ \t]*'
+_QUOTED_QUALITY_VALUES = re.compile(
+    rf'(?P<heading>{_QUALITY_HEADING})(?P<values>(?:[ \t、，,]*(?:{QUOTED_TEXT_RE.pattern}))+)'
+)
+_STANDALONE_QUALITY = re.compile(
+    rf'(?:{_QUALITY_HEADING})?'
+    r'(?:(?:全片|全段|整体|保持|确保|呈现)\s*)*'
+    r'(?P<phrase>动作(?:自然(?:且?连贯)?|连贯|流畅)|画质\s*[：:]?\s*(?:真实|逼真)|'
+    r'产品质地特写真实|真人实拍感|高级感|电影感|松弛感)'
+)
+
+
+def standalone_quality_issues(body: str) -> list[str]:
+    """Catch known filler clauses only. Connected detail still needs a source review."""
+    # A quoted entry under an explicit style/quality heading is an instruction.
+    body = _QUOTED_QUALITY_VALUES.sub(
+        lambda match: match['heading'] + '、'.join(
+            quote[0][1:-1] for quote in QUOTED_TEXT_RE.finditer(match['values'])
+        ), body,
+    )
+    # Preserve boundaries when masking remaining dialogue and literal names or signage.
+    visible = QUOTED_TEXT_RE.sub(
+        lambda match: '\0' + (match[0][-2] if match[0][-2] in _SENTENCE_END else ''), body
+    )
+    visible = _UNQUOTED_TEXT_TURN.sub('\0', visible)
+    phrases = {}
+    for clause in re.split(r'[。.!?！？；;，,、\n]', visible):
+        match = _STANDALONE_QUALITY.fullmatch(clause.strip())
+        if match:
+            phrases[match['phrase']] = None
+    return [
+        f'正文含独立泛词「{phrase}」，删去无新增信息的词，或按来源补足可见动作、光线或材质'
+        for phrase in phrases
+    ]
+
 
 def submitted_body_issues(body: str) -> list[str]:
     """Check one actual generated-prompt body at adoption and delivery."""
     if not body.strip():
         return ["缺少非空、完整的提交正文"]
-    return [issue for pattern, issue in _INTERNAL_BODY if pattern.search(body)] + generated_overlay_issues(body)
+    issues = [issue for pattern, issue in _INTERNAL_BODY if pattern.search(body)]
+    return issues + generated_overlay_issues(body) + standalone_quality_issues(body)
 
 
 def submitted_prompt_body(row: dict) -> str:

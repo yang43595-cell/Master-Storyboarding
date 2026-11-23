@@ -95,18 +95,18 @@
     {
       "path": "projects/Master-Storyboarding/应用知识/视频提示词/提示词基础方法.md",
       "role": "method",
-      "sha256": "b0271701325b2701f41a0423e479805aa4815cd2cda7128994b2a5b4ce07f34a",
-      "size_bytes": 5263,
-      "approval_assessment": "user_directed_scoped_wording_revision_2026-11-06_not_experiment_validated",
-      "inclusion_basis": "existing profile binding; scoped handheld-phone method revision directed by user"
+      "sha256": "c304b4b98fc20921fb56479ce3c533f4bd4f09a0c9548e9fec8e3eb7e6a1d622",
+      "size_bytes": 5702,
+      "approval_assessment": "user_directed_scoped_wording_revision_2026-11-22_not_experiment_validated",
+      "inclusion_basis": "existing profile binding; user-directed local clarification of director-to-prompt transfer; retains prior handheld-phone guidance and original upstream capture metadata; 2026-11-22 user-authorized repository link maintenance only"
     },
     {
       "path": "projects/Master-Storyboarding/应用知识/视频提示词/素材职责与引用方法.md",
       "role": "method",
-      "sha256": "a265ce76baa27427f84a8c068e3f9c25e64db6ad1dc3fc5b040e0171142d39b6",
-      "size_bytes": 4281,
+      "sha256": "34c1841af7344e9f59f01769c2b62a511116f95a1f353c0643446dd8e642a29f",
+      "size_bytes": 4302,
       "approval_assessment": "user_directed_scoped_wording_revision_2026-11-05_not_experiment_validated",
-      "inclusion_basis": "current profile user_directed scoped revision; original upstream capture metadata retained"
+      "inclusion_basis": "existing 2026-11-05 method adoption retained in profile; original upstream capture metadata retained; 2026-11-22 user-authorized repository link maintenance only"
     },
     {
       "path": "projects/Master-Storyboarding/应用知识/视频提示词/造物者抛光面膜真实使用过程/方法.md",

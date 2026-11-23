@@ -3,7 +3,7 @@ import copy
 import json
 import pytest
 
-from scripts.core.prompt_body import generated_overlay_issues
+from scripts.core.prompt_body import generated_overlay_issues, submitted_body_issues
 from scripts.canvas_readback import compare, digest, validate_submission
 from scripts.tests.test_delivery_preflight import delivery, bind_synthetic_quality
 
@@ -177,3 +177,45 @@ def test_offscreen_subtitle_negation_is_local_and_allowed(body):
 ])
 def test_offscreen_modifier_does_not_hide_affirmative_overlay(body):
     assert generated_overlay_issues(body)
+
+
+@pytest.mark.parametrize('body,phrases', [
+    ('动作自然，画质真实。', ('动作自然', '画质真实')),
+    ('人物低头看杯子。镜头稳定，动作自然连贯，真人实拍感。', ('动作自然连贯', '真人实拍感')),
+    ('结束在发泡完成、刷子提起。动作连贯，产品质地特写真实，真人实拍感。',
+     ('动作连贯', '产品质地特写真实', '真人实拍感')),
+    ('整体风格：真人实拍感。\n画质要求：画质真实。', ('真人实拍感', '画质真实')),
+    ('整体风格：「动作自然」「画质真实」。', ('动作自然', '画质真实')),
+    ('女一问：“画质真实？” 动作自然。', ('动作自然',)),
+])
+def test_submitted_body_flags_independent_filler_clauses(body, phrases):
+    issues = submitted_body_issues(body)
+    assert len(issues) == len(phrases)
+    assert all('独立泛词' in issue and f'「{phrase}」' in issue
+               for issue, phrase in zip(issues, phrases))
+
+
+@pytest.mark.parametrize('body', [
+    '女一轻声说：“动作自然，画质真实。”',
+    '女一轻声说：“整体风格：「动作自然」「画质真实」。”',
+    '女一说：动作自然，画质真实。她把名牌放在桌上。',
+    '女一倒茶，墙上挂着《画质真实》。',
+    '门旁的牌子上印着「动作自然」。',
+    '镜头保持固定，窗外自然光从右侧照到人物的指尖。',
+    '女一的动作自然地从抬手衔接到把杯子移到窗台上，手指始终贴住杯柄。',
+    '动作自然连贯地延续到把道具放回桌面。',
+    '参考真人实拍的窗光和肤色，保留阳光照到面颊时的毛孔纹理。',
+    '产品质地特写：刷毛提起后，奶白泡沫在刷尖形成短峰。',
+])
+def test_submitted_body_keeps_observable_directions_and_literal_text(body):
+    assert not submitted_body_issues(body)
+
+
+def test_formal_redframe_preflight_rejects_standalone_filler(tmp_path):
+    from scripts.tests.test_workflow_repair_cli import redframe_fixture, bind_redframe_production_sources
+
+    frozen, observed = redframe_fixture(tmp_path)
+    frozen['drafts'][0]['prompt'] += ' 动作自然，画质真实。'
+    bind_redframe_production_sources(tmp_path, frozen, observed)
+    with pytest.raises(ValueError, match='one: 正文含独立泛词「动作自然」'):
+        validate_submission(frozen, tmp_path, formal_delivery=True, preflight=True)

@@ -82,7 +82,27 @@ def chain(project):
         references.append(ref)
         assert (folder / "method_reading_evidence.json").is_file()
     director = json.loads((project / board["path_or_url"]).read_text(encoding="utf-8"))
-    segment = {"segment_id": "G1", "prompt": "Synthetic two-shot scene.",
+    prompt = (
+        '固定中近景，主角看着对方说：“不。”随后把物品放在桌面。主角目光稳定后切出。\n'
+        '眼高中近景保持固定，物品在桌上，主角的手已松开。停半拍后收镜。'
+    )
+    coverage = [
+        {
+            "shot_id": shots[0],
+            "action": {"field": "take.process", "quote": "把物品放在桌面", "prompt_quote": "把物品放在桌面"},
+            "reaction": None,
+            "movement": {"field": "camera.movement", "quote": "固定", "prompt_quote": "固定中近景"},
+            "cut": {"field": "cut.exit", "quote": "主角目光稳定后切出", "prompt_quote": "主角目光稳定后切出"},
+        },
+        {
+            "shot_id": shots[1],
+            "action": {"field": "take.end", "quote": "物品在桌上，手已松开", "prompt_quote": "物品在桌上，主角的手已松开"},
+            "reaction": None,
+            "movement": {"field": "camera.movement", "quote": "固定", "prompt_quote": "眼高中近景保持固定"},
+            "cut": {"field": "rhythm", "quote": "停半拍", "prompt_quote": "停半拍后收镜"},
+        },
+    ]
+    segment = {"segment_id": "G1", "prompt": prompt, "director_coverage": coverage,
         "source_shot_ids": shots, "duration_seconds": 5,
         "source_audio": [{"shot_id": shot["shot_id"],
                           "dialogue": copy.deepcopy(shot["audio"]["dialogue"])}

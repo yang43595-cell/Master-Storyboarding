@@ -2,14 +2,102 @@
 import copy
 import hashlib
 import json
+import re
 
 import pytest
 
 from scripts.core.generation_boundaries import (
-    main, validate_delivery_cutpoints, validate_delivery_parameters, validate_generation_boundaries,
+    main, validate_delivery_cutpoints, validate_delivery_parameters, validate_director_body, validate_generation_boundaries,
 )
 from scripts.core.project_kickoff import REQUEST_PATH
 from scripts.core.quality_evidence import required_visuals, validate_required_visuals, validate_scene_source_mapping
+
+
+def director_body_sample(shot_id):
+    action = '她松开右手，银钥匙落到桌上。'
+    reaction = '她低头看向钥匙。'
+    movement = '镜头固定。'
+    cut = '钥匙落桌响起时切到她的近景。'
+    shot = dict(shot_id=shot_id, take={'process': action + reaction},
+                camera={'movement': movement}, cut={'trigger': cut})
+    coverage = dict(shot_id=shot_id,
+                    action=dict(field='take.process', quote=action, prompt_quote=action),
+                    reaction=dict(field='take.process', quote=reaction, prompt_quote=reaction),
+                    movement=dict(field='camera.movement', quote=movement, prompt_quote=movement),
+                    cut=dict(field='cut.trigger', quote=cut, prompt_quote=cut))
+    return shot, movement + action + reaction + cut, coverage
+
+
+@pytest.mark.parametrize(('mutation', 'expected'), [
+    (None, None),
+    ('generic', '独立泛词'),
+    ('omit_reaction', 'V01/S1 reaction.*未出现在实际提交正文'),
+    ('reaction_after_cut', 'V01/S1 reaction.*正文顺序与出镜切点冲突'),
+    ('omit_coverage', 'V01.*director_coverage'),
+    ('pending_movement', 'V01/S1 movement.*退回导演'),
+    ('blocked', 'V01 尚有导演或制作缺口'),
+])
+def test_author_cli_checks_director_decisions_in_actual_body(tmp_path, capsys, mutation, expected):
+    shot, body, coverage = director_body_sample('S1')
+    row = dict(segment_id='V01', source_shot_ids=['S1'], prompt=body, director_coverage=[coverage])
+    if mutation == 'generic':
+        row['prompt'] = '动作自然，画质真实。'
+    elif mutation == 'omit_reaction':
+        row['prompt'] = body.replace(coverage['reaction']['prompt_quote'], '')
+    elif mutation == 'reaction_after_cut':
+        reaction = coverage['reaction']['prompt_quote']
+        row['prompt'] = body.replace(reaction, '') + reaction
+    elif mutation == 'omit_coverage':
+        row.pop('director_coverage')
+    elif mutation == 'pending_movement':
+        shot['camera']['movement'] = coverage['movement']['quote'] = '运镜待定'
+    elif mutation == 'blocked':
+        row['blockers'] = ['导演未定拍摄侧']
+    (tmp_path / 'director.json').write_text(json.dumps({'schema_version': '4.0',
+        'scenes': [{'scene_id': 'SCENE', 'shots': [shot]}]}))
+    (tmp_path / 'prompt.json').write_text(json.dumps({'generation_segments': [row]}))
+    result = main(['--project', str(tmp_path), '--prompt', 'prompt.json', '--storyboard', 'director.json'])
+    report = json.loads(capsys.readouterr().out)
+    if expected:
+        assert result == 1 and re.search(expected, report['error'])
+    else:
+        assert result == 0 and report['director_body_shots_checked'] == 1
+
+
+@pytest.mark.parametrize(('field', 'cut', 'body_end', 'valid'), [
+    ('exit', '她低头看向钥匙后切走。', '她低头看向钥匙后切走。', True),
+    ('exit', '切走后她低头看向钥匙。', '切走后她低头看向钥匙。', False),
+    ('entry', '切到中景。', '她低头看向钥匙。', True),
+    ('exit', '切走前，她低头看向钥匙。', '切走前，她低头看向钥匙。', True),
+    ('exit', '不切到近景。', '不切到近景。她低头看向钥匙。', True),
+    ('trigger', '她说：「切走。」', '她说：「切走。」她低头看向钥匙。', True),
+])
+def test_edit_cue_order_handles_shared_clauses_and_non_exit_mentions(field, cut, body_end, valid):
+    shot, _, coverage = director_body_sample('S1')
+    shot['cut'][field] = cut
+    coverage['cut'] = dict(field=f'cut.{field}', quote=cut, prompt_quote=cut)
+    coverage['reaction']['prompt_quote'] = '她低头看向钥匙'
+    setup = coverage['movement']['prompt_quote'] + coverage['action']['prompt_quote']
+    body = cut + setup + body_end if field == 'entry' else setup + body_end
+    row = dict(segment_id='V01', prompt=body, director_coverage=[coverage])
+    shots = {'S1': ('SCENE', shot)}
+    if valid:
+        assert validate_director_body(row, ['S1'], shots, require_coverage=True) == 1
+    else:
+        with pytest.raises(ValueError, match='V01/S1 reaction.*正文顺序与出镜切点冲突'):
+            validate_director_body(row, ['S1'], shots, require_coverage=True)
+
+
+def test_same_phrase_in_earlier_shot_does_not_satisfy_later_shot_order():
+    first, body, first_coverage = director_body_sample('S1')
+    second, _, second_coverage = director_body_sample('S2')
+    cut = second_coverage['cut']['prompt_quote']
+    reaction = second_coverage['reaction']['prompt_quote']
+    row = dict(segment_id='V01', prompt=body + body.replace(reaction + cut, cut + reaction),
+               director_coverage=[first_coverage, second_coverage])
+    with pytest.raises(ValueError, match='V01/S2 reaction.*正文顺序与出镜切点冲突'):
+        validate_director_body(row, ['S1', 'S2'], {'S1': ('SCENE', first), 'S2': ('SCENE', second)},
+                               require_coverage=True)
 
 
 @pytest.mark.parametrize(("product_id", "field", "prompt", "rejected"), [
@@ -70,7 +158,8 @@ def test_cli_reports_planned_state_coverage_before_canvas(tmp_path, capsys, case
         "shots": [{"shot_id": shot} for shot in shots], "scene_states": states}]}))
     prompt = tmp_path / "video.json"
     prompt.write_text(json.dumps({"generation_segments": [
-        {"segment_id": "V01", "source_shot_ids": shots, "candidate_upload_order": refs}]}))
+        {"segment_id": "V01", "source_shot_ids": shots, "candidate_upload_order": refs,
+         "prompt": "Hands set the box on the table, then let go."}]}))
     assert main(["--project", str(tmp_path), "--prompt", str(prompt), "--storyboard", str(director)]) == 0
     report = json.loads(capsys.readouterr().out)
     result, = report["scene_state_plan"]["segments"]
@@ -87,7 +176,7 @@ def test_local_cli_checks_named_segment_and_both_adjacent_seams(tmp_path, capsys
     director = tmp_path / "director.json"
     director.write_text(json.dumps({"scenes": [{"scene_id": "ROOM", "shots": shots}]}))
     ids = ["V06", "V08", "V07", "V04", "V02"]
-    rows = [{"segment_id": segment, "source_shot_ids": [shot["shot_id"]]}
+    rows = [{"segment_id": segment, "source_shot_ids": [shot["shot_id"]], "prompt": shot["take"]}
             for segment, shot in zip(ids, shots)]
     for previous, current, shot in zip(rows, rows[1:4], shots):
         current["same_scene_split"] = {"from_segment_id": previous["segment_id"], "reason": "event_complete",
@@ -124,6 +213,7 @@ def test_segment_file_review_ignores_unrelated_segments_but_checks_both_neighbor
     ]}))
     rows = [
         {'segment_id': f'V{i:02d}', 'source_shot_ids': [f'S{i}'],
+         'prompt': 'A hand pushes the door open.',
          'materials': [{'path': f'V{i:02d}.png'}],
          'edit_in_seconds': i - 1, 'edit_out_seconds': i}
         for i in range(1, 5)
@@ -176,7 +266,8 @@ def test_local_review_preserves_shared_inputs_for_the_document_and_relevant_sect
     prompt.write_text(json.dumps({
         'scope': {'type': 'full_local_authored'},
         'source_files': [{'path': 'shared.txt'}],
-        'generation_segments': [{'segment_id': f'V{i:02d}', 'source_shot_ids': [f'S{i}']} for i in range(1, 5)],
+        'generation_segments': [{'segment_id': f'V{i:02d}', 'source_shot_ids': [f'S{i}'],
+                                 'prompt': 'A hand pushes the door open.'} for i in range(1, 5)],
         'creative_sections': [
             {'generation_segments': ['V01', 'V02']},
             {'generation_segments': ['V03'], 'source_files': [{'path': 'seam.txt'}]},
@@ -210,13 +301,17 @@ def test_local_review_excludes_segments_across_a_declared_gap(tmp_path, capsys):
             {'segment_ids': ['V01', 'V02']}, {'segment_ids': ['V03', 'V04']},
         ]},
         'generation_segments': [
-            {'segment_id': 'V01', 'source_shot_ids': ['S1'], 'edit_in_seconds': 0, 'edit_out_seconds': 1},
-            {'segment_id': 'V02', 'source_shot_ids': ['S2'], 'edit_in_seconds': 1, 'edit_out_seconds': 2},
+            {'segment_id': 'V01', 'source_shot_ids': ['S1'], 'prompt': 'The actor opens the door.',
+             'edit_in_seconds': 0, 'edit_out_seconds': 1},
+            {'segment_id': 'V02', 'source_shot_ids': ['S2'], 'prompt': 'The actor steps through the door.',
+             'edit_in_seconds': 1, 'edit_out_seconds': 2},
         ],
         'independent_candidate_ranges': [{'generation_segments': [
-            {'segment_id': 'V03', 'source_shot_ids': ['S4'], 'edit_in_seconds': 3, 'edit_out_seconds': 4,
+            {'segment_id': 'V03', 'source_shot_ids': ['S4'], 'prompt': 'The actor closes the window.',
+             'edit_in_seconds': 3, 'edit_out_seconds': 4,
              'materials': [{'path': 'V03.png'}]},
-            {'segment_id': 'V04', 'source_shot_ids': ['S5'], 'edit_in_seconds': 4, 'edit_out_seconds': 5},
+            {'segment_id': 'V04', 'source_shot_ids': ['S5'], 'prompt': 'The actor pulls the curtain closed.',
+             'edit_in_seconds': 4, 'edit_out_seconds': 5},
         ]}],
     }))
     args = ['--project', str(tmp_path), '--prompt', prompt.name, '--storyboard', director.name]
@@ -404,9 +499,11 @@ def test_formal_redframe_adoption_accepts_prompts_with_or_without_timeline(tmp_p
     payload.update(platform=model['platform'], selected_video_model=model['selected_video_model'])
     bind_redframe_capability(tmp_path, payload, list(range(4, 31)))
     rows = payload['generation_segments']
+    prompt = '\n'.join(
+        f'{index * 3}–{(index + 1) * 3}秒：{row["prompt"]}' if with_timeline else row['prompt']
+        for index, row in enumerate(rows))
     payload['generation_segments'] = [dict(segment_id='MERGED',
-        prompt=('镜头一（0–3秒）：Alice stops. 4–6秒：Alice turns.'
-                if with_timeline else 'Alice stops, then turns.'),
+        prompt=prompt, director_coverage=[anchor for row in rows for anchor in row['director_coverage']],
         source_shot_ids=[s for row in rows for s in row['source_shot_ids']],
         source_audio=[audio for row in rows for audio in row['source_audio']],
         target_edit_duration_seconds=6, shot_durations=[3, 3],

@@ -16,10 +16,26 @@ from pathlib import Path
 from .quality_evidence import (generation_duration_values, required_visuals, reference_shot_ids, scene_state_requirements,
                                source_shot_ids, validate_required_visuals,
                                validate_scene_state_coverage, validate_shot_durations)
-from .prompt_body import submitted_prompt_body
+from .prompt_body import QUOTED_TEXT_RE, standalone_quality_issues, submitted_body_issues, submitted_prompt_body
 from .project_kickoff import load_kickoff
 
 _CREATOR_BOWL_BRUSH_OFFER = re.compile(r"送(?:给?你|给大家)?\s*高定\s*调膜\s*碗\s*(?:[、和与及]\s*)?刷")
+_DIRECTOR_BODY_FIELDS = {
+    "action": ("take", "continuity"),
+    "reaction": ("take", "continuity", "camera"),
+    "movement": ("camera.movement",),
+    "cut": ("cut", "rhythm", "take", "audio"),
+}
+_UNDECIDED_DIRECTOR_TEXT = re.compile(
+    r"(?:动作|反应|运镜|切点|拍法)?\s*(?:[:：]\s*)?(?:待定|待补|待确认|待导演确认|现场决定)[。.]?"
+)
+_OUTGOING_CUT = re.compile(
+    r"(?:硬切|跳切|切(?:走|出|到|至|入|回|成|换|镜)|"
+    r"切(?=[^，。！？；,\n]{0,18}(?:近景|中景|全景|远景|特写|画面|视角|镜头))|收镜|"
+    r"结束(?:这个|这一个|该|当前|本)?(?:镜头|全景|中景|近景|远景|特写)|镜头(?:就此)?结束)"
+)
+_NEGATED_CUT_PREFIX = re.compile(r"(?:不(?:要|能|再|会|用|做)?|无须|无需|没有|别|避免|禁止)(?:提前|中途|直接)?\s*$")
+_BEFORE_CUT_SUFFIX = re.compile(r"[^，。！？；,\n]{0,18}?(?:之前|前)(?=[，。！？；,\n\s]|$)")
 
 _PHYSICAL_DIMENSIONS = ("action", "positions", "props", "visibility")
 _PHYSICAL_ROLES = {
@@ -139,15 +155,83 @@ def _source_boundary(record, boundary_shots, shots, *, allow_dialogue=False):
         _need(allow_dialogue
               and re.fullmatch(r"audio\.dialogue\.\d+\.text", field),
               "完整句末只作承载限制下的连续切点，不自动证明新事件或时间省略")
-    value = shots[shot_id][1]
+    value = _director_field(shots[shot_id][1], field)
+    _need(isinstance(value, str) and quote in value, "拆段依据不在准确导演字段原文中")
+
+
+def _director_field(value, field):
     for key in field.split("."):
         if isinstance(value, dict):
             value = value.get(key)
         elif isinstance(value, list) and key.isdigit() and int(key) < len(value):
             value = value[int(key)]
         else:
-            value = None
-    _need(isinstance(value, str) and quote in value, "拆段依据不在准确导演字段原文中")
+            return None
+    return value
+
+
+def _director_exit_marker(body, visible_body, anchor, start):
+    """Find an explicit outgoing edit within a located cut anchor."""
+    if anchor["field"] not in {"cut.exit", "cut.trigger"}:
+        return None
+    excerpt = anchor["prompt_quote"]
+    position = body.find(excerpt, start)
+    while position != -1:
+        for cue in _OUTGOING_CUT.finditer(visible_body, position, position + len(excerpt)):
+            prefix = visible_body[max(0, cue.start() - 12):cue.start()]
+            if (_NEGATED_CUT_PREFIX.search(prefix)
+                    or _BEFORE_CUT_SUFFIX.match(visible_body, cue.end())):
+                continue
+            return cue
+        position = body.find(excerpt, position + len(excerpt))
+    return None
+
+
+def validate_director_body(row, shot_ids, shots, *, require_coverage):
+    """Check located source and submitted clauses; the author judges their meaning."""
+    segment_id = row["segment_id"]
+    body = submitted_prompt_body(row)
+    if issues := submitted_body_issues(body):
+        raise ValueError(f"{segment_id}: " + "；".join(issues))
+    _need(row.get("production_blocked") is not True and row.get("submit_ready") is not False
+          and not row.get("blockers"), f"{segment_id} 尚有导演或制作缺口；退回对应阶段补齐后再检查正文")
+    coverage = row.get("director_coverage")
+    if not require_coverage and "director_coverage" not in row:
+        return 0
+    _need(isinstance(coverage, list) and all(isinstance(item, dict) for item in coverage)
+          and [item.get("shot_id") for item in coverage] == shot_ids,
+          f"{segment_id} 的 director_coverage 须按所选镜号逐镜记录导演原文和实际提交正文；旧稿新交付须先补核")
+    visible_body = QUOTED_TEXT_RE.sub(lambda quoted: " " * len(quoted[0]), body)
+    shot_start = 0
+    for item in coverage:
+        shot_id = item["shot_id"]
+        for aspect, fields in _DIRECTOR_BODY_FIELDS.items():
+            anchor = item.get(aspect)
+            locator = f"{segment_id}/{shot_id} {aspect}"
+            if aspect == "reaction" and aspect in item and anchor is None:
+                continue
+            _need(isinstance(anchor, dict) and all(_text(anchor.get(k)) for k in ("field", "quote", "prompt_quote")),
+                  f"{locator} 缺导演原文或正文落点；拍法不清楚须退导演补齐")
+            field, quote, prompt_quote = (anchor[k] for k in ("field", "quote", "prompt_quote"))
+            _need(any(field == name or field.startswith(name + ".") for name in fields),
+                  f"{locator} 引用了不适用的导演字段：{field}")
+            source = _director_field(shots[shot_id][1], field)
+            _need(isinstance(source, str) and quote in source
+                  and not _UNDECIDED_DIRECTOR_TEXT.fullmatch(source.strip())
+                  and not _UNDECIDED_DIRECTOR_TEXT.fullmatch(quote.strip())
+                  and not standalone_quality_issues(quote),
+                  f"{locator} 无可核的导演拍法原文；退回导演核对 {field}")
+            _need(prompt_quote in body and not _UNDECIDED_DIRECTOR_TEXT.fullmatch(prompt_quote.strip())
+                  and not standalone_quality_issues(prompt_quote),
+                  f"{locator} 的落点未出现在实际提交正文或只含泛词")
+        exit_marker = _director_exit_marker(body, visible_body, item["cut"], shot_start)
+        if exit_marker is not None:
+            for aspect in ("action", "reaction"):
+                if anchor := item[aspect]:
+                    _need(body.find(anchor["prompt_quote"], shot_start, exit_marker.start()) != -1,
+                          f"{segment_id}/{shot_id} {aspect} 正文顺序与出镜切点冲突；本镜动作或反应须先于切走")
+            shot_start = exit_marker.end()
+    return len(coverage)
 
 
 def _cross_scene_review(left, right, before_shot, after_shot, shots):
@@ -390,7 +474,8 @@ def _require_physical_refs(refs, row, shot, dimension, side, hashes, boundary, *
 
 def validate_generation_boundaries(payload, storyboard, project, *, require_physical=True,
                                    delivery_platform=None, delivery_segment_ids=None, action_shots=None,
-                                   review_segment_ids=None, source_artifact=None, state=None):
+                                   review_segment_ids=None, source_artifact=None, state=None,
+                                   prompt_content_segment_ids=None):
     """Validate a full or partial current draft without writing/approving it.
 
     Missing facts may remain in a candidate, but this strict check fails until
@@ -398,11 +483,14 @@ def validate_generation_boundaries(payload, storyboard, project, *, require_phys
     impose model settings on an unsplit platform-neutral manuscript.
     Canvas preflight can narrow action coverage to the shots being delivered.
     A local review checks named segments and their joins in the actual draft.
+    Author review, adoption and formal Redframe delivery pass the exact segment
+    scope for submitted body checks. A historical read does not add that check.
     """
     try:
         result = _validate(payload, storyboard, Path(project).resolve(), require_physical=require_physical,
                            delivery_platform=delivery_platform, delivery_segment_ids=delivery_segment_ids,
-                           action_shots=action_shots, review_segment_ids=review_segment_ids)
+                           action_shots=action_shots, review_segment_ids=review_segment_ids,
+                           prompt_content_segment_ids=prompt_content_segment_ids)
         result['scene_state_plan'] = diagnose_scene_state_plan(
             payload, storyboard, segment_ids=review_segment_ids, project=project,
             source_artifact=source_artifact, state=state,
@@ -413,7 +501,7 @@ def validate_generation_boundaries(payload, storyboard, project, *, require_phys
 
 
 def _validate(payload, storyboard, root, *, require_physical, delivery_platform, delivery_segment_ids, action_shots,
-              review_segment_ids):
+              review_segment_ids, prompt_content_segment_ids):
     rows = _rows(payload)
     local_review = review_segment_ids is not None
     if local_review:
@@ -421,6 +509,9 @@ def _validate(payload, storyboard, root, *, require_physical, delivery_platform,
         unknown = review_segment_ids - {row['segment_id'] for row in rows}
         _need(review_segment_ids and not unknown, "局部检查须指定稿内准确段号，未找到：" + "、".join(sorted(unknown)))
     reviewed_rows = [row for row in rows if not local_review or row['segment_id'] in review_segment_ids]
+    content_ids = set(prompt_content_segment_ids or [])
+    _need(content_ids <= {row['segment_id'] for row in rows}, "正文自查包含未登记的生成段")
+    director_anchors_checked = 0
     offer_rows = [row['segment_id'] for row in reviewed_rows
                   if _CREATOR_BOWL_BRUSH_OFFER.search(submitted_prompt_body(row))]
     if offer_rows:
@@ -455,6 +546,9 @@ def _validate(payload, storyboard, root, *, require_physical, delivery_platform,
     for row in rows:
         ids = source_shot_ids(row)
         _need(ids and all(key in shots for key in ids), "每个生成段必须映射准确导演镜号，不能省略映射绕过分段检查")
+        if row['segment_id'] in content_ids:
+            director_anchors_checked += validate_director_body(
+                row, ids, shots, require_coverage=storyboard.get("schema_version") == "4.0")
         row_reviewed = not local_review or row['segment_id'] in review_segment_ids
         if check_scope and row_reviewed:
             _need(all(order[after] == order[before] + 1 for before, after in zip(ids, ids[1:])),
@@ -543,6 +637,8 @@ def _validate(payload, storyboard, root, *, require_physical, delivery_platform,
         checked += 1
     scope_report = {"validation_scope": "local_review", "checked_segment_ids": [row['segment_id'] for row in reviewed_rows],
                     "adjacent_boundaries_reviewed": reviewed_boundaries} if local_review else {}
+    if prompt_content_segment_ids is not None:
+        scope_report["director_body_shots_checked"] = director_anchors_checked
     return {"segment_count": len(reviewed_rows), "same_scene_boundaries_checked": checked,
             "cross_scene_boundaries_checked": cross_scene_checked,
             "selected_range_gaps_skipped": gaps_skipped,
@@ -689,8 +785,9 @@ def main(argv=None):
                 {'revision': director['revision'], 'path': str(board_path), 'artifact_id': director['artifact_id']},
                 'storyboard.package')
             validate_current_dependencies(director, manifest, state, project)
-            result = require_visual_readiness(project, storyboard, director, args.shot_id, manifest=manifest,
-                                              require_review=True)
+            required_visuals(storyboard, shot_ids=set(args.shot_id))
+            result = require_visual_readiness(project, storyboard, director, args.shot_id,
+                                                   manifest=manifest, require_review=True)
             print(json.dumps({"ok": True, **result}, ensure_ascii=False))
             return 0
         prompt_path = (args.project / args.prompt).resolve()
@@ -709,8 +806,10 @@ def main(argv=None):
             if entry.get('checksum', actual) != actual or entry.get('revision') != payload.get('revision', entry.get('revision')):
                 raise ValueError('prompt_state_control source bytes/revision differ from registration')
             source_artifact = {'artifact_id': entry['artifact_id'], 'revision': entry['revision'], 'sha256': actual}
+        content_ids = args.segment_id or [row['segment_id'] for row in _rows(payload)]
         result = validate_generation_boundaries(payload, storyboard, args.project, review_segment_ids=args.segment_id,
-                                                source_artifact=source_artifact)
+                                                source_artifact=source_artifact,
+                                                prompt_content_segment_ids=content_ids)
         if len(directors) == 1:
             rows = [row for row in _rows(payload) if not args.segment_id or row['segment_id'] in args.segment_id]
             result['visual_readiness'] = require_visual_readiness(

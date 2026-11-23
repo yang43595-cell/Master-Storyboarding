@@ -231,6 +231,29 @@ def test_image_evidence_cannot_change_under_an_existing_report(tmp_path, field):
         aa.validate_agent_acceptance(tmp_path, entry)
 
 
+@pytest.mark.parametrize("check_id", ["PROMPT-LANG", "VIDEO-PROMPT-NOISE"])
+def test_video_candidate_cannot_waive_prompt_language_check(tmp_path, check_id):
+    from test_agent_artifact_adoption import report
+    from test_formal_package_submission import video_project
+
+    payload = video_project(tmp_path, current_prompt=False)
+    aa.register_workflow_authorization(
+        tmp_path, authorization_id="SYNTHETIC-FLOW",
+        authorization_ref="SYNTHETIC WORKFLOW AUTHORIZATION ONLY", skills=["voiceover-to-video-script"],
+    )
+    entry = register(tmp_path, "P", "video.prompt", payload, ["storyboard.package"])
+    report_path = report(tmp_path, entry)
+    self_check = json.loads(report_path.read_text(encoding="utf-8"))
+    item = next(item for item in self_check["checks"] if item["id"] == check_id)
+    item.update(result="not_applicable", reason="Synthetic waiver for rejection test")
+    write_json(report_path, self_check)
+    before = load_project_state(tmp_path)
+
+    with pytest.raises(ValueError, match=f"核心检查被写为不适用：{check_id}"):
+        artifacts.adopt_initial_agent_artifact(tmp_path, entry["artifact_id"], str(report_path))
+    assert load_project_state(tmp_path) == before
+
+
 @pytest.mark.parametrize("reconcile", [True, False])
 def test_agent_video_adoption_and_revision_keep_generation_reconciliation(tmp_path, reconcile):
     from scripts import stage_context_cli as cli

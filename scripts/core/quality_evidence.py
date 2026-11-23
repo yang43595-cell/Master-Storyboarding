@@ -879,6 +879,7 @@ def validate_scene_source_mapping(rows, sources, project, *, check_submitted_bod
     delivery_shots = {shot for row in rows for shot in source_shot_ids(row)}
     delivery_segment_ids = ({row.get('source_segment_id', row.get('node_id')) for row in rows}
                             if delivery_platform == 'redframe' else None)
+    content_segment_ids = delivery_segment_ids if check_submitted_body else None
     for ref, path, payload in sources:
         linked_director = False
         if not isinstance(payload, dict):
@@ -912,7 +913,8 @@ def validate_scene_source_mapping(rows, sources, project, *, check_submitted_bod
                 from .generation_boundaries import validate_generation_boundaries
                 validate_generation_boundaries(payload, value, Path(ref.get('project_path', project)),
                                                delivery_platform=delivery_platform, delivery_segment_ids=delivery_segment_ids,
-                                               action_shots=delivery_shots)
+                                               action_shots=delivery_shots,
+                                               prompt_content_segment_ids=content_segment_ids)
                 linked_director = True
         if segments:
             if rows and not linked_director and isinstance(payload.get('scenes'), list) and payload['scenes']:
@@ -921,7 +923,8 @@ def validate_scene_source_mapping(rows, sources, project, *, check_submitted_bod
                 from .generation_boundaries import validate_generation_boundaries
                 validate_generation_boundaries(payload, payload, Path(ref.get('project_path', project)),
                                                delivery_platform=delivery_platform, delivery_segment_ids=delivery_segment_ids,
-                                               action_shots=delivery_shots)
+                                               action_shots=delivery_shots,
+                                               prompt_content_segment_ids=content_segment_ids)
                 linked_director = True
             if rows and not linked_director:
                 raise ValueError('generation_boundary: 生成段源必须绑定准确导演，不能删来源绕过分段检查')
