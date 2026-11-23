@@ -417,3 +417,22 @@ def test_local_editor_keeps_multiline_text_and_recovers_focus_after_menu_selecti
             assert page.get_by_label('生成提示词').locator('.imageReference').count() == 1
         finally:
             browser.close()
+
+
+def test_resume_image_node_checkpoints_creation_and_reuses_exact_node(monkeypatch):
+    ui, _, _ = adapter()
+    saved = []
+    receipt = {'target': 'scene'}
+    def create(x, y, *, save_baseline):
+        save_baseline(['source'])
+        assert saved[-1]['previous_node_ids'] == ['source']
+        return 'target'
+    monkeypatch.setattr(ui, '_new_node', create)
+    save = lambda value: saved.append(deepcopy(value))
+    assert ui.resume_image_node(receipt, save, 10, 10) == 'target'
+    assert ui.resume_image_node(saved[-1], save, 10, 10) == 'target'
+    assert len(saved) == 2
+    with pytest.raises(ImageUIError, match='find_new_nodes'):
+        ui.resume_image_node(saved[0], save, 10, 10)
+    with pytest.raises(ImageUIError, match='another canvas'):
+        ui.resume_image_node(dict(receipt, canvas_id='other'), save, 10, 10)

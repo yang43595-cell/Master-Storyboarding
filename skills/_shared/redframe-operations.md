@@ -22,6 +22,8 @@
 
 适配器使用机场任务实录中的 `data-id`、`image → in` 端口、节点名、生成提示词、引用参考素材、图片序号、生成图片、适应视图和关闭对话控件。创建与上传坐标由执行者在本任务视口中实看选定空位；不使用固定屏幕点。可复用源卡时直接给准确源节点 ID。接线前检查原边，已存在不再画线；提示词通过原生菜单插入引用，随后从真实 `promptModel` 核源节点身份及完整正文。提交前重新核实际连线、模型/画幅/尺寸/张数，并读取源卡原件字节与已确认文件 SHA-256 比较。当前实现可设置已观察到的比例控件；模型、尺寸、张数以实际原生字段核对，不符则保留节点并报告具体差异，不能猜控件或把期望值写成实采结果。
 
+中断后先运行只读命令 `python -m scripts.core.redframe_image_ui --project <项目> --receipt <本图回执路径>`，按返回的目标、节点和下一步接续。恢复时从本批准确制作请求和该图的回执路径进入；核对 target、请求哈希与画布，源卡和提示词取同一请求及回执。已有 file 时先核本地原件哈希，吻合即交执行者实看。创建结果未知时从 previous_node_ids（历史 before）调用 find_new_nodes 核实真实目标，再把经核实的 node_id 写回原回执；仅凭出现了新卡不能认定归属。
+
 下面是单图的调用方式；`target`、`settings`、`source_hashes`、`parts`、空位和回执路径取本轮真实材料。新节点先创建、命名和归位，已有节点直接复用，不重复运行创建/上传。`receipt_path` 是本图现有候选/生成回执，由本批独占写入；不是新增审批账本。
 
 ```python
@@ -33,11 +35,13 @@ from scripts.core.redframe_image_ui import image_browser_session
 receipt_path = Path(receipt_path)
 receipt = read_json(receipt_path) if receipt_path.exists() else {"target": target}
 with image_browser_session(task_browser, project_id=project_id, canvas_url=canvas_url) as ui:
-    if receipt.get("image_submission"):
+    if receipt.get("image_result"):
+        result = receipt["image_result"]  # 续用已观察的原件；从 file 指向的文件和哈希核实本地交付
+    elif receipt.get("image_submission"):
         result = ui.query(receipt, timeout=60)  # 只查已登记的原节点
     else:
         # 首次需要时：source_id = ui.upload_source(source_file, empty_x, empty_y)
-        # 首次需要时：node_id = ui.create_image_node(empty_x, empty_y)
+        node_id = ui.resume_image_node(receipt, lambda r: write_json(receipt_path, r), empty_x, empty_y)
         ui.rename(node_id, node_label)
         for source_id in source_hashes:
             ui.connect(source_id, node_id)

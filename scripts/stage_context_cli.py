@@ -2287,7 +2287,7 @@ def _prepare(args: argparse.Namespace, project: Path, supplied_vault: Path | Non
         *([f"- 图片批次：`{_CONTEXT_ID.get()}`，本批冻结 {len(image_targets)} 个 image_targets；阶段负责人统筹整体方向、跨批连续性和正式交接，本批执行者读取真实参考、完成获准图片及实看自查。委派时只回传准确路径与检查摘要。批次目录不构成已生成、已检查、人工确认或正式采用。"] if image_targets is not None and _CONTEXT_ID.get() is not None else []),
         *([f"- 图片目标：本阶段请求冻结 {len(image_targets)} 个 image_targets；主对话直做批次沿用本阶段 task_basis，不另建批次目录，但仍须写回现有回执。"] if image_targets is not None and _CONTEXT_ID.get() is None else []),
         *([f"- 本批直做实看回执写入 `{direct['receipt']}`，顶层 request_sha256 为 `{direct['request_sha256']}`；整轮 show-round 可合并这些回执。"] if direct else []),
-        *([f"- 红帧生图：读取 `{ROOT / _REDFRAME_IMAGE_STANDARDS[0]}#生图` 及同页连接入口。由主对话直接操作，先上传素材卡并当场归位，再接线和核正文；配套上传与排版规则同批冻结。"]
+        *([f"- 红帧生图：读取 `{ROOT / _REDFRAME_IMAGE_STANDARDS[0]}#生图` 及同页连接入口。主对话从本图回执续作（resume_image_node / query）；有界等待用 exec_command 30000 ms、同 session 的 write_stdin 60000 ms，外层 yield 与内层对齐。首次先上传素材卡并当场归位，再接线和核正文；配套上传与排版规则同批冻结。"]
           if _redframe_image_batch(args.skill, request) else []),
         *(["- 导演写稿和返修：先实看影响拍法的原片连续窗，核关键对白指向、起幅、镜内轨迹、落幅与实际切出后的反应；然后才核逐镜字段和下游影响。沿现有自查记录写准确时间窗和镜号。"]
           if args.skill == 'storyboard-planner' else []),
@@ -2414,7 +2414,7 @@ def _asset_batch_delivery_lines(batch):
     return [
         "", "## 本批交回", "", _asset_batch_binding_line(batch),
         "- 本批执行者跟到准确成图落盘和实看自查，或出现需交回的真实阻塞。提示词和提交清单是中间结果。",
-        "- 完成时更新上述现有实看回执，顶层沿用本卡的 `context_id` 和 `request_sha256`。每项实看写准确的 `target`、`candidate_id`、`observer`、`visual_status: passed|failed`、`observations`；所有已有成图均写 `purpose`、`path` 和 `sha256`，有偏差时附 `blocking_issue`。普通对话完成本批即回传实看回执。协调方按整轮目标用 chat_asset_review.py show-round 一次交审。",
+        "- 完成时更新上述现有实看回执，顶层沿用本卡的 `context_id` 和 `request_sha256`。每项实看写准确的 `target`、`candidate_id`、`observer`、`visual_status: passed|failed`、`observations`；所有已有成图均写 `purpose`、`path` 和 `sha256`，有偏差时附 `blocking_issue`。普通对话完成本批即回传实看回执。协调方按整轮目标用 chat_asset_review.py show-round 一次交审；清单就绪即发给用户，事后再统计性能。",
         "- 回执写齐后再通知协调方。完成通知只回批次、已完成目标、真实阻塞和回执路径；途中只通知可接续的新结果或需决策的阻塞。",
         "- 无成图可实看且确实需交回的阻塞，沿原回执 `items` 写准确 `target`、`observer`、`status: blocked` 和简短 `blocking_issue`。",
         "- 主对话直接制作时核对现有回执。委派批次由协调方按 `docs/rules/execution.md#等待与工具回传` 续等。超时不叠加 `read_thread`、`list_agents`、目录/日志查询或提前调用 `--receive-batch`；沿原等待渠道和游标续等；收到需核验的可接续新结果时只核受影响项。超过本轮已约定总等待期限仍无终态时，只读回查原任务一次，不重新提交。收到终态后用 `handoff --receive-batch` 验收准确回执一次，缺项交原执行者补核。",

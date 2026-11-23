@@ -191,13 +191,16 @@ class RedframeImageUI:
         return [node for node in self.workspace.read_canvas()['nodes']
                 if node['id'] not in previous_ids and node.get('type') == kind]
 
-    def _new_node(self, x, y, *, path=None, menu_name='图片', generation_kind='remote-imageGenerationNode'):
+    def _new_node(self, x, y, *, path=None, menu_name='图片', generation_kind='remote-imageGenerationNode',
+                  save_baseline=None):
         self.assert_target()
         viewport = self.page.viewport_size
         if not viewport or not 0 < x < viewport['width'] or not 0 < y < viewport['height']:
             raise ValueError('creation point must be in the task viewport')
         # The caller selects a visually checked empty point; no fixed screen coordinate.
         before = {node['id'] for node in self.workspace.read_canvas()['nodes']}
+        if save_baseline:
+            save_baseline(sorted(before))
         self.page.mouse.click(x, y, button='right')
         kind = 'remote-imageNode' if path else generation_kind
         try:
@@ -228,6 +231,30 @@ class RedframeImageUI:
 
     def create_image_node(self, x, y):
         return self._new_node(x, y)
+
+    def resume_image_node(self, receipt, save_receipt, x, y):
+        """Resume an unsubmitted candidate on its original canvas, or checkpoint its first creation."""
+        self.assert_target()
+        if receipt.get('image_submission') is not None or receipt.get('image_result') or receipt.get('file'):
+            raise ImageUIError('resume image', 'use the existing submission or result')
+        for key, value in (('canvas_id', self.canvas_id), ('project_id', self.project_id)):
+            if key in receipt and receipt[key] != value:
+                raise ImageUIError('resume image', 'receipt belongs to another canvas or project')
+        if receipt.get('node_id'):
+            node_id = _ident(receipt['node_id'])
+            _one(self.workspace.read_canvas()['nodes'], node_id, {'remote-imageGenerationNode'})
+            return node_id
+        previous = receipt.get('previous_node_ids', receipt.get('before'))
+        if previous is not None:
+            raise ImageUIError('resume image', 'inspect find_new_nodes on the original canvas before binding a node')
+
+        def checkpoint(ids):
+            receipt.update(previous_node_ids=ids, canvas_id=self.canvas_id, project_id=self.project_id)
+            save_receipt(receipt)
+
+        receipt['node_id'] = self._new_node(x, y, save_baseline=checkpoint)
+        save_receipt(receipt)
+        return receipt['node_id']
 
     def upload_source(self, path, x, y):
         path = Path(path).resolve()
@@ -473,3 +500,48 @@ def image_browser_session(task_browser, *, project_id, canvas_url, action_timeou
             except Exception:
                 if not interrupted:
                     raise
+
+
+def image_resume_step(project, receipt):
+    """Read-only recovery from one candidate's existing receipt."""
+    submission = receipt.get('image_submission')
+    result = receipt.get('image_result')
+    node_ids = {_ident(record['node_id']) for record in (receipt, submission, result)
+                if record is not None and record.get('node_id') is not None}
+    if len(node_ids) > 1:
+        raise ValueError('conflicting node IDs in image receipt')
+    file = receipt.get('file')
+    if file and result and result.get('status') == 'output_observed':
+        from .io import sha256_file
+        path = (project / file['path']).resolve()
+        if not path.is_relative_to(project):
+            raise ValueError('image file outside project')
+        if path.is_file() and sha256_file(path) == file['sha256']:
+            return 'review_local_file'
+    if result and result.get('status') == 'output_observed':
+        return 'retrieve_original_output'
+    if submission is not None:
+        return 'query_original_submission'
+    if file or result:
+        raise ValueError('incomplete image result; inspect the original receipt')
+    if node_ids:
+        return 'resume_original_node'
+    if 'previous_node_ids' in receipt or 'before' in receipt:
+        return 'inspect_creation_on_original_canvas'
+    return 'verify_canvas_before_creation'
+
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(description='只读核对单图回执，返回准确目标和下一步')
+    parser.add_argument('--project', required=True, type=Path)
+    parser.add_argument('--receipt', required=True, type=Path)
+    args = parser.parse_args()
+    root = args.project.resolve(strict=True)
+    path = (root / args.receipt).resolve(strict=True)
+    if not path.is_relative_to(root):
+        parser.error('回执须在本项目内')
+    receipt = json.loads(path.read_bytes())
+    print(json.dumps(dict(target=receipt['target'], next_step=image_resume_step(root, receipt),
+                          node_id=receipt.get('node_id') or (receipt.get('image_submission') or {}).get('node_id')),
+                     ensure_ascii=False))
