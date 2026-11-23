@@ -2,7 +2,9 @@
 
 ## 准备当前输入
 
-先确定本轮实际使用的来源和允许改动的范围，沿[普通准备与选知](../../_shared/knowledge-access.md#普通阶段准备与选知)核验输入，按[普通准备的阅读记录](../../_shared/knowledge-access.md#普通准备的阅读记录复用)复用仍有效的证据。已确认的改编范围和商品沿用 `project_request.json` 的 `kickoff`。同一份项目需求的顶层 `source_files` 登记尚未通过项目状态选入的本地原片和基准稿，`--request-json` 直接指向它。已有独立阶段请求可继续使用，产品和用法由开工决定带入。准备包锁定实际输入版本，`--objective` 只描述任务目标。
+以下命令使用仓库虚拟环境的 Python（macOS/Linux 为仓库根的 `.venv/bin/python`，Windows 为 `.venv\Scripts\python.exe`）；已激活该环境时可写 `python`。
+
+先确定本轮实际使用的来源和允许改动的范围，沿[普通准备与选知](../../_shared/knowledge-access.md#普通阶段准备与选知)核验输入，按[普通准备的阅读记录](../../_shared/knowledge-access.md#普通准备的阅读记录复用)复用仍有效的证据。已确认的改编范围和商品沿用 `project_request.json` 的 `kickoff`。同一份项目需求的顶层 `source_files` 登记尚未通过项目状态选入的本地原片和基准稿，`--request-json` 直接指向它。已有独立阶段请求可继续使用，产品和用法由开工决定带入。准备包锁定实际输入版本。尚在比选的网盘视频、未采用的备选资产只在 brief 记线索，选中并实际用于本版时再加入来源。`--objective` 只描述任务目标。
 
 有对标视频链接时，先按准确视频 ID 复用同一原片。缺少可用原片且需取材时，Mac 上的公开抖音视频优先走宿主的 resource-reuse／哼哼猫 CLI，核文件及取材区间的音轨后，用同一原片核画面、对白和切点。只有下载路线不可用且网页证据可用时，再取需要的网页画面或硬字幕。交接同一份来源及尚未核实的位置，已有核对直接沿用。
 
@@ -10,13 +12,15 @@
 python scripts/stage_context_cli.py prepare --project <项目> --skill creative-director --objective "本轮目标" --request-json <项目需求路径> --actor-id <执行者ID> --task-id <任务ID>
 ```
 
+若命令返回运行中的会话号，保留并继续轮询原进程。卡在某个资料路径时先查该来源和解释器；原进程仍在运行时不重复启动相同准备或取证。
+
 按 Skill 的执行顺序实读 `stage_startup.md`、实际输入和适用合同。有匹配的必读方法时，读完本轮方法包再用 `record-method-reading` 登记。同一执行者和任务运行以下命令，核验通过后进入场次判断或正文。
 
 ```powershell
 python scripts/stage_context_cli.py ensure-prepared --project <项目> --skill creative-director --actor-id <执行者ID> --task-id <任务ID> --show-task-basis
 ```
 
-共享盘对标的连续取材可直接运行 `python scripts/extract_video_batches.py --video "<已定位原片>" --out-dir "<本轮临时目录>" --end <截止秒> --batch-seconds 10`。每批完成即输出一行 JSON，目录含采样帧、音轨存在时的 WAV 和范围。macOS 核硬字幕可按实际位置加 `--ocr-region x,y,width,height`，得到同序号字幕候选。先看首批，再依次消费后续批次。范围收窄时可中止并从最后所需边界续取。主协调沿用编导的帧、字幕和观察。采样秒数用于定位，疑点回到连续原片与原声。
+下载的原片先移入项目的最终登记路径，再从该路径启动取证；已登记且不会移动的共享盘原件可直接读取。连续取材可直接运行 `python scripts/extract_video_batches.py --video "<已定位原片>" --out-dir "<本轮临时目录>" --end <截止秒> --batch-seconds 10`。每批完成即输出一行 JSON，目录含采样帧、音轨存在时的 WAV 和范围。macOS 核硬字幕可按实际位置加 `--ocr-region x,y,width,height`，得到同序号字幕候选。首批起把回执的 `subtitle_index` 路径交给编导和协调方，共用累计的字幕变化与定位帧；有疑点再查对应批次的原始 OCR 与音画。范围收窄时可中止并从最后所需边界续取。主协调沿用编导的帧、字幕和观察。采样秒数用于定位，疑点回到连续原片与原声。
 
 ## 第二层方法与第三层候选/案例
 

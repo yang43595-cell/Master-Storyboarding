@@ -15,11 +15,11 @@ from pathlib import Path
 
 try:
     from .core.agent_review_api import AgentReviewClient, AgentReviewError, DEFAULT_BASE_URL, MAX_IMAGE_BYTES, MAX_TEXT_BYTES, effective_approval
-    from .core.artifacts import load_manifest, register_workspace_artifact, save_manifest
+    from .core.artifacts import append_workspace_candidate, load_manifest, pending_narrative_candidate, save_manifest
     from .core.asset_refs import character_output_contract
     from .core.candidate_test import require_production
     from .core.image_technical import character_board_image_problem
-    from .core.io import project_lock, utc_now, write_json
+    from .core.io import project_lock, utc_now, write_bytes, write_json
     from .core.review_publication import (project_file as _path, read_decision, read_publication,
                                           read_script_approval, require_script_approval)
     from .core.story_sources import export_markdown, narrative_review_projections, validate_story_sources
@@ -27,11 +27,11 @@ try:
     from .visual_asset_source import source_project
 except ImportError:  # direct execution
     from core.agent_review_api import AgentReviewClient, AgentReviewError, DEFAULT_BASE_URL, MAX_IMAGE_BYTES, MAX_TEXT_BYTES, effective_approval
-    from core.artifacts import load_manifest, register_workspace_artifact, save_manifest
+    from core.artifacts import append_workspace_candidate, load_manifest, pending_narrative_candidate, save_manifest
     from core.asset_refs import character_output_contract
     from core.candidate_test import require_production
     from core.image_technical import character_board_image_problem
-    from core.io import project_lock, utc_now, write_json
+    from core.io import project_lock, utc_now, write_bytes, write_json
     from core.review_publication import (project_file as _path, read_decision, read_publication,
                                          read_script_approval, require_script_approval)
     from core.story_sources import export_markdown, narrative_review_projections, validate_story_sources
@@ -86,6 +86,38 @@ def _projection(project: Path, package: dict, value: str | Path, *, subtitle_rev
     if raw not in narrative_review_projections(package, subtitle_review_ids=subtitle_review_ids):
         raise ValueError("Reading Markdown differs from this exact narrative JSON; export a new copy.")
     return raw.decode("utf-8"), _binding(project, path, raw)
+
+
+def _archive_reading(project, raw):
+    checksum = hashlib.sha256(raw).hexdigest()
+    path = _path(project, f"99_历史与废弃/编导手改/{checksum}.md")
+    if path.exists():
+        if path.read_bytes() != raw:
+            raise ValueError("阅读稿的归档位置冲突")
+    else:
+        write_bytes(path, raw)
+    return _binding(project, path, raw)
+
+
+def _keep_edited_reading(project, prior, package, original):
+    if not original:
+        return
+    raw = _path(project, original["path"]).read_bytes()
+    if hashlib.sha256(raw).hexdigest() == original["sha256"]:
+        return
+    prior["user_edited_reading"] = _archive_reading(project, raw)
+    # Old packages can still point to edited Markdown. Restore the delivered
+    # bytes only when the original projection reproduces its registered hash.
+    chat = "review_markdown" in prior
+    ids = ()
+    if chat:
+        checked = validate_story_sources(package, project_root=project, review_ready=True, prepare_chat_review=True)
+        ids = checked["awaiting_subtitle_approval_ids"]
+    projections = narrative_review_projections(package, subtitle_review_ids=ids)
+    for previous in projections:
+        if hashlib.sha256(previous).hexdigest() == original["sha256"]:
+            prior["review_markdown" if chat else "reading_copy"] = _archive_reading(project, previous)
+            break
 
 
 def _check_preflight(project, client, path, *, case_id, stage, project_id=None):
@@ -183,6 +215,7 @@ def _parser() -> argparse.ArgumentParser:
     prepare.add_argument("--narrative", required=True, type=Path)
     prepare.add_argument("--output", required=True, type=Path)
     prepare.add_argument("--artifact-id", help="交稿并登记准确候选，可用同一命令续作")
+    prepare.add_argument("--replaces", help="此新编导候选替代的准确待审候选 ID")
     prepare.add_argument("--chat-review", action="store_true", help="交对话整稿审核")
     create = commands.add_parser("create-case", help="Create one explicitly authorized review case.")
     create.add_argument("--name", required=True)
@@ -231,6 +264,9 @@ def run(args: argparse.Namespace) -> dict:
         if args.command == "prepare":
             chat = getattr(args, "chat_review", False)
             ident = getattr(args, "artifact_id", None)
+            replaces = getattr(args, "replaces", None)
+            if replaces is not None and (not ident or not replaces.strip() or replaces == ident):
+                raise ValueError("替代候选须有独立的新旧产物 ID")
             package, source = _source(project, args.narrative, chat=chat)
             output = _path(project, args.output)
             ids = source["awaiting_subtitle_approval_ids"]
@@ -240,7 +276,27 @@ def run(args: argparse.Namespace) -> dict:
                 entry = next((r for r in manifest["artifacts"] if r["artifact_id"] == ident), None)
                 fields = dict(artifact_id=ident, logical_id="narrative.package", type="narrative.package",
                               revision=source["revision"], path_or_url=source["path"], checksum=source["sha256"])
-                if entry and (entry["status"] != "candidate" or any(
+                if entry is None and not replaces and any(row.get("revision_requested") and row["status"] == "candidate"
+                                                          for row in manifest["artifacts"]):
+                    raise ValueError("新编导稿须用 --replaces 指定本次返修的旧候选")
+                if replaces and entry is None:
+                    prior = pending_narrative_candidate(manifest, replaces)
+                    previous_source = _path(project, prior["path_or_url"])
+                    previous_raw = previous_source.read_bytes()
+                    if prior.get("checksum") not in (None, hashlib.sha256(previous_raw).hexdigest()):
+                        raise ValueError("旧候选源稿字节已改变，请核对旧稿并从新路径交稿")
+                    previous_package = json.loads(previous_raw.decode("utf-8-sig"))
+                    if (previous_package.get("project_id") != source["project_id"]
+                            or previous_package.get("revision") != prior["revision"]):
+                        raise ValueError("替代候选与旧稿的项目身份或原修订不一致")
+                    old_reading = prior.get("review_markdown") or prior.get("reading_copy")
+                    if (prior["revision"] == source["revision"] or
+                            previous_source == _path(project, source["path"]) or
+                            (old_reading and _path(project, old_reading["path"]) == output)):
+                        raise ValueError("替代候选须另存新修订、JSON 和阅读稿")
+                elif replaces and entry.get("replaces") != replaces:
+                    raise ValueError("候选 ID 已用于其他替代关系")
+                if entry and (entry.get("revision_requested") or entry["status"] != "candidate" or any(
                         entry.get(k) != v for k, v in fields.items() if k != "checksum")
                         or entry.get("checksum") not in (None, source["sha256"])):
                     raise ValueError("候选 ID 已用于其他版本")
@@ -250,14 +306,19 @@ def run(args: argparse.Namespace) -> dict:
                 export_markdown(package, output, subtitle_review_ids=ids)
                 reading = _binding(project, output, output.read_bytes())
             if ident:
-                if chat and ids:
-                    fields["review_markdown"] = reading
+                fields["review_markdown" if chat and ids else "reading_copy"] = reading
+                if replaces:
+                    fields["replaces"] = replaces
                 if entry is None:
-                    register_workspace_artifact(project, fields)
+                    if replaces:
+                        _keep_edited_reading(project, prior, previous_package, old_reading)
+                        prior.update(status="superseded", superseded_by=ident, superseded_at=utc_now())
+                    append_workspace_candidate(project, manifest, fields)
+                    save_manifest(project, manifest)
                 elif any(entry.get(k) != v for k, v in fields.items()):
                     entry.update(fields)
                     save_manifest(project, manifest)
-            return {"source_json": source, "markdown": reading}
+            return {"source_json": source, "markdown": reading, **({"artifact_id": ident} if ident else {})}
         if args.command in {"publish", "publish-asset"}:
             require_production(project)
 

@@ -157,3 +157,24 @@ def test_interval_batches_return_before_next_window_and_preserve_completed_windo
     assert (second["start"], second["end"], second["frames"]) == (1, 1.5, 2)
     assert read_json(directory / "manifest.json")["frames"] == 4
     assert list(result) == []
+
+
+def test_subtitle_changes_keep_the_first_locator_across_batches_and_blank_frames(tmp_path):
+    from scripts.extract_video_batches import _subtitle_changes
+
+    def read_batch(index, subtitles, start, previous):
+        directory = tmp_path / f"batch-{index:04d}"
+        directory.mkdir()
+        records = ({"i": i, "v": [{"text": text} for text in lines]}
+                   for i, lines in enumerate(subtitles, 1))
+        (directory / "subtitles.jsonl").write_text(
+            "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+        return _subtitle_changes(directory, start, 2, previous)
+
+    first, previous = read_batch(1, [["到机场了"], ["到机场了"]], 0, [])
+    second, _ = read_batch(2, [["到机场了"], [], ["到机场了"], ["给你", "礼物"]], 1, previous)
+    assert [(row["frame"], row["sample_seconds"], row["texts"]) for row in first + second] == [
+        ("batch-0001/0001.jpg", 0, ["到机场了"]),
+        ("batch-0002/0003.jpg", 2, ["到机场了"]),
+        ("batch-0002/0004.jpg", 2.5, ["给你", "礼物"]),
+    ]

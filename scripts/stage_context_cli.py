@@ -11,7 +11,7 @@ import re
 import subprocess
 import sys
 import time
-from contextlib import nullcontext
+from contextlib import ExitStack, nullcontext
 from contextvars import ContextVar
 from functools import wraps
 from pathlib import Path, PureWindowsPath
@@ -22,7 +22,7 @@ try:
                                       result_metadata as test_metadata, require_production, require_production_manifest,
                                       validate_stage as validate_test_stage, validate_usage_contract)
     from .core.artifacts import (artifact_is_adopted, exact_narrative_approval, project_path, digest, cache_file_digests,
-                                 validate_current_dependencies, load_manifest,
+                                 validate_current_dependencies, load_manifest, pending_narrative_candidate, save_manifest,
                                  register_workspace_artifact, adopt_initial_package,
                                  adopt_initial_agent_artifact, validate_candidate_submission)
     from .core.asset_refs import check_output_plan, registered_output_snapshot
@@ -53,7 +53,7 @@ except ImportError:  # direct CLI execution
                                      result_metadata as test_metadata, require_production, require_production_manifest,
                                      validate_stage as validate_test_stage, validate_usage_contract)
     from core.artifacts import (artifact_is_adopted, exact_narrative_approval, project_path, digest, cache_file_digests,
-                                validate_current_dependencies, load_manifest,
+                                validate_current_dependencies, load_manifest, pending_narrative_candidate, save_manifest,
                                 register_workspace_artifact, adopt_initial_package,
                                 adopt_initial_agent_artifact, validate_candidate_submission)
     from core.asset_refs import check_output_plan, registered_output_snapshot
@@ -102,7 +102,7 @@ _CONTEXT_ID: ContextVar[str | None] = ContextVar("stage_context_id", default=Non
 IMAGE_SKILLS = {"asset-image-assistant", "storyboard-director"}
 TASK_HANDOFF_SKILLS = {"creative-director", "storyboard-planner"}
 _HANDOFF_DEFAULT_OBJECTIVE = "按目标 Skill 完成本轮已授权工作"
-_ROUTED_HANDOFF_SCOPE = ("action", "artifact_ids", "asset_ids", "output_ids", "shot_ids", "segment_ids")
+_ROUTED_HANDOFF_SCOPE = ("action", "artifact_ids", "asset_ids", "output_ids", "shot_ids", "segment_ids", "revision_candidate_ids")
 _ROUTED_SKILLS = {
     "depth-guided-recreation": ("recreation",),
     "creative-director": ("creative",),
@@ -455,12 +455,18 @@ def adopt_package(args: argparse.Namespace, *, website_approval=None, chat_appro
             "notice": "平台无关稿件已正式登记；未执行渠道上传、生成、发布或阶段自动流转"}
 
 
+def _json_input(path: str | Path):
+    source = Path(path)
+    text = sys.stdin.read().removeprefix("\ufeff") if source == Path("-") else source.read_text(encoding="utf-8-sig")
+    return json.loads(text)
+
+
 def confirm_script_in_chat(args: argparse.Namespace) -> dict[str, Any]:
     """Apply a genuine conversation decision through the formal adoption transaction."""
     project = Path(args.project).expanduser().resolve(strict=True)
+    message = _json_input(args.confirmation_json)
     with project_lock(project):
         require_production(project)
-        message = json.loads(Path(args.confirmation_json).read_text(encoding="utf-8-sig"))
         approval = ChatScriptApproval.from_message(
             project, artifact_id=args.artifact_id, path=args.path, revision=args.revision,
             sha256=args.sha256, message=message)
@@ -967,6 +973,20 @@ def _handoff_scope(text: str) -> dict[str, Any] | None:
 
 def _check_preparation_route(project, skill, request, routed, *, repair=False, asset_batch=False):
     """Keep formal startup on the live route, including after a stale card or a restart."""
+    if "revise_candidate_id" in request:
+        if skill != "creative-director" or repair or (routed and routed["action"] != "creative"):
+            raise StageContextError("待审编导返修只适用于首次采用前的编导准备")
+        manifest = load_manifest(project)
+        ident = request["revise_candidate_id"]
+        pending_narrative_candidate(manifest, ident)
+        flow = resolve_production_handoff(project, manifest=manifest, actions={"creative"})
+        if routed and routed.get("revision_candidate_ids") and ident not in routed["revision_candidate_ids"]:
+            raise StageContextError("编导交接卡与本次待修候选不同")
+        if not any((step["action"] == "creative-review" and ident in step.get("artifact_ids", [])) or
+                   (step["action"] == "creative" and ident in step.get("revision_candidate_ids", []))
+                   for step in flow["steps"]):
+            raise StageContextError("当前未开放本版待审编导返修，请核对项目状态")
+        return
     if repair or asset_batch or skill not in _ROUTED_SKILLS:
         return
     project_request = load_project_request(project)
@@ -979,6 +999,9 @@ def _check_preparation_route(project, skill, request, routed, *, repair=False, a
         raise StageContextError("交接卡步骤与本轮准备不一致")
     requested_shots = request.get("source_shot_ids") if action == "visual" else None
     route = require_production_handoff(project, action, shot_ids=requested_shots)
+    if route.get("revision_candidate_ids"):
+        raise StageContextError("请在阶段请求的 revise_candidate_id 指定待修候选：" +
+                                "、".join(route["revision_candidate_ids"]))
     if routed:
         if action != "assets" and routed.get("workflow") != route.get("workflow"):
             raise StageContextError("制作路线已变化；重新运行 handoff")
@@ -1910,10 +1933,26 @@ def _producer_response_value(raw: str) -> Path | dict[str, Any]:
 def prepare(args: argparse.Namespace) -> dict[str, Any]:
     _require_preparation_skill(args.skill)
     usage = _check_run_budget(args)
-    started = time.perf_counter()
     project = Path(args.project).expanduser().resolve()
     if not project.is_dir():
         raise StageContextError(f"项目目录不存在：{project}")
+    supplied_vault = _vault_root(args.vault) if getattr(args, "vault", None) is not None else None
+    with ExitStack() as stack:
+        if args.skill == "creative-director":
+            context = _CONTEXT_ID.get()
+            name = f".prepare-batch-{context}.lock" if context else ".prepare-stage.lock"
+            lock_path = project / CONTEXT_DIR.parent / name
+            if lock_path.resolve() != lock_path:
+                raise StageContextError(f"准备锁路径不得含符号链接：{lock_path}")
+            try:
+                stack.enter_context(file_lock(lock_path, timeout_seconds=0))
+            except TimeoutError as exc:
+                raise StageContextError("同一编导上下文正在准备，请继续等待原调用返回") from exc
+        return _prepare(args, project, supplied_vault, usage)
+
+
+def _prepare(args: argparse.Namespace, project: Path, supplied_vault: Path | None, usage: dict | None) -> dict[str, Any]:
+    started = time.perf_counter()
     skill_dir = ROOT / "skills" / args.skill
     profile_path = skill_dir / "knowledge-profile.json"
     test_method_ids = set(getattr(args, "test_proposed_method", None) or [])
@@ -1955,7 +1994,17 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "creative-director", "storyboard-planner", "asset-image-assistant", "storyboard-director",
     } else None
     image_targets = _image_batch_targets(args.skill, request, routed=bool(routed and not asset_batch))
-    if not testing:
+    if "revise_candidate_id" in request:
+        if testing:
+            raise StageContextError("隔离试跑不能发起正式待审稿返修")
+        with file_lock(project / PROJECT_LOCK_RELATIVE):
+            _check_preparation_route(project, args.skill, request, routed, repair=bool(getattr(args, "change_id", None)))
+            manifest = load_manifest(project)
+            pending = pending_narrative_candidate(manifest, request["revise_candidate_id"])
+            if not pending.get("revision_requested"):
+                pending["revision_requested"] = True
+                save_manifest(project, manifest)
+    elif not testing:
         _check_preparation_route(project, args.skill, request, routed,
                                  repair=bool(getattr(args, "change_id", None)), asset_batch=bool(asset_batch))
     try:
@@ -2024,7 +2073,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         getattr(args, "target_logical_id", None),
     )
     policy = load_policy(ROOT)
-    vault = _vault_root(args.vault)
+    vault = supplied_vault or _vault_root(None)
     optional_experience = _optional_experience_paths(vault, profile)
     try:
         methods = resolve_method_documents(
@@ -3070,7 +3119,7 @@ def parser() -> argparse.ArgumentParser:
     chat.add_argument("--path", required=True, help="项目内准确叙事包 JSON 路径")
     chat.add_argument("--revision", required=True)
     chat.add_argument("--sha256", required=True, help="交给用户审阅的 JSON 文件原始字节 SHA-256")
-    chat.add_argument("--confirmation-json", required=True, help="用户原话、时区时间、消息位置及整稿范围")
+    chat.add_argument("--confirmation-json", required=True, help="确认依据 JSON 文件，或 - 从标准输入读取；含用户原话、时区时间、消息位置及整稿范围")
     chat.add_argument("--change-id", help="返修时对应已登记候选的活动变更案")
     testing = commands.add_parser("candidate-test", help="显式配置独立候选试跑；绝不登记用户产物确认")
     testing.add_argument("--project", required=True)
@@ -3198,9 +3247,7 @@ def main(argv: list[str] | None = None) -> int:
         if not project.is_dir():
             raise StageContextError("开工决定必须从业务项目目录读取")
         if args.answers_json:
-            raw_answers = (sys.stdin.read() if args.answers_json == Path("-")
-                           else args.answers_json.read_text(encoding="utf-8-sig"))
-            answers = validate_kickoff(json.loads(raw_answers), for_registration=True)
+            answers = validate_kickoff(_json_input(args.answers_json), for_registration=True)
             with project_lock(project):
                 require_production(project)
                 path = project / REQUEST_PATH

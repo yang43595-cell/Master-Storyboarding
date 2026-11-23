@@ -283,8 +283,15 @@ def _resolve(project, manifest, state, kickoff, *, actions=None, shot_scope=None
     steps = [_step('kickoff', 'complete', '开工决定已登记' if kickoff else '沿已有正式采用记录续作')]
     if narrative_entry is None:
         if candidates := _candidates(manifest, NARRATIVE):
-            steps.append(_step('creative-review', 'waiting', '等待准确版本的编导整稿确认及正式采用',
-                               artifact_ids=candidates))
+            revisions = [item['artifact_id'] for item in manifest['artifacts']
+                         if item['artifact_id'] in candidates and item.get('revision_requested')]
+            if revisions:
+                steps.append(_step('creative', 'ready', '按用户改稿内容修订待审稿，再交准确新候选',
+                                   skill='creative-director', revision_candidate_ids=revisions))
+            waiting = [ident for ident in candidates if ident not in revisions]
+            if waiting:
+                steps.append(_step('creative-review', 'waiting', '等待准确版本的编导整稿确认及正式采用',
+                                   artifact_ids=waiting))
         else:
             reason = ('先还原原片剧情、对白、说话人及动作，按统一入口交编导整稿'
                       if production_workflow(kickoff) != CREATIVE_WORKFLOW else '按开工依据制作编导稿')

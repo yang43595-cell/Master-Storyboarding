@@ -465,6 +465,8 @@ def adopt_initial_package(project_root: Path, artifact_id: str, approval_ref: st
             raise ValueError("找不到待正式采用的叙事/导演/视频稿件候选")
         if entry.get("status") != "candidate":
             raise ValueError("首次正式采用只能从 candidate 开始")
+        if entry.get("revision_requested"):
+            raise ValueError("本版已收到返修请求，请核对新稿后再确认")
         logical_id = entry["logical_id"]
         if any(item.get("logical_id") == logical_id and item.get("status") in {"current", "stale"}
                for item in manifest.get("artifacts", [])):
@@ -780,11 +782,28 @@ def stamp_user_approval(entry: dict[str, Any], approval_ref: str) -> dict[str, A
 @project_locked
 def register_workspace_artifact(project_root: Path, artifact: dict[str, Any]) -> dict[str, Any]:
     """登记一个新产物（默认 candidate）。不覆盖用户已有确认，不删除任何文件。"""
+    manifest = load_manifest(project_root)
+    entry = append_workspace_candidate(project_root, manifest, artifact)
+    save_manifest(project_root, manifest)
+    return entry
+
+
+def pending_narrative_candidate(manifest, artifact_id):
+    entries = [entry for entry in manifest["artifacts"] if entry.get("logical_id") == "narrative.package"]
+    if any(entry["status"] in {"current", "stale"} for entry in entries):
+        raise ValueError("编导稿已有正式版本，返修须走活动变更案")
+    for entry in entries:
+        if entry["artifact_id"] == artifact_id and entry["status"] == "candidate" and not entry.get("candidate_test"):
+            return entry
+    raise ValueError(f"编导返修来源不再是待审候选：{artifact_id}")
+
+
+def append_workspace_candidate(project_root, manifest, artifact):
+    """Validate and append in memory. The caller owns the project lock and manifest save."""
     required = {"artifact_id", "logical_id", "type", "path_or_url"}
     missing = sorted(required - set(artifact))
     if missing:
         raise ValueError(f"产物缺少字段：{missing}")
-    manifest = load_manifest(project_root)
     if any(item.get("artifact_id") == artifact.get("artifact_id") for item in manifest.get("artifacts", [])):
         raise ValueError(f"产物已存在：{artifact.get('artifact_id')}")
     entry = dict(artifact)
@@ -805,7 +824,6 @@ def register_workspace_artifact(project_root: Path, artifact: dict[str, Any]) ->
     if entry["status"] not in ARTIFACT_STATUSES:
         raise ValueError(f"未知产物状态：{entry['status']}")
     manifest.setdefault("artifacts", []).append(entry)
-    save_manifest(project_root, manifest)
     return entry
 
 

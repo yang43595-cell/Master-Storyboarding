@@ -14,6 +14,21 @@ else:
     from extract_video_frames import _file_stamp, _video_end
 
 
+def _subtitle_changes(batch, start, fps, previous):
+    """Collapse consecutive identical OCR readings, retaining a locator into the raw evidence."""
+    changes = []
+    with (batch / "subtitles.jsonl").open(encoding="utf-8") as observations:
+        for line in observations:
+            row = json.loads(line)
+            texts = [item["text"] for item in row["v"]]
+            if texts and texts != previous:
+                frame = row["i"]
+                changes.append({"sample_seconds": round(start + (frame - 1) / fps, 6),
+                                "frame": f"{batch.name}/{frame:04d}.jpg", "texts": texts})
+            previous = texts
+    return changes, previous
+
+
 def batches(video, output, start, end, seconds, fps, ocr_region=None):
     video = video.resolve(strict=True)
     if not (math.isfinite(end) and 0 <= start < end and seconds > 0 and fps > 0):
@@ -31,6 +46,7 @@ def batches(video, output, start, end, seconds, fps, ocr_region=None):
         if ocr_region:
             subprocess.run(["swiftc", str(Path(__file__).with_name("recognize_subtitles.swift")),
                             "-o", str(recognizer)], check=True)
+        previous_texts = []
         index = 0
         while start < end:
             stop = min(start + seconds, end)
@@ -58,8 +74,15 @@ def batches(video, output, start, end, seconds, fps, ocr_region=None):
                           samples_per_second=fps, frames=len(frames), directory=str(target),
                           audio="audio.wav" if probe.strip() else None,
                           subtitles="subtitles.jsonl" if ocr_region else None)
+            if ocr_region:
+                subtitle_index = run / "subtitle-index.jsonl"
+                changes, previous_texts = _subtitle_changes(stage, start, fps, previous_texts)
+                record["subtitle_index"] = str(subtitle_index)
             (stage / "manifest.json").write_text(json.dumps(record, ensure_ascii=False))
             stage.rename(target)
+            if ocr_region:
+                with subtitle_index.open("a", encoding="utf-8") as stream:
+                    stream.writelines(json.dumps(row, ensure_ascii=False) + "\n" for row in changes)
             yield record
             start = stop
 

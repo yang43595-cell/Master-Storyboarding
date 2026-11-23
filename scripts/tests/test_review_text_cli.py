@@ -2,6 +2,7 @@
 import base64
 import copy
 import hashlib
+import io
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -325,9 +326,10 @@ def test_chat_approval_adopts_initial_and_revised_script_for_downstream(
         authorization_ref="synthetic prior user authorization", skills=["storyboard-planner"])
     source, package = narrative(tmp_path)
     args = chat_args(tmp_path, source)
+    monkeypatch.setattr(stage_cli.sys, "stdin", io.StringIO(Path(args.confirmation_json).read_text(encoding="utf-8")))
     assert stage_cli.main(["confirm-script-in-chat", "--project", str(tmp_path), "--artifact-id", args.artifact_id,
                            "--path", args.path, "--revision", args.revision, "--sha256", args.sha256,
-                           "--confirmation-json", args.confirmation_json]) == 0
+                           "--confirmation-json", "-"]) == 0
     first = json.loads(capsys.readouterr().out)
     assert first["confirmation"]["channel"] == "chat_confirmation"
     assert first["confirmation"]["quote"] == "编导稿 R01 整稿通过"
@@ -1129,3 +1131,54 @@ def test_chat_delivery_registers_disclosed_candidate_and_consumes_first_decision
     result = stage_cli.confirm_script_in_chat(chat_args(tmp_path, source))
     assert result['artifact']['status'] == 'current'
     assert result['confirmation']['subtitle_review_ids'] == ['DLG-01', 'DLG-02']
+
+
+def test_replace_returned_candidate_keeps_user_edits_and_blocks_late_approval(tmp_path, kickoff_review_site):
+    from scripts.core.project_state import new_project_state, write_project_state
+
+    write_project_state(tmp_path, new_project_state(current_stage="creative-director"))
+    old, package = narrative(tmp_path)
+    command = ["prepare", "--project", str(tmp_path), "--chat-review"]
+    def deliver(revision, *extra):
+        return cli.run(cli._parser().parse_args([*command, "--narrative", revision + ".json", "--output",
+                                                revision + ".md", "--artifact-id", "N-" + revision, *extra]))
+    deliver("R01")
+    original = (tmp_path / "R01.md").read_bytes()
+    edited = original + "用户手改一句".encode()
+    (tmp_path / "R01.md").write_bytes(edited)
+    request = tmp_path / "revise.json"
+    write_json(request, {"revise_candidate_id": "N-R01", "brief": "保留手改，删广告尾段"})
+    stage = stage_cli.parser().parse_args(["prepare", "--project", str(tmp_path), "--skill", "creative-director",
+                                         "--request-json", str(request), "--objective", "返修待审稿"])
+    assert stage_cli.prepare(stage)["valid"]
+    handoff = stage_cli.handoff(stage_cli.parser().parse_args(["handoff", "--project", str(tmp_path)]))
+    step, = handoff["next_actions"]
+    assert step["skill"] == "creative-director" and step["revision_candidate_ids"] == ["N-R01"]
+    assert stage_cli.prepare(stage)["valid"]
+    with pytest.raises(ValueError, match="已收到返修"):
+        stage_cli.confirm_script_in_chat(chat_args(tmp_path, old))
+    package["revision"] = "R02"
+    write_json(tmp_path / "R02.json", package)
+    with pytest.raises(ValueError, match="--replaces"):
+        deliver("R02")
+    write_json(tmp_path / "R02.json", {**package, "project_id": "UNRELATED-PROJECT"})
+    pending_manifest = artifacts.load_manifest(tmp_path)
+    with pytest.raises(ValueError, match="项目身份"):
+        deliver("R02", "--replaces", "N-R01")
+    assert artifacts.load_manifest(tmp_path) == pending_manifest
+    assert not (tmp_path / "R02.md").exists() and not (tmp_path / "99_历史与废弃").exists()
+    write_json(tmp_path / "R02.json", package)
+    first = deliver("R02", "--replaces", "N-R01")
+    assert first == deliver("R02", "--replaces", "N-R01")
+    assert first["artifact_id"] == "N-R02"
+    previous, current = artifacts.load_manifest(tmp_path)["artifacts"]
+    assert previous["status"] == "superseded" and current["status"] == "candidate"
+    assert previous["superseded_by"] == current["artifact_id"] and current["replaces"] == previous["artifact_id"]
+    assert (tmp_path / previous["reading_copy"]["path"]).read_bytes() == original
+    assert (tmp_path / previous["user_edited_reading"]["path"]).read_bytes() == edited
+    assert (tmp_path / "R01.md").read_bytes() == edited
+    write_json(tmp_path / "R03.json", {**package, "revision": "R03"})
+    with pytest.raises(ValueError, match="不再是待审"):
+        deliver("R03", "--replaces", "N-R01")
+    assert not (tmp_path / "R03.md").exists()
+    assert stage_cli.confirm_script_in_chat(chat_args(tmp_path, tmp_path / "R02.json", "R02"))["artifact"]["status"] == "current"

@@ -6,7 +6,7 @@ import json
 import shutil
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from threading import Barrier
+from threading import Barrier, Event
 
 import pytest
 
@@ -113,6 +113,33 @@ def test_redframe_image_batch_freezes_sop_from_project_kickoff(tmp_path, skill, 
         decision_path.write_text(json.dumps(reuse))
         with pytest.raises(cli.StageContextError, match='当前来源'):
             cli.ensure_prepared(args)
+
+
+def test_running_creative_preparation_reads_inputs_only_once(tmp_path, monkeypatch):
+    args = cli.parser().parse_args(["prepare", "--project", str(_project(tmp_path)), "--skill", "creative-director",
+                                    "--objective", "并发准备", "--context-id", "draft-r01"])
+    entered, release = Event(), Event()
+    snapshot = cli._input_snapshot
+    reads = []
+
+    def read_inputs(*args, **kwargs):
+        reads.append(args[0])
+        entered.set()
+        assert release.wait(timeout=10)
+        return snapshot(*args, **kwargs)
+
+    monkeypatch.setattr(cli, "_input_snapshot", read_inputs)
+    with ThreadPoolExecutor(max_workers=1) as workers:
+        running = workers.submit(cli.prepare, args)
+        try:
+            assert entered.wait(timeout=10)
+            with pytest.raises(cli.StageContextError, match="继续等待原调用"):
+                cli.prepare(args)
+        finally:
+            release.set()
+        assert Path(running.result()["path"]).is_file()
+    assert len(reads) == 1
+    assert Path(cli.prepare(args)["path"]).is_file()
 
 
 def test_two_concurrent_batches_keep_worker_inputs_receipts_and_cache_separate(tmp_path):
