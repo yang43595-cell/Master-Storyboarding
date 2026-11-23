@@ -1774,3 +1774,15 @@ def test_voiceover_keeps_own_delivery_package():
     skill = cli.ROOT / 'skills/voiceover-to-video-script'
     selected = cli._local_standard_documents(skill, {'local_references': [reference]})
     assert (cli.ROOT / reference).resolve() in {path.resolve() for path in selected}
+
+
+@pytest.mark.parametrize("workflow,explicit,expected", [
+    ("creative", False, False), ("pending", False, False),
+    ("creative", True, True), (cli.RECREATION_WORKFLOW, False, True),
+])
+def test_director_recreation_method_requires_route_or_explicit_read(workflow, explicit, expected):
+    request = {"kickoff": {"creation": {"workflow": workflow}}}
+    if explicit:
+        request["local_references"] = [cli.RECREATION_METHOD]
+    docs = cli._local_standard_documents(cli.ROOT / "skills/storyboard-planner", request)
+    assert (cli.ROOT / cli.RECREATION_METHOD in docs) == expected

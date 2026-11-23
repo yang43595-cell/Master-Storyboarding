@@ -16,6 +16,8 @@ python scripts/stage_context_cli.py prepare --project <项目> --skill creative-
 python scripts/stage_context_cli.py ensure-prepared --project <项目> --skill creative-director --actor-id <执行者ID> --task-id <任务ID> --show-task-basis
 ```
 
+共享盘对标的连续取材可直接运行 `python scripts/extract_video_batches.py --video "<已定位原片>" --out-dir "<本轮临时目录>" --end <截止秒> --batch-seconds 10`。每批完成即输出一行 JSON，目录含采样帧、音轨存在时的 WAV 和范围。macOS 核硬字幕可按实际位置加 `--ocr-region x,y,width,height`，得到同序号字幕候选。先看首批，再依次消费后续批次。范围收窄时可中止并从最后所需边界续取。主协调沿用编导的帧、字幕和观察。采样秒数用于定位，疑点回到连续原片与原声。
+
 ## 第二层方法与第三层候选/案例
 
 第一层由 Skill 入口与项目总规则确定本轮何时写作、送审和交接。第二层由本地合同和模板规定写法与交付结构，专业方法按 `knowledge-profile.json` 的条件选读。从[仓库固定版本](../../_shared/knowledge-access.md#制作的仓库知识根)读取。
@@ -81,7 +83,7 @@ python scripts/stage_context_cli.py ensure-prepared --project <项目> --skill c
 
 首次建立原片复现或改编的全稿基线、换用基准，或人物身份、出入及跨场因果的影响无法限界时，在本轮来源范围内核全片画面。核对各场出入、在场人数、全片独立人数、无对白的表演者及独立演示者，在既有事实与范围锁定中记原片身份、出镜依据和获准改编的安排。局部返修沿用有效核对，只查受影响的场次、人物及其对白和交接引用。跨场换装用称呼、行动承接及面部等来源互证，声音归属按对白契约核对。无法区分的人物保留待核，受影响的交付回到本阶段处理。
 
-校验和审核走 Skill 执行入口。网站阅读稿准备会校验同版 JSON。本地待审 JSON 使用 `python -m scripts.core.story_sources --project <项目> --narrative <叙事包> --review-ready`，正式采用前仍按[对白契约](../references/dialogue-lineage-contract.md#送审前检查与确认范围)核查来源及实际确认范围。旧 Markdown 候选沿用历史 `--markdown` 参数。将实际发现、修复位置和未核范围简记在现有任务记录，供复查和交接使用。
+校验和审核走 Skill 执行入口。网站阅读稿准备会校验同版 JSON。对话交稿使用[交稿与确认入口](../../../docs/development/artifact-adoption.md#编导对话确认)导出并登记候选。只检查本地 JSON 时可使用 `python -m scripts.core.story_sources --project <项目> --narrative <叙事包> --review-ready`，正式采用前仍按[对白契约](../references/dialogue-lineage-contract.md#送审前检查与确认范围)核查来源及实际确认范围。旧 Markdown 候选沿用历史 `--markdown` 参数。将实际发现、修复位置和未核范围简记在现有任务记录，供复查和交接使用。
 
 ## 场景资产粒度
 

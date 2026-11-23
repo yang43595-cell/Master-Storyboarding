@@ -1103,3 +1103,29 @@ def test_unknown_remote_outcome_keeps_safe_receipt_and_does_not_retry(tmp_path, 
     assert receipt["response"] is None
     assert receipt["error"] == {"code": "TRANSPORT_ERROR", "http_status": None}
     assert "SECRET" not in capsys.readouterr().err + json.dumps(receipt)
+
+
+def test_chat_delivery_registers_disclosed_candidate_and_consumes_first_decision(tmp_path, kickoff_review_site):
+    from test_dialogue_origins import bind, fixture
+
+    record = fixture(tmp_path, isolated=False)
+    record['dialogues'].pop(1)
+    record['open_items'] = ['电话处有一声未上字幕的短音']
+    package = bind(tmp_path, record)
+    source = tmp_path / 'R01.json'
+    args = cli._parser().parse_args(['prepare', '--project', str(tmp_path), '--narrative', source.name,
+                                     '--output', 'review.md', '--artifact-id', 'N-R01', '--chat-review'])
+    package['open_questions'] = ['人物关系尚未确定']
+    write_json(source, package)
+    with pytest.raises(ValueError, match='原声疑点'):
+        cli.run(args)
+    assert not artifacts.load_manifest(tmp_path)['artifacts']
+    package['open_questions'] = record['open_items']
+    write_json(source, package)
+    receipt = cli.run(args)
+    assert receipt == cli.run(args)
+    assert artifacts.load_manifest(tmp_path)['artifacts'][0]['status'] == 'candidate'
+    assert record['open_items'][0] in (tmp_path / 'review.md').read_text().split('## 完整结构化来源')[0]
+    result = stage_cli.confirm_script_in_chat(chat_args(tmp_path, source))
+    assert result['artifact']['status'] == 'current'
+    assert result['confirmation']['subtitle_review_ids'] == ['DLG-01', 'DLG-02']

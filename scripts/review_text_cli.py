@@ -15,6 +15,7 @@ from pathlib import Path
 
 try:
     from .core.agent_review_api import AgentReviewClient, AgentReviewError, DEFAULT_BASE_URL, MAX_IMAGE_BYTES, MAX_TEXT_BYTES, effective_approval
+    from .core.artifacts import load_manifest, register_workspace_artifact, save_manifest
     from .core.asset_refs import character_output_contract
     from .core.candidate_test import require_production
     from .core.image_technical import character_board_image_problem
@@ -26,6 +27,7 @@ try:
     from .visual_asset_source import source_project
 except ImportError:  # direct execution
     from core.agent_review_api import AgentReviewClient, AgentReviewError, DEFAULT_BASE_URL, MAX_IMAGE_BYTES, MAX_TEXT_BYTES, effective_approval
+    from core.artifacts import load_manifest, register_workspace_artifact, save_manifest
     from core.asset_refs import character_output_contract
     from core.candidate_test import require_production
     from core.image_technical import character_board_image_problem
@@ -67,11 +69,11 @@ def _binding(project: Path, path: Path, raw: bytes) -> dict:
             "bytes": len(raw)}
 
 
-def _source(project: Path, value: str | Path) -> tuple[dict, dict]:
+def _source(project: Path, value: str | Path, *, chat=False) -> tuple[dict, dict]:
     path = _path(project, value)
     raw = path.read_bytes()
     package = json.loads(raw.decode("utf-8-sig"))
-    review_check = validate_story_sources(package, project_root=project, review_ready=True)
+    review_check = validate_story_sources(package, project_root=project, review_ready=True, prepare_chat_review=chat)
     return package, {**_binding(project, path, raw), "project_id": package["project_id"],
                      "revision": package["revision"], "status": package["status"],
                      "awaiting_creative_approval_ids": review_check["awaiting_creative_approval_ids"],
@@ -180,6 +182,8 @@ def _parser() -> argparse.ArgumentParser:
     prepare.add_argument("--project", required=True, type=Path)
     prepare.add_argument("--narrative", required=True, type=Path)
     prepare.add_argument("--output", required=True, type=Path)
+    prepare.add_argument("--artifact-id", help="交稿并登记准确候选，可用同一命令续作")
+    prepare.add_argument("--chat-review", action="store_true", help="交对话整稿审核")
     create = commands.add_parser("create-case", help="Create one explicitly authorized review case.")
     create.add_argument("--name", required=True)
     create.add_argument("--operation-id", required=True)
@@ -225,10 +229,35 @@ def run(args: argparse.Namespace) -> dict:
             if args.change_id and not args.adopt_script_id:
                 raise ValueError("--change-id requires --adopt-script-id.")
         if args.command == "prepare":
-            package, source = _source(project, args.narrative)
+            chat = getattr(args, "chat_review", False)
+            ident = getattr(args, "artifact_id", None)
+            package, source = _source(project, args.narrative, chat=chat)
             output = _path(project, args.output)
-            export_markdown(package, output, subtitle_review_ids=source["awaiting_subtitle_approval_ids"])
-            return {"source_json": source, "markdown": _binding(project, output, output.read_bytes())}
+            ids = source["awaiting_subtitle_approval_ids"]
+            if ident:
+                require_production(project)
+                manifest = load_manifest(project)
+                entry = next((r for r in manifest["artifacts"] if r["artifact_id"] == ident), None)
+                fields = dict(artifact_id=ident, logical_id="narrative.package", type="narrative.package",
+                              revision=source["revision"], path_or_url=source["path"], checksum=source["sha256"])
+                if entry and (entry["status"] != "candidate" or any(
+                        entry.get(k) != v for k, v in fields.items() if k != "checksum")
+                        or entry.get("checksum") not in (None, source["sha256"])):
+                    raise ValueError("候选 ID 已用于其他版本")
+            if ident and output.exists():
+                _, reading = _projection(project, package, output, subtitle_review_ids=ids)
+            else:
+                export_markdown(package, output, subtitle_review_ids=ids)
+                reading = _binding(project, output, output.read_bytes())
+            if ident:
+                if chat and ids:
+                    fields["review_markdown"] = reading
+                if entry is None:
+                    register_workspace_artifact(project, fields)
+                elif any(entry.get(k) != v for k, v in fields.items()):
+                    entry.update(fields)
+                    save_manifest(project, manifest)
+            return {"source_json": source, "markdown": reading}
         if args.command in {"publish", "publish-asset"}:
             require_production(project)
 

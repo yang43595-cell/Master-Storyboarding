@@ -158,6 +158,11 @@ class ChatScriptApproval:
         source = project_file(project, path)
         proof = message.get('review_markdown')
         if proof is None:
+            from .artifacts import load_manifest
+            proof = next((row.get('review_markdown') for row in load_manifest(project)['artifacts']
+                          if row['artifact_id'] == artifact_id and row.get('checksum') == sha256
+                          and row.get('revision') == revision), None)
+        if proof is None:
             return cls(project, artifact_id, str(source), revision, sha256, quote, at, reference)
         if (not isinstance(proof, dict) or not isinstance(proof.get('path'), str)
                 or not proof['path'].strip() or not isinstance(proof.get('sha256'), str)):

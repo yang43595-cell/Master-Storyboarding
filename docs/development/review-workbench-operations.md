@@ -12,7 +12,7 @@
 python scripts/review_text_cli.py prepare \
   --project '<业务项目绝对路径>' \
   --narrative '02_编导/R01_叙事包.json' \
-  --output '02_编导/R01_审核阅读稿.md'
+  --output '02_编导/R01_审核阅读稿.md' --artifact-id '<本次编导产物ID>'
 ```
 
 需要新建案例时：

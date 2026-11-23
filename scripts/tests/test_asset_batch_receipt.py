@@ -89,14 +89,14 @@ def test_wardrobe_check_uses_receipt_observer_and_exact_per_item_status(tmp_path
 
     summary = summarize_asset_batch_receipt(tmp_path, receipt, [TARGET, SECOND])
 
-    assert summary['status'] == 'blocked'
-    assert summary['complete'] is False
+    assert summary['status'] == 'ready_for_review'
+    assert summary['complete'] is True
     assert summary['items'][0]['observer'] == '/root/wardrobe'
     assert summary['items'][0]['status'] == 'ready_for_review'
     assert summary['items'][1] == {
-        'target': SECOND, 'status': 'blocked', 'candidate_id': 'C02',
+        'target': SECOND, 'status': 'ready_for_review', 'candidate_id': 'C02',
         'observer': '/root/wardrobe', 'visual_status': 'failed', 'issue': '服装外观通过，三视图构图待处理',
-        'observation_summary': 'framing: 脚部完整',
+        'observation_summary': 'framing: 脚部完整', 'path': str(tmp_path / failed['output_path']), 'sha256': failed['sha256'],
     }
 
 

@@ -143,3 +143,17 @@ def test_concurrent_identical_requests_share_one_batch(video, tmp_path):
         )]
     assert first["manifest"] == second["manifest"]
     assert sorted([first["reused"], second["reused"]]) == [False, True]
+
+
+def test_interval_batches_return_before_next_window_and_preserve_completed_window(video, tmp_path):
+    from scripts.extract_video_batches import batches
+
+    result = batches(video, tmp_path / "批次", 0, 1.5, 1, 4)
+    first = next(result)
+    directory = Path(first["directory"])
+    assert first["frames"] == 4 and first["end"] == 1 and first["audio"] is None
+    assert not (directory.parent / "batch-0002").exists()
+    second = next(result)
+    assert (second["start"], second["end"], second["frames"]) == (1, 1.5, 2)
+    assert read_json(directory / "manifest.json")["frames"] == 4
+    assert list(result) == []

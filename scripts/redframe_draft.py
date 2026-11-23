@@ -493,6 +493,40 @@ def run_new_draft_batch(project, plan, write, *, host_browser, check_layout, col
     return {**result, 'preflight': preflight, 'segment_nodes': segment_nodes, 'layout': layout, 'timings': timings}
 
 
+def save_draft_batch(ui, baseline, staged_graph, changes, ordered_hashes, protected_ids):
+    """Save staged draft edits and use one refreshed graph for cards, slots and prompts."""
+    workspace = ui.workspace
+    ui.assert_target()
+    nodes = canvas_nodes(staged_graph)
+    if set(changes) != set(ordered_hashes):
+        raise ValueError("缺少本批节点有序附件哈希")
+    for key, hashes in ordered_hashes.items():
+        _draft_data(nodes[key], key)
+        slots = changes[key].get("localReferences", nodes[key]["data"].get("localReferences", {})).get("in", [])
+        if (len(hashes) != len(slots)
+                or any(not isinstance(h, str) or not re.fullmatch(r"[0-9a-f]{64}", h) for h in hashes)):
+            raise ValueError(f"{key} 须提供每个目标槽已核对的 SHA-256")
+    protected = set(protected_ids)
+    expected = {key: nodes[key] for key in changes}
+    graph = workspace.save_draft_changes(baseline, expected, changes, protected_ids=protected,
+                                         staged_edges=staged_graph["edges"])
+    ui.page.reload(wait_until="domcontentloaded")
+    ui.assert_target()
+    desired = canvas_nodes(graph)
+    actual_graph = verify_saved(workspace, {key: desired[key] for key in changes})
+    actual = canvas_nodes(actual_graph)
+    for key in protected:
+        if actual.get(key) != desired[key]:
+            raise ValueError(f"刷新后素材卡缺失或已变化：{key}")
+    if actual_graph["edges"] != graph["edges"]:
+        raise ValueError("刷新后连线发生变化")
+    slots = workspace.digest_slots([actual[key] for key in changes])
+    for key, hashes in ordered_hashes.items():
+        if [item.get("sha256") for item in slots[key]] != hashes:
+            raise ValueError(f"{key} 刷新后的附件字节或顺序不符")
+    return actual_graph, slots
+
+
 def before_write_readback(graph, baseline, targets, models):
     """Reproject the unchanged native nodes, binding already verified exact slot IDs."""
     prior = rows_by_id(baseline['drafts'])

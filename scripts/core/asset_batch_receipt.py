@@ -111,7 +111,9 @@ def _reviewed_row(project, target, row, batch_observer):
     checked = {'target': target, 'candidate_id': candidate, 'observer': observer, 'visual_status': state,
                'observation_summary': _observation_summary(observations)}
     if state == 'failed':
-        return {**checked, 'status': 'blocked', 'issue': _compact_issue(problem)}
+        checked['issue'] = _compact_issue(problem or checked['observation_summary'])
+        if not _field(row, 'path', 'output_path') or checked['issue'] == '实看未通过，见原回执':
+            return {**checked, 'status': 'blocked'}
 
     path, fingerprint = _field(row, 'path', 'output_path'), row.get('sha256')
     if (not isinstance(path, str) or not path.strip() or not isinstance(fingerprint, str)
@@ -135,7 +137,7 @@ def _target_result(project, target, rows, batch_observer):
         return matches[0]
     if any(row['status'] == 'pending' for row in matches):
         return _pending(target, '同一目标的多份候选仍需核对')
-    passed = [row for row in matches if row['status'] == 'ready_for_review']
+    passed = [row for row in matches if row['status'] == 'ready_for_review' and row.get('visual_status') == 'passed']
     if len(passed) == 1:
         return passed[0]
     if passed:

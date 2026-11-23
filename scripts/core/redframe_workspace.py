@@ -373,6 +373,40 @@ class RedframeWorkspace:
             attempts = [_attempt(item) for item in (result.get('before_write'), result) if item is not None]
             raise RedframeWorkspaceError('canvas save', attempts)
 
+    def save_draft_changes(self, baseline, expected_nodes, updates, *, protected_ids, staged_edges):
+        """Apply verified draft-field edits to the latest graph; refuse stale targets/cards."""
+        if not updates or set(updates) != set(expected_nodes):
+            raise ValueError("须给出本批准确的写前节点与修改字段")
+        protected = set(protected_ids)
+        if protected.intersection(updates):
+            raise ValueError("素材保护范围与草稿修改范围冲突")
+        original = {node["id"]: node for node in baseline["nodes"]}
+        current = self.read_canvas()
+        nodes = {node["id"]: node for node in current["nodes"]}
+        if len(nodes) != len(current["nodes"]) or len(original) != len(baseline["nodes"]):
+            raise ValueError("画布节点身份重复")
+        def affected_edges(edges):
+            return {edge["id"]: edge for edge in edges
+                    if edge["source"] in updates or edge["target"] in updates}
+        if affected_edges(current["edges"]) != affected_edges(staged_edges):
+            raise ValueError("目标草稿连线已变化")
+        for ident in protected:
+            if ident not in original or original[ident] != nodes.get(ident):
+                raise ValueError(f"原素材卡缺失或已变化：{ident}")
+        for ident, fields in updates.items():
+            if (ident not in nodes or nodes[ident] != expected_nodes[ident]
+                    or nodes[ident]["type"] != "remote-videoGenerationNode"):
+                raise ValueError(f"写前草稿已变化：{ident}")
+            if not fields or set(fields) - {"prompt", "promptModel", "localReferences", "model",
+                                            "resolution", "ratio", "duration", "label"}:
+                raise ValueError("不支持的草稿修改字段")
+        edited = [{**node, "data": {**node["data"], **updates[node["id"]]}}
+                  if node["id"] in updates else node for node in current["nodes"]]
+        desired = {**current, "nodes": edited}
+        if desired != current:
+            self.write_canvas(current, desired)
+        return desired
+
     def digest_image_outputs(self, nodes):
         """Read exact source-card image bytes through the existing bounded transport."""
         records, slots, seen = [], [], set()

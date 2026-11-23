@@ -104,6 +104,7 @@ TASK_HANDOFF_SKILLS = {"creative-director", "storyboard-planner"}
 _HANDOFF_DEFAULT_OBJECTIVE = "按目标 Skill 完成本轮已授权工作"
 _ROUTED_HANDOFF_SCOPE = ("action", "artifact_ids", "asset_ids", "output_ids", "shot_ids", "segment_ids")
 _ROUTED_SKILLS = {
+    "depth-guided-recreation": ("recreation",),
     "creative-director": ("creative",),
     "storyboard-planner": ("director",),
     "asset-image-assistant": ("assets",),
@@ -985,7 +986,7 @@ def _check_preparation_route(project, skill, request, routed, *, repair=False, a
             raise StageContextError("程序交接输入已改版；重新运行 handoff")
         if (requested_shots is not None and not set(requested_shots).issubset(routed.get("shot_ids", []))
                 or any(not set(routed.get(field, [])).issubset(route.get(field, []))
-                       for field in ("asset_ids", "output_ids", "shot_ids")
+                       for field in ("asset_ids", "output_ids", "shot_ids", "segment_ids")
                        if field != "shot_ids" or requested_shots is None)):
             raise StageContextError("程序交接范围已变化；重新运行 handoff 核对就绪范围")
     if action == "assets" and (targets := request.get("image_targets")):
@@ -1521,9 +1522,10 @@ def _local_standard_documents(skill_dir: Path, request: dict[str, Any] | None = 
     local = [skill_dir / "SKILL.md", *sorted((skill_dir / "modules").glob("*.md")),
              *sorted((skill_dir / "references").glob("*.md"))]
     local = [_local_knowledge_path(path) for path in local if path.resolve() not in excluded]
-    if (skill_dir.name in {"storyboard-planner", "storyboard-director"}
-            and production_workflow(request.get("kickoff")) == RECREATION_WORKFLOW):
-        local.extend(_local_knowledge_path(ROOT / path) for path in (RECREATION_ENTRY, RECREATION_METHOD))
+    recreation_docs = [ROOT / RECREATION_ENTRY, ROOT / RECREATION_METHOD]
+    if skill_dir.name in {"storyboard-planner", "storyboard-director"}:
+        if production_workflow(request.get("kickoff")) == RECREATION_WORKFLOW:
+            local.extend(_local_knowledge_path(path) for path in recreation_docs)
     extra = request.get("local_references", [])
     if not isinstance(extra, list):
         raise StageContextError("local_references 必须是本轮实际采用的仓库相对规范路径数组。")
@@ -1544,6 +1546,9 @@ def _local_standard_documents(skill_dir: Path, request: dict[str, Any] | None = 
                 and path == (ROOT / "skills/voiceover-to-video-script/references/seedance-delivery-package.md").resolve()):
             raise StageContextError(f"本地规范是 voiceover 内部交付合同、不进其他阶段的 prepare 集：{reference}")
         local.append(path)
+    if skill_dir.name in {"storyboard-planner", "storyboard-director"}:
+        # A navigation link alone cannot select the local-rewrite branch.
+        excluded.update(path.resolve() for path in recreation_docs if path.resolve() not in local)
     if skill_dir.name == "creative-director":
         legacy = (skill_dir / "references/dialogue-legacy-workflows.md").resolve()
         candidates = (skill_dir / "references/knowledge-candidates.md").resolve()
@@ -1972,6 +1977,10 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         key: value for key, value in request.items()
         if key.startswith("source_") or key in {"sources", "inputs", "material_output_ids", "supplement_request_paths"}
     })
+    if routed and args.skill == "storyboard-planner" and routed["action"] == "director":
+        bound_paths = re.findall(r"(?m)^- 导演已绑定输入：`([^`\n]+)`$", card_text)
+        if bound_paths:
+            input_versions["source_director_paths"] = bound_paths
     if routed and routed.get("artifact_ids"):
         ids = input_versions.get("source_artifact_ids", [])
         if not isinstance(ids, list):
@@ -2170,7 +2179,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         f"- 目标：{objective}",
         *([f"- 本轮开工决定：`{project / REQUEST_PATH}` 的 `kickoff` 按本阶段适用范围纳入任务依据。"] if kickoff else []),
         *([f"- 复刻线按冻结的 `{ROOT / RECREATION_METHOD}` 执行，编导确认和本阶段采用依旧沿统一入口。"]
-          if ROOT / RECREATION_METHOD in local_documents else []),
+          if production_workflow(kickoff) == RECREATION_WORKFLOW and ROOT / RECREATION_METHOD in local_documents else []),
         *([f"- 产品参考包：`{product_pack['manifest_path']}`，用 `kickoff --project` 读取本轮用途的准确文件、职责与缺口；逐镜选用。"] if product_pack else []),
         *(["- execution_mode: candidate_test；review_status: unreviewed；production_blocked: true。仅候选文本/结构试跑，不生成、不发布、不正式采用。"] if testing else []),
         f"- 本轮唯一任务依据：`{_task_basis_path(project)}`（机器完整记录；通过 ensure-prepared --show-task-basis 读取目标、输入与冻结验收项，不整份打印后台目录）",
@@ -2289,7 +2298,7 @@ def _asset_batch_delivery_lines(batch):
     return [
         "", "## 本批交回", "", _asset_batch_binding_line(batch),
         "- 本批执行者跟到准确成图落盘和实看自查，或出现需交回的真实阻塞。提示词和提交清单是中间结果。",
-        "- 完成时更新上述现有实看回执，顶层沿用本卡的 `context_id` 和 `request_sha256`。每项实看写准确的 `target`、`candidate_id`、`observer`、`visual_status: passed|failed`、`observations`；通过项另写 `path` 和 `sha256`。",
+        "- 完成时更新上述现有实看回执，顶层沿用本卡的 `context_id` 和 `request_sha256`。每项实看写准确的 `target`、`candidate_id`、`observer`、`visual_status: passed|failed`、`observations`；所有已有成图均写 `purpose`、`path` 和 `sha256`，有偏差时附 `blocking_issue`。普通对话每批完成即可运行 chat_asset_review.py show 交审。",
         "- 回执写齐后再通知协调方。完成通知只回批次、已完成目标、真实阻塞和回执路径；途中只通知可接续的新结果或需决策的阻塞。",
         "- 无成图可实看且确实需交回的阻塞，沿原回执 `items` 写准确 `target`、`observer`、`status: blocked` 和简短 `blocking_issue`。",
         "- 主对话直接制作时核对现有回执。委派批次由协调方按 `docs/rules/execution.md#等待与工具回传` 续等。超时不叠加 `read_thread`、`list_agents`、目录/日志查询或提前调用 `--receive-batch`；沿原等待渠道和游标续等；收到需核验的可接续新结果时只核受影响项。超过本轮已约定总等待期限仍无终态时，只读回查原任务一次，不重新提交。收到终态后用 `handoff --receive-batch` 验收准确回执一次，缺项交原执行者补核。",
@@ -2484,9 +2493,23 @@ def _write_handoff(args, project, target_skill, from_skill, authorization_id, *,
 
 def _write_handoff_card(args, project, target_skill, current_stage, inputs, *, testing=False,
                         asset_batch=None, routed=None):
+    director_paths = []
+    if target_skill == "storyboard-planner" and routed and routed["action"] == "director":
+        if __package__:
+            from .core.director_inputs import dispatch, sources
+        else:
+            from core.director_inputs import dispatch, sources
+        entry = next(item for item in inputs if item["logical_id"] == "narrative.package")
+        if routed.get("segment_ids"):
+            director_paths = dispatch(project, entry, routed["segment_ids"])
+        else:
+            path = _context_dir(project, "导演编导来源.json")
+            write_json(path, sources(project, entry))
+            director_paths = [str(path.relative_to(project))]
     scope_fields = (*_ROUTED_HANDOFF_SCOPE, "workflow")
     lines = [
         "# 下一阶段交接卡", "",
+        *[f"- 导演已绑定输入：`{path}`" for path in director_paths],
         f"- 来源阶段：`{current_stage}`",
         f"- 目标 Skill：`{target_skill}`",
         *([f"- 制作路线：复刻线。实读 `{ROOT / routed['workflow_entry']}`，沿本阶段现有交接和采用入口。"]

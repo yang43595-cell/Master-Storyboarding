@@ -111,6 +111,8 @@ with open_workspace(task_browser, target_url, project_id) as workspace:
 
 启用计量验证时，下一次正常红帧生产顺带[计量](../../docs/development/token-budget.md#计量)。分别记录首个新建草稿从写入开始到独立刷新核验，以及全片由批量写入开始到草稿回读完成的未缓存输入 token 和墙钟耗时。两组各保留红帧执行者的实际日志起止和完成段数，包含各自窗口内的失败与恢复，窗口重叠时不相加。《摇钱树》沿用已有复测回执作为历史证据，取数使用下一次本来就要做的项目。
 
+复刻草稿批量落稿时，可用 `scripts.redframe_draft.save_draft_batch` 收口已在原生节点准备好的更新。首次上传前完成[深度切片](../depth-guided-recreation/references/depth-video.md#红帧首轮写入前导出)。局部返修从可信回执固定原产品卡 ID 和字节依据，先核本轮基线，再上传实际变化的槽。替换长视频时先按原生身份定位并移除旧槽，再传新版，避免新旧片同时占用参考时长。上传结果不明时先回查原节点的槽位差异。传入修改前的基线、上传后的准确节点、修改字段、有序附件哈希和受保护的卡 ID。一次合并保存后共用同一刷新图核受影响节点、产品卡和连线，一次读取各目标的有序附件字节。保存冲突时先检查原节点；同一次读回返回的 graph、slots 直接用于布局与交付核对。
+
 ### 新建直传计划和回读
 
 `run_new_draft_batch` 的 `write` 和 `check_layout` 使用同一个工作区，认证源卡批次再传同次刷新取证的 `collect_linked`。入口核实际目标、准确编导和导演、已采用视频稿及各槽来源，最后返回 `frozen`、`observed` 和 `formal_readback`，按现有交付目录保存。尚未取得平台身份时，段内保留 `reference_checks` 的准确文件身份、用途和顺序，填写 `edges: []`、`source_nodes: []`，省略 `ordered_media`，`node_id` 暂用唯一的计划标识。含图片或视频参考的段在实看后列 `realistic_face_slots`（槽号从 1 开始，无写实人脸填 `[]`）。图片认证槽在对应 `canvas_binding` 填 `mode: edge`、`source_port: image`、`target_port: in`，普通槽按其计划走直传。`upload_mapping_pending_nodes` 标记仍待平台身份的节点，`face_source_card_slots` 标记按段计划走认证源卡的槽。合法无媒体段明确使用 `ordered_media: []`。

@@ -337,6 +337,13 @@ def _resolve(project, manifest, state, kickoff, *, actions=None, shot_scope=None
                        artifact_ids=[narrative_entry['artifact_id']]))
     if actions == {'creative'}:
         return steps
+    # Already adopted legacy video packages keep their original canvas handoff.
+    legacy_video = any(e['logical_id'] == VIDEO and e['status'] == 'current' for e in manifest['artifacts'])
+    if production_workflow(kickoff) == RECREATION_WORKFLOW and actions != {'assets'} and not legacy_video:
+        from .recreation_segments import segment_steps
+        if reason := _blocked_change(project, [NARRATIVE, ASSETS]):
+            return steps + [_step('recreation', 'waiting', reason)]
+        return steps + segment_steps(project, narrative, narrative_entry, kickoff=kickoff)
     file_digest = cache_file_digests(check_for_changes=True)
     include_assets = actions is None or 'assets' in actions
     if include_assets:
