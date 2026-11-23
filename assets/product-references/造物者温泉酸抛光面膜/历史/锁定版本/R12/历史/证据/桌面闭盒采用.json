@@ -1,0 +1,18 @@
+{
+  "product_id": "creator-polishing-mask-2",
+  "revision": "R07",
+  "approval_date": "2026-11-23",
+  "id": "TABLETOP-CLOSED-BOX",
+  "path": "图片/桌面实景/01_礼盒_桌面平放.png",
+  "source_candidate": "R05/候选/桌面补图/01_礼盒_桌面平放_R03_红帧5.5.png",
+  "source_receipt": "R05/候选/桌面补图/红帧5.5_桌面闭盒试图回执.json",
+  "sha256": "dca539845aecba79c888bceb47767c52af6e790d099e058397fb4b14157381b5",
+  "user_feedback": "这张可以，就用这张，这次的补图也用红帧去生成，还缺什么？",
+  "model": "Doubao Seedream 5.5",
+  "scope": "正式桌面闭盒外观和摆放参考",
+  "dimensions": [
+    2368,
+    1776
+  ],
+  "platform_watermark_visible": true
+}

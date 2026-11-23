@@ -1,0 +1,29 @@
+{
+  "user_instruction": "背景太杂了，背景只能是灰色的墙",
+  "provider": "RedFrame 创作",
+  "model": "Doubao Seedream 5.5",
+  "target": "06_礼盒关闭_手持_R03_灰墙_红帧5.5.png",
+  "state": "result_saved_pending_review",
+  "requested_ratio": "9:16",
+  "requested_size": "2K",
+  "count": 1,
+  "prompt": "﻿\n06_礼盒关闭_手持_R02_红帧5.5.png\n  手持闭盒纯灰墙局部替换R03。对输入图进行只替换背景的精确编辑。前景完全沿用输入图：手里白色闭合礼盒的长宽厚、边缘、品牌标志、中央椭圆金徽、正面小字、位置、投影、双手肤色、指甲、手势、腕部首饰、机位、透视、取景和竖版画幅全部原样保留。整张照片的前景以外所有区域，包括两只手之间的空隙，都替换为一整面干净的中性中浅灰色哑光墙。灰墙从上到下连贯，占满背景，只有非常细微自然的灰色光线变化。清除原图背景里的瓶子、置物龛、瓷砖、台面、包、镜面和任何物品，灰墙上没有缝、纹路、转角、地面或边线。真实手机照片的自然光。尤其不要缩小、放大、重绘或挪动手和礼盒，按原图像素位置锁定前景。",
+  "native_mentions": [
+    "06_礼盒关闭_手持_R02_红帧5.5.png"
+  ],
+  "source": "06_礼盒关闭_手持_R02_红帧5.5.png",
+  "source_sha256": "80231217f86deba64687696055759c5e56d44ccd4fda54e396802e34658dc71e",
+  "page_url": "https://redframe-ai.xmpaohong.com:28888/#/creation?conversationId=a25f76ff-6938-40b6-9148-0ec874c6cce8",
+  "submitted_at": "2026-11-22T19:16:50.615514+00:00",
+  "http_status": 200,
+  "result": {
+    "file": "06_礼盒关闭_手持_R03_灰墙_红帧5.5.png",
+    "dimensions": [
+      1584,
+      2816
+    ],
+    "sha256": "e1624e073bdacc17c0fc1e1a65c9ef0246564f146e695253cde78d59399fe3c6",
+    "platform_watermark_visible": true,
+    "review_note": "背景替换为一整面素灰墙并保留自然投影，画面背景无桌面、搁架及陈设。与输入图对照，礼盒与双手的机位、相对大小和入画位置一致；盒子左前角仍略出画，平台水印及源画面数字标记可见。"
+  }
+}

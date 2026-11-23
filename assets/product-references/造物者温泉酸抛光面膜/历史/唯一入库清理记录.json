@@ -1,0 +1,1609 @@
+{
+  "date": "2026-11-23",
+  "approval": "然后把他改名“造物者温泉酸抛光面膜”，其他的都可以删掉了，包括项目中的其他流落在外的参考，如有重复，全部删掉，以后这个文件夹为唯一入库",
+  "canonical_root": "/Users/liuyang/.codex/worktrees/bcc1/Master-Storyboarding/assets/product-references/造物者温泉酸抛光面膜",
+  "trash_folder": "造物者温泉酸抛光面膜_整合前_20261123_033206",
+  "previous_directory": "/Users/liuyang/.codex/worktrees/bcc1/Master-Storyboarding/assets/product-references/creator-polishing-mask-2",
+  "previous_revisions": [
+    "R04",
+    "R05",
+    "R06",
+    "R07",
+    "R08",
+    "R09",
+    "R10",
+    "R11",
+    "R12"
+  ],
+  "retained_locks": [
+    "R04",
+    "R12"
+  ],
+  "project_reference_paths": [
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/38efad11d709a73fd313e532e738c78f37feb50e2677a7d385ffbe4eb26fefd3/11_鼻周轻刷.mp4",
+      "sha256": "38efad11d709a73fd313e532e738c78f37feb50e2677a7d385ffbe4eb26fefd3",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/38efad11d709a73fd313e532e738c78f37feb50e2677a7d385ffbe4eb26fefd3/11_鼻周轻刷.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/沉浸式/11_鼻周轻刷.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/当前资产需求表.md",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/产品使用对接.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/3d378cc48f06ef3c235bb1e0a4866170331668c4a0a9347400d1620d9e1bfe87/造物者温泉酸-A与B双剂_桌面平放.png",
+      "sha256": "3d378cc48f06ef3c235bb1e0a4866170331668c4a0a9347400d1620d9e1bfe87",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/3d378cc48f06ef3c235bb1e0a4866170331668c4a0a9347400d1620d9e1bfe87/造物者温泉酸-A与B双剂_桌面平放.png",
+      "result": "同一原件的历史路径",
+      "canonical": "图片/桌面实景/造物者温泉酸-A与B双剂_桌面平放.png",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/05_分镜/R02_WORK-BOX-OPEN_视觉补充请求.json",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/05_分镜/R03_WORK-BOX-OPEN_视觉补充请求.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/cada2ea9093aff8ba3f884d9ba7c89c4f04f72b50aaccb346274846cf2ccb807/造物者温泉酸-A与B双剂外观.png",
+      "sha256": "cada2ea9093aff8ba3f884d9ba7c89c4f04f72b50aaccb346274846cf2ccb807",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/cada2ea9093aff8ba3f884d9ba7c89c4f04f72b50aaccb346274846cf2ccb807/造物者温泉酸-A与B双剂外观.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-A与B双剂外观.png",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/当前资产需求表.md",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/产品使用对接.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/a7ca41b572c4e525b0370dea556bb59efd0ae244f8969157d78fc743e860e2e4/06B_完全起泡后提刷.mp4",
+      "sha256": "a7ca41b572c4e525b0370dea556bb59efd0ae244f8969157d78fc743e860e2e4",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/a7ca41b572c4e525b0370dea556bb59efd0ae244f8969157d78fc743e860e2e4/06B_完全起泡后提刷.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/产品展示/06B_完全起泡后提刷.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/05_分镜/候选/窗端旧碗内移_R01/batch_receipt.json",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/05_分镜/候选/窗端披肩后态_R01/batch_receipt.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/00ad6324e477d1f390560bfb46e3e4caad9643738f52e51b44ced10ea8e69a86/01_开盒.mp4",
+      "sha256": "00ad6324e477d1f390560bfb46e3e4caad9643738f52e51b44ced10ea8e69a86",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/00ad6324e477d1f390560bfb46e3e4caad9643738f52e51b44ced10ea8e69a86/01_开盒.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/产品展示/01_开盒.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/05_分镜/R02_WORK-BOX-OPEN_视觉补充请求.json",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/05_分镜/R03_WORK-BOX-OPEN_视觉补充请求.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/6074e2f1ed5113cf8cbbb6755d545330fe9afa9ed4f5b3551dea1e000763b4ac/造物者温泉酸-透明面膜碗.png",
+      "sha256": "6074e2f1ed5113cf8cbbb6755d545330fe9afa9ed4f5b3551dea1e000763b4ac",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/6074e2f1ed5113cf8cbbb6755d545330fe9afa9ed4f5b3551dea1e000763b4ac/造物者温泉酸-透明面膜碗.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-透明面膜碗.png",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/当前资产需求表.md",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/产品使用对接.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/8f10beffb61565f76fbf3d219d62bb402f9dbaa031838aec8d96832ebb4dbb4b/08_另一颊开始刷涂.mp4",
+      "sha256": "8f10beffb61565f76fbf3d219d62bb402f9dbaa031838aec8d96832ebb4dbb4b",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/8f10beffb61565f76fbf3d219d62bb402f9dbaa031838aec8d96832ebb4dbb4b/08_另一颊开始刷涂.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/沉浸式/08_另一颊开始刷涂.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/当前资产需求表.md",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/产品使用对接.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/d6bab38d982d0af2bc06fae05d316d1a8932e221c09c7f65dc19ca39ca9e183e/03_透明面膜碗_手持.png",
+      "sha256": "d6bab38d982d0af2bc06fae05d316d1a8932e221c09c7f65dc19ca39ca9e183e",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/d6bab38d982d0af2bc06fae05d316d1a8932e221c09c7f65dc19ca39ca9e183e/03_透明面膜碗_手持.png",
+      "result": "同一原件的历史路径",
+      "canonical": "图片/手持效果/03_透明面膜碗_手持.png",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/05_分镜/候选/窗端女二卧靠原碗_R01/batch_receipt.json",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/6fa5603ca913153879c60be695f7b7d40361e04b8279b33f2f3a62de4cfcf2f9/09_额头铺开.mp4",
+      "sha256": "6fa5603ca913153879c60be695f7b7d40361e04b8279b33f2f3a62de4cfcf2f9",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/6fa5603ca913153879c60be695f7b7d40361e04b8279b33f2f3a62de4cfcf2f9/09_额头铺开.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/沉浸式/09_额头铺开.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/当前资产需求表.md",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/产品使用对接.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/818cea984d849ae88a87a222d5cdc3406d074da64f2c8e35cebacc5ba48c57a0/03_挤白管.mp4",
+      "sha256": "818cea984d849ae88a87a222d5cdc3406d074da64f2c8e35cebacc5ba48c57a0",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/818cea984d849ae88a87a222d5cdc3406d074da64f2c8e35cebacc5ba48c57a0/03_挤白管.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/产品展示/03_挤白管.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/当前资产需求表.md",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/产品使用对接.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/82da3699b49203579edc5540f8d0e393584b242ca64c1d8770c533915147e658/02_掰白管.mp4",
+      "sha256": "82da3699b49203579edc5540f8d0e393584b242ca64c1d8770c533915147e658",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/82da3699b49203579edc5540f8d0e393584b242ca64c1d8770c533915147e658/02_掰白管.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/产品展示/02_掰白管.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/当前资产需求表.md",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/产品使用对接.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/4526a1f39b8515b524750f340ecea05bd22cc8aaf4c01d94fd469228b3594e4e/12_补涂并展示全脸薄膜.mp4",
+      "sha256": "4526a1f39b8515b524750f340ecea05bd22cc8aaf4c01d94fd469228b3594e4e",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/4526a1f39b8515b524750f340ecea05bd22cc8aaf4c01d94fd469228b3594e4e/12_补涂并展示全脸薄膜.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/沉浸式/12_补涂并展示全脸薄膜.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/05_分镜/R02_F1-FILM-LOOK_视觉补充请求.json",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/05_分镜/R03_F1-FILM-LOOK_视觉补充请求.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/f7708a9daa784c9c7d8773871ea35cbfae3c3e1cf83f63cf14e03fabaecdff44/林奕希_全脸膜态.png",
+      "sha256": "f7708a9daa784c9c7d8773871ea35cbfae3c3e1cf83f63cf14e03fabaecdff44",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/f7708a9daa784c9c7d8773871ea35cbfae3c3e1cf83f63cf14e03fabaecdff44/林奕希_全脸膜态.png",
+      "result": "同一原件的历史路径",
+      "canonical": "图片/上脸膜态/林奕希_全脸膜态.png",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/05_分镜/R02_F2-FILM-LOOK_视觉补充请求.json",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/05_分镜/R03_F2-FILM-LOOK_视觉补充请求.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/c733ce002e72d9e2a011281bf50a8fad8a2d25f70c98f512ae00bccbd1b58479/05_挤金管.mp4",
+      "sha256": "c733ce002e72d9e2a011281bf50a8fad8a2d25f70c98f512ae00bccbd1b58479",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/c733ce002e72d9e2a011281bf50a8fad8a2d25f70c98f512ae00bccbd1b58479/05_挤金管.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/产品展示/05_挤金管.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/当前资产需求表.md",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/产品使用对接.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/19d695108da199db32d49d0fa2645f9134e3c71f1480b5c3a06b1ef75a981c95/10_下巴铺开.mp4",
+      "sha256": "19d695108da199db32d49d0fa2645f9134e3c71f1480b5c3a06b1ef75a981c95",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/19d695108da199db32d49d0fa2645f9134e3c71f1480b5c3a06b1ef75a981c95/10_下巴铺开.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/沉浸式/10_下巴铺开.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/当前资产需求表.md",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/产品使用对接.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/fbc347d4ce569c267d142d84bbe8576fa205db8c55bb713aa912eb1fc6e3a429/造物者温泉酸-毛刷_白底电商.png",
+      "sha256": "fbc347d4ce569c267d142d84bbe8576fa205db8c55bb713aa912eb1fc6e3a429",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/fbc347d4ce569c267d142d84bbe8576fa205db8c55bb713aa912eb1fc6e3a429/造物者温泉酸-毛刷_白底电商.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-毛刷_白底电商.png",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/当前资产需求表.md",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/产品使用对接.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/90a90ea184e2d53bac02ffbcd6fd5524179b4432a87704d1a3fa65cd2b77160b/02_AB双剂_手持.png",
+      "sha256": "90a90ea184e2d53bac02ffbcd6fd5524179b4432a87704d1a3fa65cd2b77160b",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/90a90ea184e2d53bac02ffbcd6fd5524179b4432a87704d1a3fa65cd2b77160b/02_AB双剂_手持.png",
+      "result": "同一原件的历史路径",
+      "canonical": "图片/手持效果/02_AB双剂_手持.png",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/当前资产需求表.md",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/产品使用对接.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/de00ace2eb6fb6ecc309d74bbb32c80b98f8779eb553a1e419897db548abbb55/04_毛刷_手持.png",
+      "sha256": "de00ace2eb6fb6ecc309d74bbb32c80b98f8779eb553a1e419897db548abbb55",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/de00ace2eb6fb6ecc309d74bbb32c80b98f8779eb553a1e419897db548abbb55/04_毛刷_手持.png",
+      "result": "同一原件的历史路径",
+      "canonical": "图片/手持效果/04_毛刷_手持.png",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/当前资产需求表.md",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/产品使用对接.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/29813b30c032d501a1f0ee5c6c3690c5b2bb3c846d6fa0e30e090e82ce9b4049/07_净脸第一颊起手.mp4",
+      "sha256": "29813b30c032d501a1f0ee5c6c3690c5b2bb3c846d6fa0e30e090e82ce9b4049",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/29813b30c032d501a1f0ee5c6c3690c5b2bb3c846d6fa0e30e090e82ce9b4049/07_净脸第一颊起手.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/沉浸式/07_净脸第一颊起手.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/05_分镜/R02_F1-FILM-LOOK_视觉补充请求.json",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/05_分镜/R03_F1-FILM-LOOK_视觉补充请求.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/17bbf19b9b5fe6873e6289ff550b7e1389d43258131f8b3218485b4410ab654c/13_纸巾从鼻侧向外擦过一侧脸颊.mp4",
+      "sha256": "17bbf19b9b5fe6873e6289ff550b7e1389d43258131f8b3218485b4410ab654c",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/17bbf19b9b5fe6873e6289ff550b7e1389d43258131f8b3218485b4410ab654c/13_纸巾从鼻侧向外擦过一侧脸颊.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/沉浸式/13_纸巾从鼻侧向外擦过一侧脸颊.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/05_分镜/R02_F1-FILM-LOOK_视觉补充请求.json",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/05_分镜/R03_F1-FILM-LOOK_视觉补充请求.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/9968e61750a90dc40c06ca9fef547d800de75acc830a6174888ee952d6170ae2/04_掰金管.mp4",
+      "sha256": "9968e61750a90dc40c06ca9fef547d800de75acc830a6174888ee952d6170ae2",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/9968e61750a90dc40c06ca9fef547d800de75acc830a6174888ee952d6170ae2/04_掰金管.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/产品展示/04_掰金管.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/当前资产需求表.md",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/产品使用对接.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/983377199097a463b6eab3a3cf46847150838ac0e8c938db3358288c0b8d0a44/06A_起手搅拌两色混合.mp4",
+      "sha256": "983377199097a463b6eab3a3cf46847150838ac0e8c938db3358288c0b8d0a44",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/983377199097a463b6eab3a3cf46847150838ac0e8c938db3358288c0b8d0a44/06A_起手搅拌两色混合.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/产品展示/06A_起手搅拌两色混合.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/当前资产需求表.md",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/产品使用对接.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/5068c644d0e9adb0e67e689767988491276f4031602f23d561048202bc89713b/造物者温泉酸-礼盒外观.png",
+      "sha256": "5068c644d0e9adb0e67e689767988491276f4031602f23d561048202bc89713b",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/5068c644d0e9adb0e67e689767988491276f4031602f23d561048202bc89713b/造物者温泉酸-礼盒外观.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-礼盒外观.png",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/当前资产需求表.md",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/产品使用对接.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/f06dc36163e5d16e82a1d6730f3ac585561e8ae2817d75a33584a3545264c5d4/01_礼盒_手持.png",
+      "sha256": "f06dc36163e5d16e82a1d6730f3ac585561e8ae2817d75a33584a3545264c5d4",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/项目产品参考/f06dc36163e5d16e82a1d6730f3ac585561e8ae2817d75a33584a3545264c5d4/01_礼盒_手持.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/图片/手持效果/01_礼盒_手持.png",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/当前资产需求表.md",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/产品使用对接.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/知识库参考/80a8633b642540af/PROD-000007_造物者温泉酸-A与B双剂外观_单图_v001.png",
+      "sha256": "cada2ea9093aff8ba3f884d9ba7c89c4f04f72b50aaccb346274846cf2ccb807",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/知识库参考/80a8633b642540af/PROD-000007_造物者温泉酸-A与B双剂外观_单图_v001.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-A与B双剂外观.png",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/母版/R04_9d996ba66f4d4ca7/用户确认记录.json",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/00_项目管理/资产工作台/asset-vault/资产库/资产索引.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/知识库参考/3c0bede1dcda441f/PROD-000006_造物者温泉酸-礼盒外观_单图_v001.png",
+      "sha256": "5068c644d0e9adb0e67e689767988491276f4031602f23d561048202bc89713b",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/知识库参考/3c0bede1dcda441f/PROD-000006_造物者温泉酸-礼盒外观_单图_v001.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-礼盒外观.png",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/母版/R04_9d996ba66f4d4ca7/用户确认记录.json",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/00_项目管理/资产工作台/asset-vault/资产库/资产索引.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/知识库参考/0e4b76aecb4147cc/PROD-000008_造物者温泉酸-透明面膜碗_单图_v001.png",
+      "sha256": "6074e2f1ed5113cf8cbbb6755d545330fe9afa9ed4f5b3551dea1e000763b4ac",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/知识库参考/0e4b76aecb4147cc/PROD-000008_造物者温泉酸-透明面膜碗_单图_v001.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-透明面膜碗.png",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/母版/R04_9d996ba66f4d4ca7/用户确认记录.json",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/00_项目管理/资产工作台/asset-vault/资产库/资产索引.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/知识库参考/f54e1900052642dc/PROD-000009_造物者温泉酸-毛刷_白底电商_单图_v001.png",
+      "sha256": "fbc347d4ce569c267d142d84bbe8576fa205db8c55bb713aa912eb1fc6e3a429",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/知识库参考/f54e1900052642dc/PROD-000009_造物者温泉酸-毛刷_白底电商_单图_v001.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-毛刷_白底电商.png",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/母版/R04_9d996ba66f4d4ca7/用户确认记录.json",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/00_项目管理/资产工作台/asset-vault/资产库/资产索引.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/00_项目管理/资产工作台/asset-vault/资产库/产品/PROD-000008_造物者温泉酸-透明面膜碗/PROD-000008_造物者温泉酸-透明面膜碗_单图_v001.png",
+      "sha256": "6074e2f1ed5113cf8cbbb6755d545330fe9afa9ed4f5b3551dea1e000763b4ac",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/00_项目管理/资产工作台/asset-vault/资产库/产品/PROD-000008_造物者温泉酸-透明面膜碗/PROD-000008_造物者温泉酸-透明面膜碗_单图_v001.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-透明面膜碗.png",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/母版/R04_9d996ba66f4d4ca7/用户确认记录.json",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/00_项目管理/资产工作台/asset-vault/资产库/资产索引.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/00_项目管理/资产工作台/asset-vault/资产库/产品/PROD-000009_造物者温泉酸-毛刷_白底电商/PROD-000009_造物者温泉酸-毛刷_白底电商_单图_v001.png",
+      "sha256": "fbc347d4ce569c267d142d84bbe8576fa205db8c55bb713aa912eb1fc6e3a429",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/00_项目管理/资产工作台/asset-vault/资产库/产品/PROD-000009_造物者温泉酸-毛刷_白底电商/PROD-000009_造物者温泉酸-毛刷_白底电商_单图_v001.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-毛刷_白底电商.png",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/母版/R04_9d996ba66f4d4ca7/用户确认记录.json",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/00_项目管理/资产工作台/asset-vault/资产库/资产索引.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/00_项目管理/资产工作台/asset-vault/资产库/产品/PROD-000006_造物者温泉酸-礼盒外观/PROD-000006_造物者温泉酸-礼盒外观_单图_v001.png",
+      "sha256": "5068c644d0e9adb0e67e689767988491276f4031602f23d561048202bc89713b",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/00_项目管理/资产工作台/asset-vault/资产库/产品/PROD-000006_造物者温泉酸-礼盒外观/PROD-000006_造物者温泉酸-礼盒外观_单图_v001.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-礼盒外观.png",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/母版/R04_9d996ba66f4d4ca7/用户确认记录.json",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/00_项目管理/资产工作台/asset-vault/资产库/资产索引.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/00_项目管理/资产工作台/asset-vault/资产库/产品/PROD-000007_造物者温泉酸-A与B双剂外观/PROD-000007_造物者温泉酸-A与B双剂外观_单图_v001.png",
+      "sha256": "cada2ea9093aff8ba3f884d9ba7c89c4f04f72b50aaccb346274846cf2ccb807",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/老板娘AI酸_空白对话实测_20261122/00_项目管理/资产工作台/asset-vault/资产库/产品/PROD-000007_造物者温泉酸-A与B双剂外观/PROD-000007_造物者温泉酸-A与B双剂外观_单图_v001.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-A与B双剂外观.png",
+      "reference_examples": [
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/04_资产/母版/R04_9d996ba66f4d4ca7/用户确认记录.json",
+        "/Users/liuyang/Desktop/老板娘AI酸_空白对话实测_20261122/00_项目管理/资产工作台/asset-vault/资产库/资产索引.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/熬夜急救-温泉酸面膜版/04_资产/状态图·林晓-敷膜-效果参考_R02.png",
+      "sha256": "f7708a9daa784c9c7d8773871ea35cbfae3c3e1cf83f63cf14e03fabaecdff44",
+      "scope": "项目参考",
+      "trash_path": "原位置/Desktop/熬夜急救-温泉酸面膜版/04_资产/状态图·林晓-敷膜-效果参考_R02.png",
+      "result": "移入废纸篓",
+      "canonical": null
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/爱花钱的老婆_导演候选_20261105/01_原始资料/产品真实参考_R01/product-references/造物者温泉酸-透明面膜碗.png",
+      "sha256": "6074e2f1ed5113cf8cbbb6755d545330fe9afa9ed4f5b3551dea1e000763b4ac",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/桌面迁入_20261109/爱花钱的老婆_导演候选_20261105/01_原始资料/产品真实参考_R01/product-references/造物者温泉酸-透明面膜碗.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-透明面膜碗.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/爱花钱的老婆_导演候选_20261105/06_视频提示词/R07_视频提示词候选.json",
+        "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/爱花钱的老婆_导演候选_20261105/06_视频提示词/R06_视频提示词候选.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/爱花钱的老婆_导演候选_20261105/01_原始资料/产品真实参考_R01/product-references/造物者温泉酸-A与B双剂外观.png",
+      "sha256": "cada2ea9093aff8ba3f884d9ba7c89c4f04f72b50aaccb346274846cf2ccb807",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/桌面迁入_20261109/爱花钱的老婆_导演候选_20261105/01_原始资料/产品真实参考_R01/product-references/造物者温泉酸-A与B双剂外观.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-A与B双剂外观.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/爱花钱的老婆_导演候选_20261105/06_视频提示词/R07_视频提示词候选.json",
+        "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/爱花钱的老婆_导演候选_20261105/06_视频提示词/R06_视频提示词候选.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/爱花钱的老婆_导演候选_20261105/01_原始资料/产品真实参考_R01/product-references/造物者温泉酸-礼盒外观.png",
+      "sha256": "5068c644d0e9adb0e67e689767988491276f4031602f23d561048202bc89713b",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/桌面迁入_20261109/爱花钱的老婆_导演候选_20261105/01_原始资料/产品真实参考_R01/product-references/造物者温泉酸-礼盒外观.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-礼盒外观.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/爱花钱的老婆_导演候选_20261105/00_项目管理/编导R04局部请求.json",
+        "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/爱花钱的老婆_导演候选_20261105/00_项目管理/执行上下文/批次/wife-narrative-r04/task_basis.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/07_画布交付/上传素材/M018__RAW-造物者温泉酸-透明面膜碗.png",
+      "sha256": "6074e2f1ed5113cf8cbbb6755d545330fe9afa9ed4f5b3551dea1e000763b4ac",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/07_画布交付/上传素材/M018__RAW-造物者温泉酸-透明面膜碗.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-透明面膜碗.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/05_分镜/正式采用_R09/VS-CARE-MASK-WAIT-R02_用途核对.json",
+        "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/05_分镜/正式采用_R08/VS-CARE-MASK-WAIT-R01_用途核对.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/07_画布交付/上传素材/M005__RAW-CLOSED-BOX.png",
+      "sha256": "5068c644d0e9adb0e67e689767988491276f4031602f23d561048202bc89713b",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/07_画布交付/上传素材/M005__RAW-CLOSED-BOX.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-礼盒外观.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/05_分镜/正式采用_R09/VS-AUNT-GIFT-ARRIVAL-R02_用途核对.json",
+        "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/05_分镜/正式采用_R09/VS-LIVING-5-LATE-R05_用途核对.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/07_画布交付/上传素材/M017__RAW-造物者温泉酸-A与B双剂外观.png",
+      "sha256": "cada2ea9093aff8ba3f884d9ba7c89c4f04f72b50aaccb346274846cf2ccb807",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/07_画布交付/上传素材/M017__RAW-造物者温泉酸-A与B双剂外观.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-A与B双剂外观.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/05_分镜/候选/连续性护理与回场_R01/VS-CARE-IMMUTABLE-BASE_R01_制作回执.json",
+        "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/07_画布交付/本轮交付记录.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/07_画布交付/R09_冻结上传输入/上传素材/M027__source.png",
+      "sha256": "cada2ea9093aff8ba3f884d9ba7c89c4f04f72b50aaccb346274846cf2ccb807",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/07_画布交付/R09_冻结上传输入/上传素材/M027__source.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-A与B双剂外观.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/07_画布交付/R09_冻结上传输入/本轮画布输入.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/07_画布交付/R09_冻结上传输入/上传素材/M005__source.png",
+      "sha256": "5068c644d0e9adb0e67e689767988491276f4031602f23d561048202bc89713b",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/07_画布交付/R09_冻结上传输入/上传素材/M005__source.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-礼盒外观.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/07_画布交付/R09_冻结上传输入/本轮画布输入.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/07_画布交付/R09_冻结上传输入/上传素材/M028__source.png",
+      "sha256": "6074e2f1ed5113cf8cbbb6755d545330fe9afa9ed4f5b3551dea1e000763b4ac",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/07_画布交付/R09_冻结上传输入/上传素材/M028__source.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-透明面膜碗.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/07_画布交付/R09_冻结上传输入/本轮画布输入.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/01_原始资料/产品参考/造物者温泉酸-A与B双剂外观.png",
+      "sha256": "cada2ea9093aff8ba3f884d9ba7c89c4f04f72b50aaccb346274846cf2ccb807",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/01_原始资料/产品参考/造物者温泉酸-A与B双剂外观.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-A与B双剂外观.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/06_视频提示词/R01_红帧Seedance2.5_视频提示词.json",
+        "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/06_视频提示词/R08_红帧SE2.5_480p_连续性返修候选.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/01_原始资料/产品参考/造物者温泉酸-礼盒外观.png",
+      "sha256": "5068c644d0e9adb0e67e689767988491276f4031602f23d561048202bc89713b",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/01_原始资料/产品参考/造物者温泉酸-礼盒外观.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-礼盒外观.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/06_视频提示词/R01_红帧Seedance2.5_视频提示词.json",
+        "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/06_视频提示词/R08_红帧SE2.5_480p_连续性返修候选.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/01_原始资料/产品参考/本轮补查/造物者温泉酸-透明面膜碗.png",
+      "sha256": "6074e2f1ed5113cf8cbbb6755d545330fe9afa9ed4f5b3551dea1e000763b4ac",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/01_原始资料/产品参考/本轮补查/造物者温泉酸-透明面膜碗.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-透明面膜碗.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/06_视频提示词/R01_红帧Seedance2.5_视频提示词.json",
+        "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/财不外露_造物者产品改编_20261105/06_视频提示词/R08_红帧SE2.5_480p_连续性返修候选.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/案例10_融合修订_20261105/99_历史与废弃/案例10_原片盲测_20261105/01_原始资料/product-manual-温泉酸.pdf",
+      "sha256": "b7892491b61051187fa5abbea4a46d6cd01539bd463eb5473eeae5723b775b3d",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/桌面迁入_20261109/案例10_融合修订_20261105/99_历史与废弃/案例10_原片盲测_20261105/01_原始资料/product-manual-温泉酸.pdf",
+      "result": "同一原件的历史路径",
+      "canonical": "使用参考/温泉酸产品手册.pdf",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/案例10_融合修订_20261105/99_历史与废弃/案例10_原片盲测_20261105/00_项目管理/盲测与旧稿对比.json",
+        "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/案例10_融合修订_20261105/99_历史与废弃/案例10_原片盲测_20261105/00_项目管理/编导请求.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/案例10_融合修订_20261105/99_历史与废弃/案例10_资产核查_20261105/原包文件/07_产品原始资料_仅供核对/product-manual-温泉酸.pdf",
+      "sha256": "b7892491b61051187fa5abbea4a46d6cd01539bd463eb5473eeae5723b775b3d",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/桌面迁入_20261109/案例10_融合修订_20261105/99_历史与废弃/案例10_资产核查_20261105/原包文件/07_产品原始资料_仅供核对/product-manual-温泉酸.pdf",
+      "result": "同一原件的历史路径",
+      "canonical": "使用参考/温泉酸产品手册.pdf",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/案例10_融合修订_20261105/99_历史与废弃/案例10_原片盲测_20261105/00_项目管理/盲测与旧稿对比.json",
+        "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/案例10_融合修订_20261105/99_历史与废弃/案例10_原片盲测_20261105/00_项目管理/编导请求.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/案例10_融合修订_20261105/01_原始资料/product-manual-温泉酸.pdf",
+      "sha256": "b7892491b61051187fa5abbea4a46d6cd01539bd463eb5473eeae5723b775b3d",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/桌面迁入_20261109/案例10_融合修订_20261105/01_原始资料/product-manual-温泉酸.pdf",
+      "result": "同一原件的历史路径",
+      "canonical": "使用参考/温泉酸产品手册.pdf",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/案例10_融合修订_20261105/99_历史与废弃/案例10_原片盲测_20261105/00_项目管理/盲测与旧稿对比.json",
+        "/Users/liuyang/Documents/分镜项目/桌面迁入_20261109/案例10_融合修订_20261105/99_历史与废弃/案例10_原片盲测_20261105/00_项目管理/编导请求.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/2026-11-05_村姑眼膜前105秒_造物者改编/01_原始资料/产品参考/造物者温泉酸-透明面膜碗.png",
+      "sha256": "6074e2f1ed5113cf8cbbb6755d545330fe9afa9ed4f5b3551dea1e000763b4ac",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/2026-11-05_村姑眼膜前105秒_造物者改编/01_原始资料/产品参考/造物者温泉酸-透明面膜碗.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-透明面膜碗.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/2026-11-05_村姑眼膜前105秒_造物者改编/05_分镜/R01_素材覆盖与补图选择.md",
+        "/Users/liuyang/Documents/分镜项目/2026-11-05_村姑眼膜前105秒_造物者改编/05_分镜/R01_素材覆盖与补图选择.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/2026-11-05_村姑眼膜前105秒_造物者改编/01_原始资料/产品参考/造物者温泉酸-A与B双剂外观.png",
+      "sha256": "cada2ea9093aff8ba3f884d9ba7c89c4f04f72b50aaccb346274846cf2ccb807",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/2026-11-05_村姑眼膜前105秒_造物者改编/01_原始资料/产品参考/造物者温泉酸-A与B双剂外观.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-A与B双剂外观.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/2026-11-05_村姑眼膜前105秒_造物者改编/05_分镜/R01_素材覆盖与补图选择.md",
+        "/Users/liuyang/Documents/分镜项目/2026-11-05_村姑眼膜前105秒_造物者改编/05_分镜/R01_素材覆盖与补图选择.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/2026-11-05_村姑眼膜前105秒_造物者改编/01_原始资料/产品参考/造物者温泉酸-礼盒外观.png",
+      "sha256": "5068c644d0e9adb0e67e689767988491276f4031602f23d561048202bc89713b",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/2026-11-05_村姑眼膜前105秒_造物者改编/01_原始资料/产品参考/造物者温泉酸-礼盒外观.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-礼盒外观.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/2026-11-05_村姑眼膜前105秒_造物者改编/04_资产/R01_素材复用与待补清单.md",
+        "/Users/liuyang/Documents/分镜项目/2026-11-05_村姑眼膜前105秒_造物者改编/04_资产/母版/visual-asset-manifest.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/AST-PROD-01/AST-PROD-01_state3_view0_主图_R01.png",
+      "sha256": "fbc347d4ce569c267d142d84bbe8576fa205db8c55bb713aa912eb1fc6e3a429",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/AST-PROD-01/AST-PROD-01_state3_view0_主图_R01.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-毛刷_白底电商.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/visual-asset-manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/00_项目管理/执行上下文/批次/vlog-rework-20261114/sb_manifest.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/AST-PROD-01/AST-PROD-01_state2_view0_主图_R01.png",
+      "sha256": "6074e2f1ed5113cf8cbbb6755d545330fe9afa9ed4f5b3551dea1e000763b4ac",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/AST-PROD-01/AST-PROD-01_state2_view0_主图_R01.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-透明面膜碗.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/visual-asset-manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/00_项目管理/执行上下文/批次/vlog-rework-20261114/sb_manifest.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/AST-PROD-01/AST-PROD-01_state1_view0_主图_R01.png",
+      "sha256": "cada2ea9093aff8ba3f884d9ba7c89c4f04f72b50aaccb346274846cf2ccb807",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/AST-PROD-01/AST-PROD-01_state1_view0_主图_R01.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-A与B双剂外观.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/visual-asset-manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/00_项目管理/执行上下文/批次/vlog-rework-20261114/sb_manifest.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/AST-PROD-01/AST-PROD-01_state4_view0_主图_R01.png",
+      "sha256": "f7708a9daa784c9c7d8773871ea35cbfae3c3e1cf83f63cf14e03fabaecdff44",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/AST-PROD-01/AST-PROD-01_state4_view0_主图_R01.png",
+      "result": "同一原件的历史路径",
+      "canonical": "图片/上脸膜态/林奕希_全脸膜态.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/visual-asset-manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/00_项目管理/执行上下文/批次/vlog-rework-20261114/资产登记R02记录.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/AST-PROD-01/AST-PROD-01_state0_view0_主图_R01.png",
+      "sha256": "5068c644d0e9adb0e67e689767988491276f4031602f23d561048202bc89713b",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/AST-PROD-01/AST-PROD-01_state0_view0_主图_R01.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-礼盒外观.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/visual-asset-manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/00_项目管理/执行上下文/批次/vlog-rework-20261114/资产登记R02记录.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/知识库参考/92ffdd59ff7041da/PROD-000805_AST-PROD-01_搅拌提刷见质地.png_单图_v001.png",
+      "sha256": "fbc347d4ce569c267d142d84bbe8576fa205db8c55bb713aa912eb1fc6e3a429",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/知识库参考/92ffdd59ff7041da/PROD-000805_AST-PROD-01_搅拌提刷见质地.png_单图_v001.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-毛刷_白底电商.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/知识库参考/6643d173df044455/PROD-000803_AST-PROD-01_开盒见双剂排列.png_单图_v001.png",
+      "sha256": "cada2ea9093aff8ba3f884d9ba7c89c4f04f72b50aaccb346274846cf2ccb807",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/知识库参考/6643d173df044455/PROD-000803_AST-PROD-01_开盒见双剂排列.png_单图_v001.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-A与B双剂外观.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/知识库参考/42f9bd79e4b8423e/PROD-000802_AST-PROD-01_礼盒闭合展示.png_单图_v001.png",
+      "sha256": "5068c644d0e9adb0e67e689767988491276f4031602f23d561048202bc89713b",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/知识库参考/42f9bd79e4b8423e/PROD-000802_AST-PROD-01_礼盒闭合展示.png_单图_v001.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-礼盒外观.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/知识库参考/87ff64c1fb8e4dd9/PROD-000806_AST-PROD-01_上脸半透明膜态.png_单图_v001.png",
+      "sha256": "f7708a9daa784c9c7d8773871ea35cbfae3c3e1cf83f63cf14e03fabaecdff44",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/知识库参考/87ff64c1fb8e4dd9/PROD-000806_AST-PROD-01_上脸半透明膜态.png_单图_v001.png",
+      "result": "同一原件的历史路径",
+      "canonical": "图片/上脸膜态/林奕希_全脸膜态.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/知识库参考/27b270f29a7a48ff/PROD-000804_AST-PROD-01_双剂挤入透明碗.png_单图_v001.png",
+      "sha256": "6074e2f1ed5113cf8cbbb6755d545330fe9afa9ed4f5b3551dea1e000763b4ac",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/知识库参考/27b270f29a7a48ff/PROD-000804_AST-PROD-01_双剂挤入透明碗.png_单图_v001.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-透明面膜碗.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/普拉提vlog复刻-温泉酸版/04_资产/母版/R01_25e47bb5b3894803/用户确认记录.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/造物者温泉酸-礼盒外观.png",
+      "sha256": "5068c644d0e9adb0e67e689767988491276f4031602f23d561048202bc89713b",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/造物者温泉酸-礼盒外观.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-礼盒外观.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/VS-ZHANG-LIVING-BOX-ON-LAP-C02_登记候选.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/VS-ZHANG-LIVING-BOX-ON-LAP-C01_实看自查.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/01_礼盒_手持.png",
+      "sha256": "f06dc36163e5d16e82a1d6730f3ac585561e8ae2817d75a33584a3545264c5d4",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/01_礼盒_手持.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/图片/手持效果/01_礼盒_手持.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/VS-ZHANG-LIVING-BOX-ON-LAP-C02_登记候选.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/VS-ZHANG-LIVING-BOX-ON-LAP-C01_实看自查.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/产品参考/R04/视频/分动作/01_开盒.mp4",
+      "sha256": "00ad6324e477d1f390560bfb46e3e4caad9643738f52e51b44ced10ea8e69a86",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/产品参考/R04/视频/分动作/01_开盒.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/产品展示/01_开盒.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/产品参考/R04/视频/分动作/05_挤金管.mp4",
+      "sha256": "c733ce002e72d9e2a011281bf50a8fad8a2d25f70c98f512ae00bccbd1b58479",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/产品参考/R04/视频/分动作/05_挤金管.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/产品展示/05_挤金管.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/产品参考/R04/视频/分动作/09_额头铺开.mp4",
+      "sha256": "6fa5603ca913153879c60be695f7b7d40361e04b8279b33f2f3a62de4cfcf2f9",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/产品参考/R04/视频/分动作/09_额头铺开.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/沉浸式/09_额头铺开.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/产品参考/R04/视频/分动作/11_鼻周轻刷.mp4",
+      "sha256": "38efad11d709a73fd313e532e738c78f37feb50e2677a7d385ffbe4eb26fefd3",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/产品参考/R04/视频/分动作/11_鼻周轻刷.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/沉浸式/11_鼻周轻刷.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/产品参考/R04/视频/分动作/03_挤白管.mp4",
+      "sha256": "818cea984d849ae88a87a222d5cdc3406d074da64f2c8e35cebacc5ba48c57a0",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/产品参考/R04/视频/分动作/03_挤白管.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/产品展示/03_挤白管.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/产品参考/R04/视频/分动作/06A_起手搅拌两色混合.mp4",
+      "sha256": "983377199097a463b6eab3a3cf46847150838ac0e8c938db3358288c0b8d0a44",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/产品参考/R04/视频/分动作/06A_起手搅拌两色混合.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/产品展示/06A_起手搅拌两色混合.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/产品参考/R04/视频/分动作/12_补涂并展示全脸薄膜.mp4",
+      "sha256": "4526a1f39b8515b524750f340ecea05bd22cc8aaf4c01d94fd469228b3594e4e",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/产品参考/R04/视频/分动作/12_补涂并展示全脸薄膜.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/沉浸式/12_补涂并展示全脸薄膜.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/产品参考/R04/视频/分动作/07_净脸第一颊起手.mp4",
+      "sha256": "29813b30c032d501a1f0ee5c6c3690c5b2bb3c846d6fa0e30e090e82ce9b4049",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/产品参考/R04/视频/分动作/07_净脸第一颊起手.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/沉浸式/07_净脸第一颊起手.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/产品参考/R04/视频/分动作/02_掰白管.mp4",
+      "sha256": "82da3699b49203579edc5540f8d0e393584b242ca64c1d8770c533915147e658",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/产品参考/R04/视频/分动作/02_掰白管.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/产品展示/02_掰白管.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/产品参考/R04/视频/分动作/06B_完全起泡后提刷.mp4",
+      "sha256": "a7ca41b572c4e525b0370dea556bb59efd0ae244f8969157d78fc743e860e2e4",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/产品参考/R04/视频/分动作/06B_完全起泡后提刷.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/产品展示/06B_完全起泡后提刷.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/产品参考/R04/视频/分动作/08_另一颊开始刷涂.mp4",
+      "sha256": "8f10beffb61565f76fbf3d219d62bb402f9dbaa031838aec8d96832ebb4dbb4b",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/产品参考/R04/视频/分动作/08_另一颊开始刷涂.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/沉浸式/08_另一颊开始刷涂.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/产品参考/R04/视频/分动作/04_掰金管.mp4",
+      "sha256": "9968e61750a90dc40c06ca9fef547d800de75acc830a6174888ee952d6170ae2",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/产品参考/R04/视频/分动作/04_掰金管.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/产品展示/04_掰金管.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/产品参考/R04/视频/分动作/10_下巴铺开.mp4",
+      "sha256": "19d695108da199db32d49d0fa2645f9134e3c71f1480b5c3a06b1ef75a981c95",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/产品参考/R04/视频/分动作/10_下巴铺开.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/沉浸式/10_下巴铺开.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/产品参考/R04/视频/分动作/13_纸巾从鼻侧向外擦过一侧脸颊.mp4",
+      "sha256": "17bbf19b9b5fe6873e6289ff550b7e1389d43258131f8b3218485b4410ab654c",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/产品参考/R04/视频/分动作/13_纸巾从鼻侧向外擦过一侧脸颊.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/沉浸式/13_纸巾从鼻侧向外擦过一侧脸颊.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/38efad11d709a73fd313e532e738c78f37feb50e2677a7d385ffbe4eb26fefd3/11_鼻周轻刷.mp4",
+      "sha256": "38efad11d709a73fd313e532e738c78f37feb50e2677a7d385ffbe4eb26fefd3",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/38efad11d709a73fd313e532e738c78f37feb50e2677a7d385ffbe4eb26fefd3/11_鼻周轻刷.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/沉浸式/11_鼻周轻刷.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/3d378cc48f06ef3c235bb1e0a4866170331668c4a0a9347400d1620d9e1bfe87/造物者温泉酸-A与B双剂_桌面平放.png",
+      "sha256": "3d378cc48f06ef3c235bb1e0a4866170331668c4a0a9347400d1620d9e1bfe87",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/3d378cc48f06ef3c235bb1e0a4866170331668c4a0a9347400d1620d9e1bfe87/造物者温泉酸-A与B双剂_桌面平放.png",
+      "result": "同一原件的历史路径",
+      "canonical": "图片/桌面实景/造物者温泉酸-A与B双剂_桌面平放.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/cada2ea9093aff8ba3f884d9ba7c89c4f04f72b50aaccb346274846cf2ccb807/造物者温泉酸-A与B双剂外观.png",
+      "sha256": "cada2ea9093aff8ba3f884d9ba7c89c4f04f72b50aaccb346274846cf2ccb807",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/cada2ea9093aff8ba3f884d9ba7c89c4f04f72b50aaccb346274846cf2ccb807/造物者温泉酸-A与B双剂外观.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-A与B双剂外观.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/a7ca41b572c4e525b0370dea556bb59efd0ae244f8969157d78fc743e860e2e4/06B_完全起泡后提刷.mp4",
+      "sha256": "a7ca41b572c4e525b0370dea556bb59efd0ae244f8969157d78fc743e860e2e4",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/a7ca41b572c4e525b0370dea556bb59efd0ae244f8969157d78fc743e860e2e4/06B_完全起泡后提刷.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/产品展示/06B_完全起泡后提刷.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/00ad6324e477d1f390560bfb46e3e4caad9643738f52e51b44ced10ea8e69a86/01_开盒.mp4",
+      "sha256": "00ad6324e477d1f390560bfb46e3e4caad9643738f52e51b44ced10ea8e69a86",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/00ad6324e477d1f390560bfb46e3e4caad9643738f52e51b44ced10ea8e69a86/01_开盒.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/产品展示/01_开盒.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/6074e2f1ed5113cf8cbbb6755d545330fe9afa9ed4f5b3551dea1e000763b4ac/造物者温泉酸-透明面膜碗.png",
+      "sha256": "6074e2f1ed5113cf8cbbb6755d545330fe9afa9ed4f5b3551dea1e000763b4ac",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/6074e2f1ed5113cf8cbbb6755d545330fe9afa9ed4f5b3551dea1e000763b4ac/造物者温泉酸-透明面膜碗.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-透明面膜碗.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/8f10beffb61565f76fbf3d219d62bb402f9dbaa031838aec8d96832ebb4dbb4b/08_另一颊开始刷涂.mp4",
+      "sha256": "8f10beffb61565f76fbf3d219d62bb402f9dbaa031838aec8d96832ebb4dbb4b",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/8f10beffb61565f76fbf3d219d62bb402f9dbaa031838aec8d96832ebb4dbb4b/08_另一颊开始刷涂.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/沉浸式/08_另一颊开始刷涂.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/d6bab38d982d0af2bc06fae05d316d1a8932e221c09c7f65dc19ca39ca9e183e/03_透明面膜碗_手持.png",
+      "sha256": "d6bab38d982d0af2bc06fae05d316d1a8932e221c09c7f65dc19ca39ca9e183e",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/d6bab38d982d0af2bc06fae05d316d1a8932e221c09c7f65dc19ca39ca9e183e/03_透明面膜碗_手持.png",
+      "result": "同一原件的历史路径",
+      "canonical": "图片/手持效果/03_透明面膜碗_手持.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/6fa5603ca913153879c60be695f7b7d40361e04b8279b33f2f3a62de4cfcf2f9/09_额头铺开.mp4",
+      "sha256": "6fa5603ca913153879c60be695f7b7d40361e04b8279b33f2f3a62de4cfcf2f9",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/6fa5603ca913153879c60be695f7b7d40361e04b8279b33f2f3a62de4cfcf2f9/09_额头铺开.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/沉浸式/09_额头铺开.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/818cea984d849ae88a87a222d5cdc3406d074da64f2c8e35cebacc5ba48c57a0/03_挤白管.mp4",
+      "sha256": "818cea984d849ae88a87a222d5cdc3406d074da64f2c8e35cebacc5ba48c57a0",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/818cea984d849ae88a87a222d5cdc3406d074da64f2c8e35cebacc5ba48c57a0/03_挤白管.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/产品展示/03_挤白管.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/82da3699b49203579edc5540f8d0e393584b242ca64c1d8770c533915147e658/02_掰白管.mp4",
+      "sha256": "82da3699b49203579edc5540f8d0e393584b242ca64c1d8770c533915147e658",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/82da3699b49203579edc5540f8d0e393584b242ca64c1d8770c533915147e658/02_掰白管.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/产品展示/02_掰白管.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/4526a1f39b8515b524750f340ecea05bd22cc8aaf4c01d94fd469228b3594e4e/12_补涂并展示全脸薄膜.mp4",
+      "sha256": "4526a1f39b8515b524750f340ecea05bd22cc8aaf4c01d94fd469228b3594e4e",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/4526a1f39b8515b524750f340ecea05bd22cc8aaf4c01d94fd469228b3594e4e/12_补涂并展示全脸薄膜.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/沉浸式/12_补涂并展示全脸薄膜.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/f7708a9daa784c9c7d8773871ea35cbfae3c3e1cf83f63cf14e03fabaecdff44/林奕希_全脸膜态.png",
+      "sha256": "f7708a9daa784c9c7d8773871ea35cbfae3c3e1cf83f63cf14e03fabaecdff44",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/f7708a9daa784c9c7d8773871ea35cbfae3c3e1cf83f63cf14e03fabaecdff44/林奕希_全脸膜态.png",
+      "result": "同一原件的历史路径",
+      "canonical": "图片/上脸膜态/林奕希_全脸膜态.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/c733ce002e72d9e2a011281bf50a8fad8a2d25f70c98f512ae00bccbd1b58479/05_挤金管.mp4",
+      "sha256": "c733ce002e72d9e2a011281bf50a8fad8a2d25f70c98f512ae00bccbd1b58479",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/c733ce002e72d9e2a011281bf50a8fad8a2d25f70c98f512ae00bccbd1b58479/05_挤金管.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/产品展示/05_挤金管.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/19d695108da199db32d49d0fa2645f9134e3c71f1480b5c3a06b1ef75a981c95/10_下巴铺开.mp4",
+      "sha256": "19d695108da199db32d49d0fa2645f9134e3c71f1480b5c3a06b1ef75a981c95",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/19d695108da199db32d49d0fa2645f9134e3c71f1480b5c3a06b1ef75a981c95/10_下巴铺开.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/沉浸式/10_下巴铺开.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/fbc347d4ce569c267d142d84bbe8576fa205db8c55bb713aa912eb1fc6e3a429/造物者温泉酸-毛刷_白底电商.png",
+      "sha256": "fbc347d4ce569c267d142d84bbe8576fa205db8c55bb713aa912eb1fc6e3a429",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/fbc347d4ce569c267d142d84bbe8576fa205db8c55bb713aa912eb1fc6e3a429/造物者温泉酸-毛刷_白底电商.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-毛刷_白底电商.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/90a90ea184e2d53bac02ffbcd6fd5524179b4432a87704d1a3fa65cd2b77160b/02_AB双剂_手持.png",
+      "sha256": "90a90ea184e2d53bac02ffbcd6fd5524179b4432a87704d1a3fa65cd2b77160b",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/90a90ea184e2d53bac02ffbcd6fd5524179b4432a87704d1a3fa65cd2b77160b/02_AB双剂_手持.png",
+      "result": "同一原件的历史路径",
+      "canonical": "图片/手持效果/02_AB双剂_手持.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/de00ace2eb6fb6ecc309d74bbb32c80b98f8779eb553a1e419897db548abbb55/04_毛刷_手持.png",
+      "sha256": "de00ace2eb6fb6ecc309d74bbb32c80b98f8779eb553a1e419897db548abbb55",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/de00ace2eb6fb6ecc309d74bbb32c80b98f8779eb553a1e419897db548abbb55/04_毛刷_手持.png",
+      "result": "同一原件的历史路径",
+      "canonical": "图片/手持效果/04_毛刷_手持.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/29813b30c032d501a1f0ee5c6c3690c5b2bb3c846d6fa0e30e090e82ce9b4049/07_净脸第一颊起手.mp4",
+      "sha256": "29813b30c032d501a1f0ee5c6c3690c5b2bb3c846d6fa0e30e090e82ce9b4049",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/29813b30c032d501a1f0ee5c6c3690c5b2bb3c846d6fa0e30e090e82ce9b4049/07_净脸第一颊起手.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/沉浸式/07_净脸第一颊起手.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/17bbf19b9b5fe6873e6289ff550b7e1389d43258131f8b3218485b4410ab654c/13_纸巾从鼻侧向外擦过一侧脸颊.mp4",
+      "sha256": "17bbf19b9b5fe6873e6289ff550b7e1389d43258131f8b3218485b4410ab654c",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/17bbf19b9b5fe6873e6289ff550b7e1389d43258131f8b3218485b4410ab654c/13_纸巾从鼻侧向外擦过一侧脸颊.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/沉浸式/13_纸巾从鼻侧向外擦过一侧脸颊.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/9968e61750a90dc40c06ca9fef547d800de75acc830a6174888ee952d6170ae2/04_掰金管.mp4",
+      "sha256": "9968e61750a90dc40c06ca9fef547d800de75acc830a6174888ee952d6170ae2",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/9968e61750a90dc40c06ca9fef547d800de75acc830a6174888ee952d6170ae2/04_掰金管.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/产品展示/04_掰金管.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/983377199097a463b6eab3a3cf46847150838ac0e8c938db3358288c0b8d0a44/06A_起手搅拌两色混合.mp4",
+      "sha256": "983377199097a463b6eab3a3cf46847150838ac0e8c938db3358288c0b8d0a44",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/983377199097a463b6eab3a3cf46847150838ac0e8c938db3358288c0b8d0a44/06A_起手搅拌两色混合.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "视频/产品展示/06A_起手搅拌两色混合.mp4",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/R04字节证据/manifest.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/当前资产需求表.md"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/5068c644d0e9adb0e67e689767988491276f4031602f23d561048202bc89713b/造物者温泉酸-礼盒外观.png",
+      "sha256": "5068c644d0e9adb0e67e689767988491276f4031602f23d561048202bc89713b",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/5068c644d0e9adb0e67e689767988491276f4031602f23d561048202bc89713b/造物者温泉酸-礼盒外观.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-礼盒外观.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/VS-ZHANG-LIVING-BOX-ON-LAP-C02_登记候选.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/VS-ZHANG-LIVING-BOX-ON-LAP-C01_实看自查.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/f06dc36163e5d16e82a1d6730f3ac585561e8ae2817d75a33584a3545264c5d4/01_礼盒_手持.png",
+      "sha256": "f06dc36163e5d16e82a1d6730f3ac585561e8ae2817d75a33584a3545264c5d4",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/04_资产/项目产品参考/f06dc36163e5d16e82a1d6730f3ac585561e8ae2817d75a33584a3545264c5d4/01_礼盒_手持.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/图片/手持效果/01_礼盒_手持.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/VS-ZHANG-LIVING-BOX-ON-LAP-C02_登记候选.json",
+        "/Users/liuyang/Documents/分镜项目/阶段归档_20261117/摇钱树/摇钱树_温泉酸面膜_20261113_正式重做/05_分镜/候选/接稳礼盒/VS-ZHANG-LIVING-BOX-ON-LAP-C01_实看自查.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/04_资产/母版/R01_聊天确认/AST-006/AST-006_PRODUCT-BOX.png",
+      "sha256": "5068c644d0e9adb0e67e689767988491276f4031602f23d561048202bc89713b",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/04_资产/母版/R01_聊天确认/AST-006/AST-006_PRODUCT-BOX.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-礼盒外观.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/05_分镜/候选/VS-S02-AFTER-DINNER-R01_请求.json",
+        "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/05_分镜/候选/VS-S02-AFTER-DINNER-R01_quality_evidence.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/04_资产/母版/R01_聊天确认/AST-006/AST-006_PRODUCT-AB.png",
+      "sha256": "cada2ea9093aff8ba3f884d9ba7c89c4f04f72b50aaccb346274846cf2ccb807",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/04_资产/母版/R01_聊天确认/AST-006/AST-006_PRODUCT-AB.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-A与B双剂外观.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/04_资产/当前资产清单.json",
+        "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/04_资产/母版/R01_聊天确认/visual-asset-manifest.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/04_资产/母版/R01_聊天确认/AST-007/AST-007_MIX-BOWL.png",
+      "sha256": "6074e2f1ed5113cf8cbbb6755d545330fe9afa9ed4f5b3551dea1e000763b4ac",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/04_资产/母版/R01_聊天确认/AST-007/AST-007_MIX-BOWL.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-透明面膜碗.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/05_分镜/候选/VS-S02-AFTER-DINNER-R01_请求.json",
+        "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/05_分镜/候选/VS-S02-AFTER-DINNER-R01_quality_evidence.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/01_原始资料/产品参考/造物者温泉酸-透明面膜碗.png",
+      "sha256": "6074e2f1ed5113cf8cbbb6755d545330fe9afa9ed4f5b3551dea1e000763b4ac",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/01_原始资料/产品参考/造物者温泉酸-透明面膜碗.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-透明面膜碗.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/04_资产/母版/R01_聊天确认/visual-asset-manifest.json",
+        "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/04_资产/母版/R01_聊天确认/用户确认记录.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/01_原始资料/产品参考/造物者温泉酸-A与B双剂外观.png",
+      "sha256": "cada2ea9093aff8ba3f884d9ba7c89c4f04f72b50aaccb346274846cf2ccb807",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/01_原始资料/产品参考/造物者温泉酸-A与B双剂外观.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-A与B双剂外观.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/04_资产/母版/R01_聊天确认/visual-asset-manifest.json",
+        "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/04_资产/母版/R01_聊天确认/用户确认记录.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/01_原始资料/产品参考/造物者温泉酸-礼盒外观.png",
+      "sha256": "5068c644d0e9adb0e67e689767988491276f4031602f23d561048202bc89713b",
+      "scope": "项目参考",
+      "trash_path": "原位置/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/01_原始资料/产品参考/造物者温泉酸-礼盒外观.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/电商与白底外观/造物者温泉酸-礼盒外观.png",
+      "reference_examples": [
+        "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/04_资产/母版/R01_聊天确认/visual-asset-manifest.json",
+        "/Users/liuyang/Documents/分镜项目/2026-11-06_素颜霜剧情前90秒_造物者改编/04_资产/母版/R01_聊天确认/用户确认记录.json"
+      ]
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/PRODUCT_BRIEF.md",
+      "sha256": "aed33055bafc974c096d526bdec33816c808035b2b3733306cbe1b6aae0eafd8",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/PRODUCT_BRIEF.md",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/PRODUCT_BRIEF.md"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/manifest.json",
+      "sha256": "17548706d41d747e592f770460bbd7ffdf6dfc399d4ad61637a8aa9d17c9b7da",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/manifest.json",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/manifest.json"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/证据/温泉酸产品手册.pdf",
+      "sha256": "b7892491b61051187fa5abbea4a46d6cd01539bd463eb5473eeae5723b775b3d",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/证据/温泉酸产品手册.pdf",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/证据/温泉酸产品手册.pdf"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/证据/生图输入/闭盒_0.30秒.png",
+      "sha256": "cd010ea6f79beb8b4f4cc5af3c583d05d3194441b0cb99cd4887089d12f35611",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/证据/生图输入/闭盒_0.30秒.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/证据/生图输入/闭盒_0.30秒.png"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/证据/生图输入/开盒_1.68秒.png",
+      "sha256": "078c6c05784900e8debdfd513d7b79523144dfddca41bdfe96ade844b7b1a2a5",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/证据/生图输入/开盒_1.68秒.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/证据/生图输入/开盒_1.68秒.png"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/证据/生图输入/毛刷_用户实拍.png",
+      "sha256": "b7460a624fddde55613cac2a9778223c381efff3c9f4357ab877cda52fc936bd",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/证据/生图输入/毛刷_用户实拍.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/证据/生图输入/毛刷_用户实拍.png"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/证据/手持实拍/白A管_实拍手指.png",
+      "sha256": "c48782f6c5458e54b00f683300cb564a900ee7704b9b2dbed30ae7653d976332",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/证据/手持实拍/白A管_实拍手指.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/证据/手持实拍/白A管_实拍手指.png"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/证据/手持实拍/透明碗_原片0.12秒.png",
+      "sha256": "ba6501b2c599c655f9d93a97f61ff8c429e247cf9e39ca0dcaf5a703f1b5ef8f",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/证据/手持实拍/透明碗_原片0.12秒.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/证据/手持实拍/透明碗_原片0.12秒.png"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/证据/手持实拍/开盒_实拍双手.png",
+      "sha256": "9c3a863554f411623c2dd62b7e499e240e38b3ba219b37b1bb050d4a6d8d4142",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/证据/手持实拍/开盒_实拍双手.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/证据/手持实拍/开盒_实拍双手.png"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/证据/手持实拍/金B管_实拍手指.png",
+      "sha256": "908405462a60b61adde2b0c148784e76941f0e792b7ae43c4511cadf3be20fd8",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/证据/手持实拍/金B管_实拍手指.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/证据/手持实拍/金B管_实拍手指.png"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/动作顺序与来源.json",
+      "sha256": "98295fca24d8322508c289eac1164dbd0ff2d905380b0afa19350727a3cb4953",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/动作顺序与来源.json",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/视频/动作顺序与来源.json"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/温泉酸_使用动作顺序参考.mp4",
+      "sha256": "8966762eca6d6d096efac5f3ca7e88f6c7422373850ec48a60957637e0500152",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/温泉酸_使用动作顺序参考.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/视频/温泉酸_使用动作顺序参考.mp4"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/01_开盒.mp4",
+      "sha256": "00ad6324e477d1f390560bfb46e3e4caad9643738f52e51b44ced10ea8e69a86",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/01_开盒.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/视频/分动作/01_开盒.mp4"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/05_挤金管.mp4",
+      "sha256": "c733ce002e72d9e2a011281bf50a8fad8a2d25f70c98f512ae00bccbd1b58479",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/05_挤金管.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/视频/分动作/05_挤金管.mp4"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/09_额头铺开.mp4",
+      "sha256": "6fa5603ca913153879c60be695f7b7d40361e04b8279b33f2f3a62de4cfcf2f9",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/09_额头铺开.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/视频/分动作/09_额头铺开.mp4"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/11_鼻周轻刷.mp4",
+      "sha256": "38efad11d709a73fd313e532e738c78f37feb50e2677a7d385ffbe4eb26fefd3",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/11_鼻周轻刷.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/视频/分动作/11_鼻周轻刷.mp4"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/03_挤白管.mp4",
+      "sha256": "818cea984d849ae88a87a222d5cdc3406d074da64f2c8e35cebacc5ba48c57a0",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/03_挤白管.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/视频/分动作/03_挤白管.mp4"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/06A_起手搅拌两色混合.mp4",
+      "sha256": "983377199097a463b6eab3a3cf46847150838ac0e8c938db3358288c0b8d0a44",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/06A_起手搅拌两色混合.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/视频/分动作/06A_起手搅拌两色混合.mp4"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/12_补涂并展示全脸薄膜.mp4",
+      "sha256": "4526a1f39b8515b524750f340ecea05bd22cc8aaf4c01d94fd469228b3594e4e",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/12_补涂并展示全脸薄膜.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/视频/分动作/12_补涂并展示全脸薄膜.mp4"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/07_净脸第一颊起手.mp4",
+      "sha256": "29813b30c032d501a1f0ee5c6c3690c5b2bb3c846d6fa0e30e090e82ce9b4049",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/07_净脸第一颊起手.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/视频/分动作/07_净脸第一颊起手.mp4"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/02_掰白管.mp4",
+      "sha256": "82da3699b49203579edc5540f8d0e393584b242ca64c1d8770c533915147e658",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/02_掰白管.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/视频/分动作/02_掰白管.mp4"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/06B_完全起泡后提刷.mp4",
+      "sha256": "a7ca41b572c4e525b0370dea556bb59efd0ae244f8969157d78fc743e860e2e4",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/06B_完全起泡后提刷.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/视频/分动作/06B_完全起泡后提刷.mp4"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/08_另一颊开始刷涂.mp4",
+      "sha256": "8f10beffb61565f76fbf3d219d62bb402f9dbaa031838aec8d96832ebb4dbb4b",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/08_另一颊开始刷涂.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/视频/分动作/08_另一颊开始刷涂.mp4"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/04_掰金管.mp4",
+      "sha256": "9968e61750a90dc40c06ca9fef547d800de75acc830a6174888ee952d6170ae2",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/04_掰金管.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/视频/分动作/04_掰金管.mp4"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/10_下巴铺开.mp4",
+      "sha256": "19d695108da199db32d49d0fa2645f9134e3c71f1480b5c3a06b1ef75a981c95",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/10_下巴铺开.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/视频/分动作/10_下巴铺开.mp4"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/13_纸巾从鼻侧向外擦过一侧脸颊.mp4",
+      "sha256": "17bbf19b9b5fe6873e6289ff550b7e1389d43258131f8b3218485b4410ab654c",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/视频/分动作/13_纸巾从鼻侧向外擦过一侧脸颊.mp4",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/视频/分动作/13_纸巾从鼻侧向外擦过一侧脸颊.mp4"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/history/a31467686c208dbc8cb1c02d06bed5449efabce5f78c78fea8adfe4ff5d476dd/manifest.json",
+      "sha256": "a31467686c208dbc8cb1c02d06bed5449efabce5f78c78fea8adfe4ff5d476dd",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/history/a31467686c208dbc8cb1c02d06bed5449efabce5f78c78fea8adfe4ff5d476dd/manifest.json",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/history/a31467686c208dbc8cb1c02d06bed5449efabce5f78c78fea8adfe4ff5d476dd/manifest.json"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/history/a31467686c208dbc8cb1c02d06bed5449efabce5f78c78fea8adfe4ff5d476dd/视频/动作顺序与来源.json",
+      "sha256": "3c097657430e39d30deabcdb71fa484b7214dd7f0373f83ab4789ccf0616824a",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/history/a31467686c208dbc8cb1c02d06bed5449efabce5f78c78fea8adfe4ff5d476dd/视频/动作顺序与来源.json",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/history/a31467686c208dbc8cb1c02d06bed5449efabce5f78c78fea8adfe4ff5d476dd/视频/动作顺序与来源.json"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/图片/造物者温泉酸-透明面膜碗.png",
+      "sha256": "6074e2f1ed5113cf8cbbb6755d545330fe9afa9ed4f5b3551dea1e000763b4ac",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/图片/造物者温泉酸-透明面膜碗.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/图片/造物者温泉酸-透明面膜碗.png"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/图片/造物者温泉酸-A与B双剂外观.png",
+      "sha256": "cada2ea9093aff8ba3f884d9ba7c89c4f04f72b50aaccb346274846cf2ccb807",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/图片/造物者温泉酸-A与B双剂外观.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/图片/造物者温泉酸-A与B双剂外观.png"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/图片/造物者温泉酸-毛刷_白底电商.png",
+      "sha256": "fbc347d4ce569c267d142d84bbe8576fa205db8c55bb713aa912eb1fc6e3a429",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/图片/造物者温泉酸-毛刷_白底电商.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/图片/造物者温泉酸-毛刷_白底电商.png"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/图片/造物者温泉酸-礼盒外观.png",
+      "sha256": "5068c644d0e9adb0e67e689767988491276f4031602f23d561048202bc89713b",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/图片/造物者温泉酸-礼盒外观.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/图片/造物者温泉酸-礼盒外观.png"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/图片/造物者温泉酸-A与B双剂_桌面平放.png",
+      "sha256": "3d378cc48f06ef3c235bb1e0a4866170331668c4a0a9347400d1620d9e1bfe87",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/图片/造物者温泉酸-A与B双剂_桌面平放.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/图片/造物者温泉酸-A与B双剂_桌面平放.png"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/图片/上脸膜态/林奕希_全脸膜态.png",
+      "sha256": "f7708a9daa784c9c7d8773871ea35cbfae3c3e1cf83f63cf14e03fabaecdff44",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/图片/上脸膜态/林奕希_全脸膜态.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/图片/上脸膜态/林奕希_全脸膜态.png"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/图片/手持效果/02_AB双剂_手持.png",
+      "sha256": "90a90ea184e2d53bac02ffbcd6fd5524179b4432a87704d1a3fa65cd2b77160b",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/图片/手持效果/02_AB双剂_手持.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/图片/手持效果/02_AB双剂_手持.png"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/图片/手持效果/生成记录.json",
+      "sha256": "9584c339d6b09c012c7dacfe016366c67efc9dcabf8c72f381032c27840465e6",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/图片/手持效果/生成记录.json",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/图片/手持效果/生成记录.json"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/图片/手持效果/04_毛刷_手持.png",
+      "sha256": "de00ace2eb6fb6ecc309d74bbb32c80b98f8779eb553a1e419897db548abbb55",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/图片/手持效果/04_毛刷_手持.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/图片/手持效果/04_毛刷_手持.png"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/图片/手持效果/03_透明面膜碗_手持.png",
+      "sha256": "d6bab38d982d0af2bc06fae05d316d1a8932e221c09c7f65dc19ca39ca9e183e",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/图片/手持效果/03_透明面膜碗_手持.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/图片/手持效果/03_透明面膜碗_手持.png"
+    },
+    {
+      "path": "/Users/liuyang/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/图片/手持效果/01_礼盒_手持.png",
+      "sha256": "f06dc36163e5d16e82a1d6730f3ac585561e8ae2817d75a33584a3545264c5d4",
+      "scope": "旧版工作副本兼容路径",
+      "trash_path": "原位置/Desktop/Master-Storyboarding/assets/product-references/creator-polishing-mask-2/R04/图片/手持效果/01_礼盒_手持.png",
+      "result": "同一原件的历史路径",
+      "canonical": "历史/锁定版本/R04/图片/手持效果/01_礼盒_手持.png"
+    }
+  ],
+  "history_note": "兼容路径使用同一 inode，不作为新产品的入库来源。"
+}
