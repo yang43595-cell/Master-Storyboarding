@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -60,3 +61,180 @@ def test_incremental_confirmation_checks_bytes_and_does_not_reactivate_earlier_b
     assert all(
         review.asset_refs._confirmed_output(project, asset["asset_id"], o) for o in asset["confirmed_outputs"]
     )
+
+
+def round_project(root, outputs=("A", "B")):
+    path, story = narrative(root)
+    story["asset_requirements"][0]["image_decision"] = "需要制作"
+    write_json(path, story)
+    upstream = dict(artifact_id="story", checksum=artifacts.digest(path), revision="R01", path_or_url=path.name)
+    targets = ["AST-PROP-PAPER@" + output for output in outputs]
+    write_json(root / review.stage.REQUEST_PATH, {"asset_review_targets": targets})
+    return upstream, targets
+
+
+def image_batch(root, narrative, targets, name, *, direct=False, missing=()):
+    request = root / (name + "-request.json")
+    receipt = root / (name + "-receipt.json")
+    payload = dict(image_targets=targets, image_output_kinds={t: "道具" for t in targets})
+    write_json(request, payload)
+    digest = artifacts.digest(request)
+    context = None if direct else name
+    folder = review.stage._context_path(root, context)
+    basis = dict(skill="asset-image-assistant", context_id=context, request_path=str(request),
+                 reading_manifest={"project_path": str(root)}, task_request=payload,
+                 input_snapshot={"artifacts": [{"record": {"artifact_id": narrative["artifact_id"]},
+                                                "file": {"sha256": narrative["checksum"]}}]})
+    write_json(folder / "task_basis.json", basis)
+    if not direct:
+        binding = dict(context_id=context, request=request.name, request_sha256=digest,
+                       targets=targets, receipt=receipt.name)
+        card = review.stage._ASSET_BATCH_BINDING_PREFIX + json.dumps(binding) + "`\n"
+        (folder / "next_stage_handoff.md").write_text(card)
+    items = []
+    for i, target in enumerate(targets):
+        if target in missing:
+            continue
+        image = root / (target.split("@")[1] + "-" + name + ".png")
+        Image.new("RGB", (5, 5), (i, len(name), 1)).save(image)
+        items.append(dict(target=target, path=image.name, sha256=artifacts.digest(image),
+                          purpose="纸张外观", observer=name, candidate_id=target.split("@")[1],
+                          visual_status="passed", observations="纸张画面完整"))
+    write_json(receipt, dict(request_sha256=digest, context_id=context, items=items))
+    return receipt
+
+
+def decision(root, key, upstream, reference, **update):
+    message = dict(at="2026-11-22T12:00:00+08:00", quote="全部通过", scope="all_shown", review_ref=reference)
+    return review.confirm(root, [key], {**message, **update}, upstream, artifacts.load_manifest(root)["artifacts"])
+
+
+def test_show_round_across_delegated_and_direct_batches(tmp_path):
+    root = tmp_path.resolve()
+    upstream, targets = round_project(root, list("ABCDEFGHI"))
+    image_batch(root, upstream, targets[:8], "worker")
+    direct = image_batch(root, upstream, targets[8:], "direct", direct=True)
+    pending = review.show_round(root, ["worker"], upstream)
+    assert [r["target"] for r in pending["pending"]] == targets[8:]
+    assert not (root / review.SHOWN).exists()
+    shown = review.show_round(root, ["worker"], upstream, receipts=[direct])
+    assert [r["target"] for r in shown["items"]] == targets
+    assert len(list((root / review.SHOWN).glob("*.json"))) == 1
+    write_json(root / review.stage.REQUEST_PATH, {"asset_review_targets": targets[:8]})
+    with pytest.raises(ValueError, match="目标已变化"):
+        decision(root, shown["shown"], upstream, "test")
+    write_json(root / review.stage.REQUEST_PATH, {"asset_review_targets": targets})
+    recorded = decision(root, shown["shown"], upstream, "test")
+    assert recorded["count"] == 9
+    assert decision(root, shown["shown"], upstream, "test") == recorded
+    assert review.show_round(root, ["worker"], upstream, receipts=[direct])["status"] == "already_confirmed"
+
+
+def test_show_round_repair_carries_forward_only_approved_versions(tmp_path):
+    root = tmp_path.resolve()
+    upstream, (a, b) = round_project(root)
+    image_batch(root, upstream, [a, b], "pair")
+    shown = review.show_round(root, ["pair"], upstream)
+    with pytest.raises(ValueError, match="已展示"):
+        decision(root, shown["shown"], upstream, "partial", scope="selected", targets=[a + "-unknown"])
+    result = decision(root, shown["shown"], upstream, "partial", scope="selected", targets=[a], quote="除了 B 其余通过")
+    assert result["count"] == 1
+    with pytest.raises(ValueError, match="同一条用户消息"):
+        decision(root, shown["shown"], upstream, "partial")
+    image_batch(root, upstream, [b], "retry")
+    image_batch(root, upstream, [b], "pending", missing=[b])
+    replacement = review.show_round(root, ["pending", "retry"], upstream)
+    assert [r["target"] for r in replacement["items"]] == [b]
+    # The old mixed batch may contribute its remaining candidate to a narrower next round.
+    write_json(root / review.stage.REQUEST_PATH, {"asset_review_targets": [b]})
+    assert [r["target"] for r in review.show_round(root, ["pair"], upstream)["items"]] == [b]
+    with pytest.raises(ValueError, match="多份待审版本"):
+        review.show_round(root, ["pair", "retry"], upstream)
+    write_json(root / review.stage.REQUEST_PATH, {"asset_review_targets": [a, b]})
+    adopted = decision(root, replacement["shown"], upstream, "repaired")
+    assert adopted["count"] == 1
+    assert {o["output_id"] for o in read_json(Path(adopted["manifest"]))["assets"][0]["confirmed_outputs"]} == {"A", "B"}
+
+
+def test_show_round_rejects_omissions_and_wrong_bindings(tmp_path):
+    root = tmp_path.resolve()
+    upstream, targets = round_project(root)
+    write_json(root / "small.json", {"image_targets": targets[:1]})
+    with pytest.raises(ValueError, match="不一致"):
+        review.show_round(root, [], upstream, "small.json")
+    story_path = root / upstream["path_or_url"]
+    story = read_json(story_path)
+    story["asset_requirements"].append({**story["asset_requirements"][0], "asset_id": "AST-PROP-EXTRA"})
+    write_json(story_path, story)
+    upstream.update(checksum=artifacts.digest(story_path))
+    with pytest.raises(ValueError, match="遗漏.*AST-PROP-EXTRA"):
+        review.show_round(root, [], upstream)
+    story["asset_requirements"].pop()
+    write_json(story_path, story)
+    upstream.update(checksum=artifacts.digest(story_path))
+    direct = image_batch(root, upstream, targets, "local", direct=True)
+    receipt = read_json(direct)
+    digest = receipt["request_sha256"]
+    index = root / review.stage.CONTEXT_DIR / "直做图片请求" / (digest + ".json")
+    binding = dict(skill="asset-image-assistant", request="local-request.json", request_sha256=digest,
+                   narrative_id=upstream["artifact_id"], narrative_sha256=upstream["checksum"], targets=targets,
+                   image_output_kinds={t:"道具" for t in targets})
+    write_json(index, binding)
+    assert review.show_round(root, [], upstream, receipts=[direct])["shown"]
+    write_json(index, {**binding, "narrative_sha256": "0" * 64})
+    with pytest.raises(ValueError, match="冻结的项目"):
+        review.show_round(root, [], upstream, receipts=[direct])
+
+
+def test_rejected_slot_in_earlier_batch_cannot_return_to_review(tmp_path):
+    root = tmp_path.resolve()
+    upstream, (layout, replacement) = round_project(root, ["OLD-LAYOUT", "NEW"])
+    image_batch(root, upstream, [layout, replacement], "studio")
+    earlier = review.show_round(root, ["studio"], upstream)
+    record = dict(asset_id="AST-PROP-PAPER", output_id="OLD-LAYOUT", decision_id="decision-1",
+                  status="rejected", scope="project", reason="只能参考布局", user_instruction="这张不要作正式资产",
+                  decided_at="2026-11-22T12:00:00+08:00", evidence_refs=["synthetic:decision-1"])
+    write_json(root / review.asset_refs.OUTPUT_DECISIONS,
+               dict(schema_version="asset-output-applicability-1.0", decisions=[record]))
+    with pytest.raises(ValueError, match="已排除"):
+        decision(root, earlier["shown"], upstream, "after-rejection")
+    with pytest.raises(ValueError, match="已排除"):
+        review.show_round(root, ["studio"], upstream)
+    write_json(root / review.stage.REQUEST_PATH, {"asset_review_targets": [replacement]})
+    fresh = review.show_round(root, ["studio"], upstream)
+    assert [r["target"] for r in fresh["items"]] == [replacement]
+
+
+def test_show_round_covers_each_declared_character_outfit(tmp_path):
+    root = tmp_path.resolve()
+    upstream, _ = round_project(root)
+    path = root / upstream["path_or_url"]
+    story = read_json(path)
+    ast = "AST-CHAR-HOST"
+    story["asset_requirements"][0].update(
+        asset_id=ast, category="CHARACTER", character_type="HUMAN", character_output_kind=review.boards.BOARD,
+        wardrobe_states=[dict(name=outfit, evidence="synthetic", output_id=outfit) for outfit in ("DAY", "NIGHT")])
+    write_json(path, story)
+    upstream.update(checksum=artifacts.digest(path))
+    head, day, night = [ast + "@" + output for output in ("HEAD", "JACKET", "COAT")]
+
+    def batch(name, slots):
+        receipt = image_batch(root, upstream, [slot[0] for slot in slots], name)
+        packet = read_json(receipt)
+        for row, (_, kind, final) in zip(packet["items"], slots, strict=True):
+            row.update(output_kind=kind, final_output_id=final)
+        write_json(receipt, packet)
+
+    batch("first", [(head, review.boards.HEAD, None), (day, "服装", "DAY")])
+    write_json(root / review.stage.REQUEST_PATH, {"asset_review_targets": [head, day]})
+    result = review.show_round(root, ["first"], upstream)
+    assert [r["target"] for r in result["pending"]] == [ast + "@NIGHT"]
+    assert not (root / review.SHOWN).exists()
+    batch("second", [(night, "服装", "NIGHT")])
+    write_json(root / review.stage.REQUEST_PATH, {"asset_review_targets": [head, day, night]})
+    key = review.show_round(root, ["first", "second"], upstream)["shown"]
+    decision(root, key, upstream, "head and one outfit", scope="selected", targets=[head, day], quote="头照和日常装通过")
+    assert [r["target"] for r in review.show_round(root, ["second"], upstream)["items"]] == [night]
+    existing = {ast: {"required_board_ids": ["DAY", "NIGHT"], "image": {"outputs": [
+        {"output_id": outfit, "output_kind": review.boards.BOARD} for outfit in ("DAY", "NIGHT")]}}}
+    assert not review.boards.round_board_source_gaps(root, existing, [dict(target=head, output_kind=review.boards.HEAD)])

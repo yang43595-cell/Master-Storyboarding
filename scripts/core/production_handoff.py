@@ -1,6 +1,7 @@
 """Derive production handoffs from the project records already used by each stage."""
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -8,9 +9,10 @@ from .agent_acceptance import (require_asset_workflow_authorization, require_wor
                                validate_agent_acceptance)
 from .artifacts import (artifact_is_adopted, cache_file_digests, digest, exact_narrative_approval, load_manifest,
                         project_path, validate_current_dependencies)
-from .asset_batch_receipt import summarize_asset_batch_receipt
-from .asset_refs import asset_index, load_asset_list
+from .asset_batch_receipt import DIRECT_RECEIPTS, DIRECT_REQUESTS, summarize_asset_batch_receipt, validate_asset_review_targets
+from .asset_refs import _output_decisions, asset_index, load_asset_list
 from .candidate_test import require_production_manifest
+from . import character_boards
 from .character_assets import final_output_problems, scoped_output_requirements
 from .io import read_json
 from .draft_delivery import read_draft_delivery
@@ -118,6 +120,7 @@ def _asset_readiness(project, narrative, asset_ids=None, *, file_digest=None):
         outputs = [output for output in image.get('outputs', [])
                    if output.get('sha256') and output.get('path_exists')]
         if asset_id in requirements:
+            item['required_board_ids'] = list(requirements[asset_id])
             problems = final_output_problems(requirements, [asset_id], {asset_id: outputs})
         else:
             problems = []
@@ -167,9 +170,56 @@ def require_handoff_visual_inputs(project, storyboard, director, shot_ids, *, ro
                                     assets=assets, file_digest=file_digest)
 
 
-def _pending_asset_batches(project, narrative, assets, waiting):
-    """Read ordinary delegated image batches bound to the current story and request."""
+def _pending_asset_batches(project, narrative, relevant_assets, confirmed, *, active_request=None):
+    """Read image work bound to the current story, including direct work after a restart."""
     output = {}
+
+    def collect(receipt, targets, binding, kinds):
+        relevant = {target for target in targets if target.partition('@')[0] in relevant_assets and target not in confirmed}
+        if not relevant:
+            return
+        path = project_path(project, receipt)
+        if not path.is_relative_to(project):
+            return
+        try:
+            document = read_json(path)
+        except (OSError, ValueError):
+            document = {}
+        result = summarize_asset_batch_receipt(project, path, targets, binding=binding, document=document)
+        rows = document.get('items', []) if isinstance(document, dict) else []
+        for item in result['items']:
+            target = item['target']
+            if target not in relevant:
+                continue
+            record = output.setdefault(target, {'statuses': set(), 'receipts': set(), 'versions': set()})
+            status = item['status']
+            if status == 'ready_for_review':
+                source = next(r for r in rows if r.get('target') == target and r.get('candidate_id') == item['candidate_id']
+                              and str(r.get('sha256')).lower() == item['sha256'])
+                if not isinstance(source.get('purpose'), str) or not source['purpose'].strip():
+                    status = 'pending'
+                else:
+                    kind = source.get('output_kind') or kinds.get(target)
+                    final = source.get('final_output_id')
+                    record['versions'].add((item['candidate_id'], item['sha256'], item['path'], kind, final))
+                    record['candidate'] = {'target': target, 'output_kind': kind, 'final_output_id': final}
+            record['statuses'].add(status)
+            record['receipts'].add(result['receipt_path'])
+
+    for index in (project / DIRECT_REQUESTS).glob('*.json'):
+        try:
+            if index.stem == active_request or not index.resolve().is_relative_to(project):
+                continue
+            batch = read_json(index)
+            if (batch['skill'] != 'asset-image-assistant'
+                    or batch['request_sha256'] != index.stem or batch['narrative_id'] != narrative['artifact_id']
+                    or batch['narrative_sha256'] != narrative['checksum']):
+                continue
+            collect(DIRECT_RECEIPTS / index.name, batch['targets'], {'context_id': None, 'request_sha256': index.stem},
+                    batch['image_output_kinds'])
+        except (*EVIDENCE_ERRORS, AttributeError):
+            continue
+
     context_root = project / '00_项目管理' / '执行上下文' / '批次'
     story_lines = (f'- artifact_id：`{narrative["artifact_id"]}`\n'
                    f'  - logical_id：`{NARRATIVE}`\n'
@@ -191,60 +241,118 @@ def _pending_asset_batches(project, narrative, assets, waiting):
             batch = json.loads(entries[0])
             if batch['context_id'] != card_path.parent.name:
                 continue
-            request = project_path(project, batch['request'])
-            if (not request.is_relative_to(project) or digest(request) != batch['request_sha256']
-                    or read_json(request).get('image_targets') != batch['targets']):
+            if not any(target.partition('@')[0] in relevant_assets and target not in confirmed for target in batch['targets']):
                 continue
-            result = summarize_asset_batch_receipt(project, batch['receipt'], batch['targets'], binding=batch)
-            for item in result['items']:
-                asset_id, _, output_id = item['target'].partition('@')
-                current = assets.get(asset_id, {}).get('image', {}).get('outputs', [])
-                if asset_id not in waiting or any(existing['output_id'] == output_id
-                                                  for existing in current if existing.get('sha256')):
-                    continue
-                record = output.setdefault(item['target'], {'statuses': set(), 'receipts': set()})
-                record['statuses'].add(item['status'])
-                record['receipts'].add(result['receipt_path'])
+            request = project_path(project, batch['request'])
+            if not request.is_relative_to(project):
+                continue
+            raw = request.read_bytes()
+            if hashlib.sha256(raw).hexdigest() != batch['request_sha256']:
+                continue
+            planned = json.loads(raw)
+            if planned.get('image_targets') == batch['targets']:
+                collect(batch['receipt'], batch['targets'], batch, planned.get('image_output_kinds', {}))
         except (*EVIDENCE_ERRORS, AttributeError):
             continue
     return output
 
 
-def _asset_steps(project, state, kickoff, narrative_entry, assets, ready, waiting):
-    if not waiting:
+def unlisted_asset_work(project, assets, waiting, planned_assets):
+    """An intentionally deferred decision or a board with confirmed sources needs no new review slot."""
+    inventory = {ast for ast in waiting if ast not in planned_assets and assets.get(ast, {}).get('state') == 'needs_image'}
+    boards = {ast: assets[ast] for ast in inventory if assets[ast].get('required_board_ids')}
+    missing = {row['target'].partition('@')[0] for row in character_boards.round_board_source_gaps(project, boards, [])}
+    composing = boards.keys() - missing
+    return inventory - composing, composing
+
+
+def _asset_steps(project, state, kickoff, narrative_entry, assets, ready, waiting, *, review_targets=None, active_request=None):
+    targets = set(validate_asset_review_targets(review_targets)) if review_targets is not None else set()
+    planned_assets = {target.partition('@')[0] for target in targets}
+    needed = {asset for asset in waiting if assets.get(asset, {}).get('state') == 'needs_image'}
+    for target in targets:
+        ast, output = target.split('@')
+        item = assets.get(ast, {})
+        if item.get('state') != 'needs_image' or output in item.get('required_board_ids', []):
+            raise ValueError('整轮待审清单须使用当前需要人工审核的源图槽：' + target)
+    confirmed = {f'{ast}@{output["output_id"]}' for ast in planned_assets | needed
+                 for output in assets[ast]['image'].get('outputs', []) if output.get('sha256') and output['path_exists']}
+    outstanding = targets - confirmed
+    if not waiting and not outstanding:
         return [_step('assets', 'complete' if ready else 'not_applicable',
                       '所有必要资产已有可用确认输出' if ready else '本轮没有待制作资产',
                       output_ids=[value for values in ready.values() for value in values])]
+
+    decisions, _ = _output_decisions(project)
+    rejected = {ast + '@' + output for (ast, output), row in decisions.items() if row['status'] == 'rejected'}
+    if rejected & targets:
+        raise ValueError('整轮清单仍包含项目已拒用的输出：' + '、'.join(sorted(rejected & targets)))
     generation = (kickoff or {}).get('image_generation') or {}
-    authorization = _authorization(project, state, 'asset-image-assistant')
-    needed = {asset for asset in waiting if assets.get(asset, {}).get('state') == 'needs_image'}
+    authorized = bool(generation or _authorization(project, state, 'asset-image-assistant'))
+    batches = _pending_asset_batches(project, narrative_entry, needed | planned_assets, confirmed | rejected,
+                                     active_request=active_request)
+    reviewed = {target for target, row in batches.items()
+                if row['statuses'] == {'ready_for_review'} and len(row['versions']) == 1}
+    held = batches.keys() - reviewed
+    inventory, composing = unlisted_asset_work(project, assets, waiting, {target.partition('@')[0] for target in outstanding})
     steps = []
-    batches = _pending_asset_batches(project, narrative_entry, assets, waiting)
-    reviewed = sorted(target for target, row in batches.items() if row['statuses'] == {'ready_for_review'})
+    board_gaps = []
     if reviewed:
-        steps.append(_step('asset-review', 'waiting', '候选已完成实看，沿原目标等待准确图片确认及登记',
-                           output_ids=reviewed, receipt_paths=sorted({receipt for target in reviewed
-                                                                      for receipt in batches[target]['receipts']})))
-    held = set(batches) - set(reviewed)
+        all_ready = bool(outstanding) and outstanding <= reviewed and not inventory and not (batches.keys() - targets)
+        if all_ready:
+            board_gaps = character_boards.round_board_source_gaps(project, assets, [batches[t]['candidate'] for t in reviewed])
+            if board_gaps:
+                all_ready = False
+                inventory.update(row['target'].partition('@')[0] for row in board_gaps)
+        covered = outstanding if all_ready else reviewed
+        steps.append(_step('asset-review' if all_ready else 'assets', 'waiting',
+                           '本轮源图已齐，一次展示并等待整轮确认' if all_ready
+                           else '已完成候选留在原批次；列齐整轮待审源图并继续收齐其余输出',
+                           output_ids=sorted(covered), receipt_paths=sorted({receipt for target in covered
+                                                                             for receipt in batches[target]['receipts']})))
     if held:
         steps.append(_step('assets', 'waiting', '沿现有图片批次等待结果或处理原阻塞',
                            output_ids=sorted(held), receipt_paths=sorted({receipt for target in held
                                                                           for receipt in batches[target]['receipts']})))
-    batched_assets = {target.partition('@')[0] for target in batches}
-    approved = {f'{asset}@{output["output_id"]}' for asset in needed
-                for output in assets[asset]['image'].get('outputs', []) if output.get('sha256')}
-    permitted_outputs = {f'{asset}@{output}' for asset, outputs in generation.get('outputs', {}).items()
-                         if asset in needed for output in outputs} - batches.keys() - approved
-    permitted = ({target.partition('@')[0] for target in permitted_outputs}
-                 if 'outputs' in generation else needed - batched_assets)
+
+    scoped_grant = {f'{ast}@{output}' for ast, outputs in generation.get('outputs', {}).items()
+                    if ast in needed | planned_assets for output in outputs}
+    if targets:
+        missing = outstanding - batches.keys()
+        permitted_outputs = missing & scoped_grant if 'outputs' in generation else missing
+        if restricted := missing - permitted_outputs:
+            steps.append(_step('assets', 'waiting', '待补源图超出当前生图授权范围', output_ids=sorted(restricted)))
+    else:
+        permitted_outputs = scoped_grant - batches.keys() - confirmed - rejected
+        if 'outputs' in generation:
+            inventory = set()
+    permitted = {target.partition('@')[0] for target in permitted_outputs} | inventory | composing
     if permitted:
-        reason = ('按已采用编导稿先核现有图片，缺的输出按现有授权制作' if generation or authorization
-                  else '按已采用编导稿盘点和复用现有图片；出图前沿现有授权入口核准范围')
-        output_scope = {'output_ids': sorted(permitted_outputs)} if generation or authorization else {}
-        steps.append(_step('assets', 'ready', reason,
-                           skill='asset-image-assistant', artifact_ids=[narrative_entry['artifact_id']],
-                           asset_ids=sorted(permitted), **output_scope))
-    if remaining := set(waiting) - permitted - batched_assets:
+        reason = ('按整轮清单并行补齐未派出的源图，沿当前批次收齐后一次交审' if targets
+                  else '列全本轮人工交审的 asset_review_targets；复用已有图片和批次，继续制作已授权的缺图')
+        if inventory and targets:
+            reason += '；盘点尚未覆盖的需求，补入待审清单或登记已核实的复用图'
+        if composing:
+            reason += '；用 compose-boards 拼成已确认源图对应的人物板'
+        route = dict(asset_ids=sorted(permitted))
+        if authorized and (permitted_outputs or inventory and not targets and 'outputs' not in generation):
+            route['output_ids'] = sorted(permitted_outputs)
+        if not targets and confirmed:
+            route['confirmed_output_ids'] = sorted(confirmed)
+        if not targets and batches:
+            route['batched_output_ids'] = sorted(batches)
+        if not targets and rejected:
+            route['rejected_output_ids'] = sorted(rejected)
+        if board_gaps:
+            route['missing_board_sources'] = board_gaps
+        if composing:
+            route['compose_asset_ids'] = sorted(composing)
+        if targets and inventory:
+            route['inventory_asset_ids'] = sorted(inventory)
+        steps.append(_step('assets', 'ready', reason, skill='asset-image-assistant',
+                           artifact_ids=[narrative_entry['artifact_id']], **route))
+    covered_assets = {target.partition('@')[0] for target in batches} | planned_assets
+    if remaining := set(waiting) - permitted - covered_assets:
         steps.append(_step('assets', 'waiting', '必要资产缺确认输出、制作授权或当前需求决定',
                            asset_ids=sorted(remaining), blockers={asset: waiting[asset] for asset in sorted(remaining)}))
     return steps
@@ -268,13 +376,14 @@ def _read_assets_for_handoff(project, narrative, asset_ids=None, *, file_digest)
         return {}, {}, {}, str(exc)
 
 
-def _resolve(project, manifest, state, kickoff, *, actions=None, shot_scope=None):
+def _resolve(project, manifest, state, kickoff, *, actions=None, shot_scope=None, active_asset_request=None):
     if state.get('candidate_test'):
         return [_step('kickoff', 'waiting', '隔离候选项目不进入正式生产交接')]
     require_production_manifest(project)
     if state['project_status'] != 'active':
         return [_step('delivery', 'waiting', '项目当前不处于可交接的活动状态')]
-    if LEGACY_RULE in load_project_request(project).get('local_references', []):
+    request = load_project_request(project)
+    if LEGACY_RULE in request.get('local_references', []):
         return [_step('kickoff', 'waiting', '本轮选用兼容人工流程，沿原交接步骤执行')]
     narrative_entry, narrative = _package(project, manifest, state, NARRATIVE)
     if kickoff is None and narrative_entry is None:
@@ -311,7 +420,8 @@ def _resolve(project, manifest, state, kickoff, *, actions=None, shot_scope=None
             if reason := asset_error or _blocked_change(project, [NARRATIVE, ASSETS]):
                 steps.append(_step('assets', 'waiting', reason))
             else:
-                steps.extend(_asset_steps(project, state, kickoff, narrative_entry, assets, ready, waiting))
+                steps.extend(_asset_steps(project, state, kickoff, narrative_entry, assets, ready, waiting,
+                                         review_targets=request.get('asset_review_targets'), active_request=active_asset_request))
         except EVIDENCE_ERRORS as exc:
             asset_error = str(exc)
             assets, waiting = {}, {}
@@ -484,7 +594,7 @@ def _resolve(project, manifest, state, kickoff, *, actions=None, shot_scope=None
 
 
 def resolve_production_handoff(project_root, *, manifest=None, state=None, actions=None, shot_scope=None,
-                               revision_status=None):
+                               revision_status=None, active_asset_request=None):
     """Report the full flow or check only the named actions and their prerequisites."""
     project = Path(project_root).resolve()
     workflow = CREATIVE_WORKFLOW
@@ -497,7 +607,8 @@ def resolve_production_handoff(project_root, *, manifest=None, state=None, actio
         state = load_project_state(project) if state is None else state
         kickoff = None if state.get('candidate_test') else load_kickoff(project)
         workflow = production_workflow(kickoff)
-        steps = _resolve(project, manifest, state, kickoff, actions=actions, shot_scope=shot_scope)
+        steps = _resolve(project, manifest, state, kickoff, actions=actions, shot_scope=shot_scope,
+                         active_asset_request=active_asset_request)
         if isinstance(active_change, dict) and actions is None:
             steps.insert(0, _step('revision', 'waiting', '沿原变更案继续核对、返修或确认',
                                   change_id=active_change.get('change_id')))
@@ -511,13 +622,13 @@ def resolve_production_handoff(project_root, *, manifest=None, state=None, actio
 
 
 def require_production_handoff(project_root, action, *, manifest=None, state=None,
-                               shot_ids=None, segment_ids=None):
+                               shot_ids=None, segment_ids=None, active_asset_request=None):
     """Require the named normal transition to be ready for the exact requested scope."""
     shot_scope = list(dict.fromkeys(shot_ids)) if shot_ids is not None and action in {'visual', 'video'} else None
     if shot_scope == []:
         raise ValueError(f'{action} 超出已就绪的 shot_ids 范围')
     steps = resolve_production_handoff(project_root, manifest=manifest, state=state,
-                                       actions={action}, shot_scope=shot_scope)['steps']
+                                       actions={action}, shot_scope=shot_scope, active_asset_request=active_asset_request)['steps']
     for step in steps:
         if step['action'] != action or step['status'] != 'ready':
             continue

@@ -1,4 +1,4 @@
-"""Show one finished ordinary image batch and record a decision on exact shown lists."""
+"""Prepare ordinary image reviews and record decisions on the exact images shown."""
 
 import argparse
 import hashlib
@@ -12,13 +12,15 @@ from PIL import Image
 
 if __package__:
     from . import stage_context_cli as stage
-    from .core import artifacts, asset_refs, character_boards as boards
+    from .core import artifacts, asset_refs, character_boards as boards, production_handoff
+    from .core.asset_batch_receipt import DIRECT_REQUESTS, summarize_asset_batch_receipt, validate_asset_review_targets
     from .core.io import project_lock, read_json, write_json, sha256_json, utc_now
     from .core.project_state import write_project_state
     from .core.schema_contracts import require_schema
 else:
     import stage_context_cli as stage
-    from core import artifacts, asset_refs, character_boards as boards
+    from core import artifacts, asset_refs, character_boards as boards, production_handoff
+    from core.asset_batch_receipt import DIRECT_REQUESTS, summarize_asset_batch_receipt, validate_asset_review_targets
     from core.io import project_lock, read_json, write_json, sha256_json, utc_now
     from core.project_state import write_project_state
     from core.schema_contracts import require_schema
@@ -41,12 +43,25 @@ def current(entries, logical):
     return next(iter(rows), None)
 
 
-def effective_requirements(root, narrative):
-    story = read_json(inside(root, narrative["path_or_url"]))
+def effective_requirements(root, narrative, *, story=None):
+    if story is None:
+        story = read_json(inside(root, narrative["path_or_url"]))
     return {r["asset_id"]: r for r in asset_refs.effective(story, asset_refs.read_choices(root))}
 
 
-def show(root, context, narrative):
+def check_basis(basis, narrative, context):
+    if (basis.get("skill") != "asset-image-assistant" or basis.get("context_id") != context
+            or basis["input_snapshot"].get("candidate_test")):
+        raise ValueError("图片批次任务依据与当前项目或执行身份不符")
+    if not any(
+        a["record"]["artifact_id"] == narrative["artifact_id"]
+        and a["file"]["sha256"] == narrative["checksum"]
+        for a in basis["input_snapshot"]["artifacts"]
+    ):
+        raise ValueError("批次与当前编导版本不符")
+
+
+def batch_items(root, context, narrative, requirements):
     args = stage.parser().parse_args(
         [
             "handoff",
@@ -60,28 +75,69 @@ def show(root, context, narrative):
         ]
     )
     batch = stage.handoff(args)
-    basis = read_json(inside(root, f"00_项目管理/执行上下文/批次/{context}/task_basis.json"))
-    if not any(
-        a["record"]["artifact_id"] == narrative["artifact_id"]
-        and a["file"]["sha256"] == narrative["checksum"]
-        for a in basis["input_snapshot"]["artifacts"]
-    ):
-        raise ValueError("批次与当前编导版本不符")
-    requirements = effective_requirements(root, narrative)
-    original = read_json(inside(root, batch["receipt_path"]))
+    basis = read_json(stage._context_path(root, context, "task_basis.json"))
+    check_basis(basis, narrative, context)
+    return review_items(root, batch, requirements, basis["task_request"].get("image_output_kinds", {}))
+
+
+def direct_items(root, receipt, narrative, requirements):
+    receipt = inside(root, receipt)
+    document = read_json(receipt)
+    digest = document.get("request_sha256") if isinstance(document, dict) else None
+    if not isinstance(digest, str) or not re.fullmatch("[0-9a-f]{64}", digest) or document.get("context_id"):
+        raise ValueError("主对话直做回执缺本阶段准确请求哈希，或属于另一执行批次")
+    binding_path = inside(root, DIRECT_REQUESTS / (digest + ".json"))
+    if binding_path.is_file():
+        binding = read_json(binding_path)
+        if (binding.get("request_sha256") != digest
+                or binding.get("skill") != "asset-image-assistant"
+                or (binding.get("narrative_id"), binding.get("narrative_sha256"))
+                != (narrative["artifact_id"], narrative["checksum"])):
+            raise ValueError("直做批次与冻结的项目、请求或编导版本不符")
+        request, request_sha = stage._request_snapshot(inside(root, binding["request"]))
+        targets = request.get("image_targets")
+        kinds = request.get("image_output_kinds", {})
+        if digest != request_sha or targets != binding["targets"] or kinds != binding["image_output_kinds"]:
+            raise ValueError("直做回执与冻结的批次请求不符")
+    else:
+        basis = read_json(stage._context_path(root, None, "task_basis.json"))
+        check_basis(basis, narrative, None)
+        request_path = Path(basis["request_path"])
+        if request_path.is_absolute():
+            request_path = request_path.relative_to(basis["reading_manifest"]["project_path"])
+        request, request_sha = stage._request_snapshot(inside(root, request_path))
+        frozen = basis["task_request"]
+        semantic = stage._semantic_request(stage.bind_stage_request(request, stage.load_kickoff(root)), basis["skill"])
+        if digest != request_sha or semantic != frozen:
+            raise ValueError("直做回执与本阶段冻结请求不符")
+        targets = frozen["image_targets"]
+        kinds = frozen.get("image_output_kinds", {})
+    batch = summarize_asset_batch_receipt(root, receipt, targets, binding={"request_sha256": digest, "context_id": None},
+                                          document=document)
+    return review_items(root, batch, requirements, kinds, document)
+
+
+def review_items(root, batch, requirements, kinds, original=None):
+    if not any(row["status"] == "ready_for_review" for row in batch["items"]):
+        return [], batch["items"]
+    if original is None:
+        original = read_json(inside(root, batch["receipt_path"]))
     items = []
     pending = []
     for row in batch["items"]:
         if row["status"] != "ready_for_review":
             pending.append(row)
             continue
-        source = next(
+        source = next((
             i
             for i in original["items"]
             if i["target"] == row["target"]
             and i.get("candidate_id") == row["candidate_id"]
             and str(i.get("sha256")).lower() == row["sha256"]
-        )
+        ), None)
+        if source is None:
+            pending.append({"target": row["target"], "issue": "实看回执在接收期间已更新", "status": "pending"})
+            continue
         if not isinstance(source.get("purpose"), str) or not source["purpose"].strip():
             pending.append({"target": row["target"], "issue": "回执缺本图用途", "status": "pending"})
             continue
@@ -101,17 +157,121 @@ def show(root, context, narrative):
                 "view": source.get("view"),
                 "state": source.get("state"),
                 "output_kind": source.get("output_kind")
-                or basis["task_request"].get("image_output_kinds", {}).get(row["target"]),
+                or kinds.get(row["target"]),
             }
         )
-    if not items:
-        raise ValueError("本批暂无可审成图")
-    snapshot = dict(
-        context=context, narrative=narrative["checksum"], narrative_id=narrative["artifact_id"], items=items
-    )
+    return items, pending
+
+
+def store_shown(root, narrative, items, **scope):
+    snapshot = dict(narrative=narrative["checksum"], narrative_id=narrative["artifact_id"], items=items, **scope)
     key = sha256_json(snapshot)
     write_json(inside(root, SHOWN / (key + ".json")), snapshot)
-    return dict(shown=key, items=items, pending=pending)
+    return dict(shown=key, items=items, pending=[])
+
+
+def show(root, context, narrative):
+    items, pending = batch_items(root, context, narrative, effective_requirements(root, narrative))
+    if not items:
+        raise ValueError("本批暂无可审成图")
+    return dict(store_shown(root, narrative, items, context=context), pending=pending)
+
+
+def round_targets(root, targets_path=None):
+    request_path = inside(root, stage.REQUEST_PATH)
+    request = read_json(request_path) if request_path.is_file() else {}
+    registered = request.get("asset_review_targets")
+    targets = registered
+    if targets_path:
+        plan = read_json(inside(root, targets_path))
+        targets = plan.get("asset_review_targets", plan.get("image_targets")) if isinstance(plan, dict) else None
+    targets = validate_asset_review_targets(targets)
+    if registered is not None and set(targets) != set(validate_asset_review_targets(registered)):
+        raise ValueError("指定范围与项目已登记的整轮交审目标不一致")
+    return targets
+
+
+def approved_versions(images):
+    return {f"{ast}@{o['output_id']}": {"sha256": o["sha256"], "purpose": o["purpose"]}
+            for ast, asset in images.items() for o in asset.get("outputs", []) if o.get("sha256")}
+
+
+def reviewed_purpose(item):
+    return item["purpose"] + ("。已披露偏差：" + item["issue"] if item.get("issue") else "")
+
+
+def rejected_targets(root, targets):
+    decisions, issues = asset_refs._output_decisions(root)
+    pairs = {tuple(t.split("@")) for t in targets}
+    for issue in issues:
+        if any(issue.get("asset_id") in (None, ast) and issue.get("output_id") in (None, "", output)
+               for ast, output in pairs):
+            raise ValueError(issue["message"])
+    rejected = {f"{ast}@{output}" for (ast, output), decision in decisions.items() if decision["status"] == "rejected"}
+    if excluded := rejected.intersection(targets):
+        raise ValueError("清单含项目已排除的输出，请使用本轮替代槽：" + "、".join(sorted(excluded)))
+    return rejected
+
+
+def show_round(root, contexts, narrative, targets_path=None, receipts=()):
+    targets = round_targets(root, targets_path)
+    expected = set(targets)
+    rejected = rejected_targets(root, expected)
+    story = read_json(inside(root, narrative["path_or_url"]))
+    assets, _, waiting = production_handoff._asset_readiness(root, story, file_digest=artifacts.cache_file_digests())
+    inventory, _ = production_handoff.unlisted_asset_work(root, assets, waiting, {t.split("@")[0] for t in targets})
+    if inventory:
+        raise ValueError("整轮清单遗漏仍需人审的资产：" + "、".join(sorted(inventory)))
+    for target in targets:
+        ast, output = target.split("@")
+        asset = assets.get(ast, {})
+        if asset.get("state") != "needs_image" or output in asset.get("required_board_ids", []):
+            raise ValueError("整轮交审目标须为当前需人审的准确源图：" + target)
+    requirements = effective_requirements(root, narrative, story=story)
+    contexts = sorted(set(contexts))
+    receipts = sorted({inside(root, path).relative_to(root).as_posix() for path in receipts})
+    batches = [batch_items(root, c, narrative, requirements) for c in contexts]
+    batches.extend(direct_items(root, path, narrative, requirements) for path in receipts)
+    ready, pending = {}, {}
+    for items, blocked in batches:
+        for row in items:
+            target = row["target"]
+            if target in ready and ready[target] != row:
+                raise ValueError("同一目标有多份待审版本，请指定实际批次：" + target)
+            ready[target] = row
+        for row in blocked:
+            pending[row["target"]] = row
+    approved = approved_versions({ast: asset["image"] for ast, asset in assets.items()})
+    reused = {}
+    same_version = {t for t, row in ready.items()
+                    if approved.get(t) == dict(sha256=row["sha256"], purpose=reviewed_purpose(row))}
+    for target, previous in approved.items():
+        if target in ready and target not in same_version:
+            continue
+        if target not in pending:
+            reused[target] = previous
+    extra = (ready.keys() | pending.keys()) - expected - reused.keys() - rejected
+    if extra:
+        raise ValueError("执行批次含本轮清单外且未经同版确认的目标：" + "、".join(sorted(extra)))
+    reused = {t: reused[t] for t in targets if t in reused}
+    missing = []
+    for target in targets:
+        if target not in reused and target not in ready:
+            missing.append(pending.get(target) or dict(target=target, status="pending", issue="尚缺本轮目标的成图回执"))
+        elif target in pending and target in same_version:
+            missing.append(pending[target])
+    if missing:
+        return dict(status="pending", pending=missing)
+    items = [ready[t] for t in targets if t not in reused]
+    gaps = boards.round_board_source_gaps(root, assets, items)
+    if gaps:
+        return dict(status="pending", pending=gaps)
+    if len(reused) == len(targets):
+        return dict(status="already_confirmed", confirmed=targets, items=[], pending=[])
+    scope = dict(targets=targets, reused=reused, targets_path=(
+        inside(root, targets_path).relative_to(root).as_posix() if targets_path else None
+    ))
+    return store_shown(root, narrative, items, contexts=contexts, receipts=receipts, review_round=scope)
 
 
 def append_candidate(record, path, sources, width, height, fmt):
@@ -196,7 +356,7 @@ def collect_output(root, rel, staging, target, item, requirements, out, message,
         dict(
             selected,
             output_id=output,
-            purpose=item["purpose"] + ("。已披露偏差：" + item["issue"] if item.get("issue") else ""),
+            purpose=reviewed_purpose(item),
             view=item.get("view") or "见已确认成图",
             state=item.get("state") or output,
             output_kind=item["output_kind"] or output,
@@ -224,9 +384,10 @@ def collect_output(root, rel, staging, target, item, requirements, out, message,
 def confirm(root, keys, message, narrative, entries):
     if not all(isinstance(message.get(k), str) and message[k].strip() for k in ("at", "quote", "review_ref")):
         raise ValueError("缺用户确认原话、时间或消息引用")
-    if datetime.fromisoformat(message["at"]).utcoffset() is None or message.get("scope") != "all_shown":
+    if datetime.fromisoformat(message["at"]).utcoffset() is None or message.get("scope") not in ("all_shown", "selected"):
         raise ValueError("确认须绑定已展示清单与含时区时间")
     rows = {}
+    round_scope = None
     for key in keys:
         if not re.fullmatch("[0-9a-f]{64}", key):
             raise ValueError("交审编号无效")
@@ -236,10 +397,22 @@ def confirm(root, keys, message, narrative, entries):
             narrative["artifact_id"],
         ):
             raise ValueError("交审内容或编导版本已变化")
+        if "review_round" in packet:
+            if len(keys) != 1:
+                raise ValueError("整轮交审只使用本轮唯一展示编号")
+            round_scope = packet["review_round"]
         for item in packet["items"]:
             if item["target"] in rows and rows[item["target"]] != item:
                 raise ValueError("同一输出展示了多个版本，请指定实际通过的清单")
             rows[item["target"]] = item
+    if message["scope"] == "selected":
+        selected = validate_asset_review_targets(message.get("targets"))
+        if round_scope is None or not set(selected) <= rows.keys():
+            raise ValueError("部分通过须明确列出本轮已展示且获通过的准确目标")
+        rows = {target: item for target, item in rows.items() if target in selected}
+        message = {**message, "targets": sorted(selected)}
+    elif "targets" in message:
+        raise ValueError("指定部分通过项时须用 selected 范围")
     key = sha256_json([sorted(set(keys)), message])
     ident = "visual-assets-chat-" + key
     rel = Path(asset_refs.MASTER_DIR) / ident
@@ -269,6 +442,13 @@ def confirm(root, keys, message, narrative, entries):
         if artifacts.digest(dest) != old["checksum"]:
             raise ValueError("已确认清单字节变化")
     else:
+        if round_scope:
+            if set(round_targets(root, round_scope["targets_path"])) != set(round_scope["targets"]):
+                raise ValueError("整轮交审目标已变化，请按当前清单重新展示")
+            rejected_targets(root, rows)
+            reused = round_scope["reused"]
+            if reused and approved_versions(asset_refs.confirmed_images(root, requests=reused)) != reused:
+                raise ValueError("交审后沿用的已确认图已变化，请重新展示")
         for e in entries:
             if e["artifact_id"].startswith("visual-boards-") and e["status"] == "candidate":
                 raise ValueError("已有拼版待恢复，请先按原实看编号续作")
@@ -280,7 +460,7 @@ def confirm(root, keys, message, narrative, entries):
             if any(r["confirmation"]["review_ref"] == message["review_ref"] for r in other["items"]):
                 raise ValueError("同一条用户消息已用于其他交审范围")
         story = read_json(inside(root, narrative["path_or_url"]))
-        requirements = effective_requirements(root, narrative)
+        requirements = effective_requirements(root, narrative, story=story)
         revisions = [
             int(e["revision"][1:])
             for e in entries
@@ -310,11 +490,12 @@ def confirm(root, keys, message, narrative, entries):
                 raise ValueError("当前资产表属于另一编导版本，须核对沿用范围")
             out.update(prior, revision=out["revision"])
         confirmed = []
+        user_evidence = {k: v for k, v in message.items() if k != "targets"}
         with TemporaryDirectory(dir=root) as tmp:
             staging = Path(tmp)
             for target, item in rows.items():
                 confirmed.append(
-                    collect_output(root, rel, staging, target, item, requirements, out, message, receipt)
+                    collect_output(root, rel, staging, target, item, requirements, out, user_evidence, receipt)
                 )
             for target, item in rows.items():
                 ast, output = target.split("@")
@@ -490,6 +671,10 @@ def main():
     parser.add_argument("--project", required=True, type=Path)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("show").add_argument("--context-id", required=True)
+    together = commands.add_parser("show-round", help="按整轮需求一次展示已收齐的成图")
+    together.add_argument("--context-id", action="append", default=[], help="委派批次，可重复")
+    together.add_argument("--receipt", action="append", default=[], help="项目内直做批次实看回执，可重复")
+    together.add_argument("--targets-json", help="项目内本轮总请求，默认读取项目需求的 asset_review_targets")
     decide = commands.add_parser("confirm")
     decide.add_argument("--shown", action="append", required=True)
     decide.add_argument("--confirmation-json", required=True, type=Path)
@@ -512,6 +697,8 @@ def main():
             raise ValueError("缺当前已采用的准确编导稿")
         if args.command == "show":
             result = show(root, args.context_id, narrative)
+        elif args.command == "show-round":
+            result = show_round(root, args.context_id, narrative, args.targets_json, args.receipt)
         elif args.command == "confirm":
             result = confirm(root, args.shown, read_json(args.confirmation_json), narrative, entries)
         else:

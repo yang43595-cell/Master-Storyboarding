@@ -26,7 +26,7 @@ try:
                                  register_workspace_artifact, adopt_initial_package,
                                  adopt_initial_agent_artifact, validate_candidate_submission)
     from .core.asset_refs import check_output_plan, registered_output_snapshot
-    from .core.asset_batch_receipt import summarize_asset_batch_receipt, validate_asset_batch_targets
+    from .core.asset_batch_receipt import DIRECT_RECEIPTS, DIRECT_REQUESTS, summarize_asset_batch_receipt, validate_asset_batch_targets
     from .core.character_layout import (character_layout_references, character_prompt_templates,
                                         character_template_kinds)
     from .core.agent_acceptance import register_workflow_authorization, require_workflow_authorization
@@ -57,7 +57,7 @@ except ImportError:  # direct CLI execution
                                 register_workspace_artifact, adopt_initial_package,
                                 adopt_initial_agent_artifact, validate_candidate_submission)
     from core.asset_refs import check_output_plan, registered_output_snapshot
-    from core.asset_batch_receipt import summarize_asset_batch_receipt, validate_asset_batch_targets
+    from core.asset_batch_receipt import DIRECT_RECEIPTS, DIRECT_REQUESTS, summarize_asset_batch_receipt, validate_asset_batch_targets
     from core.character_layout import (character_layout_references, character_prompt_templates,
                                        character_template_kinds)
     from core.agent_acceptance import register_workflow_authorization, require_workflow_authorization
@@ -971,7 +971,8 @@ def _handoff_scope(text: str) -> dict[str, Any] | None:
             **({"asset_batch_sha256": _identity_hash(sorted(bindings))} if bindings else {})}
 
 
-def _check_preparation_route(project, skill, request, routed, *, repair=False, asset_batch=False):
+def _check_preparation_route(project, skill, request, routed, *, repair=False, asset_batch=False,
+                             active_request=None):
     """Keep formal startup on the live route, including after a stale card or a restart."""
     if "revise_candidate_id" in request:
         if skill != "creative-director" or repair or (routed and routed["action"] != "creative"):
@@ -998,26 +999,34 @@ def _check_preparation_route(project, skill, request, routed, *, repair=False, a
     if routed and routed["action"] != action:
         raise StageContextError("交接卡步骤与本轮准备不一致")
     requested_shots = request.get("source_shot_ids") if action == "visual" else None
-    route = require_production_handoff(project, action, shot_ids=requested_shots)
+    route = require_production_handoff(project, action, shot_ids=requested_shots,
+                                       **({"active_asset_request": active_request} if active_request else {}))
     if route.get("revision_candidate_ids"):
         raise StageContextError("请在阶段请求的 revise_candidate_id 指定待修候选：" +
                                 "、".join(route["revision_candidate_ids"]))
+    image_targets = set(request.get("image_targets", [])) if action == "assets" else set()
     if routed:
         if action != "assets" and routed.get("workflow") != route.get("workflow"):
             raise StageContextError("制作路线已变化；重新运行 handoff")
         if not set(routed.get("artifact_ids", [])).issubset(route.get("artifact_ids", [])):
             raise StageContextError("程序交接输入已改版；重新运行 handoff")
+        fields = ("shot_ids", "segment_ids") if image_targets else ("asset_ids", "output_ids", "shot_ids", "segment_ids")
         if (requested_shots is not None and not set(requested_shots).issubset(routed.get("shot_ids", []))
                 or any(not set(routed.get(field, [])).issubset(route.get(field, []))
-                       for field in ("asset_ids", "output_ids", "shot_ids", "segment_ids")
-                       if field != "shot_ids" or requested_shots is None)):
+                       for field in fields if field != "shot_ids" or requested_shots is None)):
             raise StageContextError("程序交接范围已变化；重新运行 handoff 核对就绪范围")
-    if action == "assets" and (targets := request.get("image_targets")):
-        if "output_ids" not in route:
-            raise StageContextError("资产交接范围为盘点和复用；出图目标须先登记当前制作授权")
-        if (not {target.partition("@")[0] for target in targets}.issubset(route.get("asset_ids", []))
-                or route.get("output_ids") and not set(targets).issubset(route["output_ids"])):
-            raise StageContextError("图片目标超出程序交接范围")
+    if image_targets:
+        assets = {target.partition("@")[0] for target in image_targets}
+        for scope in (routed, route) if routed else (route,):
+            if "output_ids" not in scope:
+                raise StageContextError("资产交接范围为盘点和复用；出图目标须先登记当前制作授权")
+            if (not assets.issubset(scope.get("asset_ids", []))
+                    or scope["output_ids"] and not image_targets.issubset(scope["output_ids"])
+                    or assets.intersection(scope.get("compose_asset_ids", []))
+                    or image_targets.intersection(scope.get("confirmed_output_ids", []))
+                    or image_targets.intersection(scope.get("batched_output_ids", []))
+                    or image_targets.intersection(scope.get("rejected_output_ids", []))):
+                raise StageContextError("图片目标超出程序交接范围")
 
 
 def _coordinator_objective(skill: str, context_id, scope, testing=False) -> str | None:
@@ -1776,7 +1785,8 @@ def _validate_current_inputs(project: Path, basis: dict[str, Any], *, adopted_ca
     if not current.get("candidate_test"):
         _check_preparation_route(project, skill, frozen_request, (scope or {}).get("routed"),
                                  repair=bool(basis.get("revision")),
-                                 asset_batch=bool((scope or {}).get("asset_batch_sha256")))
+                                 asset_batch=bool((scope or {}).get("asset_batch_sha256")),
+                                 active_request=basis.get("direct_asset_request_sha256"))
     standards = basis["standards"]
     profile = basis.get("knowledge_profile", {})
     if not isinstance(profile, dict) or not profile.get("path") or not profile.get("sha256"):
@@ -1951,6 +1961,30 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         return _prepare(args, project, supplied_vault, usage)
 
 
+def _direct_asset_binding(project, path, request_sha, targets, kinds, snapshot):
+    """Keep each direct production request linked to the exact story after the next prepare."""
+    stories = [item for item in snapshot['artifacts'] if item['record'].get('logical_id') == 'narrative.package'
+               and item['record'].get('status') == 'current']
+    if len(stories) != 1:
+        return None
+    story = stories[0]
+    name = request_sha + '.json'
+    binding = dict(skill='asset-image-assistant', request=path.relative_to(project).as_posix(),
+                   request_sha256=request_sha, narrative_id=story['record']['artifact_id'],
+                   narrative_sha256=story['file']['sha256'], targets=targets, image_output_kinds=kinds,
+                   receipt=(DIRECT_RECEIPTS / name).as_posix())
+    destination = (project / DIRECT_REQUESTS / name).resolve()
+    if not destination.is_relative_to(project):
+        raise StageContextError('直做资产请求冻结路径越出项目')
+    with file_lock(project / PROJECT_LOCK_RELATIVE):
+        if destination.is_file():
+            if _read_json(destination, default=None) != binding:
+                raise StageContextError('相同直做请求已绑定其他版本；请在请求中列明当前编导来源后重新准备')
+        else:
+            write_json(destination, binding)
+    return binding
+
+
 def _prepare(args: argparse.Namespace, project: Path, supplied_vault: Path | None, usage: dict | None) -> dict[str, Any]:
     started = time.perf_counter()
     skill_dir = ROOT / "skills" / args.skill
@@ -2006,7 +2040,9 @@ def _prepare(args: argparse.Namespace, project: Path, supplied_vault: Path | Non
                 save_manifest(project, manifest)
     elif not testing:
         _check_preparation_route(project, args.skill, request, routed,
-                                 repair=bool(getattr(args, "change_id", None)), asset_batch=bool(asset_batch))
+                                 repair=bool(getattr(args, "change_id", None)), asset_batch=bool(asset_batch),
+                                 active_request=(request_snapshot[1] if args.skill == 'asset-image-assistant'
+                                                 and image_targets and _CONTEXT_ID.get() is None else None))
     try:
         output_requirements = check_output_plan(project, request, **({"candidate_test_mode": True} if testing else {})) if args.skill == "asset-image-assistant" else {}
     except ValueError as exc:
@@ -2222,6 +2258,13 @@ def _prepare(args: argparse.Namespace, project: Path, supplied_vault: Path | Non
     if testing:
         task_basis.update(test_metadata())
     task_basis['reading_reuse_key'] = _reading_reuse_key(task_basis)
+    direct = None
+    if (not testing and args.skill == 'asset-image-assistant' and image_targets and _CONTEXT_ID.get() is None
+            and request_path and request_path.is_relative_to(project)):
+        direct = _direct_asset_binding(project, request_path, request_snapshot[1], image_targets,
+                                       request.get('image_output_kinds', {}), snapshot)
+        if direct:
+            task_basis['direct_asset_request_sha256'] = direct['request_sha256']
     content = "\n".join([
         "# 阶段启动包", "",
         f"- Skill：`{args.skill}`",
@@ -2243,6 +2286,7 @@ def _prepare(args: argparse.Namespace, project: Path, supplied_vault: Path | Non
         f"- 等待及接收：执行前实读 `{ROOT / 'docs/rules/execution.md'}#等待与工具回传` 的宿主参数；沿原任务续等，完成后只交本轮身份、结论、差异及证据路径。原图由执行者实看，协调方按争议定向取图，不整份回传 JSON、日志或图组。",
         *([f"- 图片批次：`{_CONTEXT_ID.get()}`，本批冻结 {len(image_targets)} 个 image_targets；阶段负责人统筹整体方向、跨批连续性和正式交接，本批执行者读取真实参考、完成获准图片及实看自查。委派时只回传准确路径与检查摘要。批次目录不构成已生成、已检查、人工确认或正式采用。"] if image_targets is not None and _CONTEXT_ID.get() is not None else []),
         *([f"- 图片目标：本阶段请求冻结 {len(image_targets)} 个 image_targets；主对话直做批次沿用本阶段 task_basis，不另建批次目录，但仍须写回现有回执。"] if image_targets is not None and _CONTEXT_ID.get() is None else []),
+        *([f"- 本批直做实看回执写入 `{direct['receipt']}`，顶层 request_sha256 为 `{direct['request_sha256']}`；整轮 show-round 可合并这些回执。"] if direct else []),
         *([f"- 红帧生图：读取 `{ROOT / _REDFRAME_IMAGE_STANDARDS[0]}#生图` 及同页连接入口。由主对话直接操作，先上传素材卡并当场归位，再接线和核正文；配套上传与排版规则同批冻结。"]
           if _redframe_image_batch(args.skill, request) else []),
         *(["- 导演写稿和返修：先实看影响拍法的原片连续窗，核关键对白指向、起幅、镜内轨迹、落幅与实际切出后的反应；然后才核逐镜字段和下游影响。沿现有自查记录写准确时间窗和镜号。"]
@@ -2307,6 +2351,9 @@ def _prepare(args: argparse.Namespace, project: Path, supplied_vault: Path | Non
             report["candidate_trial"] = {"rule_ids": trial_record["rule_ids"], "production_blocked": True}
     if usage is not None:
         report["run_usage"] = usage
+    if direct:
+        report["direct_asset_receipt"] = direct["receipt"]
+        report["direct_request_sha256"] = direct["request_sha256"]
     if asset_batch:
         report.update(_asset_batch_dispatch(project, args, asset_batch, output, kickoff))
     return report
@@ -2367,7 +2414,7 @@ def _asset_batch_delivery_lines(batch):
     return [
         "", "## 本批交回", "", _asset_batch_binding_line(batch),
         "- 本批执行者跟到准确成图落盘和实看自查，或出现需交回的真实阻塞。提示词和提交清单是中间结果。",
-        "- 完成时更新上述现有实看回执，顶层沿用本卡的 `context_id` 和 `request_sha256`。每项实看写准确的 `target`、`candidate_id`、`observer`、`visual_status: passed|failed`、`observations`；所有已有成图均写 `purpose`、`path` 和 `sha256`，有偏差时附 `blocking_issue`。普通对话每批完成即可运行 chat_asset_review.py show 交审。",
+        "- 完成时更新上述现有实看回执，顶层沿用本卡的 `context_id` 和 `request_sha256`。每项实看写准确的 `target`、`candidate_id`、`observer`、`visual_status: passed|failed`、`observations`；所有已有成图均写 `purpose`、`path` 和 `sha256`，有偏差时附 `blocking_issue`。普通对话完成本批即回传实看回执。协调方按整轮目标用 chat_asset_review.py show-round 一次交审。",
         "- 回执写齐后再通知协调方。完成通知只回批次、已完成目标、真实阻塞和回执路径；途中只通知可接续的新结果或需决策的阻塞。",
         "- 无成图可实看且确实需交回的阻塞，沿原回执 `items` 写准确 `target`、`observer`、`status: blocked` 和简短 `blocking_issue`。",
         "- 主对话直接制作时核对现有回执。委派批次由协调方按 `docs/rules/execution.md#等待与工具回传` 续等。超时不叠加 `read_thread`、`list_agents`、目录/日志查询或提前调用 `--receive-batch`；沿原等待渠道和游标续等；收到需核验的可接续新结果时只核受影响项。超过本轮已约定总等待期限仍无终态时，只读回查原任务一次，不重新提交。收到终态后用 `handoff --receive-batch` 验收准确回执一次，缺项交原执行者补核。",

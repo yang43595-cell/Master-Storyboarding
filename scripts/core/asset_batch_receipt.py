@@ -9,6 +9,9 @@ from .media_types import MEDIA_EXTENSIONS
 from .visual_context_budget import assert_payload_free, VisualContextBudgetError
 
 
+DIRECT_REQUESTS = Path('00_项目管理/执行上下文/直做图片请求')
+DIRECT_RECEIPTS = Path('00_项目管理/执行上下文/直做图片回执')
+
 _REVIEW_STATUS = {
     'pass': 'passed',
     'passed': 'passed',
@@ -36,6 +39,14 @@ def validate_asset_batch_targets(targets):
     if (not isinstance(targets, list) or not 1 <= len(targets) <= 8
             or not all(_target(item) for item in targets) or len(set(targets)) != len(targets)):
         raise ValueError('资产 image_targets 须列 1–8 个不重复的准确 AST-ID@OUTPUT-ID')
+    return list(targets)
+
+
+def validate_asset_review_targets(targets):
+    """The complete human review scope may span several execution batches."""
+    if (not isinstance(targets, list) or not targets or not all(_target(item) for item in targets)
+            or len(set(targets)) != len(targets)):
+        raise ValueError('整轮 asset_review_targets 须列全不重复的准确 AST-ID@OUTPUT-ID')
     return list(targets)
 
 
@@ -145,7 +156,7 @@ def _target_result(project, target, rows, batch_observer):
     return {'target': target, 'status': 'blocked', 'issue': '本目标的候选均有阻塞，见原回执'}
 
 
-def summarize_asset_batch_receipt(project: Path, receipt_path: Path, targets: list[str], *, binding=None) -> dict:
+def summarize_asset_batch_receipt(project: Path, receipt_path: Path, targets: list[str], *, binding=None, document=None) -> dict:
     """Read only exact project-bound AST outputs, without turning self-check into approval."""
     targets = validate_asset_batch_targets(targets)
     project = project.resolve()
@@ -154,7 +165,8 @@ def summarize_asset_batch_receipt(project: Path, receipt_path: Path, targets: li
         raise ValueError('资产实看回执须指定项目内的 JSON 文件')
     issue = None
     try:
-        document = read_json(receipt)
+        if document is None:
+            document = read_json(receipt)
     except FileNotFoundError:
         issue = '实看回执尚未落盘'
     except (OSError, ValueError):

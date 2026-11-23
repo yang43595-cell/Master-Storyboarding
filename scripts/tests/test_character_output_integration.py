@@ -312,6 +312,22 @@ def test_prepare_inherits_adopted_board_and_blocks_alternate_single_id(adopted_c
         'AST-001': {'HOME-FINAL': '人物1x4', 'OUT-FINAL': '人物1x4'}}
 
 
+def test_ordinary_head_and_two_wardrobes_prepare_together_before_review(adopted_character_board):
+    root = adopted_character_board
+    targets = {'AST-001@HEAD': '大头照', 'AST-001@HOME-CLOTHES': '服装',
+               'AST-001@OUT-CLOTHES': '服装'}
+    request = root / 'request.json'
+    request.write_text(json.dumps({'image_targets': list(targets), 'image_output_kinds': targets}))
+    args = cli.parser().parse_args(['prepare', '--project', str(root), '--skill', 'asset-image-assistant',
+        '--objective', 'prepare both outfit sources and the head together', '--request-json', str(request),
+        '--context-id', 'sources', '--actor-id', 'synthetic-actor', '--task-id', 'synthetic-task'])
+    assert cli.prepare(args)['valid']
+    basis = json.loads((root / cli.CONTEXT_DIR / '批次/sources/task_basis.json').read_text())
+    assert basis['scope']['image_targets'] == list(targets)
+    assert set(basis['character_layout_references']) == {'大头照', '服装'}
+    assert not asset_refs.require_final_images(root, ['AST-001'])[0]
+
+
 def test_final_delivery_checks_adopted_exact_output_and_real_canvas(adopted_character_board):
     from PIL import Image
     from scripts.core.artifacts import digest

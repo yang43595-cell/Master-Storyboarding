@@ -79,6 +79,35 @@ def _shown_finals(root, ast, output, cache):
     return result
 
 
+def round_board_source_gaps(root, assets, candidates):
+    """Check that every outstanding outfit can be assembled after this single human review."""
+    new = {}
+    for item in candidates:
+        ast, output = item["target"].split("@")
+        new.setdefault(ast, {})[output] = item
+    gaps = []
+    cache = {}
+    for ast, asset in assets.items():
+        required = set(asset.get("required_board_ids", []))
+        if not required:
+            continue
+        proposals = new.get(ast, {})
+        confirmed = [o for o in asset["image"].get("outputs", []) if o["output_id"] not in proposals]
+        remaining = required - {o["output_id"] for o in confirmed if o.get("output_kind") == BOARD}
+        if not remaining:
+            continue
+        head = any(o.get("output_kind") == HEAD for o in (*confirmed, *proposals.values()))
+        clothes = {o.get("final_output_id") for o in proposals.values() if o.get("output_kind") in CLOTHES}
+        for o in confirmed:
+            if o.get("output_kind") in CLOTHES:
+                clothes.update(_shown_finals(root, ast, o, cache))
+        for final in sorted(remaining):
+            missing = ([] if head else ["同角色大头照"]) + ([] if final in clothes else ["绑定本造型的服装源图"])
+            if missing:
+                gaps.append(dict(target=ast + "@" + final, status="pending", issue="尚缺" + "、".join(missing)))
+    return gaps
+
+
 def plans(root, selection, specs, reviewed=None):
     raw_assets = {a["asset_id"]: a for a in selection["assets"]}
     explicit = {}
