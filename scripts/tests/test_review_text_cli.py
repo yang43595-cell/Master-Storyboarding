@@ -342,8 +342,7 @@ def test_chat_approval_adopts_initial_and_revised_script_for_downstream(
         report = stage_cli.handoff(handoff)
         assert report["artifact_ids"] == ["N-R01"] and report["from_stage"] == "creative-director"
         assert stage_cli.handoff(handoff) == report
-        assert artifacts.load_project_state(tmp_path) == {
-            **before, "current_stage": "creative-director", "next_stage": "storyboard-planner"}
+        assert artifacts.load_project_state(tmp_path) == before
 
     package["revision"] = "R02"
     package["story_paragraphs"][0]["text"] += "第二版修订。"
@@ -378,13 +377,15 @@ def test_chat_approval_adopts_initial_and_revised_script_for_downstream(
     assert [row["revision"] for row in receipts if row.get("channel") == "chat_confirmation"] == ["R01", "R02"]
     report = stage_cli.handoff(handoff)
     assert report["artifact_ids"] == ["N-R02"]
-    assert artifacts.load_project_state(tmp_path)["next_stage"] == "storyboard-planner"
+    assert artifacts.load_project_state(tmp_path)["next_stage"] is None
 
 
-@pytest.mark.parametrize("blocker", [
-    "no_grant", "wrong_scope", "revoked", "conflicting_stage", "changed_bytes", "active_revision",
+@pytest.mark.parametrize(("blocker", "reason"), [
+    ("no_grant", "缺有效导演流程授权"), ("wrong_scope", "缺有效导演流程授权"),
+    ("revoked", "缺有效导演流程授权"), ("changed_bytes", "准确文件字节"),
+    ("active_revision", "冻结分支"),
 ])
-def test_initial_chat_handoff_requires_existing_scope_and_current_script(tmp_path, kickoff_review_site, blocker):
+def test_initial_chat_handoff_requires_existing_scope_and_current_script(tmp_path, kickoff_review_site, blocker, reason):
     from scripts.core.project_state import write_project_state
 
     source, _ = narrative(tmp_path)
@@ -396,8 +397,6 @@ def test_initial_chat_handoff_requires_existing_scope_and_current_script(tmp_pat
     state = artifacts.load_project_state(tmp_path)
     if blocker == "revoked":
         state["workflow_authorizations"][0]["status"] = "revoked"
-    if blocker == "conflicting_stage":
-        state["next_stage"] = "storyboard-director"
     if blocker == "changed_bytes":
         source.write_bytes(source.read_bytes() + b" ")
     write_project_state(tmp_path, state)
@@ -405,7 +404,7 @@ def test_initial_chat_handoff_requires_existing_scope_and_current_script(tmp_pat
         rc.open_change(tmp_path, change_id="CHAT-REVISION", tier="T1", logical_ids=["narrative.package"], reason="synthetic")
 
     handoff = stage_cli.parser().parse_args(["handoff", "--project", str(tmp_path), "--to-skill", "storyboard-planner"])
-    with pytest.raises(stage_cli.StageContextError, match="已有导演流程授权|下一阶段不一致|内容与确认版本不一致|被修订状态阻止"):
+    with pytest.raises(stage_cli.StageContextError, match=reason):
         stage_cli.handoff(handoff)
     assert artifacts.load_project_state(tmp_path) == state
     assert not stage_cli._handoff_path(tmp_path).exists()
@@ -739,7 +738,7 @@ def test_kickoff_rejects_pending_receipt_in_manual_adoption_and_accepts_live_app
         artifacts.adopt_initial_package(tmp_path, "N-R01", pending)
     assert not artifacts.load_project_state(tmp_path)["user_confirmations"]
     handoff = stage_cli.parser().parse_args(["handoff", "--project", str(tmp_path), "--to-skill", "storyboard-planner"])
-    with pytest.raises(stage_cli.StageContextError, match="没有编导整稿的正式采用记录"):
+    with pytest.raises(stage_cli.StageContextError, match="director 当前未就绪"):
         stage_cli.handoff(handoff)
 
     kickoff_review_site("approved")
@@ -754,12 +753,11 @@ def test_kickoff_rejects_pending_receipt_in_manual_adoption_and_accepts_live_app
     bad_decision["response"]["approval"]["scope"]["version"] = "other-version"
     original_decision = (tmp_path / "approved.json").read_bytes()
     write_json(tmp_path / "approved.json", bad_decision)
-    with pytest.raises(stage_cli.StageContextError, match="已有导演流程授权"):
+    with pytest.raises(stage_cli.StageContextError, match="缺有效导演流程授权"):
         stage_cli.handoff(handoff)
     (tmp_path / "approved.json").write_bytes(original_decision)
     assert stage_cli.handoff(handoff)["artifact_ids"] == ["N-R01"]
-    assert artifacts.load_project_state(tmp_path) == {
-        **before, "current_stage": "creative-director", "next_stage": "storyboard-planner"}
+    assert artifacts.load_project_state(tmp_path) == before
 
 
 def test_kickoff_rechecks_published_bytes_after_live_approval(tmp_path, kickoff_review_site):

@@ -351,7 +351,7 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
         if not reading_existing:
             from .asset_refs import resolve_final_images
             from .delivery_files import declared_input_roots, discover_dependencies
-            from .visual_readiness import require_visual_readiness
+            from .production_handoff import require_handoff_visual_inputs
             scope = payload.get("scope")
             if (payload.get("production_blocked") is True
                     or isinstance(scope, dict) and scope.get("unwritten_shot_ids")):
@@ -365,9 +365,9 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
                                                           director, known_shots, state)
             content_segment_ids = [row['segment_id'] for row in visual_rows]
             if visual_rows:
-                require_visual_readiness(root, storyboard, director,
+                require_handoff_visual_inputs(root, storyboard, director,
                                               {shot for row in visual_rows for shot in source_shot_ids(row)},
-                                              rows=visual_rows, manifest=manifest)
+                                              rows=visual_rows, manifest=manifest, state=state)
             asset_references = []
             for row in segments:
                 if (row.get("production_blocked") is True or row.get("submit_ready") is False

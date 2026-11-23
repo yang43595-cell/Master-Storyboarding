@@ -11,11 +11,11 @@
 - **图片连续性**：核[共用检查](../references/image-continuity-hard-rules.md#共用检查)及[参考资产契约](../references/reference-asset-contract.md#连续性)内本次适用的小节。处理跨段时读取[开场状态](../references/reference-asset-contract.md#真实开场状态)和[切点衔接](../references/reference-asset-contract.md#连续事件因时长拆段时的实际衔接参考)。
 - **提示词语言合规**：写提示词必读 `../voiceover-to-video-script/references/prompt-language-hard-rules.md` 并以其为准；禁用 影视级/8K/唯美/高级 等炫技含糊词。
 
-视觉补充只解决已确认导演镜头中一个无法由现有材料可靠承担的静态状态；该状态也可以是多个镜头共用的座位或站位关系。
+写视频提示词之前核本轮全部拟写镜号。补图只固定一个已由导演确定、现有材料仍无法可靠承担的静态状态，可覆盖多个镜头。
 
 1. 逐项查看确认资产、动作参考、产品实拍和来源镜头文字状态。
-2. 按 `VISUAL-SUPPLEMENT-METHOD` 完成判断，在 `visual-supplement-request.json` 登记唯一目标状态、必须出现、禁止出现和保留项；补图填写 gap，复用填写 existing_references.coverage，返回上游填写 return_upstream.reason。
-3. 选择最小参考集合并限制候选数量；已足够时复用并停止生成。
+2. 按 `VISUAL-SUPPLEMENT-METHOD` 判断覆盖，在现有请求里按[视觉交接](../../../docs/rules/visual-production.md#导演到视频的视觉交接)登记四种决定、准确镜号和依据。普通镜头按相同依据成组写明实际可见事实，以及常规参考的覆盖或无需静态控制的原因。
+3. 先复用充分覆盖的参考，再按[补图范围与计数](../../../docs/rules/visual-production.md#补图范围与计数)合并同状态、同用途的缺口，每个独立目标从一张开始。按[生图提示词模板](../templates/storyboard-image-template.md)写唯一静态画面、参考职责及必要专项约束。
 4. 技术核对文件和引用事实后，按下节对照本次要求实际看图，沿既有观察证据准入记录结论；统一入口自行验收且不送网站，兼容路径自查不代替用户视觉终审。采用与确认按 Skill 入口分支执行，未接通的 agent 验收不伪写为人审。
 
 ## 场景关系参考的交付约定

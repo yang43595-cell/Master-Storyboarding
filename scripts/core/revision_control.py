@@ -1091,6 +1091,60 @@ def cancel_change(project: Path, *, change_id: str, reason: str) -> dict[str, An
         return _commit_json_transaction_unlocked(project, {project / CONTROL_RELATIVE: control}, reason="cancel revision change")
 
 
+def handoff_revision_status(project: Path) -> tuple[dict[str, Any] | None | str, list[dict], list[str]]:
+    """Share actual revision/transaction blockers between status and handoff."""
+    blockers: list[str] = []
+    try:
+        active_change = _load_control(project)["active_change"]
+    except (OSError, ValueError) as exc:
+        active_change = "unknown"
+        blockers.append(f"活动变更状态未知：{exc}")
+    transaction_rows = []
+    tx_root = project / TRANSACTION_ROOT
+    if tx_root.exists() and not tx_root.is_dir():
+        blockers.append("revision_transactions 不是目录；事务状态未知")
+    elif tx_root.is_dir():
+        for folder in sorted(tx_root.iterdir()):
+            if not folder.is_dir():
+                continue
+            row = {"transaction_id": folder.name, "state": "unknown", "anomalies": []}
+            try:
+                transaction, intent, result = (
+                    read_json(path) if path.is_file() else None
+                    for path in (folder / "transaction.json", folder / "commit_intent.json", folder / "result.json")
+                )
+                if not isinstance(transaction, dict):
+                    row["anomalies"].append("transaction.json 缺失/无效")
+                if intent is not None and not isinstance(intent, dict):
+                    row["anomalies"].append("commit_intent.json 无效")
+                if isinstance(intent, dict) and not isinstance(result, dict):
+                    row["anomalies"].append("已有 commit intent 但无 result；需显式恢复")
+                if result is None and intent is None:
+                    row["state"] = "prepared_without_intent"
+                elif isinstance(result, dict) and result.get("state") == "aborted" and intent is None:
+                    row["state"] = "aborted"
+                elif isinstance(result, dict) and result.get("state") == "committed" and isinstance(intent, dict):
+                    row["state"] = "committed"
+                else:
+                    row["anomalies"].append("事务结果与提交意图不一致")
+            except (OSError, ValueError) as exc:
+                row["anomalies"].append(f"事务记录不可读：{exc}")
+            if row["anomalies"]:
+                row["state"] = "anomalous"
+                blockers.extend(f"事务 {folder.name}：{problem}" for problem in row["anomalies"])
+            transaction_rows.append(row)
+    return active_change, transaction_rows, blockers
+
+
+
+def require_handoff_revision(project: Path, logical_ids=()):
+    """Reject incomplete journals and enforce the applicable branch freeze."""
+    active_change, _, blockers = handoff_revision_status(project)
+    if blockers:
+        raise RevisionControlError("正式交接被修订状态阻止：" + "；".join(blockers))
+    check_frozen_branch(active_change, logical_ids)
+
+
 def guard_action(
     project: Path,
     *,
@@ -1103,12 +1157,20 @@ def guard_action(
     active = control.get("active_change")
     if not isinstance(active, dict):
         return {"allowed": True, "reason": "no_active_change"}
-    touched = sorted(set(logical_ids) & set(active.get("frozen_logical_ids") or []))
-    if touched and change_id != active.get("change_id"):
-        raise RevisionControlError(f"动作触及冻结分支：{', '.join(touched)}")
+    touched = check_frozen_branch(active, logical_ids, change_id=change_id)
     return {"allowed": True, "change_id": active.get("change_id"), "frozen_intersection": touched}
 
 
 def show_change(project: Path) -> dict[str, Any]:
     project = project.resolve()
     return _load_control(project)
+
+
+def check_frozen_branch(active_change, logical_ids, *, change_id=None):
+    """Apply the existing branch freeze to already-read revision evidence."""
+    if not isinstance(active_change, dict):
+        return []
+    touched = sorted(set(logical_ids) & set(active_change.get("frozen_logical_ids") or []))
+    if touched and change_id != active_change.get("change_id"):
+        raise RevisionControlError(f"动作触及冻结分支：{', '.join(touched)}")
+    return touched

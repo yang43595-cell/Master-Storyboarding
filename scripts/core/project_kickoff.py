@@ -2,14 +2,22 @@
 
 import json
 import math
+import re
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit
 
 from .product_reference_pack import current_product_pack_revision, resolve_product_pack, validate_selection
 
 
 REQUEST_PATH = Path("00_项目管理/project_request.json")
+LEGACY_RULE = "docs/rules/legacy-review.md"
 REDFRAME_MODEL = "Seedance 2.5"
+CREATIVE_WORKFLOW = "creative"
+RECREATION_WORKFLOW = "depth-guided-recreation"
+PENDING_WORKFLOW = "pending"
+RECREATION_ENTRY = f"skills/{RECREATION_WORKFLOW}/SKILL.md"
+RECREATION_METHOD = f"skills/{RECREATION_WORKFLOW}/modules/recreation-method.md"
 PRODUCT_MODES = {"none", "retain", "replace", "insert"}
 IMAGE_PROVIDERS = {"imagegen", "dreamina", "chatgpt", "redframe"}
 IMAGE_SCOPES = ("required_asset_outputs", "required_assets_and_supplements")
@@ -32,6 +40,14 @@ def _normalize_product_id(record):
 
 def _text(value):
     return isinstance(value, str) and bool(value.strip())
+
+
+def production_workflow(kickoff):
+    creation = (kickoff or {}).get("creation")
+    workflow = creation.get("workflow", CREATIVE_WORKFLOW) if isinstance(creation, dict) else CREATIVE_WORKFLOW
+    if workflow not in (CREATIVE_WORKFLOW, RECREATION_WORKFLOW, PENDING_WORKFLOW):
+        raise ValueError("creation.workflow 须选 creative、depth-guided-recreation 或 pending")
+    return workflow
 
 
 def _positive_seconds(value):
@@ -83,6 +99,66 @@ def load_project_request(project):
     return request
 
 
+def project_source_inputs(request):
+    """Project declarations shared by dispatch and task preparation."""
+    return {key: request[key] for key in ("source_files", "sources") if key in request}
+
+
+def normalize_source_alias(inputs: dict[str, Any]) -> dict[str, Any]:
+    """The request-level sources alias declares local files, not semantic sources.
+
+    Normalize at the input boundary only; do not reinterpret arbitrary nested
+    prose/metadata named sources or enumerate undeclared project files.
+    """
+    if "sources" not in inputs:
+        return inputs
+    sources = inputs["sources"]
+    if (not isinstance(sources, list) or not sources
+            or any(not isinstance(item, str) or not item.strip() for item in sources)):
+        raise ValueError("request.sources 必须是非空本地文件路径数组。")
+    if "source_files" in inputs and inputs["source_files"] != sources:
+        raise ValueError("request.sources 与 source_files 声明不一致；请保留准确的同一来源列表。")
+    return {**{key: value for key, value in inputs.items() if key != "sources"},
+            "source_files": sources}
+
+
+def explicit_source_paths(project: Path, inputs: dict[str, Any]) -> list[Path]:
+    """Resolve declared files only, never enumerate the project or guess ID paths."""
+    from .artifacts import project_path
+
+    paths: set[Path] = set()
+    file_keys = {"path", "path_or_url", "file", "files", "source", "source_markdown",
+                 "source_json", "source_image", "source_video", "source_audio", "source_document", "source_url"}
+    def collect(value: Any, key: str = "") -> None:
+        if key in file_keys and (value is None or value == "" or value == []):
+            raise ValueError(f"必需显式来源文件缺失：{key}")
+        if isinstance(value, dict):
+            for name, child in value.items():
+                collect(child, name)
+        elif isinstance(value, list):
+            for child in value:
+                collect(child, key)
+        elif isinstance(value, str) and value:
+            explicit = key in file_keys or key.endswith(("_path", "_paths", "_file", "_files"))
+            path_like = "/" in value or "\\" in value or bool(Path(value).suffix)
+            source_path = key.startswith("source_") and not key.endswith(("_id", "_ids", "_type", "_kind", "_format", "_version", "_description", "_note"))
+            if explicit or ((key == "inputs" or source_path) and path_like):
+                if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", value):
+                    raise ValueError(f"显式来源不是可核验的本地文件：{value}；先提供准确本地快照。")
+                path = project_path(project, value)
+                if not path.is_file():
+                    raise ValueError(f"必需显式来源文件缺失：{value}")
+                paths.add(path)
+    collect(normalize_source_alias(inputs))
+    return sorted(paths)
+
+
+def uses_routed_handoff(request):
+    """Select the production flow consistently, including before kickoff on a new project."""
+    return (LEGACY_RULE not in request.get("local_references", [])
+            and ("kickoff" in request or request.get("project_mode") == "new"))
+
+
 def load_kickoff(project):
     request = load_project_request(project)
     if "kickoff" not in request:
@@ -93,6 +169,7 @@ def load_kickoff(project):
 def validate_kickoff(kickoff, *, for_registration=False):
     if not isinstance(kickoff, dict) or not _text(kickoff.get("decision_ref")):
         raise ValueError("开工决定须登记 decision_ref")
+    production_workflow(kickoff)
     product = kickoff.get("product")
     if not isinstance(product, dict) or not _text(product.get("mode")) or product["mode"] not in PRODUCT_MODES:
         raise ValueError("开工产品须明确选择 none / retain / replace / insert")

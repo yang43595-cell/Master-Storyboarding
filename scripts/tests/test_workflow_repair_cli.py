@@ -420,6 +420,12 @@ def test_money_tree_rush_uses_formal_redframe_write_preflight(tmp_path):
     assert outcome.returncode == 0, outcome.stdout
     assert json.loads((tmp_path / 'finalized/formal_readback.json').read_text())['native_reference_checks'] == {
         'created-node': 'passed'}
+    from scripts.core.draft_delivery import read_draft_delivery
+
+    source = next(item for item in first['source_artifacts'] if item['artifact_id'] == 'VIDEO')
+    delivery = read_draft_delivery(tmp_path, first, source, ['one'])['one']
+    assert delivery['status'] == 'complete' and delivery['node_id'] == 'created-node'
+    assert delivery['readback_path'] == json.loads(outcome.stdout)['readback_path']
 
 
 @pytest.mark.parametrize('field', ['edges', 'source_nodes', 'native_mentions', 'prompt', 'parameters', 'ordered_media'])

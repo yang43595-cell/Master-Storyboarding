@@ -635,9 +635,12 @@ def _positive_seconds(value):
     return type(value) in (int, float) and math.isfinite(value) and value > 0
 
 
+MAX_GENERATION_SEGMENT_SECONDS = 30
+
+
 def generation_duration_values(row, parameters):
     """Collect existing generation duration aliases, excluding edit targets."""
-    values = [row[key] for key in ('duration_seconds', 'generation_seconds') if key in row]
+    values = [row[key] for key in ('duration_seconds', 'generation_seconds', 'generation_duration_seconds') if key in row]
     values.extend(parameters[key] for key in ('duration_seconds', 'duration') if key in parameters)
     return values
 

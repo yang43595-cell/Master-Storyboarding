@@ -56,7 +56,7 @@ def test_redframe_image_batch_freezes_sop_from_project_kickoff(tmp_path, skill, 
     args, batch_request = make_batch_context(tmp_path, skill=skill, targets=[target])
     args.vault = None
     kickoff_path = Path(args.project) / cli.REQUEST_PATH
-    kickoff_path.write_text(json.dumps({"kickoff": {
+    kickoff_path.write_text(json.dumps({"local_references": [cli.LEGACY_RULE], "kickoff": {
         "decision_ref": "synthetic kickoff",
         "creation": {"target_duration_seconds": 30},
         "product": {"mode": "none"},

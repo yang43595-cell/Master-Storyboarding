@@ -49,7 +49,8 @@ from core.artifacts import (load_manifest, save_manifest, register_workspace_art
                             asset_output_impact)
 from core.io import project_lock
 from core.project_state import load_project_state, write_project_state
-from core.project_kickoff import grant_covers_asset, load_kickoff, load_project_request, validate_kickoff
+from core.project_kickoff import (grant_covers_asset, load_kickoff, load_project_request,
+                                  uses_routed_handoff, validate_kickoff)
 from core.product_reference_pack import resolve_product_pack
 from core.agent_acceptance import (asset_authorization_digest, require_asset_workflow_authorization,
                                    validate_asset_review)
@@ -2545,12 +2546,34 @@ class Projects:
     def continue_project(self, ident):
         p = self.get(ident)
         self.fresh(p)
-        if not p.get('export'):
+        root = Path(p['path'])
+        routed_flow = uses_routed_handoff(load_project_request(root))
+        exported = p.get('export')
+        if exported:
+            self.validate_export_basis(p)
+        elif routed_flow and (exported := p.get('partial_export')):
+            self.validate_export_snapshot(p, exported, complete=False)
+        else:
             raise ValueError('请先完成必需图片的审核和导出')
-        self.validate_export_basis(p)
-        state = load_project_state(Path(p['path']))
+        handoff = exported['handoff']
+        if routed_flow:
+            result = subprocess.run([sys.executable, str(ROOT / 'scripts/stage_context_cli.py'), 'handoff',
+                '--project', p['path']], capture_output=True, encoding='utf-8', errors='replace',
+                timeout=90, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            if result.returncode:
+                raise ValueError('程序交接未完成：' + (result.stderr or result.stdout).strip()[-500:])
+            routed = json.loads(result.stdout)
+            return {
+                'handoff': handoff,
+                'content': Path(handoff).read_text(encoding='utf-8')
+                + f'\n- 正式清单产物 ID: {exported["artifact_id"]}\n',
+                'instruction': '按程序返回的交接范围与交接卡继续；等待项沿原审核或补核入口处理。',
+                'warning': '' if routed['next_actions'] else '其他交接条件尚未满足，请核对等待项。',
+                'next_actions': routed['next_actions'],
+                'steps': routed['steps'],
+            }
+        state = load_project_state(root)
         target = state.get('next_stage')
-        handoff = p['export']['handoff']
         warning = ''
         if target:
             result = subprocess.run([sys.executable, str(ROOT / 'scripts/stage_context_cli.py'), 'handoff',

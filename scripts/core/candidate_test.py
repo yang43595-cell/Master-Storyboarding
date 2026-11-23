@@ -75,11 +75,12 @@ def require_production(project):
     require_production_manifest(project)
 
 
-def require_production_manifest(project):
+def require_production_manifest(project, *, manifest=None):
     """Reject test artifacts after the caller has checked the project mode."""
     from .artifacts import load_manifest
+    manifest = load_manifest(Path(project)) if manifest is None else manifest
     if any(a.get("candidate_test") or a.get("production_blocked") or a.get("type") == "preview-reference"
-           for a in load_manifest(Path(project))["artifacts"]):
+           for a in manifest["artifacts"]):
         raise ValueError(_PRODUCTION_BLOCKED)
 
 

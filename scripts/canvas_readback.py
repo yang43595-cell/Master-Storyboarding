@@ -547,18 +547,23 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         from .core.project_state import load_project_state
         from .core.candidate_test import require_production
         from .core.delivery_files import discover_dependencies
+        from .core.revision_control import require_handoff_revision
     except ImportError:
         from core.artifacts import (load_manifest, artifact_is_adopted, project_path, cache_file_digests,
                                     validate_current_dependencies)
         from core.project_state import load_project_state
         from core.candidate_test import require_production
         from core.delivery_files import discover_dependencies
+        from core.revision_control import require_handoff_revision
     project = project.resolve()
     if not private_preview:
         require_production(project)
     platform_project_id = _declared_project_id(frozen)
     kickoff = None if private_preview else load_kickoff(project)
     canvas = kickoff.get("canvas") if kickoff else None
+    if formal_delivery and preflight and kickoff and not private_preview:
+        require_handoff_revision(project, ("narrative.package", "storyboard.package", "visual.asset.manifest",
+                                           "video.prompt"))
     if formal_delivery and kickoff and canvas is None:
         raise ValueError("正式画布交付须先登记目标画布")
     if canvas and (not canvas.get("target_url")
@@ -596,11 +601,11 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             if issues:
                 raise ValueError(f"{row['node_id']}: " + '; '.join(issues))
     try:
-        from .core.quality_evidence import (validate_native_binding_claims, scene_state_requirements,
+        from .core.quality_evidence import (MAX_GENERATION_SEGMENT_SECONDS, validate_native_binding_claims, scene_state_requirements,
                                             validate_scene_state_references, reference_shot_ids, source_shot_ids, validate_scene_source_mapping,
                                             validate_shot_durations)
     except ImportError:
-        from core.quality_evidence import (validate_native_binding_claims, scene_state_requirements,
+        from core.quality_evidence import (MAX_GENERATION_SEGMENT_SECONDS, validate_native_binding_claims, scene_state_requirements,
                                            validate_scene_state_references, reference_shot_ids, source_shot_ids, validate_scene_source_mapping,
                                            validate_shot_durations)
     validate_native_binding_claims(frozen, project)
@@ -729,9 +734,9 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
     ) or {}
     if not private_preview:
         try:
-            from .core.visual_readiness import require_visual_readiness
+            from .core.production_handoff import require_handoff_visual_inputs
         except ImportError:
-            from core.visual_readiness import require_visual_readiness
+            from core.production_handoff import require_handoff_visual_inputs
         submitted_shots = {shot for row in drafts.values() for shot in source_shot_ids(row)}
         for ref, _, payload in scene_sources:
             source = entries[ref['artifact_id']]
@@ -740,8 +745,8 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             shots = submitted_shots.intersection(
                 shot['shot_id'] for scene in payload['scenes'] for shot in scene['shots'])
             if shots:
-                require_visual_readiness(project, payload, source, shots,
-                                         rows=drafts.values(), manifest=manifest)
+                require_handoff_visual_inputs(project, payload, source, shots,
+                                              rows=drafts.values(), manifest=manifest, state=state)
     if set(contexts) != set(external):
         raise ValueError('partial delivery requires exact prior-node evidence for every source continuation')
     validation_rows, context_scopes = [], {}
@@ -875,6 +880,8 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         if not isinstance(row.get('prompt'), str) or not row['prompt'].strip():
             raise ValueError('complete submitted prompt body required')
         duration = seconds(row['parameters']['duration'])
+        if duration > MAX_GENERATION_SEGMENT_SECONDS:
+            raise ValueError(f"草稿 {row['node_id']} 的生成段超过 {MAX_GENERATION_SEGMENT_SECONDS} 秒")
         low, high = map(seconds, row['duration_bounds'])
         if low > high or not low <= duration <= high:
             raise ValueError('duration outside explicitly selected platform bounds')

@@ -120,8 +120,19 @@ def test_accepted_supplement_must_be_the_bound_reference(tmp_path):
 
     frozen, _ = agent_fixture(tmp_path, image_setup=use_request)
     assert canvas_readback.validate_submission(frozen, tmp_path)['ok']
+    bound = {**frozen['drafts'][0], 'source_segment_id': 'G-01'}
     frozen['drafts'][0]['reference_checks'] = []
     frozen['drafts'][0]['ordered_media'] = []
+    unbound = {**frozen['drafts'][0], 'source_segment_id': 'G-02'}
+    board = next(entry for entry in artifacts.load_manifest(tmp_path)['artifacts']
+                 if entry['logical_id'] == 'storyboard.package')
+    readiness = require_visual_readiness(
+        tmp_path, read_json(tmp_path / board['path_or_url']), board, ['S01-010'],
+        rows=[bound, unbound], collect_blockers=True,
+    )
+    assert readiness['availability_blockers'] == {}
+    assert list(readiness['binding_blockers']) == ['S01-010']
+    assert readiness['binding_segment_ids'] == ['G-02']
     with pytest.raises(ValueError, match='VS-LAYOUT.*缺已采用'):
         canvas_readback.validate_submission(frozen, tmp_path)
 

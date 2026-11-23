@@ -361,6 +361,26 @@ def test_same_scene_without_reason_is_rejected_even_with_three_short_clips(tmp_p
         validate_generation_boundaries(payload, board, tmp_path)
 
 
+def test_project_duration_cap_also_applies_to_models_with_a_higher_limit(tmp_path):
+    payload, board = fixture(tmp_path, maximum=45)
+    first = payload["generation_segments"][0]
+    first["duration_seconds"] = 30
+    for row in payload["generation_segments"][1:]:
+        row["duration_seconds"] = 4
+        row["same_scene_split"]["estimated_scene_duration_seconds"] = 38
+    assert validate_generation_boundaries(payload, board, tmp_path)["segment_count"] == 3
+
+    first["duration_seconds"] = 30.01
+    with pytest.raises(ValueError, match="G1: 单个生成段不得超过 30 秒"):
+        validate_generation_boundaries(payload, board, tmp_path)
+    first["duration_seconds"] = 30
+    actual = {"source_segment_id": "G1", "parameters": {
+        "model": "synthetic-model", "reference_mode": "synthetic-multi-reference", "duration": 30.01,
+    }}
+    with pytest.raises(ValueError, match="G1: 单个生成段不得超过 30 秒"):
+        validate_delivery_parameters([actual], payload, tmp_path)
+
+
 def test_merged_scene_has_no_fixed_minimum_maximum_or_model_guess(tmp_path):
     payload, board = fixture(tmp_path)
     payload = {"generation_segments": [dict(segment_id="ONE", prompt="Complete continuous scene.",

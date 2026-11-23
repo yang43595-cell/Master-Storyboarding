@@ -294,6 +294,8 @@ def test_formal_handoff_records_authorized_next_stage_without_a_revision_file(tm
     from scripts.init_desktop_project import initialize
 
     project = initialize(tmp_path / "fresh-project")
+    request = project / cli.REQUEST_PATH
+    write_json(request, {**json.loads(request.read_text()), "local_references": [cli.LEGACY_RULE]})
     path = project / "narrative.json"
     write_json(path, _current_narrative_package(project))
     cli.main(["adopt-package", "--project", str(project), "--artifact-id", "N-R01",
@@ -1442,7 +1444,7 @@ def test_image_generation_authorization_only_invalidates_dependent_preparations(
         "creation": {"target_duration_seconds": 30},
         "product": {"mode": "none"},
     }
-    request = {"kickoff": kickoff}
+    request = {"kickoff": kickoff, "local_references": [cli.LEGACY_RULE]}
     write_json(request_path, request)
     args = cli.parser().parse_args([
         "prepare", "--project", str(project), "--skill", skill, "--objective", "synthetic work",

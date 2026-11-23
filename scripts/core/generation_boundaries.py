@@ -13,7 +13,7 @@ import math
 import re
 from pathlib import Path
 
-from .quality_evidence import (generation_duration_values, required_visuals, reference_shot_ids, scene_state_requirements,
+from .quality_evidence import (MAX_GENERATION_SEGMENT_SECONDS, generation_duration_values, required_visuals, reference_shot_ids, scene_state_requirements,
                                source_shot_ids, validate_required_visuals,
                                validate_scene_state_coverage, validate_shot_durations)
 from .prompt_body import QUOTED_TEXT_RE, standalone_quality_issues, submitted_body_issues, submitted_prompt_body
@@ -348,7 +348,14 @@ def _model_limit(payload, left, right, capability):
         parameters = row.get("parameters", payload.get("platform", {}))
         _need(isinstance(parameters, dict), "交付/源参数结构无效")
         _check_generation_duration(row, parameters, capability)
-    return maximum
+    return min(maximum, MAX_GENERATION_SEGMENT_SECONDS)
+
+
+def _check_project_duration(row, parameters):
+    _need(all(not _seconds(value) or value <= MAX_GENERATION_SEGMENT_SECONDS
+              for value in generation_duration_values(row, parameters)),
+          f"{row.get('segment_id') or row.get('node_id') or row.get('source_segment_id')}: "
+          f"单个生成段不得超过 {MAX_GENERATION_SEGMENT_SECONDS} 秒")
 
 
 def validate_delivery_parameters(rows, payload, project, *, platform=None):
@@ -362,6 +369,8 @@ def validate_delivery_parameters(rows, payload, project, *, platform=None):
         expected = source.get("parameters", payload.get("platform", {}))
         parameters = actual.get("parameters")
         _need(isinstance(parameters, dict) and isinstance(expected, dict), "交付/源参数结构无效")
+        _check_project_duration(source, expected)
+        _check_project_duration(actual, parameters)
         for aliases, label in ((("model",), "模型"), (("reference_mode", "mode"), "参考模式")):
             values = [expected[k] for k in aliases if k in expected]
             if values:
@@ -560,8 +569,9 @@ def _validate(payload, storyboard, root, *, require_physical, delivery_platform,
         if not row_reviewed:
             continue
         parameters = row.get("parameters", payload.get("platform", {}))
+        _need(isinstance(parameters, dict), "交付/源参数结构无效")
+        _check_project_duration(row, parameters)
         if capability is not None:
-            _need(isinstance(parameters, dict), "交付/源参数结构无效")
             _check_target_edit_duration(row, capability[2], platform=selected_model["platform"])
             _check_generation_duration(row, parameters, capability)
         if "shot_durations" in row or (check_cross_scene and capability is not None):
@@ -629,7 +639,7 @@ def _validate(payload, storyboard, root, *, require_physical, delivery_platform,
             limit = _model_limit(payload, left, right, capability)
             estimate = split.get("estimated_scene_duration_seconds")
             _need(_seconds(estimate) and estimate > limit and _text(split.get("timing_basis")),
-                  "待承载连续内容未证明超出模型上限，不能机械拆段")
+                  "待承载连续内容未证明超出有效生成上限，不能机械拆段")
         if reason == "execution_limit":
             _evidence_file(split.get("limitation_evidence"), root)
         if reason in {"model_duration_exceeded", "execution_limit"}:
@@ -768,7 +778,7 @@ def main(argv=None):
         from .artifacts import (_read_confirmed_package_source, load_manifest, project_path,
                                 validate_current_dependencies)
         from .project_state import load_project_state
-        from .visual_readiness import require_visual_readiness
+        from .production_handoff import require_handoff_visual_inputs
         project = args.project.resolve()
         board_path = project_path(project, str(args.storyboard))
         manifest = load_manifest(project)
@@ -786,8 +796,8 @@ def main(argv=None):
                 'storyboard.package')
             validate_current_dependencies(director, manifest, state, project)
             required_visuals(storyboard, shot_ids=set(args.shot_id))
-            result = require_visual_readiness(project, storyboard, director, args.shot_id,
-                                                   manifest=manifest, require_review=True)
+            result = require_handoff_visual_inputs(project, storyboard, director, args.shot_id,
+                                                   manifest=manifest, state=state, require_review=True)
             print(json.dumps({"ok": True, **result}, ensure_ascii=False))
             return 0
         prompt_path = (args.project / args.prompt).resolve()
@@ -812,7 +822,7 @@ def main(argv=None):
                                                 prompt_content_segment_ids=content_ids)
         if len(directors) == 1:
             rows = [row for row in _rows(payload) if not args.segment_id or row['segment_id'] in args.segment_id]
-            result['visual_readiness'] = require_visual_readiness(
+            result['visual_readiness'] = require_handoff_visual_inputs(
                 project, storyboard, directors[0],
                 {shot for row in rows for shot in source_shot_ids(row)}, rows=rows, manifest=manifest)
         if (payload.get('scope') or {}).get('type') in {'full_local_authored', 'selected_ranges'}:

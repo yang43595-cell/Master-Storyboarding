@@ -1,5 +1,7 @@
 """A compact coordinator view of an existing image worker self-check receipt."""
 
+import hashlib
+import json
 import re
 from pathlib import Path
 
@@ -7,6 +9,10 @@ from .artifacts import project_path
 from .io import read_json, sha256_file
 from .media_types import MEDIA_EXTENSIONS
 from .visual_context_budget import assert_payload_free, VisualContextBudgetError
+
+
+CONTEXT_ROOT = Path('00_项目管理/执行上下文')
+BATCH_CARD_PREFIX = '- 图片批次依据 `'
 
 
 _REVIEW_STATUS = {
@@ -44,6 +50,113 @@ def _inside(project, raw):
     if path == project or not path.is_relative_to(project):
         raise ValueError('资产回执或成图路径越出项目')
     return path
+
+
+def asset_batch_binding_entries(text):
+    return {line.removeprefix(BATCH_CARD_PREFIX).removesuffix('`') for line in text.splitlines()
+            if line.startswith(BATCH_CARD_PREFIX) and line.endswith('`')}
+
+
+def _card_has_narrative(card, narrative):
+    for block in card.split('\n- artifact_id：`')[1:]:
+        lines = block.splitlines()
+        if (lines and lines[0] == f'{narrative["artifact_id"]}`'
+                and '  - logical_id：`narrative.package`' in lines
+                and f'  - revision：`{narrative["revision"]}`' in lines
+                and f'  - sha256：`{narrative["checksum"]}`' in lines):
+            return True
+    return False
+
+
+def _basis_has_narrative(basis, narrative):
+    snapshot = basis.get('input_snapshot', {})
+    if not isinstance(snapshot, dict) or snapshot.get('candidate_test'):
+        return False
+    for fact in snapshot.get('artifacts', []):
+        if not isinstance(fact, dict):
+            continue
+        record, source = fact.get('record'), fact.get('file')
+        if not isinstance(record, dict) or not isinstance(source, dict):
+            continue
+        if (record.get('logical_id') == 'narrative.package'
+                and all(record.get(field) == narrative[field] for field in ('artifact_id', 'revision', 'checksum'))
+                and source.get('sha256') == narrative['checksum']):
+            return True
+    return False
+
+
+def _validate_bound_request(project, binding):
+    request = _inside(project, binding['request'])
+    receipt = _inside(project, binding['receipt'])
+    if request == receipt or any(path.suffix.lower() != '.json' for path in (request, receipt)):
+        raise ValueError('本批请求和回执须为项目内不同的 JSON 文件')
+    raw = request.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != binding['request_sha256']:
+        raise ValueError('原请求内容已改变')
+    payload = json.loads(raw.decode('utf-8'))
+    if not isinstance(payload, dict) or payload.get('image_targets') != binding['targets']:
+        raise ValueError('本批约定目标与准确请求不一致')
+    return receipt
+
+
+def load_asset_batch_binding(project, directory, *, narrative=None, validate_request=True):
+    """Read one existing batch. Historical cards and prepare-only tasks share this reader."""
+    project = project.resolve()
+    directory = Path(directory)
+    context_root = project / CONTEXT_ROOT
+    is_root = directory == context_root
+    if (not is_root and directory.parent != context_root / '批次') or directory.resolve() != directory:
+        raise ValueError('资产批次上下文须为当前项目的原目录')
+    context_id = None if is_root else directory.name
+    handoff_path = directory / 'next_stage_handoff.md'
+    startup_path = directory / 'stage_startup.md'
+    basis_path = directory / 'task_basis.json'
+    carriers = (handoff_path, startup_path, basis_path)
+    for path in carriers:
+        if path.is_symlink():
+            raise ValueError('资产批次依据须使用本批原文件')
+    card = handoff_path.read_text(encoding='utf-8') if handoff_path.is_file() else ''
+    startup = startup_path.read_text(encoding='utf-8') if startup_path.is_file() else ''
+    card_rows = (asset_batch_binding_entries(card)
+                 if '- 目标 Skill：`asset-image-assistant`' in card else set())
+    startup_rows = (asset_batch_binding_entries(startup)
+                    if '- Skill：`asset-image-assistant`' in startup else set())
+    rows = card_rows | startup_rows
+    try:
+        basis = read_json(basis_path) if basis_path.is_file() else {}
+    except (OSError, ValueError):
+        if startup_rows and not card_rows and narrative is not None:
+            raise ValueError('资产任务依据无法核对编导版本')
+        basis = {}
+    if not isinstance(basis, dict):
+        basis = {}
+    has_basis = (basis.get('skill') == 'asset-image-assistant'
+                 and basis.get('context_id') == context_id)
+    bindings = [json.loads(row) for row in rows]
+    if has_basis and 'asset_batch' in basis:
+        bindings.append(basis['asset_batch'])
+    if not bindings:
+        return None
+    batch = bindings[0]
+    if not isinstance(batch, dict) or any(item != batch for item in bindings):
+        raise ValueError('本批交接卡或任务依据的图片批次绑定冲突')
+    if batch.get('context_id') != context_id:
+        raise ValueError('批次身份不一致')
+    validate_asset_batch_targets(batch.get('targets'))
+    if narrative is not None and not (
+        (card_rows and _card_has_narrative(card, narrative))
+        or (has_basis and _basis_has_narrative(basis, narrative))
+    ):
+        return None
+    if validate_request:
+        _validate_bound_request(project, batch)
+    return batch
+
+
+def receive_bound_asset_batch(project, binding):
+    project = project.resolve()
+    receipt = _validate_bound_request(project, binding)
+    return summarize_asset_batch_receipt(project, receipt, binding['targets'], binding=binding)
 
 
 def _field(row, current, historical):

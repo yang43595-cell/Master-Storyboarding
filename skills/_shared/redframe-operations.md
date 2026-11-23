@@ -65,7 +65,7 @@ with image_browser_session(task_browser, project_id=project_id, canvas_url=canva
 
 接手续做时，同时核本地现有交付记录及本轮准确节点的持久化数据。平台已有任务或成片时，把可核的任务、结果与文件路径写回原记录，分别说明草稿、平台任务和成片状态。把画布交给用户时附实际子画布地址、对应段号，并说明登录失效时可从[红帧入口](https://redframe-ai.xmpaohong.com:28888/#/projects)用本人账号重新进入。
 
-已有生成回执时，可先离线核对本次范围。交付回执或冻结交付提供段号与节点映射，`--receipt` 传原任务或生成回执，可重复。原交付记录已引用的结果回执用 `--recorded` 指定。归档迁移时可用 `--former-root` 传归档前准确的项目根，重算当前文件指纹。
+已有生成回执时，可先离线核对本次范围。交付回执或冻结交付提供段号与节点映射，`--receipt` 传原任务或生成回执，可重复。原交付记录已引用的结果回执用 `--recorded` 指定。归档迁移时可用 `--former-root` 传归档前准确的项目根，重算当前文件指纹。 批次入口返回 `readback_path` 时，`--delivery` 使用该目录的 `frozen.json`。
 
 ```sh
 python -m scripts.reconcile_video_delivery --project "<业务项目>" \
@@ -107,6 +107,15 @@ with open_workspace(task_browser, target_url, project_id) as workspace:
 3. 用 `verify_placements` 按实际尺寸一次核本批预留位置。新建用 `RedframeVideoDraftUI.create_video_draft` 的「视频」菜单，保留旧节点、任务和成片，旧结果归位按[批量修改节点](../voiceover-to-video-script/references/redframe-canvas-usage.md#批量修改节点)执行。新节点持久化后核原生 ID 及 `videoTask`、`outputs`、`draft`、`draftHistory` 均无生成记录，再继续写入。节点未读到时按原 ID 只读回查。参数以工作区原生字段为准，按[整节点字段](#红帧整节点的源连线用途与时间)准备并核对。
 4. 保存收到回执后，用 `verify_saved` 核实际写入的节点内容，含正文、参数和原生槽。批内中间检查只读这些字段。发现旧值按原节点处理受影响段，布局有偏差先修正，然后在原后台会话刷新，核准确节点及最终布局并截图。布局收口后的同一次刷新采集整批受影响节点，用 `RedframeWorkspace.digest_slots` 一次读取当前各槽原件并计算 SHA-256。工具只重试暂态失败槽一次。已取得的成功槽沿本轮刷新证据交付；仍失败时留下准确槽和错误，后续定向补核该槽，发现原生槽身份、顺序或路径变动才重查其影响范围。批次入口一次绑定实际槽并返回冻结交付、实采回读和正式检查；已有同一批真实采集时可用 [`finalize-new`](#新建直传计划和回读) 独立收口。已有节点同值复测沿用[写前基线和当前读数](#更新前核已有编辑)，只在授权内保存一次。相同故障持续时保留原节点 ID、最后可信快照和最小复现。
 
+草稿批次在开始创建前将准确目标、采用视频稿、段号和写前计划保存到现有 `06_视频/画布交付回执.json`。用 `ui.create_video_draft` 创建，节点持久化后先登记实际 ID，再命名、上传和写正文。回读三件套写入返回的 `readback_path`，交接沿原回执查段号和状态。原计划重跑复用已核回读；有原节点但尚缺回读时，批次默认只读刷新，可传 `resume(ui, planned_draft, node_id)` 补齐该节点未完成的内容。
+
+创建结果未知时，先在原画布核对本次创建及并发变化。确认找到原节点后，使用回执中的原 `plan_path` 执行下面的只读核对，确认后从原节点续作。确证未创建时，可把 `--node-id <原生ID>` 换成 `--confirm-absent`。原工作区未读到或节点身份有歧义时保留未知。
+
+```sh
+python scripts/redframe_draft.py resolve-creation --project <项目> --plan <原计划JSON> \
+  --segment-id <源段号> --node-id <原生ID>
+```
+
 离线比较只消费实际采集值。原生引用字段、输入槽字节下载、持久化、认证传递和布局均需实际执行者在合法平台通路实测。常规直传用现有工作区采集；旧连线按[既有连线草稿](#既有连线草稿)。页面字段采集异常、接线或明确使用 port 模式时，再查[平台采集](#平台采集与离线合同的接缝)。交回差异、结论、截图及原生数据路径，协调方核当前回执与依赖。
 
 启用计量验证时，下一次正常红帧生产顺带[计量](../../docs/development/token-budget.md#计量)。分别记录首个新建草稿从写入开始到独立刷新核验，以及全片由批量写入开始到草稿回读完成的未缓存输入 token 和墙钟耗时。两组各保留红帧执行者的实际日志起止和完成段数，包含各自窗口内的失败与恢复，窗口重叠时不相加。《摇钱树》沿用已有复测回执作为历史证据，取数使用下一次本来就要做的项目。
@@ -117,7 +126,7 @@ with open_workspace(task_browser, target_url, project_id) as workspace:
 
 含认证源卡的段先核同字节源卡认证或按原授权补卡，经认证后接线，普通槽再按冻结顺序对应直传。保留 `realistic_face_slots`，绑定实际节点与槽身份，按[整节点回读](#既有连线草稿)校验实际连线、源卡认证、原件字节及原生 `@`。预检的槽号只表示计划路径。下述 `finalize-new` 用于纯直传段。
 
-首次直传从创建回执保存段号到真实节点 ID 的 JSON 对象（如 `{"W03":"实际节点ID"}`）。本批刷新后，用 `native_draft` 整理实采节点和已下载槽，记录实际目标、项目 ID、修订与 `phase: after_refresh`。用以下命令将实采身份绑定到通过预检的计划，一次出冻结交付、回读和正式检查三份 JSON。`--preflight` 可直接使用 `accept-artifact --preflight-json` 的完整输出，也可使用独立预检报告。该命令执行正式回读比较，正文、参数和引用顺序仍按原计划核对。
+首次直传从创建回执保存段号到真实节点 ID 的 JSON 对象（如 `{"W03":"实际节点ID"}`）。本批刷新后，用 `native_draft` 整理实采节点和已下载槽，记录实际目标、项目 ID、修订与 `phase: after_refresh`。用以下命令将实采身份绑定到通过预检的计划，一次出冻结交付、回读和正式检查三份 JSON。命令同时更新原交付回执，回传项目内准确的 `readback_path`。`--preflight` 可直接使用 `accept-artifact --preflight-json` 的完整输出，也可使用独立预检报告。该命令执行正式回读比较，正文、参数和引用顺序仍按原计划核对。
 
 ```sh
 python scripts/redframe_draft.py finalize-new --project <项目> --plan <写前计划JSON> \

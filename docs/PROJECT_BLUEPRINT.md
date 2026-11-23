@@ -21,7 +21,7 @@
 | 2 | `storyboard-planner` 分镜 | 导演 JSON（Markdown 按需导出） |
 | 3 | `asset-image-assistant` 资产 | 人物/场景/道具/产品母版图 |
 | 4 | `voice-reference-manager` 声音（可选·已有导入/绑定 CLI，按当前输入验收） | 声音参考库 |
-| 5 | `storyboard-director` 画面（按需） | 正式分镜图 |
+| 5 | `storyboard-director` 视频写词前视觉必查 | 按镜号登记实看依据及复用／缺口，确有缺口时补分镜图 |
 | 6 | `voiceover-to-video-script` 视频脚本 | 已确认导演包、原文对白与真实素材 → 完整分段 JSON 提示词（Markdown 按需导出） → 画布草稿（由你点击生成） |
 
 - **每步之间**：除 `voiceover-to-video-script` 外使用 `stage_context_cli` 的 `prepare` / `ensure-prepared` / `handoff` / `validate`（入口全集以 `PROJECT_RULES.md`「工作边界」为准）；`review-pack` 仅在用户明确要求独立审核时使用；视频提示词按其 Skill 入口直接读取和自查。

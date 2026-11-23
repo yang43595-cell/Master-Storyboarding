@@ -348,7 +348,7 @@ def registered_output_snapshot(root: Path, entry: dict, *, file_digest=None) -> 
         return None
 
 
-def _legacy_confirmed_output(root: Path, asset: dict, confirmation_cache: dict) -> dict | None:
+def _legacy_confirmed_output(root: Path, asset: dict, confirmation_cache: dict, *, file_digest=None) -> dict | None:
     """Project a trustworthy pre-2.0 confirmed_asset into one main output."""
     asset_id = asset.get("asset_id")
     selected = asset.get("confirmed_asset")
@@ -377,7 +377,7 @@ def _legacy_confirmed_output(root: Path, asset: dict, confirmation_cache: dict) 
     if receipt is None or image_receipt is None:
         return None
     try:
-        verify_image_confirmation(image_path, image_receipt)
+        verify_image_confirmation(image_path, image_receipt, file_digest=file_digest)
     except (ValueError, OSError):
         return None
     return {
@@ -388,7 +388,8 @@ def _legacy_confirmed_output(root: Path, asset: dict, confirmation_cache: dict) 
     }
 
 
-def confirmed_images(root: Path, *, requests: Iterable[str] | None = None) -> dict[str, dict]:
+def confirmed_images(root: Path, *, requests: Iterable[str] | None = None, manifest=None,
+                     state=None, file_digest=None) -> dict[str, dict]:
     """Read current, explicitly confirmed outputs from the newest asset manifest.
 
     ``candidates`` are production history, not approved material.  Likewise a
@@ -410,19 +411,21 @@ def confirmed_images(root: Path, *, requests: Iterable[str] | None = None) -> di
     master = root / MASTER_DIR
     if not master.is_dir():
         return {}
+    file_digest = digest if file_digest is None else file_digest
+    manifest = load_manifest(root) if manifest is None else manifest
+    state = load_project_state(root) if state is None else state
     registrations: dict[Path, list[dict]] = {}
-    for entry in load_manifest(root).get("artifacts", []):
+    for entry in manifest.get("artifacts", []):
         path_text = entry.get("path_or_url")
         if isinstance(path_text, str) and path_text:
             path = project_path(root, path_text)
             registrations.setdefault(path, []).append(entry)
             if (entry.get("type") == "visual-asset-manifest" and entry.get("status") == "current"
                     and entry.get("checksum")
-                    and (not path.is_file() or digest(path) != entry["checksum"])):
+                    and (not path.is_file() or file_digest(path) != entry["checksum"])):
                 # Its changed contents cannot tell us which old ASTs to erase.
                 # Stop before merging, rather than reviving an earlier legacy image.
                 raise ValueError("已登记资产导出清单内容已变化或缺失，请重新核对：" + str(path))
-    state = load_project_state(root)
     current_assets: dict[str, tuple[Path, dict]] = {}
     for folder in sorted(p for p in master.iterdir() if p.is_dir()):
         manifest_path = folder / "visual-asset-manifest.json"
@@ -439,7 +442,7 @@ def confirmed_images(root: Path, *, requests: Iterable[str] | None = None) -> di
         current_manifest = entries is None or any(
             entry.get("artifact_id") in state["current_artifacts"]
             and artifact_is_adopted(entry, state, root)
-            and (not entry.get("checksum") or digest(manifest_path) == entry["checksum"])
+            and (not entry.get("checksum") or file_digest(manifest_path.resolve()) == entry["checksum"])
             for entry in entries
         )
         for asset in manifest.get("assets", []):
@@ -461,7 +464,7 @@ def confirmed_images(root: Path, *, requests: Iterable[str] | None = None) -> di
         outputs = []
         if "confirmed_outputs" not in asset:
             if requested_outputs is None or "legacy-main" in requested_outputs:
-                legacy = _legacy_confirmed_output(root, asset, confirmation_cache)
+                legacy = _legacy_confirmed_output(root, asset, confirmation_cache, file_digest=file_digest)
                 if legacy is not None:
                     outputs.append(legacy)
         else:
@@ -474,7 +477,7 @@ def confirmed_images(root: Path, *, requests: Iterable[str] | None = None) -> di
                 ):
                     continue
                 confirmed = _confirmed_output(root, asset_id, output, confirmation_cache=confirmation_cache,
-                                              display_label=True)
+                                              display_label=True, file_digest=file_digest)
                 if confirmed is not None:
                     outputs.append(confirmed)
         if not outputs:
@@ -504,10 +507,12 @@ def confirmed_images(root: Path, *, requests: Iterable[str] | None = None) -> di
 
 
 def build_asset_list(root: Path, narrative: dict, choices: dict | None = None, *,
-                     image_requests: Iterable[str] | None = None) -> dict:
+                     image_requests: Iterable[str] | None = None, manifest=None,
+                     state=None, file_digest=None) -> dict:
     """当前资产清单：state + 在场区间 + 图片状态。"""
     choices = choices if choices is not None else read_choices(root)
-    images = confirmed_images(root, requests=image_requests)
+    images = confirmed_images(root, requests=image_requests, manifest=manifest, state=state,
+                              file_digest=file_digest)
     usage = load_usage(root, narrative)
     items = []
     for requirement in effective(narrative, choices):
@@ -556,13 +561,15 @@ def write_asset_list(root: Path, narrative: dict, choices: dict) -> Path:
 
 
 def load_asset_list(root: Path, narrative: dict | None = None, choices: dict | None = None, *,
-                    image_requests: Iterable[str] | None = None) -> dict:
+                    image_requests: Iterable[str] | None = None, manifest=None,
+                    state=None, file_digest=None) -> dict:
     if narrative is None:
         narrative = current_narrative(root)
     # The JSON file is a convenience snapshot, never an authority for image
     # confirmation.  Rebuild in memory so an old candidate-polluted snapshot
     # cannot be re-exported by a later tool invocation.
-    return build_asset_list(root, narrative, choices, image_requests=image_requests)
+    return build_asset_list(root, narrative, choices, image_requests=image_requests, manifest=manifest,
+                            state=state, file_digest=file_digest)
 
 
 def current_narrative(root: Path) -> dict:
@@ -601,7 +608,8 @@ def asset_index(asset_list: dict) -> dict[str, dict]:
     return {item["asset_id"]: item for item in asset_list["items"]}
 
 
-def director_location_readiness(root: Path, storyboard: dict, shot_ids: Iterable[str]) -> list[str]:
+def director_location_readiness(root: Path, storyboard: dict, shot_ids: Iterable[str], *,
+                                scoped=False, assets=None):
     """Find missing master images for required locations in the requested shots."""
     scope = set(shot_ids)
     shots_by_asset: dict[str, list[str]] = {}
@@ -614,19 +622,19 @@ def director_location_readiness(root: Path, storyboard: dict, shot_ids: Iterable
     if not shots_by_asset:
         return []
 
-    index = asset_index(load_asset_list(root))
+    index = asset_index(load_asset_list(root, image_requests=shots_by_asset)) if assets is None else assets
     problems = []
     for asset_id, shots in shots_by_asset.items():
         item = index.get(asset_id)
         if item is None:
-            problems.append(f"{asset_id}（{', '.join(shots)}）：导演引用的需求不在当前资产清单")
+            problems.append((shots, f"{asset_id}（{', '.join(shots)}）：导演引用的需求不在当前资产清单"))
             continue
         if item['state'] != 'needs_image' or item.get('category') != 'LOCATION':
             continue
         image = item.get('image', {})
         if image.get('status') != 'confirmed' or not image.get('outputs'):
-            problems.append(f"{asset_id}（{item['name']}，{', '.join(shots)}）：缺可用的已确认母版图片")
-    return problems
+            problems.append((shots, f"{asset_id}（{item['name']}，{', '.join(shots)}）：缺可用的已确认母版图片"))
+    return problems if scoped else [message for _, message in problems]
 
 
 def _aliases(item: dict) -> list[str]:

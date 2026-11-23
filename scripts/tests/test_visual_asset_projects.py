@@ -1884,6 +1884,15 @@ class ProjectTests(unittest.TestCase):
         partial_manifest = Path(partial['export']['manifest'])
         partial_receipt = partial_manifest.parent / '用户确认记录.json'
         snapshots = {path: path.read_bytes() for path in (partial_manifest, partial_receipt)}
+        continuation = service.continue_project(p['id'])
+        self.assertIn(partial['export']['artifact_id'], continuation['content'])
+        self.assertIn('steps', continuation)
+        partial_manifest.write_bytes(snapshots[partial_manifest] + b' ')
+        try:
+            with self.assertRaisesRegex(ValueError, '导出清单内容已变化'):
+                service.continue_project(p['id'])
+        finally:
+            partial_manifest.write_bytes(snapshots[partial_manifest])
         self.assertEqual(service.apply_chat_confirmation(p['id'], authorization_id='FLOW-ASSET-TEST',
                                                          confirmation={'outputs': []}), partial)
         from core.asset_refs import resolve_final_images
