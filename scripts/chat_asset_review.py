@@ -12,14 +12,14 @@ from PIL import Image
 
 if __package__:
     from . import stage_context_cli as stage
-    from .core import artifacts, asset_refs
-    from .core.io import project_lock, read_json, write_json, sha256_json
+    from .core import artifacts, asset_refs, character_boards as boards
+    from .core.io import project_lock, read_json, write_json, sha256_json, utc_now
     from .core.project_state import write_project_state
     from .core.schema_contracts import require_schema
 else:
     import stage_context_cli as stage
-    from core import artifacts, asset_refs
-    from core.io import project_lock, read_json, write_json, sha256_json
+    from core import artifacts, asset_refs, character_boards as boards
+    from core.io import project_lock, read_json, write_json, sha256_json, utc_now
     from core.project_state import write_project_state
     from core.schema_contracts import require_schema
 
@@ -114,6 +114,32 @@ def show(root, context, narrative):
     return dict(shown=key, items=items, pending=pending)
 
 
+def append_candidate(record, path, sources, width, height, fmt):
+    ast = record["asset_id"]
+    used = {r["candidate_id"] for r in record["candidates"]}
+    serial = 1
+    while f"{ast}-C{serial:02}" in used:
+        serial += 1
+    candidate = f"{ast}-C{serial:02}"
+    record["candidates"].append(
+        dict(
+            candidate_id=candidate,
+            path=path,
+            status="awaiting_user_review",
+            source_references=sources,
+            technical_qc=dict(
+                path_exists=True,
+                format=fmt,
+                width=width,
+                height=height,
+                naming_valid=True,
+                reference_traceable=True,
+            ),
+        )
+    )
+    return candidate
+
+
 def collect_output(root, rel, staging, target, item, requirements, out, message, receipt):
     ast, output = target.split("@")
     if ast not in requirements:
@@ -159,27 +185,9 @@ def collect_output(root, rel, staging, target, item, requirements, out, message,
         out["assets"].append(record)
         out["source_asset_requirement_ids"].append(ast)
     record["status"] = "confirmed"
-    used = {r["candidate_id"] for r in record["candidates"]}
-    serial = 1
-    while f"{ast}-C{serial:02}" in used:
-        serial += 1
-    candidate = f"{ast}-C{serial:02}"
-    record["candidates"].append(
-        dict(
-            candidate_id=candidate,
-            path=path,
-            status="awaiting_user_review",
-            source_references=[item["path"]],
-            technical_qc=dict(
-                path_exists=True,
-                format=fmt,
-                width=width,
-                height=height,
-                naming_valid=True,
-                reference_traceable=True,
-            ),
-        )
-    )
+    candidate = append_candidate(record, path, [item["path"]], width, height, fmt)
+    if item.get("output_kind") in {boards.HEAD, *boards.CLOTHES}:
+        boards.invalidate_changed_source(root, record, output, item["sha256"], out["scope_gaps"], receipt.as_posix(), {})
     selected = dict(
         candidate_id=candidate, path=path, user_confirmation_ref=receipt.as_posix() + "#" + output
     )
@@ -262,6 +270,8 @@ def confirm(root, keys, message, narrative, entries):
             raise ValueError("已确认清单字节变化")
     else:
         for e in entries:
+            if e["artifact_id"].startswith("visual-boards-") and e["status"] == "candidate":
+                raise ValueError("已有拼版待恢复，请先按原实看编号续作")
             if e["artifact_id"] == ident or not e["artifact_id"].startswith("visual-assets-chat-"):
                 continue
             if e["status"] == "candidate":
@@ -330,50 +340,149 @@ def confirm(root, keys, message, narrative, entries):
                         production_stopped=True,
                     )
                 )
-            require_schema(out, "visual-asset-manifest.schema.json", label="对话确认资产")
-            write_json(staging / dest.name, out)
-            write_json(staging / receipt.name, dict(shown=keys, items=confirmed))
-            checksum = artifacts.digest(staging / dest.name)
-            if old and old["checksum"] != checksum:
-                raise ValueError("待恢复的资产清单与原登记不一致")
-            if old is None:
-                artifacts.register_workspace_artifact(
-                    root,
-                    dict(
-                        artifact_id=ident,
-                        logical_id=LOGICAL,
-                        type="visual-asset-manifest",
-                        revision=out["revision"],
-                        path_or_url=(rel / dest.name).as_posix(),
-                        depends_on=["narrative.package"],
-                        user_approved=True,
-                        checksum=checksum,
-                        confirmation_ref=receipt.as_posix(),
-                    ),
-                )
-            if folder.exists():
-                if any(artifacts.digest(folder / f.name) != artifacts.digest(f) for f in staging.iterdir()):
-                    raise ValueError("已有导出与本次确认冲突")
-            else:
-                folder.parent.mkdir(parents=True, exist_ok=True)
-                staging.rename(folder)
-            artifacts.promote_candidate(root, LOGICAL, ident)
+            publish(root, rel, ident, out, staging, receipt, dict(shown=keys, items=confirmed), old)
     if not old or old["status"] != "superseded":
-        # Promotion can reconcile the on-disk selection. Use its new state version.
-        state = artifacts.load_project_state(root)
-        asset_ids = {e["artifact_id"] for e in entries if e["logical_id"] == LOGICAL}
-        state["current_artifacts"] = [i for i in state["current_artifacts"] if i not in asset_ids] + [ident]
-        if not any(ident in r.get("artifact_ids", []) for r in state["user_confirmations"]):
-            state["user_confirmations"].append(
-                dict(
-                    at=message["at"],
-                    artifact_ids=[ident],
-                    confirmation_ref=receipt.as_posix(),
-                    method="对话确认",
-                )
-            )
-        write_project_state(root, state)
+        select_export(root, entries, ident, receipt, message["at"], "对话确认")
     return dict(artifact_id=ident, count=len(rows), manifest=str(dest))
+
+
+def publish(root, rel, ident, out, staging, receipt, evidence, old):
+    folder = inside(root, rel)
+    dest = folder / "visual-asset-manifest.json"
+    require_schema(out, "visual-asset-manifest.schema.json", label="对话确认资产")
+    write_json(staging / dest.name, out)
+    write_json(staging / receipt.name, evidence)
+    checksum = artifacts.digest(staging / dest.name)
+    if old and old["checksum"] != checksum:
+        raise ValueError("待恢复的资产清单与原登记不一致")
+    if old is None:
+        artifacts.register_workspace_artifact(
+            root,
+            dict(
+                artifact_id=ident,
+                logical_id=LOGICAL,
+                type="visual-asset-manifest",
+                revision=out["revision"],
+                path_or_url=(rel / dest.name).as_posix(),
+                depends_on=["narrative.package"],
+                user_approved=True,
+                checksum=checksum,
+                confirmation_ref=receipt.as_posix(),
+            ),
+        )
+    if folder.exists():
+        if any(artifacts.digest(folder / f.name) != artifacts.digest(f) for f in staging.iterdir()):
+            raise ValueError("已有导出与本次确认冲突")
+    else:
+        folder.parent.mkdir(parents=True, exist_ok=True)
+        staging.rename(folder)
+    artifacts.promote_candidate(root, LOGICAL, ident)
+
+
+def select_export(root, entries, ident, receipt, at, method):
+    # Promotion can reconcile the on-disk selection. Use its new state version.
+    state = artifacts.load_project_state(root)
+    asset_ids = {e["artifact_id"] for e in entries if e["logical_id"] == LOGICAL}
+    selected = [i for i in state["current_artifacts"] if i in asset_ids or i == ident]
+    confirmed = any(ident in row.get("artifact_ids", []) for row in state["user_confirmations"])
+    if selected == [ident] and confirmed:
+        return
+    state["current_artifacts"] = [i for i in state["current_artifacts"] if i not in asset_ids and i != ident] + [ident]
+    if not confirmed:
+        state["user_confirmations"].append(
+            dict(
+                at=at,
+                artifact_ids=[ident],
+                confirmation_ref=receipt.as_posix(),
+                method=method,
+            )
+        )
+    write_project_state(root, state)
+
+
+def compose_boards(root, specs, reviewed, narrative, entries):
+    selection = current(entries, LOGICAL)
+    if not selection:
+        raise ValueError("须先确认头照和服装源图")
+    source = inside(root, selection["path_or_url"])
+    if artifacts.digest(source) != selection["checksum"]:
+        raise ValueError("当前资产清单字节已变化")
+    out = read_json(source)
+    if out["source_narrative"]["artifact_id"] != narrative["artifact_id"]:
+        raise ValueError("人物板上游编导版本已变化")
+    expected = None
+    if reviewed:
+        if not re.fullmatch(r"[0-9a-f]{64}", reviewed):
+            raise ValueError("实看编号无效")
+        packet = read_json(inside(root, boards.PACKETS / (reviewed + ".json")))
+        if sha256_json(packet) != reviewed or packet["narrative"] != narrative["checksum"]:
+            raise ValueError("实看清单或编导版本已变化")
+        requested = [[i["ast_id"] + "@" + i["output_id"], *(o["output_id"] for o in i["sources"])]
+                     for i in packet["items"]]
+        if specs and sorted(specs) != sorted(requested):
+            raise ValueError("请按原实看范围登记")
+        expected = {i["ast_id"] + "@" + i["output_id"]: i for i in packet["items"]}
+        specs = requested
+        # A crash after promoting but before updating project_state is recoverable via this receipt.
+        if (selection["artifact_id"].startswith("visual-boards-")
+                and read_json(inside(root, selection["confirmation_ref"])).get("review_key") == reviewed):
+            select_export(root, entries, selection["artifact_id"], Path(selection["confirmation_ref"]),
+                          selection["created_at"], "沿用源图确认并实看拼版")
+
+    ready, reused, pending = boards.plans(root, out, specs, expected)
+    if reviewed and pending:
+        raise ValueError("实看范围内的来源已失效：" + "、".join(pending))
+    rendered = [boards.render(root, plan) for plan in ready]
+    result = dict(count=len(rendered), reused=reused, pending=pending,
+                  items=[{k: row[k] for k in ("ast_id", "output_id", "path", "image_sha256", "pixel_size")} for row in rendered])
+    if not rendered:
+        return dict(result, artifact_id=selection["artifact_id"])
+    if not reviewed:
+        packet = dict(narrative=narrative["checksum"], items=rendered)
+        key = sha256_json(packet)
+        write_json(inside(root, boards.PACKETS / (key + ".json")), packet)
+        return dict(result, review_key=key)
+    if any(row != expected[row["ast_id"] + "@" + row["output_id"]] for row in rendered):
+        raise ValueError("人物板或来源已变化，请重新实看")
+
+    ident = "visual-boards-" + sha256_json([reviewed, selection["artifact_id"]])
+    old = next((e for e in entries if e["artifact_id"] == ident), None)
+    if old and old["status"] != "candidate":
+        raise ValueError("历史拼版已被替代，请核对当前输出")
+    for entry in entries:
+        if (entry["logical_id"] == LOGICAL and entry["status"] == "candidate" and entry != old
+                and entry["artifact_id"].startswith(("visual-boards-", "visual-assets-chat-"))):
+            raise ValueError("另一次资产登记待恢复，请先按原编号续作")
+    rel = Path(asset_refs.MASTER_DIR) / ident
+    receipt = rel / "人物1×4拼版回执.json"
+    revisions = [int(e["revision"][1:]) for e in entries
+                 if e["logical_id"] == LOGICAL and re.fullmatch(r"R[0-9]+", e["revision"])]
+    out["revision"] = old["revision"] if old else f"R{max(revisions, default=0) + 1:02}"
+    records = {a["asset_id"]: a for a in out["assets"]}
+    confirmations = []
+    for row in rendered:
+        ast, final = row["ast_id"], row["output_id"]
+        record = records[ast]
+        candidate = append_candidate(record, row["path"], [s["path"] for s in row["sources"]],
+                                     *row["pixel_size"], "png")
+        output = dict(output_id=final, output_kind=boards.BOARD, state=row["state"], purpose=record["name"] + "人物造型",
+                      candidate_id=candidate, path=row["path"], user_confirmation_ref=receipt.as_posix() + "#" + final,
+                      view="、".join(boards.ORDER))
+        original = record["confirmed_outputs"]
+        record["confirmed_outputs"] = [output if o["output_id"] == final else o for o in original]
+        if not any(o["output_id"] == final for o in original):
+            record["confirmed_outputs"].append(output)
+        if record["confirmed_asset"]["candidate_id"] not in {o["candidate_id"] for o in record["confirmed_outputs"]}:
+            record["confirmed_asset"] = {k: output[k] for k in ("candidate_id", "path", "user_confirmation_ref")}
+        out["scope_gaps"] = [g for g in out["scope_gaps"] if g["gap_id"] != f"GAP-{ast}-{final}"]
+        confirmations.append(dict(ast_id=ast, output_id=final,
+                                  confirmation=dict(id=final, path=row["path"], image_sha256=row["image_sha256"],
+                                                    sources=row["sources"], pixel_size=row["pixel_size"], view_order=boards.ORDER)))
+    with TemporaryDirectory(dir=root) as tmp:
+        publish(root, rel, ident, out, Path(tmp), receipt,
+                dict(method="两份已确认源图等比拼版，执行者实看", review_key=reviewed, items=confirmations), old)
+    select_export(root, entries, ident, receipt, utc_now(), "沿用源图确认并实看拼版")
+    return dict(result, artifact_id=ident, manifest=str(root / rel / "visual-asset-manifest.json"))
 
 
 def main():
@@ -384,6 +493,10 @@ def main():
     decide = commands.add_parser("confirm")
     decide.add_argument("--shown", action="append", required=True)
     decide.add_argument("--confirmation-json", required=True, type=Path)
+    compose = commands.add_parser("compose-boards", help="从同一角色的已确认源图拼版；实看后按编号登记")
+    compose.add_argument("--board", action="append", nargs=3, default=[], metavar=("AST@FINAL", "HEAD", "WARDROBE"),
+                         help="仅在指定范围或来源不唯一时提供，可重复")
+    compose.add_argument("--reviewed", help="执行者已实看并通过的准确拼版编号")
     args = parser.parse_args()
     root = args.project.resolve(strict=True)
     with project_lock(root):
@@ -397,11 +510,12 @@ def main():
             or artifacts.digest(inside(root, narrative["path_or_url"])) != narrative["checksum"]
         ):
             raise ValueError("缺当前已采用的准确编导稿")
-        result = (
-            show(root, args.context_id, narrative)
-            if args.command == "show"
-            else confirm(root, args.shown, read_json(args.confirmation_json), narrative, entries)
-        )
+        if args.command == "show":
+            result = show(root, args.context_id, narrative)
+        elif args.command == "confirm":
+            result = confirm(root, args.shown, read_json(args.confirmation_json), narrative, entries)
+        else:
+            result = compose_boards(root, args.board, args.reviewed, narrative, entries)
     print(json.dumps(result, ensure_ascii=False))
 
 

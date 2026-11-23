@@ -303,11 +303,6 @@ def _resolve(project, manifest, state, kickoff, *, actions=None, shot_scope=None
         return steps
     # Already adopted legacy video packages keep their original canvas handoff.
     legacy_video = any(e['logical_id'] == VIDEO and e['status'] == 'current' for e in manifest['artifacts'])
-    if production_workflow(kickoff) == RECREATION_WORKFLOW and actions != {'assets'} and not legacy_video:
-        from .recreation_segments import segment_steps
-        if reason := _blocked_change(project, [NARRATIVE, ASSETS]):
-            return steps + [_step('recreation', 'waiting', reason)]
-        return steps + segment_steps(project, narrative, narrative_entry, kickoff=kickoff)
     file_digest = cache_file_digests(check_for_changes=True)
     include_assets = actions is None or 'assets' in actions
     if include_assets:
@@ -323,6 +318,13 @@ def _resolve(project, manifest, state, kickoff, *, actions=None, shot_scope=None
             steps.append(_step('assets', 'waiting', asset_error))
         if actions == {'assets'}:
             return steps
+
+    if production_workflow(kickoff) == RECREATION_WORKFLOW and not legacy_video:
+        from .recreation_segments import segment_steps
+        if reason := _blocked_change(project, [NARRATIVE, ASSETS]):
+            return steps + [_step('recreation', 'waiting', reason)]
+        images = {ast: a['image'] for ast, a in assets.items()} if include_assets and not asset_error else None
+        return steps + segment_steps(project, narrative, narrative_entry, kickoff=kickoff, asset_images=images)
 
     if production_workflow(kickoff) == PENDING_WORKFLOW:
         steps.append(_step('director', 'waiting', '编导整稿已采用；在开工记录选择导演重新拍或按原片结构复刻'))

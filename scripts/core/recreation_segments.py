@@ -6,6 +6,7 @@ from .artifacts import digest, project_path
 from .io import read_json, sha256_json
 from .director_inputs import job_path, return_binding
 from .asset_refs import MASTER_DIR, confirmed_images
+from .recreation_assets import segment_asset_problems
 from .media_types import MEDIA_EXTENSIONS
 from .product_reference_pack import resolve_product_pack
 from .project_kickoff import load_kickoff
@@ -25,7 +26,7 @@ def checked_file(root, item, hashes):
         raise ValueError(f"参考已换版 {item['path']}")
 
 
-def product_inputs(root, product, plan, segment, hashes):
+def product_inputs(root, product, plan, segment, hashes, installed):
     if not product or product["mode"] == "none":
         raise ValueError("请用户先确认本段使用的准确商品")
     bundle = plan.get("product_pack") or {}
@@ -47,7 +48,6 @@ def product_inputs(root, product, plan, segment, hashes):
     if not real_use and not set(packaging).intersection(segment["appearance"]):
         raise ValueError("商品展示段须引用所选产品包的包装外观")
 
-    installed = resolve_product_pack(product)
     if installed:
         allowed = {(row["role"], row["sha256"]) for row in installed["references"]}
         if any(("packaging", refs[key]["sha256"]) not in allowed for key in packaging):
@@ -135,7 +135,7 @@ def group_steps(steps):
     return list(grouped.values())
 
 
-def segment_steps(root, narrative, entry, *, plan=None, kickoff=None):
+def segment_steps(root, narrative, entry, *, plan=None, kickoff=None, asset_images=None):
     if not (root / PLAN).exists():
         return [
             dict(
@@ -164,6 +164,25 @@ def segment_steps(root, narrative, entry, *, plan=None, kickoff=None):
         raise ValueError("原片帧率无效")
     ids, lines, hashes, steps, deliveries = set(), [], {}, [], []
     written = {} if proposed else written_prompts(root, entry)
+    installed = resolve_product_pack(product) if product and product.get("mode") != "none" else None
+    custom_packaging = []
+    bundle = plan.get("product_pack") or {}
+    if not installed and product and product.get("mode") != "none" and product.get("product_id") == bundle.get("product_id"):
+        source = bundle.get("source")
+        if isinstance(source, dict) and source.get("path") and source.get("sha256"):
+            try:
+                checked_file(root, source, hashes)
+                custom_packaging = bundle.get("packaging", [])
+            except (OSError, ValueError):
+                pass  # Affected product segments report their missing source via product_inputs.
+
+    def load_images():
+        nonlocal asset_images
+        if asset_images is None:
+            asset_images = confirmed_images(root)
+        return asset_images
+
+    asset_problems = segment_asset_problems(root, narrative, plan, installed, custom_packaging, load_images)
     masters = None
     for row in plan["segments"]:
         sid = row["id"]
@@ -200,10 +219,12 @@ def segment_steps(root, narrative, entry, *, plan=None, kickoff=None):
             step.update(action="director", skill="storyboard-planner", reason=row["change"])
         else:
             try:
+                if issues := asset_problems.get(sid):
+                    raise ValueError("；".join(issues))
                 packaging = None
                 if row["mode"] == "product" or (product and product.get("product_usage") == "display"
                         and product_paragraphs.intersection(row["paragraph_ids"])):
-                    packaging = product_inputs(root, product, plan, row, hashes)
+                    packaging = product_inputs(root, product, plan, row, hashes, installed)
                 ticket = job_path(root, sid)
                 saved_job = read_json(ticket) if ticket.is_file() else None
                 current_job = (
@@ -250,7 +271,7 @@ def segment_steps(root, narrative, entry, *, plan=None, kickoff=None):
                         if masters is None:
                             masters = {
                                 Path(o["path"])
-                                for a in confirmed_images(root).values()
+                                for a in load_images().values()
                                 if a["status"] == "confirmed"
                                 for o in a["outputs"]
                             }

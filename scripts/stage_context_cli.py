@@ -2308,8 +2308,28 @@ def _prepare(args: argparse.Namespace, project: Path, supplied_vault: Path | Non
     if usage is not None:
         report["run_usage"] = usage
     if asset_batch:
-        report["asset_batch"] = asset_batch
+        report.update(_asset_batch_dispatch(project, args, asset_batch, output, kickoff))
     return report
+
+
+def _asset_batch_dispatch(project, args, batch, entry, kickoff):
+    """Return host arguments for a bound built-in ImageGen batch; UI work stays with the coordinator."""
+    result = {"asset_batch": batch}
+    if ((kickoff or {}).get("image_generation") or {}).get("provider") != "imagegen":
+        return result
+    context = batch["context_id"]
+    suffix = _identity_hash([str(project), context])[:8]
+    identity = _reading_identity(args)
+    identity_line = " ".join(f"{key}={value}" for key, value in identity.items() if value)
+    result["spawn_agent"] = {
+        "task_name": f"asset_{context.replace('-', '_')}_{suffix}",
+        "fork_turns": "none",
+        "message": (f"按 {ROOT / 'skills/asset-image-assistant/SKILL.md'} 执行项目 {project} 的图片批次 {context}。"
+                    f"本轮入口 {entry}。在项目内读请求 {batch['request']}，按所列目标与本批授权制作。"
+                    f"阅读身份 {identity_line or '沿用本批实际执行者与任务 ID'}。"
+                    f"实看后写回 {batch['receipt']}，只回传结果或阻塞和回执位置。"),
+    }
+    return result
 
 
 def _asset_batch_handoff(project, args, target_skill, *, request_path=None, request_snapshot=None, receipt_ref=None):
@@ -2592,6 +2612,7 @@ def _write_handoff_card(args, project, target_skill, current_stage, inputs, *, t
         if target_skill == "voiceover-to-video-script" else
         "- 按根规则为已授权的下一 Skill 建立执行者。统一入口在网站通过、编导整稿对话确认正式采用或有效自主采用后，按本轮范围继续；兼容人工流程沿其继续规则。创作新轮由专属生产 agent 准备并校验 stage_startup.md。"
     )
+    kickoff = None if testing else load_kickoff(project)
     task_context = _CONTEXT_ID.get()
     if target_skill == "creative-director" and not testing:
         python = ROOT / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
@@ -2615,7 +2636,7 @@ def _write_handoff_card(args, project, target_skill, current_stage, inputs, *, t
         f"- 工具报错：沿 `{ROOT / 'docs/rules/execution.md'}#工具报错与原处续作`，在现有任务记录交回原操作、失败位置、最后可信结果和待恢复步骤。",
         f"- 等待及接收：执行前实读 `{ROOT / 'docs/rules/execution.md'}#等待与工具回传` 的宿主参数；沿原任务续等，完成后只交本轮身份、结论、差异及证据路径。原图由执行者实看，协调方按争议定向取图，不整份回传 JSON、日志或图组。",
         "", "## 接收约束", "",
-        *([f"- 从 `{project / REQUEST_PATH}` 直接读取本轮 `kickoff`；已有决定随项目沿用，缺项只影响依赖它的动作。"] if not testing and load_kickoff(project) else []),
+        *([f"- 从 `{project / REQUEST_PATH}` 直接读取本轮 `kickoff`；已有决定随项目沿用，缺项只影响依赖它的动作。"] if kickoff else []),
         ("- 仅按独立测试授权继续候选试写；保留所有未核对事实和素材阻塞。视频 Skill 仍直接读取，不重建准备包。" if testing else startup_requirement),
         *([f"- 准备、读取登记、产前检查和需要的审核包沿本任务 `--context-id {task_context}`；使用原执行者和任务 ID。"]
           if task_context and target_skill in TASK_HANDOFF_SKILLS else []),
@@ -2637,7 +2658,7 @@ def _write_handoff_card(args, project, target_skill, current_stage, inputs, *, t
     report["to_skill"] = target_skill
     report["artifact_ids"] = [item["artifact_id"] for item in inputs]
     if asset_batch:
-        report["asset_batch"] = asset_batch
+        report.update(_asset_batch_dispatch(project, args, asset_batch, output, kickoff))
     if testing:
         report.update(test_metadata())
     return report

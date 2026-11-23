@@ -517,6 +517,14 @@ def test_asset_worker_receipt_is_bound_and_received_without_changing_project_sta
     receipt = request.with_name("visual-self-check.json")
     batch_args = ["handoff", "--project", args.project, "--to-skill", args.skill,
                   "--context-id", args.context_id]
+    # Switching the project provider changes the host, never the selected files.
+    kickoff_path = project / cli.REQUEST_PATH
+    grant = {"provider": "imagegen", "model": "synthetic builtin", "fee_scope": "existing_quota",
+             "reference_upload_authorized": True, "scope": "required_asset_outputs",
+             "authorization_ref": "synthetic test grant"}
+    kickoff = {"decision_ref": "synthetic kickoff", "creation": {"target_duration_seconds": 30},
+               "product": {"mode": "none"}, "image_generation": grant}
+    kickoff_path.write_text(json.dumps({"kickoff": kickoff}), encoding="utf-8")
     if entry == "prepare":
         args.vault = None
         args.batch_receipt = str(receipt)
@@ -531,6 +539,17 @@ def test_asset_worker_receipt_is_bound_and_received_without_changing_project_sta
         args.batch_receipt = str(receipt.with_name("unbound-receipt.json"))
         with pytest.raises(cli.StageContextError, match="已有图片批次交接不一致"):
             cli.prepare(args)
+    payload = result["spawn_agent"]
+    assert set(payload) == {"fork_turns", "task_name", "message"}
+    assert payload["fork_turns"] == "none"
+    assert args.context_id.replace("-", "_") in payload["task_name"]
+    assert str(Path(result["path"])) in payload["message"]
+    assert request.name in payload["message"] and receipt.name in payload["message"]
+    grant["provider"] = "redframe"
+    kickoff_path.write_text(json.dumps({"kickoff": kickoff}), encoding="utf-8")
+    redframe = cli.handoff(cli.parser().parse_args(batch_args + ["--request-json", str(request),
+                                                                 "--batch-receipt", str(receipt)]))
+    assert "spawn_agent" not in redframe
     assert result["asset_batch"]["targets"] == [target]
     receive = cli.parser().parse_args(batch_args + ["--receive-batch"])
     assert cli.handoff(receive)["status"] == "pending"

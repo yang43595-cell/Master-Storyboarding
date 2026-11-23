@@ -28,6 +28,8 @@
 
 协调方运行普通 handoff。复刻 Skill 在项目的 `01_原始资料/复刻分段.json` 写一份输入清单。顶层填已采用编导的 narrative_id、narrative_sha256、fps、first_frame、end_frame、references 与有序 segments。帧界均左闭右开。references 以正文引用名索引，逐项写项目相对 path、sha256、role；动作视频另写按实际解码核对的 frame_count；深度母片同时登记 source_start_frame，明确在原片中的起点。人物、地点、物件用本项目当前确认的准确用途和版本，产品外观可取真实实物资料。
 
+新分段将该镜实际出画的人物和场景 AST 编号列入 `visible_asset_ids`。同一剧情段拆多镜时逐镜填写，画外发声的人物不列入。按当前有效资产决定，只把须有独立图的对象绑定到已确认外观；每项引用用 `asset_id`、`output_id`、文件路径和字节摘要定位具体造型。旧计划的确认母版可按准确路径和字节沿用。
+
 每段写 id、frames、paragraph_ids、dialogue_ids、mode、motion、reference_frames、appearance；列明剧情动作、谁说话及需要继承的状态。depth 模式使用同窗深度，product 使用目标产品的真实实操；包装图不能充当操作依据。同镜混合时分别指定动作阶段，产品操作以实操为准。原片只供其获准用途。需要改写戏剧动作时 mode 填 rewrite，change 写具体冲突。原动作参考已不适合新工序时同时设 requires_new_motion 为 true，回传须选择不同字节的实际动作视频。导演通过下面的回传命令落实本段改法、进出状态和对应参考。其余段并行继续。分段或参考换版后重新核对受影响段。
 
 有产品的分段计划登记 `product_pack.product_id`，对应开工时用户确认的商品，`packaging` 和 `operations` 列出 `references` 内同款包装和实操的键。目录内商品按开工锁定的参考包核对字节及用途；目录外同款实物包在 `product_pack.source` 登记项目内来源文件 `path` 和 `sha256`。产品段缺任一实际依赖时在交接中列出缺口，使齐备的剧情段继续。
