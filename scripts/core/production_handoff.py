@@ -266,15 +266,21 @@ def unlisted_asset_work(project, assets, waiting, planned_assets):
     return inventory - composing, composing
 
 
-def _asset_steps(project, state, kickoff, narrative_entry, assets, ready, waiting, *, review_targets=None, active_request=None):
-    targets = set(validate_asset_review_targets(review_targets)) if review_targets is not None else set()
-    planned_assets = {target.partition('@')[0] for target in targets}
-    needed = {asset for asset in waiting if assets.get(asset, {}).get('state') == 'needs_image'}
+def review_source_assets(assets, targets):
+    planned = set()
     for target in targets:
         ast, output = target.split('@')
         item = assets.get(ast, {})
         if item.get('state') != 'needs_image' or output in item.get('required_board_ids', []):
             raise ValueError('整轮待审清单须使用当前需要人工审核的源图槽：' + target)
+        planned.add(ast)
+    return planned
+
+
+def _asset_steps(project, state, kickoff, narrative_entry, assets, ready, waiting, *, review_targets=None, active_request=None):
+    targets = set(validate_asset_review_targets(review_targets)) if review_targets is not None else set()
+    planned_assets = review_source_assets(assets, targets)
+    needed = {asset for asset in waiting if assets.get(asset, {}).get('state') == 'needs_image'}
     confirmed = {f'{ast}@{output["output_id"]}' for ast in planned_assets | needed
                  for output in assets[ast]['image'].get('outputs', []) if output.get('sha256') and output['path_exists']}
     outstanding = targets - confirmed

@@ -219,14 +219,10 @@ def show_round(root, contexts, narrative, targets_path=None, receipts=()):
     rejected = rejected_targets(root, expected)
     story = read_json(inside(root, narrative["path_or_url"]))
     assets, _, waiting = production_handoff._asset_readiness(root, story, file_digest=artifacts.cache_file_digests())
-    inventory, _ = production_handoff.unlisted_asset_work(root, assets, waiting, {t.split("@")[0] for t in targets})
+    planned_assets = production_handoff.review_source_assets(assets, targets)
+    inventory, _ = production_handoff.unlisted_asset_work(root, assets, waiting, planned_assets)
     if inventory:
         raise ValueError("整轮清单遗漏仍需人审的资产：" + "、".join(sorted(inventory)))
-    for target in targets:
-        ast, output = target.split("@")
-        asset = assets.get(ast, {})
-        if asset.get("state") != "needs_image" or output in asset.get("required_board_ids", []):
-            raise ValueError("整轮交审目标须为当前需人审的准确源图：" + target)
     requirements = effective_requirements(root, narrative, story=story)
     contexts = sorted(set(contexts))
     receipts = sorted({inside(root, path).relative_to(root).as_posix() for path in receipts})
