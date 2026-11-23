@@ -115,6 +115,8 @@ with open_workspace(task_browser, target_url, project_id) as workspace:
 
 ### 新建直传计划和回读
 
+批次中断后用原计划重进同一入口。已写完的段只回读，未完成的段用 `resume(ui, draft, node_id)` 补写原节点。若回执显示创建结果未知，先刷新核对原画布，再用 `python scripts/redframe_draft.py resolve-creation --project <项目> --plan <原计划> --segment-id <段号> --node-id <核实的原节点>` 绑定。核实未建卡时使用 `--confirm-absent`。
+
 `run_new_draft_batch` 的 `write` 和 `check_layout` 使用同一个工作区，认证源卡批次再传同次刷新取证的 `collect_linked`。入口核实际目标、准确编导和导演、已采用视频稿及各槽来源，最后返回 `frozen`、`observed` 和 `formal_readback`，按现有交付目录保存。尚未取得平台身份时，段内保留 `reference_checks` 的准确文件身份、用途和顺序，填写 `edges: []`、`source_nodes: []`，省略 `ordered_media`，`node_id` 暂用唯一的计划标识。含图片或视频参考的段在实看后列 `realistic_face_slots`（槽号从 1 开始，无写实人脸填 `[]`）。图片认证槽在对应 `canvas_binding` 填 `mode: edge`、`source_port: image`、`target_port: in`，普通槽按其计划走直传。`upload_mapping_pending_nodes` 标记仍待平台身份的节点，`face_source_card_slots` 标记按段计划走认证源卡的槽。合法无媒体段明确使用 `ordered_media: []`。
 
 含认证源卡的段先核同字节源卡认证或按原授权补卡，经认证后接线，普通槽再按冻结顺序对应直传。保留 `realistic_face_slots`，绑定实际节点与槽身份，按[整节点回读](#既有连线草稿)校验实际连线、源卡认证、原件字节及原生 `@`。预检的槽号只表示计划路径。下述 `finalize-new` 用于纯直传段。

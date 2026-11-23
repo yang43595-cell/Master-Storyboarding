@@ -8,6 +8,8 @@ import sys
 import pytest
 
 from scripts import redframe_draft
+from scripts.core.draft_delivery import plan_bindings, read_draft_delivery
+from scripts.core.io import read_json, write_json
 from scripts.tests.test_workflow_repair_cli import bind_redframe_production_sources, redframe_fixture
 from scripts.tests.test_delivery_preflight import bind_synthetic_quality
 
@@ -106,11 +108,12 @@ def test_text_only_upload_plan_checks_explicit_empty_media(tmp_path, monkeypatch
 
 @pytest.mark.parametrize('case', [
     'direct', 'wrong-bytes', 'linked', 'stale-face', 'stale-authority',
-    'three-drafts', 'late-wrong-bytes', 'interrupted-write',
+    'three-drafts', 'late-wrong-bytes', 'interrupted-write', 'interrupted-after-click',
+    'interrupted-after-id', 'independent-batches',
 ])
 def test_new_draft_batch_uses_one_refresh_and_one_ordered_download(tmp_path, monkeypatch, case):
     plan, observed = redframe_fixture(tmp_path)
-    if case in {'three-drafts', 'late-wrong-bytes', 'interrupted-write'}:
+    if case in {'three-drafts', 'late-wrong-bytes', 'interrupted-write', 'independent-batches'}:
         third = deepcopy(plan['drafts'][1])
         third.update(node_id='three', continuity={'event_id': 'separate-event'})
         plan['drafts'].append(third)
@@ -158,9 +161,9 @@ def test_new_draft_batch_uses_one_refresh_and_one_ordered_download(tmp_path, mon
             return {'nodes': earlier_nodes + nodes, 'edges': edges.copy()}
 
         def digest_slots(self, actual):
-            assert actual == nodes
+            assert actual == [node for node in nodes if node in actual]
             calls.append('download')
-            return slots
+            return {node['id']: slots[node['id']] for node in actual}
 
     @contextmanager
     def open_once(factory, target, project_id):
@@ -170,10 +173,16 @@ def test_new_draft_batch_uses_one_refresh_and_one_ordered_download(tmp_path, mon
         finally:
             calls.append('close')
 
+    interrupt = [case] if case.startswith('interrupted-') else []
+    if case == 'independent-batches':
+        alternate = {**plan, 'drafts': plan['drafts'][2:]}
+        plan['drafts'] = plan['drafts'][:2]
+
     def write(ui, draft):
         ident = 'created-' + draft['source_segment_id']
         calls.append(ident)
-        if case == 'interrupted-write' and ident == 'created-two':
+        halt = interrupt.pop() if interrupt and ident == 'created-two' else None
+        if halt == 'interrupted-write':
             raise RuntimeError('synthetic write interruption')
         path = f'assets/{ident}/frame.png'
         face_slot = bool(draft['realistic_face_slots'])
@@ -197,6 +206,10 @@ def test_new_draft_batch_uses_one_refresh_and_one_ordered_download(tmp_path, mon
             slots[ident] = []
         else:
             slots[ident] = [dict(source=ident, media_id='slot', path=path, index=1, sha256=checksum, status=200)]
+        if halt == 'interrupted-after-id':
+            ui._draft_created(ident)
+        if halt:
+            raise RuntimeError('synthetic write interruption')
         return node
 
     def layout(ui, graph, segment_nodes):
@@ -225,10 +238,52 @@ def test_new_draft_batch_uses_one_refresh_and_one_ordered_download(tmp_path, mon
     monkeypatch.setattr(redframe_draft.RedframeVideoDraftUI, '__init__', lambda *args, **kwargs: None)
     monkeypatch.setattr(redframe_draft.RedframeVideoDraftUI, 'assert_target', lambda ui: calls.append('target'))
     kwargs = {'host_browser': object(), 'check_layout': layout, 'collect_linked': read_linked if linked else None}
-    if case == 'interrupted-write':
+    def delivery_status():
+        bindings = plan_bindings(tmp_path, plan)
+        source = bindings['one']['source']
+        return read_draft_delivery(tmp_path, plan, source, bindings)
+
+    if case.startswith('interrupted-'):
         with pytest.raises(RuntimeError, match='synthetic write interruption'):
             redframe_draft.run_new_draft_batch(tmp_path, plan, write, **kwargs)
         assert calls == ['open', 'target', 'read', 'created-one', 'created-two', 'close']
+        status = delivery_status()
+        assert status['one']['node_id'] == 'created-one'
+        assert status['one']['status'] == 'resume'
+        if case == 'interrupted-after-id':
+            assert status['two']['node_id'] == 'created-two'
+            assert status['two']['status'] == 'resume'
+        else:
+            assert status['two']['status'] == 'unknown'
+            calls.clear()
+            with pytest.raises(ValueError, match='创建结果未知'):
+                redframe_draft.run_new_draft_batch(tmp_path, plan, write, **kwargs)
+            assert not calls
+            resolve = redframe_draft.resolve_draft_creation
+            if case == 'interrupted-after-click':
+                with pytest.raises(ValueError, match='仍有新增节点'):
+                    resolve(tmp_path, plan, 'two', host_browser=object(), confirm_absent=True)
+                with pytest.raises(ValueError, match='不对应指定 ID'):
+                    resolve(tmp_path, plan, 'two', host_browser=object(), node_id='created-one')
+                resolution = resolve(tmp_path, plan, 'two', host_browser=object(), node_id='created-two')
+                assert resolution['node_id'] == 'created-two'
+            else:
+                resolution = resolve(tmp_path, plan, 'two', host_browser=object(), confirm_absent=True)
+                assert resolution['status'] == 'confirmed_absent'
+                assert 'two' not in delivery_status()
+        calls.clear()
+        resumed = []
+        result = redframe_draft.run_new_draft_batch(
+            tmp_path, plan, write, resume=lambda _, draft, node_id: resumed.append((draft['source_segment_id'], node_id)), **kwargs)
+        assert result['formal_readback']['ok']
+        assert 'created-one' not in calls
+        assert ('created-two' in calls) == (case == 'interrupted-write')
+        assert resumed == ([] if case == 'interrupted-write' else [('two', 'created-two')])
+        assert set(result['segment_nodes'].values()) == {node['id'] for node in nodes}
+        calls.clear()
+        replay = redframe_draft.run_new_draft_batch(tmp_path, plan, write, **kwargs)
+        assert replay['reused_readback'] and replay['segment_nodes'] == result['segment_nodes']
+        assert not calls
         return
 
     node_ids = ['created-' + draft['source_segment_id'] for draft in plan['drafts']]
@@ -252,6 +307,40 @@ def test_new_draft_batch_uses_one_refresh_and_one_ordered_download(tmp_path, mon
                      'refresh', 'target', 'read', 'layout', 'download'] + (
                          ['read-linked'] if linked else []) + ['close']
     assert 'ordered_media' not in plan['drafts'][0]
+    if case == 'independent-batches':
+        calls.clear()
+        second = redframe_draft.run_new_draft_batch(tmp_path, alternate, write, **kwargs)
+        assert second['formal_readback']['ok']
+        assert second['readback_path'] != result['readback_path']
+        assert calls == ['open', 'target', 'read', 'created-three', 'refresh', 'target', 'read', 'layout', 'download', 'close']
+        calls.clear()
+        assert redframe_draft.run_new_draft_batch(tmp_path, plan, write, **kwargs)['reused_readback']
+        assert redframe_draft.run_new_draft_batch(tmp_path, alternate, write, **kwargs)['reused_readback']
+        assert not calls
+
+        path = tmp_path / result['readback_path'] / 'observed.json'
+        observed = read_json(path)
+        observed['drafts'][0]['prompt'] += ' drift'
+        write_json(path, observed)
+        assert {k: v['status'] for k, v in delivery_status().items()} == {'one': 'resume', 'two': 'resume'}
+        assert all(draft['node_id'] == f'created-{segment}' for segment, draft in delivery_status().items())
+
+
+
+def test_native_creation_records_id_before_first_draft_edit():
+    ui = object.__new__(redframe_draft.RedframeVideoDraftUI)
+    ids = []
+    ui._new_node = lambda *args, **kwargs: 'actual-node'
+    ui._draft_created = ids.append
+
+    def interrupted(node_id):
+        assert ids == [node_id]
+        raise RuntimeError('operation stopped before naming')
+
+    ui._draft_locator = interrupted
+    with pytest.raises(RuntimeError, match='operation stopped before naming'):
+        ui.create_video_draft(10, 20, 'Draft title')
+    assert ids == ['actual-node']
 
 
 def test_retest_refreshes_in_the_same_browser_after_resave(monkeypatch):

@@ -12,7 +12,8 @@ from .asset_batch_receipt import summarize_asset_batch_receipt
 from .asset_refs import asset_index, load_asset_list
 from .candidate_test import require_production_manifest
 from .character_assets import final_output_problems, scoped_output_requirements
-from .io import read_json, sha256_json
+from .io import read_json
+from .draft_delivery import read_draft_delivery
 from .project_kickoff import (CREATIVE_WORKFLOW, PENDING_WORKFLOW, RECREATION_ENTRY, RECREATION_WORKFLOW,
                               load_kickoff, load_project_request, production_workflow)
 from .project_state import load_project_state
@@ -164,50 +165,6 @@ def require_handoff_visual_inputs(project, storyboard, director, shot_ids, *, ro
     return require_visual_readiness(project, storyboard, director, scope, rows=rows,
                                     manifest=manifest, require_review=modern or require_review,
                                     assets=assets, file_digest=file_digest)
-
-
-def _delivery_segments(project, canvas, entry, segment_ids):
-    """Recheck the formal frozen/observed/report bundles from the normal canvas workflow."""
-    if not canvas or not canvas.get('target_url'):
-        return set()
-    if __package__ == 'scripts.core':
-        from ..canvas_readback import compare
-    else:
-        from canvas_readback import compare
-
-    delivered = set()
-    for report_path in sorted((project / '06_视频').rglob('formal_readback.json')):
-        freeze_path = report_path.with_name('frozen.json')
-        observed_path = report_path.with_name('observed.json')
-        if any(not path.resolve().is_relative_to(project) for path in (freeze_path, observed_path, report_path)):
-            continue
-        try:
-            report = read_json(report_path)
-            frozen = read_json(freeze_path)
-            if (report.get('ok') is not True or report.get('native_refresh_binding') != 'selected_fields_match'
-                    or not frozen.get('revision') or report.get('revision') != frozen['revision']
-                    or frozen.get('target_url') != canvas['target_url']
-                    or canvas.get('target_project_id') is not None
-                    and frozen.get('target_project_id') != canvas['target_project_id']
-                    or not any(source.get('artifact_id') == entry['artifact_id']
-                               and source.get('revision') == entry['revision']
-                               and source.get('sha256') == entry['checksum']
-                               for source in frozen.get('source_artifacts', []))):
-                continue
-            matched = {row.get('source_segment_id') for row in frozen['drafts']}
-            if not matched or not matched <= segment_ids or matched <= delivered:
-                continue
-            observed = read_json(observed_path)
-            if (report.get('frozen_sha256') != sha256_json(frozen)
-                    or report.get('observed_sha256') != sha256_json(observed)):
-                continue
-            if compare(frozen, observed, project, formal_delivery=True)['ok']:
-                delivered.update(matched)
-        except (*EVIDENCE_ERRORS, AttributeError):
-            continue
-        if delivered == segment_ids:
-            break
-    return delivered
 
 
 def _pending_asset_batches(project, narrative, assets, waiting):
@@ -487,15 +444,26 @@ def _resolve(project, manifest, state, kickoff, *, actions=None, shot_scope=None
         steps.append(_step('video', 'complete', '已采用视频提示词覆盖本轮导演镜号',
                            artifact_ids=[video_entry['artifact_id']]))
     canvas = (kickoff or {}).get('canvas')
-    delivered = _delivery_segments(project, canvas, video_entry, set(video_segments))
+    try:
+        delivery = read_draft_delivery(project, canvas, video_entry, set(video_segments))
+    except EVIDENCE_ERRORS as exc:
+        steps.append(_step('canvas', 'waiting', f'画布交付回执待核对：{exc}', segment_ids=list(video_segments)))
+        return steps
+    delivered = {segment for segment, item in delivery.items() if item['status'] == 'complete'}
+    unknown = {segment for segment, item in delivery.items() if item['status'] == 'unknown'}
+    if unknown:
+        steps.append(_step('canvas', 'waiting', '创建结果未知，先核对原画布节点', segment_ids=sorted(unknown),
+                           draft_evidence={segment: delivery[segment] for segment in sorted(unknown)}))
     pending = [segment for segment in video_segments if segment not in delivered]
-    ready_segments = [segment for segment in pending if not set(video_segments[segment]) &
+    ready_segments = [segment for segment in pending if segment not in unknown and not set(video_segments[segment]) &
                       (asset_blockers.keys() | visual_blockers.keys())]
     if ready_segments and canvas and not frozen:
         steps.append(_step('canvas', 'ready', '按已登记画布继续草稿写入或原节点刷新回读',
                            skill='voiceover-to-video-script', artifact_ids=[video_entry['artifact_id']],
-                           segment_ids=ready_segments))
-    if blocked_segments := [segment for segment in pending if not canvas or frozen or segment not in ready_segments]:
+                           segment_ids=ready_segments, draft_evidence={segment: delivery[segment] for segment in ready_segments
+                                                                      if segment in delivery}))
+    if blocked_segments := [segment for segment in pending if segment not in unknown and
+                            (not canvas or frozen or segment not in ready_segments)]:
         steps.append(_step('canvas', 'waiting', frozen or '缺已登记画布、本段视觉复核或有效资产确认',
                            segment_ids=blocked_segments))
     if delivered:

@@ -18,6 +18,11 @@ if not __package__:
 
 from scripts.canvas_readback import compare, compare_baseline, digest, rows_by_id, validate_submission
 from scripts.core.artifacts import cache_file_reads, load_manifest, project_path
+from scripts.core.draft_delivery import (
+    DELIVERY_RECEIPT, clear_unobserved_draft, draft_delivery_lock, draft_record, load_draft_receipt,
+    plan_bindings, publish_draft_readback, read_draft_delivery, readback_bundle,
+    store_creation_plan, update_draft_record,
+)
 from scripts.core.io import read_json, write_json
 from scripts.core.native_references import redframe_reference_labels
 from scripts.core.quality_evidence import draft_binding, fingerprint
@@ -249,7 +254,11 @@ def finalize_new_drafts(project, plan, preflight, segment_nodes, observed):
             or report.get('frozen_sha256') != digest(plan)):
         raise ValueError('写前预检未通过，或快照与通过的预检不一致')
     _check_new_plan(plan)
-    return _bind_new_drafts(project, plan, segment_nodes, observed)
+    project = Path(project).resolve()
+    with draft_delivery_lock(project):
+        result = _bind_new_drafts(project, plan, segment_nodes, observed)
+        readback_path = publish_draft_readback(project, plan, result)
+        return {**result, 'readback_path': readback_path, 'receipt_path': DELIVERY_RECEIPT.as_posix()}
 
 
 @contextmanager
@@ -269,10 +278,17 @@ class RedframeVideoDraftUI(RedframeImageUI):
         _draft_data(node, node_id)
         return self.page.locator(f'[data-id="{node_id}"]')
 
+    _draft_created = None
+    _resume_only = False
+
     def create_video_draft(self, x, y, label):
+        if self._resume_only:
+            raise ValueError('续作须使用原草稿节点，不能再新建')
         if not isinstance(label, str) or not label.strip():
             raise ValueError('请为视频草稿提供明确名称')
         node_id = self._new_node(x, y, menu_name='视频', generation_kind='remote-videoGenerationNode')
+        if self._draft_created is not None:
+            self._draft_created(node_id)
         locator = self._draft_locator(node_id)
         locator.locator('.labelText').dblclick(timeout=self.timeout)
         title = locator.get_by_label('节点名称', exact=True)
@@ -410,19 +426,82 @@ def _check_linked_observation(graph, nodes, row, draft, direct_slots, models):
             raise ValueError(f'{node_id} 源卡认证与刷新的持久画布不符')
 
 
-def run_new_draft_batch(project, plan, write, *, host_browser, check_layout, collect_linked=None):
-    """Preflight current project inputs, then write and read back in one session.
+def run_new_draft_batch(project, plan, write, *, host_browser, check_layout, collect_linked=None,
+                        resume=None):
+    """Create unstarted drafts, resume exact existing IDs, and publish the refreshed result.
 
-    `write(ui, planned_draft)` returns its new native ID or the complete node
-    expected after save. It performs no refresh or generation.
-    `check_layout(ui, graph, segment_nodes)` measures the refreshed layout
-    and raises on a layout conflict.
-    When the plan has source-card slots, `collect_linked(ui, graph, segment_nodes,
-    linked_drafts, slots)` returns the linked rows from that same refresh, using
-    the already downloaded direct slots and actual source-card bytes, native
-    references, edges and certifications.
-    The two collectors are read-only.
+    `write(ui, planned_draft)` creates through `ui.create_video_draft` and returns
+    the native ID or full saved node. `resume(ui, planned_draft, node_id)`, when
+    provided, only finishes incomplete fields on that original node. Without it
+    a known node is refreshed read-only. Both callbacks must avoid generation.
+    The layout and linked-slot collectors are read-only.
     """
+    project = Path(project).resolve()
+    with draft_delivery_lock(project):
+        return _run_new_draft_batch(project, plan, write, host_browser=host_browser,
+                                    check_layout=check_layout, collect_linked=collect_linked, resume=resume)
+
+
+def _write_draft_nodes(project, plan, drafts, bindings, existing, receipt, ui, before, write, resume):
+    plan_sha256 = digest(plan)
+    previous_ids = {ident for ident, node in before.items() if node.get('type') == 'remote-videoGenerationNode'}
+    segment_nodes, expected = {}, {}
+    plan_path = store_creation_plan(project, plan, plan_sha256) if set(drafts) - existing.keys() else None
+    for segment, draft in drafts.items():
+        binding = bindings[segment]
+        prior = existing.get(segment)
+        wrote_fields = False
+        if prior:
+            node_id = prior['node_id']
+            _draft_data(before.get(node_id), node_id)
+            ui._resume_only = True
+            record = draft_record(receipt, binding) or {}
+            already_written = record.get('write_finished_for') == plan_sha256
+            if resume is not None and prior['status'] == 'resume' and not already_written:
+                saved = resume(ui, deepcopy(draft), node_id)
+                if saved is not None and (saved.get('id') if isinstance(saved, dict) else saved) != node_id:
+                    raise ValueError(f'{segment} 续作须使用原草稿节点 {node_id}')
+                wrote_fields = True
+            else:
+                saved = None
+        else:
+            update_draft_record(project, receipt, binding, phase='creation_unknown',
+                                plan_sha256=plan_sha256, plan_path=plan_path,
+                                previous_node_ids=sorted(previous_ids))
+
+            def record_created(ident):
+                ident = _ident(ident)
+                if ident in previous_ids or ident in expected or ident == draft['node_id']:
+                    raise ValueError(f'{segment} 须绑定本批新建的唯一草稿节点 ID：{ident}')
+                update_draft_record(project, receipt, binding, phase='node_observed', node_id=ident)
+                ui._resume_only = True
+
+            ui._draft_created = record_created
+            saved = write(ui, deepcopy(draft))
+            node_id = _ident(saved.get('id') if isinstance(saved, dict) else saved)
+            record = draft_record(receipt, binding)
+            if record.get('node_id') != node_id:
+                observed_node = saved if isinstance(saved, dict) else canvas_nodes(ui.workspace.read_canvas()).get(node_id)
+                _draft_data(observed_node, node_id)
+                record_created(node_id)
+            previous_ids.add(node_id)
+            wrote_fields = True
+        ui._draft_created = None
+        ui._resume_only = False
+        node = saved if isinstance(saved, dict) else None
+        if node is not None:
+            _draft_data(node, node_id)
+        if node_id in expected:
+            raise ValueError(f'{segment} 的草稿节点与本批其他段冲突：{node_id}')
+        if wrote_fields:
+            update_draft_record(project, receipt, binding, node_id=node_id, phase='node_observed',
+                                write_finished_for=plan_sha256)
+        segment_nodes[segment] = node_id
+        expected[node_id] = node
+    return segment_nodes, expected
+
+
+def _run_new_draft_batch(project, plan, write, *, host_browser, check_layout, collect_linked, resume):
     started = time.monotonic()
     drafts = _check_new_plan(plan, allow_linked=True)
     linked = {segment: draft for segment, draft in drafts.items() if draft.get('realistic_face_slots')}
@@ -431,13 +510,31 @@ def run_new_draft_batch(project, plan, write, *, host_browser, check_layout, col
     if any(draft.get('native_identity_mode', 'media_id') != 'media_id' for draft in drafts.values()):
         raise ValueError('该批次入口只接收原生媒体 ID 回读')
     read_json_bytes = cache_file_reads(Path.read_bytes)
-    preflight = validate_submission(plan, project, formal_delivery=True, preflight=True,
-                                    read_json_bytes=read_json_bytes)
+    preflight = validate_submission(plan, project, formal_delivery=True, preflight=True, read_json_bytes=read_json_bytes)
+    bindings = plan_bindings(project, plan)
+    existing = read_draft_delivery(project, plan, next(iter(bindings.values()))['source'], drafts)
+    if unknown := [segment for segment, row in existing.items() if row['status'] == 'unknown']:
+        raise ValueError('创建结果未知，先核原画布及原回执：' + '、'.join(sorted(unknown)))
+    receipt = load_draft_receipt(project)
+    plan_sha256 = digest(plan)
+    complete = {segment: row for segment, row in existing.items() if row['status'] == 'complete'}
+    if set(complete) == set(drafts) and all(
+        (draft_record(receipt, binding) or {}).get('plan_sha256') == plan_sha256
+        for binding in bindings.values()
+    ):
+        paths = {row['readback_path'] for row in complete.values()}
+        if len(paths) == 1:
+            path, = paths
+            bundle = readback_bundle(project, path)
+            nodes = {row['source_segment_id']: row['node_id'] for row in bundle['frozen']['drafts']}
+            if set(nodes) == set(drafts):
+                return {**bundle, 'preflight': preflight, 'segment_nodes': nodes, 'layout': None,
+                        'timings': {'elapsed_seconds': round(time.monotonic() - started, 3)},
+                        'reused_readback': True, 'readback_path': path,
+                        'receipt_path': DELIVERY_RECEIPT.as_posix()}
     direct = [segment for segment in drafts if segment not in linked]
     models = source_capabilities(project, plan, read_json_bytes)
-    del read_json_bytes
     target, project_id = plan['target_url'], plan['target_project_id']
-    segment_nodes, expected = {}, {}
     tick = time.monotonic()
     timings = {'plan_check_seconds': round(tick - started, 3)}
     with open_workspace(host_browser, target, project_id) as workspace:
@@ -446,16 +543,8 @@ def run_new_draft_batch(project, plan, write, *, host_browser, check_layout, col
         before = canvas_nodes(workspace.read_canvas())
         next_tick = time.monotonic()
         timings['open_seconds'] = round(next_tick - tick, 3)
-        for segment, draft in drafts.items():
-            saved = write(ui, deepcopy(draft))
-            node = saved if isinstance(saved, dict) else None
-            node_id = _ident(saved if node is None else node['id'])
-            if node_id in before or node_id in expected or node_id == draft['node_id']:
-                raise ValueError(f'{segment} 须绑定本批新建的唯一草稿节点 ID：{node_id}')
-            if node is not None:
-                _draft_data(node, node_id)
-            segment_nodes[segment] = node_id
-            expected[node_id] = node
+        segment_nodes, expected = _write_draft_nodes(
+            project, plan, drafts, bindings, existing, receipt, ui, before, write, resume)
         tick = time.monotonic()
         timings['write_seconds'] = round(tick - next_tick, 3)
         workspace.page.reload(wait_until='domcontentloaded')
@@ -487,11 +576,59 @@ def run_new_draft_batch(project, plan, write, *, host_browser, check_layout, col
     observed = dict(target_url=target, target_project_id=project_id, revision=plan['revision'],
                     phase='after_refresh', drafts=[rows[node_id] for node_id in segment_nodes.values()])
     result = _bind_new_drafts(project, plan, segment_nodes, observed)
+    readback_path = publish_draft_readback(project, plan, result)
     ended = time.monotonic()
     timings.update(formal_readback_seconds=round(ended - tick, 3),
                    elapsed_seconds=round(ended - started, 3))
-    return {**result, 'preflight': preflight, 'segment_nodes': segment_nodes, 'layout': layout, 'timings': timings}
+    return {**result, 'preflight': preflight, 'segment_nodes': segment_nodes, 'layout': layout, 'timings': timings,
+            'readback_path': readback_path, 'receipt_path': DELIVERY_RECEIPT.as_posix()}
 
+
+def resolve_draft_creation(project, plan, segment_id, *, host_browser, node_id=None, confirm_absent=False):
+    """Resolve a recorded unknown creation against the refreshed original workspace.
+
+    Pass the independently identified native node ID to resume it, or use the
+    explicit absence path after investigating the original attempt.
+    """
+    if (node_id is not None) == confirm_absent:
+        raise ValueError('须明确选择核对原节点 ID 或确证未创建')
+    project = Path(project).resolve()
+    draft = _check_new_plan(plan, allow_linked=True).get(segment_id)
+    if draft is None:
+        raise ValueError('须指定原计划中的准确生成段')
+    if node_id is not None:
+        _ident(node_id)
+    with draft_delivery_lock(project):
+        validate_submission(plan, project, formal_delivery=True, preflight=True)
+        binding = plan_bindings(project, plan)[segment_id]
+        receipt = load_draft_receipt(project)
+        record = draft_record(receipt, binding)
+        if not record or record['phase'] != 'creation_unknown' or record.get('plan_sha256') != digest(plan):
+            raise ValueError(f'{segment_id} 缺同一原计划的创建未知记录')
+        baseline = record.get('previous_node_ids')
+        if not isinstance(baseline, list) or len(set(baseline)) != len(baseline):
+            raise ValueError(f'{segment_id} 缺准确创建前节点范围')
+        baseline = {_ident(ident) for ident in baseline}
+        target, project_id = plan['target_url'], plan['target_project_id']
+        with open_workspace(host_browser, target, project_id) as workspace:
+            ui = RedframeVideoDraftUI(workspace.page, project_id, target, workspace=workspace)
+            workspace.page.reload(wait_until='domcontentloaded')
+            ui.assert_target()
+            nodes = {ident: node for ident, node in canvas_nodes(workspace.read_canvas()).items()
+                     if node.get('type') == 'remote-videoGenerationNode'}
+        new_ids = nodes.keys() - baseline
+        if not baseline <= nodes.keys():
+            raise ValueError(f'{segment_id} 创建前节点已变化，保留未知并核对原画布')
+        if node_id is None:
+            if new_ids:
+                raise ValueError(f'{segment_id} 仍有新增节点，不能按缺失释放')
+            clear_unobserved_draft(project, receipt, binding)
+            return {'ok': True, 'segment_id': segment_id, 'status': 'confirmed_absent'}
+        if node_id == draft['node_id'] or node_id not in new_ids or len(new_ids) != 1:
+            raise ValueError(f'{segment_id} 实采新节点不唯一或不对应指定 ID，保留未知')
+        _draft_data(nodes[node_id], node_id)
+        update_draft_record(project, receipt, binding, phase='node_observed', node_id=node_id)
+        return {'ok': True, 'segment_id': segment_id, 'status': 'resume', 'node_id': node_id}
 
 def save_draft_batch(ui, baseline, staged_graph, changes, ordered_hashes, protected_ids):
     """Save staged draft edits and use one refreshed graph for cards, slots and prompts."""
@@ -640,10 +777,11 @@ def finalize_new_cli(argv):
         result = finalize_new_drafts(args.project.resolve(), read_json(args.plan), read_json(args.preflight),
                                      read_json(args.segment_nodes), read_json(args.readback))
         args.output_dir.mkdir(parents=True, exist_ok=True)
-        for name, value in result.items():
-            write_json(args.output_dir / f'{name}.json', value)
+        for name in ('frozen', 'observed', 'formal_readback'):
+            write_json(args.output_dir / f'{name}.json', result[name])
         report = result['formal_readback']
-        print(json.dumps({key: report[key] for key in ('ok', 'draft_count', 'frozen_sha256')},
+        print(json.dumps({**{key: report[key] for key in ('ok', 'draft_count', 'frozen_sha256')},
+                          'receipt_path': result['receipt_path'], 'readback_path': result['readback_path']},
                          ensure_ascii=False))
         return 0
     except (ValueError, KeyError, OSError, TypeError) as exc:
@@ -651,7 +789,31 @@ def finalize_new_cli(argv):
         return 2
 
 
+def resolve_creation_cli(argv):
+    parser = argparse.ArgumentParser(description='只读核对创建结果未知的视频草稿，更新原交付回执')
+    parser.add_argument('--project', type=Path, required=True)
+    parser.add_argument('--plan', type=Path, required=True)
+    parser.add_argument('--segment-id', required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument('--node-id')
+    mode.add_argument('--confirm-absent', action='store_true')
+    args = parser.parse_args(argv)
+    try:
+        sys.path.insert(0, str(Path.home() / '.local/share/codex-headless-browser'))
+        from headless_edge import task_browser
+
+        result = resolve_draft_creation(args.project, read_json(args.plan), args.segment_id,
+                                        host_browser=task_browser, node_id=args.node_id,
+                                        confirm_absent=args.confirm_absent)
+        print(json.dumps(result, ensure_ascii=False))
+        return 0
+    except (ValueError, KeyError, OSError, TypeError, RuntimeError, ImportError) as exc:
+        print(json.dumps({'ok': False, 'error': str(exc)}, ensure_ascii=False))
+        return 2
+
 if __name__ == '__main__':
     if sys.argv[1:2] == ['finalize-new']:
         raise SystemExit(finalize_new_cli(sys.argv[2:]))
+    if sys.argv[1:2] == ['resolve-creation']:
+        raise SystemExit(resolve_creation_cli(sys.argv[2:]))
     raise SystemExit(main())
