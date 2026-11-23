@@ -98,6 +98,10 @@ python -m scripts.reconcile_video_delivery --project "<业务项目>" \
 
 ### 成批写入和整节点回读
 
+已采用编导稿的 1:1 复刻线使用 `python scripts/redframe_draft.py write-recreation --project <项目> --groups <项目内红帧分组稿>`。使用 `--preflight` 可先离线核当前采用稿、分段和提示词原件、全部对白、同窗动作参考、分组时长及目标。分段计划的外观参考登记准确 `asset_id` 和 `output_id`，预检按项目正式资产清单核对确认状态、文件及字节。已锁定的产品包实物图按同版产品包核对。需要人物 1×4 时，引用适用造型的最终人物板，头照和服装三视图留在资产阶段。该入口沿用复刻分段稿和同一原生画布，按回执保存并刷新回读。用户明确要求另建节点时用 `--append-revision`。以新版分组创建一套独立草稿，复用已核字节的图片源卡。刷新通过后保留上一版回执，旧节点及其成片继续留在画布。只需另建受影响的分组时加 `--changed-only`，按上一份已回读稿自动比较完整分组内容，同段号直接识别，仅换段号时填写所替换的 `previous_id`。未变化的分组沿用已回读的节点；发生变化的分组另建。相同参数加 `--preflight` 可离线查看实际待写段号和数量。同段已交付的补充实操片及成品状态图沿用原画布槽的字节；跨产品包版本的补图另核原段采用凭据、锁版原件与图片确认。新增素材先补正式来源。
+
+锁定产品图超过红帧 8 MB 上限时，可在项目内另存小于 8 MB 的无损 WebP，原件留在产品包。分段计划用 `lossless_product_source_sha256` 对应所选产品包的原图。写实膜态图需要人脸认证时，可用 `resized_product_source_sha256` 登记同一原图的等比缩小 PNG。复刻预检核对原图归属、像素、视向和 ICC。PNG 在画布原生上传后，按 Seedance 认证资产 ID 回读；仅有平台人物编号的卡仍待认证。画布局部换绑时保留原源卡和既有生成记录。
+
 红帧的上传、接线、调时长和刷新回读默认由主对话用 Playwright 完成。每批只开启一个独立后台 Edge。图片使用 `image_browser_session`，视频使用 `scripts.redframe_draft.open_workspace(task_browser, target_url, project_id)`。在同一个 `with` 块内复用 `workspace` 和页面，按目标节点、槽位、保存回执或控件的实际状态等待。整批保存并收口布局后，在同一会话刷新页面，回读持久化结果。已定稿草稿没有本轮修改授权时保持只读。正式写入消费同一份已采用源稿与冻结快照。先核[写前内容与快照](../voiceover-to-video-script/references/seedance-delivery-package.md#正式草稿写前检查)。新建采用 `scripts.redframe_draft.run_new_draft_batch` 串起本页的原生写入、布局采集和正式回读；它管理整批的同一会话、刷新和槽位下载。现有节点按[更新前核已有编辑](#更新前核已有编辑)处理。
 
 需要在原画布做一次已授权的源卡连线测试时，可在该 `with` 块内这样执行。`source_xy` 和 `draft_xy` 取本轮实看确认的两个空位。已有准确测试草稿或素材卡时，传原节点 ID 并从缺失步骤续作。

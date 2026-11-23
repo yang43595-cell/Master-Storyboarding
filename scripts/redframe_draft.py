@@ -811,9 +811,48 @@ def resolve_creation_cli(argv):
         print(json.dumps({'ok': False, 'error': str(exc)}, ensure_ascii=False))
         return 2
 
+
+def write_recreation_cli(argv):
+    parser = argparse.ArgumentParser(description='按本项目已采用编导稿与复刻分组写入并回读红帧草稿')
+    parser.add_argument('--project', type=Path, required=True)
+    parser.add_argument('--groups', type=Path, required=True)
+    parser.add_argument('--preflight', action='store_true')
+    parser.add_argument('--append-revision', action='store_true')
+    parser.add_argument('--changed-only', action='store_true')
+    args = parser.parse_args(argv)
+    try:
+        from scripts.core.redframe_recreation import _revision_scope, recreation_groups, write_recreation
+
+        project = args.project.resolve()
+        group_path = project / args.groups
+        if args.preflight:
+            packet, canvas = recreation_groups(project, group_path)
+            result = {'ok': True, 'draft_count': len(packet['groups']), 'target_url': canvas['target_url']}
+            if args.changed_only:
+                from scripts.core.draft_delivery import load_draft_receipt
+                if not args.append_revision:
+                    raise ValueError('局部另建须使用 --append-revision')
+                changed, _, _ = _revision_scope(project, packet, load_draft_receipt(project).get('recreation', {}))
+                result['changed_groups'] = [group['id'] for group in changed]
+                result['write_count'] = len(changed)
+        else:
+            sys.path.insert(0, str(Path.home() / '.local/share/codex-headless-browser'))
+            from headless_edge import task_browser
+
+            result = write_recreation(project, group_path, host_browser=task_browser,
+                                      append_revision=args.append_revision, changed_only=args.changed_only)
+        print(json.dumps(result, ensure_ascii=False))
+        return 0
+    except (ValueError, KeyError, OSError, TypeError, RuntimeError, ImportError) as exc:
+        print(json.dumps({'ok': False, 'error': str(exc)}, ensure_ascii=False))
+        return 2
+
+
 if __name__ == '__main__':
     if sys.argv[1:2] == ['finalize-new']:
         raise SystemExit(finalize_new_cli(sys.argv[2:]))
     if sys.argv[1:2] == ['resolve-creation']:
         raise SystemExit(resolve_creation_cli(sys.argv[2:]))
+    if sys.argv[1:2] == ['write-recreation']:
+        raise SystemExit(write_recreation_cli(sys.argv[2:]))
     raise SystemExit(main())

@@ -110,3 +110,29 @@ def test_product_segment_requires_the_chosen_pack_and_canvas_readback(tmp_path):
     assert run(kickoff)[-1]["status"] == "complete"
     (tmp_path / "packing.jpg").write_text("changed")
     assert run(kickoff)[0]["status"] == "waiting"
+
+
+def test_display_segment_requires_packaging_and_excludes_motion(tmp_path):
+    entry = {"artifact_id": "source", "checksum": "rev"}
+    narrative = {"story_paragraphs": [{"paragraph_id": "P"}], "dialogues": []}
+    assets = tmp_path / "01_原始资料"
+    assets.mkdir()
+    package = assets / "包装.png"
+    package.write_bytes(b"actual package fixture")
+    ref = {"path": str(package.relative_to(tmp_path)), "sha256": digest(package)}
+    row = dict(id="S", mode="product-display", motion=None, frames=[0, 24],
+               reference_frames=[], paragraph_ids=["P"], dialogue_ids=[], appearance=["包装"])
+    plan = dict(narrative_id="source", narrative_sha256="rev", fps=24, first_frame=0, end_frame=24,
+                references={"包装": ref}, segments=[row],
+                product_pack=dict(product_id="fixture", packaging=["包装"], source=ref))
+    write_json(tmp_path / PLAN, plan)
+    kickoff = {"product": {"mode": "retain", "product_id": "fixture", "product_usage": "real_use"}}
+
+    def result():
+        return segment_steps(tmp_path, narrative, entry, plan=plan, kickoff=kickoff)[0]
+
+    assert result()["status"] == "ready"
+    row["motion"] = "旧深度"
+    assert "不能带视频" in result()["reason"]
+    row.update(motion=None, appearance=[])
+    assert "包装外观" in result()["reason"]

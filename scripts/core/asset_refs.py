@@ -18,7 +18,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
-from .character_assets import (character_type, uses_wardrobe, scoped_output_requirements,
+from .character_assets import (character_type, uses_wardrobe, requires_face_certification, scoped_output_requirements,
                                validate_output_plan, final_output_problems)
 from .image_technical import character_board_image_problem
 
@@ -921,6 +921,8 @@ def _required_images(root: Path, requests: list[str], *, final: bool = False,
                     if issue := character_board_image_problem(output["path"]):
                         problems.append(f"{request}：{issue}")
                 selected[request] = {**output, "manifest": image.get("manifest")}
+                if requires_face_certification(item, output.get("output_kind")):
+                    selected[request]["requires_face_certification"] = True
         elif image.get("status") == "unavailable":
             rejected_count = len(image.get("unavailable_outputs", []))
             problems.append(

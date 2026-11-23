@@ -229,7 +229,16 @@ class RedframeImageUI:
             else:
                 create = menu.get_by_text(menu_name, exact=True)
                 create.wait_for(state='visible', timeout=self.timeout)
-                self._click(create, 'create node', mutation=True)
+                if generation_kind == 'remote-videoGenerationNode':
+                    self._unique(create, 'create video node')
+                    create.evaluate('''element => {
+                        const rect = element.getBoundingClientRect();
+                        const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+                        if (!element.contains(hit)) throw Error('video menu option is covered');
+                        element.click();
+                    }''', timeout=self.timeout)
+                else:
+                    self._click(create, 'create node', mutation=True)
             def created(graph):
                 found = [node for node in graph['nodes'] if node['id'] not in before and node.get('type') == kind]
                 if len(found) > 1:
