@@ -1,0 +1,66 @@
+FFFFFFFFFF                                                               [100%]
+=================================== FAILURES ===================================
+___ test_prepare_rejects_replaced_handoff_input_and_accepts_regenerated_card ___
+scripts/tests/test_stage_context_cli.py:679: in test_prepare_rejects_replaced_handoff_input_and_accepts_regenerated_card
+    with pytest.raises(cli.StageContextError, match="^已有交接卡的产物、版本或路径已过期"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: '^已有交接卡的产物、版本或路径已过期'
+E     Actual message: '交接卡来源字节已改变或过期；重新核对并 handoff'
+_______ test_write_baseline_rejects_missing_graph_readback[fields0-both] _______
+scripts/tests/test_workflow_repair_cli.py:167: in test_write_baseline_rejects_missing_graph_readback
+    with pytest.raises(ValueError, match='collected edges and source_nodes'):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+_____ test_write_baseline_rejects_missing_graph_readback[fields0-baseline] _____
+scripts/tests/test_workflow_repair_cli.py:167: in test_write_baseline_rejects_missing_graph_readback
+    with pytest.raises(ValueError, match='collected edges and source_nodes'):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+_____ test_write_baseline_rejects_missing_graph_readback[fields0-current] ______
+scripts/tests/test_workflow_repair_cli.py:167: in test_write_baseline_rejects_missing_graph_readback
+    with pytest.raises(ValueError, match='collected edges and source_nodes'):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+_______ test_write_baseline_rejects_missing_graph_readback[fields1-both] _______
+scripts/tests/test_workflow_repair_cli.py:167: in test_write_baseline_rejects_missing_graph_readback
+    with pytest.raises(ValueError, match='collected edges and source_nodes'):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+_____ test_write_baseline_rejects_missing_graph_readback[fields1-baseline] _____
+scripts/tests/test_workflow_repair_cli.py:167: in test_write_baseline_rejects_missing_graph_readback
+    with pytest.raises(ValueError, match='collected edges and source_nodes'):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+_____ test_write_baseline_rejects_missing_graph_readback[fields1-current] ______
+scripts/tests/test_workflow_repair_cli.py:167: in test_write_baseline_rejects_missing_graph_readback
+    with pytest.raises(ValueError, match='collected edges and source_nodes'):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+_______ test_write_baseline_rejects_missing_graph_readback[fields2-both] _______
+scripts/tests/test_workflow_repair_cli.py:167: in test_write_baseline_rejects_missing_graph_readback
+    with pytest.raises(ValueError, match='collected edges and source_nodes'):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+_____ test_write_baseline_rejects_missing_graph_readback[fields2-baseline] _____
+scripts/tests/test_workflow_repair_cli.py:167: in test_write_baseline_rejects_missing_graph_readback
+    with pytest.raises(ValueError, match='collected edges and source_nodes'):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+_____ test_write_baseline_rejects_missing_graph_readback[fields2-current] ______
+scripts/tests/test_workflow_repair_cli.py:167: in test_write_baseline_rejects_missing_graph_readback
+    with pytest.raises(ValueError, match='collected edges and source_nodes'):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+=========================== short test summary info ============================
+FAILED config::test_prepare_rejects_replaced_handoff_input_and_accepts_regenerated_card
+FAILED config::test_write_baseline_rejects_missing_graph_readback[fields0-both]
+FAILED config::test_write_baseline_rejects_missing_graph_readback[fields0-baseline]
+FAILED config::test_write_baseline_rejects_missing_graph_readback[fields0-current]
+FAILED config::test_write_baseline_rejects_missing_graph_readback[fields1-both]
+FAILED config::test_write_baseline_rejects_missing_graph_readback[fields1-baseline]
+FAILED config::test_write_baseline_rejects_missing_graph_readback[fields1-current]
+FAILED config::test_write_baseline_rejects_missing_graph_readback[fields2-both]
+FAILED config::test_write_baseline_rejects_missing_graph_readback[fields2-baseline]
+FAILED config::test_write_baseline_rejects_missing_graph_readback[fields2-current]
+10 failed in 0.28s

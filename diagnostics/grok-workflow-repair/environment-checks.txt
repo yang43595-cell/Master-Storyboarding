@@ -1,0 +1,8 @@
+codex/grok-workflow-repair-8AcvWY
+6833d775449f8dbca9373126ebd7b930a518bbfc
+Python 3.12.14
+/Users/liuyang/Documents/Codex/2026-11-09/grok-workflow-repair.8AcvWY/worktree/scripts/canvas_readback.py
+/Users/liuyang/Documents/Codex/2026-11-09/grok-workflow-repair.8AcvWY/worktree/scripts/session_usage.py
+/Users/liuyang/Documents/Codex/2026-11-09/grok-workflow-repair.8AcvWY/worktree/scripts/stage_context_cli.py
+ffmpeg version 1.0.0-401a53202a Copyright (c) 2000-2024 the FFmpeg developers
+ffprobe version 1.0.0-401a53202a Copyright (c) 2007-2024 the FFmpeg developers

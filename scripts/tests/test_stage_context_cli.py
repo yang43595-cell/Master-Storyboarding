@@ -676,7 +676,7 @@ def test_prepare_rejects_replaced_handoff_input_and_accepts_regenerated_card(tmp
     first = cli.prepare(args)
     before = Path(first["path"]).read_bytes()
     adopt("R02")
-    with pytest.raises(cli.StageContextError, match="交接卡.*过期"):
+    with pytest.raises(cli.StageContextError, match="^已有交接卡的产物、版本或路径已过期"):
         cli.prepare(args)
     assert Path(first["path"]).read_bytes() == before
     cli.handoff(argparse.Namespace(project=str(project), to_skill=args.skill))
@@ -1116,8 +1116,22 @@ def test_handoff_revision_receipt_relative_path_and_hash(tmp_path, invalid):
     if invalid:
         with pytest.raises(cli.StageContextError): cli.handoff(args)
     else:
+        args.objective = "合成目标，仅核交接"
+        args.stop_at = "交回本轮候选及未决项"
         report = cli.handoff(args)
-        assert str(artifact.resolve()) in Path(report["path"]).read_text(encoding="utf-8")
+        card = Path(report["path"]).read_text(encoding="utf-8")
+        assert str(artifact.resolve()) in card
+        assert checksum in card
+        assert args.objective in card and args.stop_at in card
+        assert all(value in card for value in ("原始证据", "决定及授权", "未决项", "本轮停止点"))
+        assert cli._current_handoff_text(project, "storyboard-director") == card
+        Path(report["path"]).write_text(card.replace(checksum, "0" * 64), encoding="utf-8")
+        with pytest.raises(cli.StageContextError, match="^交接卡来源字节已改变；"):
+            cli._current_handoff_text(project, "storyboard-director")
+        Path(report["path"]).write_text(card, encoding="utf-8")
+        artifact.write_text("changed after handoff", encoding="utf-8")
+        with pytest.raises(cli.StageContextError):
+            cli._current_handoff_text(project, "storyboard-director")
 
 
 @pytest.mark.parametrize("requested", [False, True])

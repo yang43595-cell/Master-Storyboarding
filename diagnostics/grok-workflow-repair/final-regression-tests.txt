@@ -1,0 +1,123 @@
+........................................................................ [ 16%]
+........................................................................ [ 33%]
+...................................FFFFFFF.............................. [ 49%]
+.......................FF............FF..F.............................. [ 66%]
+.................F...................................................... [ 83%]
+............................................................. [ 97%]
+............                                                             [100%]
+=================================== FAILURES ===================================
+_________ test_stage_switch_restores_only_matching_reading_state[none] _________
+scripts/tests/test_stage_context_cli.py:423: in test_stage_switch_restores_only_matching_reading_state
+    _synthetic_method_profile(tmp_path, vault, monkeypatch)
+scripts/tests/test_stage_context_cli.py:143: in _synthetic_method_profile
+    copy_source_fixture(cli.ROOT, repo)
+scripts/tests/source_fixture.py:63: in copy_source_fixture
+    raise ValueError("source fixture destination must be outside its source")
+E   ValueError: source fixture destination must be outside its source
+________ test_stage_switch_restores_only_matching_reading_state[source] ________
+scripts/tests/test_stage_context_cli.py:423: in test_stage_switch_restores_only_matching_reading_state
+    _synthetic_method_profile(tmp_path, vault, monkeypatch)
+scripts/tests/test_stage_context_cli.py:143: in _synthetic_method_profile
+    copy_source_fixture(cli.ROOT, repo)
+scripts/tests/source_fixture.py:63: in copy_source_fixture
+    raise ValueError("source fixture destination must be outside its source")
+E   ValueError: source fixture destination must be outside its source
+________ test_stage_switch_restores_only_matching_reading_state[method] ________
+scripts/tests/test_stage_context_cli.py:423: in test_stage_switch_restores_only_matching_reading_state
+    _synthetic_method_profile(tmp_path, vault, monkeypatch)
+scripts/tests/test_stage_context_cli.py:143: in _synthetic_method_profile
+    copy_source_fixture(cli.ROOT, repo)
+scripts/tests/source_fixture.py:63: in copy_source_fixture
+    raise ValueError("source fixture destination must be outside its source")
+E   ValueError: source fixture destination must be outside its source
+________ test_stage_switch_restores_only_matching_reading_state[scope] _________
+scripts/tests/test_stage_context_cli.py:423: in test_stage_switch_restores_only_matching_reading_state
+    _synthetic_method_profile(tmp_path, vault, monkeypatch)
+scripts/tests/test_stage_context_cli.py:143: in _synthetic_method_profile
+    copy_source_fixture(cli.ROOT, repo)
+scripts/tests/source_fixture.py:63: in copy_source_fixture
+    raise ValueError("source fixture destination must be outside its source")
+E   ValueError: source fixture destination must be outside its source
+________ test_stage_switch_restores_only_matching_reading_state[actor] _________
+scripts/tests/test_stage_context_cli.py:423: in test_stage_switch_restores_only_matching_reading_state
+    _synthetic_method_profile(tmp_path, vault, monkeypatch)
+scripts/tests/test_stage_context_cli.py:143: in _synthetic_method_profile
+    copy_source_fixture(cli.ROOT, repo)
+scripts/tests/source_fixture.py:63: in copy_source_fixture
+    raise ValueError("source fixture destination must be outside its source")
+E   ValueError: source fixture destination must be outside its source
+_____ test_stage_switch_restores_only_matching_reading_state[confirmation] _____
+scripts/tests/test_stage_context_cli.py:423: in test_stage_switch_restores_only_matching_reading_state
+    _synthetic_method_profile(tmp_path, vault, monkeypatch)
+scripts/tests/test_stage_context_cli.py:143: in _synthetic_method_profile
+    copy_source_fixture(cli.ROOT, repo)
+scripts/tests/source_fixture.py:63: in copy_source_fixture
+    raise ValueError("source fixture destination must be outside its source")
+E   ValueError: source fixture destination must be outside its source
+_______ test_stage_switch_restores_only_matching_reading_state[corrupt] ________
+scripts/tests/test_stage_context_cli.py:423: in test_stage_switch_restores_only_matching_reading_state
+    _synthetic_method_profile(tmp_path, vault, monkeypatch)
+scripts/tests/test_stage_context_cli.py:143: in _synthetic_method_profile
+    copy_source_fixture(cli.ROOT, repo)
+scripts/tests/source_fixture.py:63: in copy_source_fixture
+    raise ValueError("source fixture destination must be outside its source")
+E   ValueError: source fixture destination must be outside its source
+_ test_creative_story_method_is_optional_but_selected_method_keeps_reading_gate[False] _
+scripts/tests/test_stage_context_cli.py:1137: in test_creative_story_method_is_optional_but_selected_method_keeps_reading_gate
+    _synthetic_method_profile(tmp_path, vault, monkeypatch)
+scripts/tests/test_stage_context_cli.py:143: in _synthetic_method_profile
+    copy_source_fixture(cli.ROOT, repo)
+scripts/tests/source_fixture.py:63: in copy_source_fixture
+    raise ValueError("source fixture destination must be outside its source")
+E   ValueError: source fixture destination must be outside its source
+_ test_creative_story_method_is_optional_but_selected_method_keeps_reading_gate[True] _
+scripts/tests/test_stage_context_cli.py:1137: in test_creative_story_method_is_optional_but_selected_method_keeps_reading_gate
+    _synthetic_method_profile(tmp_path, vault, monkeypatch)
+scripts/tests/test_stage_context_cli.py:143: in _synthetic_method_profile
+    copy_source_fixture(cli.ROOT, repo)
+scripts/tests/source_fixture.py:63: in copy_source_fixture
+    raise ValueError("source fixture destination must be outside its source")
+E   ValueError: source fixture destination must be outside its source
+__________ test_split_rule_frozen_and_revalidated_on_resume[changed] ___________
+scripts/tests/test_stage_context_cli.py:1437: in test_split_rule_frozen_and_revalidated_on_resume
+    repo = copy_source_fixture(cli.ROOT, tmp_path / 'repo')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/tests/source_fixture.py:63: in copy_source_fixture
+    raise ValueError("source fixture destination must be outside its source")
+E   ValueError: source fixture destination must be outside its source
+__________ test_split_rule_frozen_and_revalidated_on_resume[missing] ___________
+scripts/tests/test_stage_context_cli.py:1437: in test_split_rule_frozen_and_revalidated_on_resume
+    repo = copy_source_fixture(cli.ROOT, tmp_path / 'repo')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/tests/source_fixture.py:63: in copy_source_fixture
+    raise ValueError("source fixture destination must be outside its source")
+E   ValueError: source fixture destination must be outside its source
+_________ test_missing_active_recovery_section_cannot_silently_prepare _________
+scripts/tests/test_stage_context_cli.py:1482: in test_missing_active_recovery_section_cannot_silently_prepare
+    repo = copy_source_fixture(cli.ROOT, tmp_path / 'repo')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/tests/source_fixture.py:63: in copy_source_fixture
+    raise ValueError("source fixture destination must be outside its source")
+E   ValueError: source fixture destination must be outside its source
+__________ test_director_actual_method_snapshot_changes_in_isolation ___________
+scripts/tests/test_quality_evidence_consumers.py:351: in test_director_actual_method_snapshot_changes_in_isolation
+    replica=copy_source_fixture(root,tmp_path/'repo')
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/tests/source_fixture.py:63: in copy_source_fixture
+    raise ValueError("source fixture destination must be outside its source")
+E   ValueError: source fixture destination must be outside its source
+=========================== short test summary info ============================
+FAILED config::test_stage_switch_restores_only_matching_reading_state[none]
+FAILED config::test_stage_switch_restores_only_matching_reading_state[source]
+FAILED config::test_stage_switch_restores_only_matching_reading_state[method]
+FAILED config::test_stage_switch_restores_only_matching_reading_state[scope]
+FAILED config::test_stage_switch_restores_only_matching_reading_state[actor]
+FAILED config::test_stage_switch_restores_only_matching_reading_state[confirmation]
+FAILED config::test_stage_switch_restores_only_matching_reading_state[corrupt]
+FAILED config::test_creative_story_method_is_optional_but_selected_method_keeps_reading_gate[False]
+FAILED config::test_creative_story_method_is_optional_but_selected_method_keeps_reading_gate[True]
+FAILED config::test_split_rule_frozen_and_revalidated_on_resume[changed] - Va...
+FAILED config::test_split_rule_frozen_and_revalidated_on_resume[missing] - Va...
+FAILED config::test_missing_active_recovery_section_cannot_silently_prepare
+FAILED config::test_director_actual_method_snapshot_changes_in_isolation - Va...
+13 failed, 420 passed, 11 subtests passed in 9.12s

@@ -239,3 +239,38 @@ python scripts/canvas_readback.py --private-preview --project <准确候选项�
 只交付连续事件的后段时，保留真实 `continuity.previous_node_id` 和 `event_id`，并在同一 `continuity` 内添加 `previous_delivery`，仅含已有前次快照的 `artifact_id`、`revision`、`sha256`。该快照也须列于本次 `source_artifacts`，沿用正式已确认来源或当前私有候选范围，不创建新的批准。没有已有可核证据就报告缺口，不能删前驱、另起事件或补造快照通过。
 
 检查器只读加载所需前驱节点，核原快照字节、同项目/目标/正式或私有模式、准确源修订与段号、实际参数、引用和切点。当前 `drafts` 仍只列本次要交付的节点，不要求重传前段。先前节点的更早前驱元数据保留，但不递归加载旧链；本次已加载节点中的自环、互环仍拒绝。无关旧段不会因过期文件而阻塞本次检查。该结果不证明远端节点当前存在、视觉正确或获准生成，实际回读与原流程仍须执行。
+
+## 红帧整节点的源、连线、用途与时间
+
+新红帧正式提交根据开工 `canvas.platform=redframe` 或准确红帧域名启用整节点检查。其他平台显式带下列 `edges` / `source_nodes` 时同样核验。历史无项目的只读比较保留原范围，相关结果为 `not_checked`，不能充当新红帧交付通过。仍使用同一冻结 JSON、现有参考来源和原生回读。
+
+每个 `reference_checks` 沿准确槽位增加 `canvas_binding`。`purpose` 写具体镜号和本次用途，同一文件 SHA-256 与同一用途重复占槽即拒绝。同文件确实承担不同用途时分别说明，观察和确认范围仍须覆盖。`prompt_reference` 指明是否出现在正文原生引用中，保留无正文引用的槽须有 `unmentioned_reason`。执行者核用途语义，程序只能核声明一致性。
+
+```json
+{
+  "canvas_binding": {
+    "mode": "edge",
+    "purpose": "S01-003 产品外观",
+    "prompt_reference": true,
+    "source_port": "image",
+    "target_port": "实际视频输入端口"
+  }
+}
+```
+
+`edge` 的源身份来自本槽 `ordered_media.node_id`，逐 draft 的 `edges` 保存全部实际入边，每项严格包含 `source_node_id/source_port/target_node_id/target_port/slot`，slot 从 1 开始。`source_nodes` 保存相应源输出的 `node_id/port/sha256`，同源输出只列一次。程序将源、端口、目标、槽和原片文件 hash 逐项核齐，缺边、多边、错端口、同源输出指向不同字节均拒绝。普通 `direct` 输入不填端口，产品参考及 action 职责须独立源节点连线。真实商品识别仍靠已有产品参考登记与实看，不从名称推断。原片裁切与完整画幅按准确文件版本区分。
+
+正文逐镜秒数范围直接从 `prompt` 读取，例如 `0.00–1.00秒` 和 `1.00–4.00秒`，支持 s/秒及横线、波浪线、至、到。各范围须从 0 连续递增，与 `shot_durations` 一一匹配，最后时间点等于 `parameters.duration`。未写可解析范围、只写总秒数或范围有歧义时拒绝该合同，执行者回准确来源修订并核实，不能在交付稿静默重写已采用正文。该有限格式检查不证明实拍动作足时，也不解析任意自然语言时间。正文仍保留时间不渲染为文字的既有约束。
+
+保存刷新后，读回整个受影响节点的正文、参数、全部输入槽、正文原生实体、源节点 hash 和全部入边。回读 `source_nodes` / `edges` 不分列表顺序，其他原有有序媒体与正文比较保持严格。无正文引用槽只从预期 mentions 中排除，其来源、槽、用途及边继续检查。仅换两份素材也核完整节点。`canvas_input_checks` 给逐节点结论，技术通过仍不认证采集行为、媒体远端来源或视觉效果。
+
+### 更新前核已有编辑
+
+沿现有回读文件保存最后可信 `after_refresh` 基线，在实际写前采集同一目标全部受影响节点的 `before_write`。两份数据都须包含完整正文、参数、有序输入及 native_mentions，每个节点还必须显式提供列表类型的 edges 和 source_nodes，并保存本轮采集到的其他节点字段。缺少图谱字段即拒绝，显式空列表表示实际回读的空图谱。更新预检用原命令附加两个只读输入。
+
+```sh
+python scripts/canvas_readback.py --delivery --project '<项目>' --frozen '<冻结JSON>' \
+  --preflight --baseline '<最后可信原生回读.json>' --current '<本次写前原生回读.json>'
+```
+
+程序核目标 URL、项目 ID、准确节点集合，比较完整节点中所有已采集字段，变化返回非零及 changed_node_ids。没有实际采集的字段仍未验证。执行者先核已有编辑的准确范围，正文、来源或时长变化沿现有修订和采用处理，再取得可信基线，不能用当前读数覆盖旧基线求通过。新建节点无历史基线时明确记录创建范围。参数配对及差异可程序核验，更新任务必须使用此比较、采集完整性、用户编辑归属及检查后的并发修改仍由执行者/平台负责，CLI 不是远端事务锁。
