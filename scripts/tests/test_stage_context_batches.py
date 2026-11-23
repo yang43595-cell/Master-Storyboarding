@@ -261,8 +261,13 @@ def test_scoped_handoff_change_requires_preparation_and_drives_current_goal(tmp_
     handoff = ["handoff", *identity, "--to-skill", "creative-director"]
     parse = cli.parser().parse_args
 
-    cli.handoff(parse([*handoff, "--objective", "Scope A", "--stop-at", "Stop A"]))
-    prepare = parse(["prepare", *stage, "--request-json", str(request), "--objective", "Scope A"])
+    card = Path(cli.handoff(parse([*handoff, "--objective", "Scope A", "--stop-at", "Stop A"]))["path"])
+    line = next(line for line in card.read_text(encoding="utf-8").splitlines() if "编导开工命令参数：" in line)
+    command, _ = json.JSONDecoder().raw_decode(line.split("参数：", 1)[1])
+    assert Path(command[0]).is_relative_to(cli.ROOT / ".venv")
+    assert Path(command[1]) == cli.ROOT / "scripts/stage_context_cli.py"
+    prepare = parse([*command[2:], "--actor-id", "worker", "--task-id", "draft",
+                     "--request-json", str(request), "--objective", "Scope A"])
     folder = Path(cli.prepare(prepare)["path"]).parent
     basis_path = folder / "task_basis.json"
     basis = json.loads(basis_path.read_text(encoding="utf-8"))

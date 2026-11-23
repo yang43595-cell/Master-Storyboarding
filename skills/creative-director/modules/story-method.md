@@ -2,14 +2,14 @@
 
 ## 准备当前输入
 
-以下命令使用仓库虚拟环境的 Python（macOS/Linux 为仓库根的 `.venv/bin/python`，Windows 为 `.venv\Scripts\python.exe`）；已激活该环境时可写 `python`。
+以下命令使用仓库虚拟环境的 Python（macOS/Linux 为仓库根的 `.venv/bin/python`，Windows 为 `.venv\Scripts\python.exe`）。示例从仓库根运行，Windows PowerShell 将命令开头的 `./.venv/bin/python` 换成 `.\.venv\Scripts\python.exe`。
 
 先确定本轮实际使用的来源和允许改动的范围，沿[普通准备与选知](../../_shared/knowledge-access.md#普通阶段准备与选知)核验输入，按[普通准备的阅读记录](../../_shared/knowledge-access.md#普通准备的阅读记录复用)复用仍有效的证据。已确认的改编范围和商品沿用 `project_request.json` 的 `kickoff`。同一份项目需求的顶层 `source_files` 登记尚未通过项目状态选入的本地原片和基准稿，`--request-json` 直接指向它。已有独立阶段请求可继续使用，产品和用法由开工决定带入。准备包锁定实际输入版本。尚在比选的网盘视频、未采用的备选资产只在 brief 记线索，选中并实际用于本版时再加入来源。`--objective` 只描述任务目标。
 
 有对标视频链接时，先按准确视频 ID 复用同一原片。缺少可用原片且需取材时，Mac 上的公开抖音视频优先走宿主的 resource-reuse／哼哼猫 CLI，核文件及取材区间的音轨后，用同一原片核画面、对白和切点。只有下载路线不可用且网页证据可用时，再取需要的网页画面或硬字幕。交接同一份来源及尚未核实的位置，已有核对直接沿用。
 
 ```powershell
-python scripts/stage_context_cli.py prepare --project <项目> --skill creative-director --objective "本轮目标" --request-json <项目需求路径> --actor-id <执行者ID> --task-id <任务ID>
+./.venv/bin/python scripts/stage_context_cli.py prepare --project <项目> --skill creative-director --objective "本轮目标" --request-json <项目需求路径> --actor-id <执行者ID> --task-id <任务ID>
 ```
 
 若命令返回运行中的会话号，保留并继续轮询原进程。卡在某个资料路径时先查该来源和解释器；原进程仍在运行时不重复启动相同准备或取证。
@@ -17,7 +17,7 @@ python scripts/stage_context_cli.py prepare --project <项目> --skill creative-
 按 Skill 的执行顺序实读 `stage_startup.md`、实际输入和适用合同。有匹配的必读方法时，读完本轮方法包再用 `record-method-reading` 登记。同一执行者和任务运行以下命令，核验通过后进入场次判断或正文。
 
 ```powershell
-python scripts/stage_context_cli.py ensure-prepared --project <项目> --skill creative-director --actor-id <执行者ID> --task-id <任务ID> --show-task-basis
+./.venv/bin/python scripts/stage_context_cli.py ensure-prepared --project <项目> --skill creative-director --actor-id <执行者ID> --task-id <任务ID> --show-task-basis
 ```
 
 下载的原片先移入项目的最终登记路径，再从该路径启动取证；已登记且不会移动的共享盘原件可直接读取。连续取材可直接运行 `python scripts/extract_video_batches.py --video "<已定位原片>" --out-dir "<本轮临时目录>" --end <截止秒> --batch-seconds 10`。每批完成即输出一行 JSON，目录含采样帧、音轨存在时的 WAV 和范围。macOS 核硬字幕可按实际位置加 `--ocr-region x,y,width,height`，得到同序号字幕候选。首批起把回执的 `subtitle_index` 路径交给编导和协调方，共用累计的字幕变化与定位帧；有疑点再查对应批次的原始 OCR 与音画。范围收窄时可中止并从最后所需边界续取。主协调沿用编导的帧、字幕和观察。采样秒数用于定位，疑点回到连续原片与原声。
@@ -87,7 +87,7 @@ python scripts/stage_context_cli.py ensure-prepared --project <项目> --skill c
 
 首次建立原片复现或改编的全稿基线、换用基准，或人物身份、出入及跨场因果的影响无法限界时，在本轮来源范围内核全片画面。核对各场出入、在场人数、全片独立人数、无对白的表演者及独立演示者，在既有事实与范围锁定中记原片身份、出镜依据和获准改编的安排。局部返修沿用有效核对，只查受影响的场次、人物及其对白和交接引用。跨场换装用称呼、行动承接及面部等来源互证，声音归属按对白契约核对。无法区分的人物保留待核，受影响的交付回到本阶段处理。
 
-校验和审核走 Skill 执行入口。网站阅读稿准备会校验同版 JSON。对话交稿使用[交稿与确认入口](../../../docs/development/artifact-adoption.md#编导对话确认)导出并登记候选。只检查本地 JSON 时可使用 `python -m scripts.core.story_sources --project <项目> --narrative <叙事包> --review-ready`，正式采用前仍按[对白契约](../references/dialogue-lineage-contract.md#送审前检查与确认范围)核查来源及实际确认范围。旧 Markdown 候选沿用历史 `--markdown` 参数。将实际发现、修复位置和未核范围简记在现有任务记录，供复查和交接使用。
+校验和审核走 Skill 执行入口。网站阅读稿准备会校验同版 JSON。对话交稿使用[交稿与确认入口](../../../docs/development/artifact-adoption.md#编导对话确认)导出并登记候选。自查完成后直接交稿。仅在交稿报错、需要单独定位源稿问题时使用 `python -m scripts.core.story_sources --project <项目> --narrative <叙事包> --review-ready`，正式采用前仍按[对白契约](../references/dialogue-lineage-contract.md#送审前检查与确认范围)核查来源及实际确认范围。旧 Markdown 候选沿用历史 `--markdown` 参数。将实际发现、修复位置和未核范围简记在现有任务记录，供复查和交接使用。
 
 ## 场景资产粒度
 

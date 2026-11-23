@@ -2593,6 +2593,14 @@ def _write_handoff_card(args, project, target_skill, current_stage, inputs, *, t
         "- 按根规则为已授权的下一 Skill 建立执行者。统一入口在网站通过、编导整稿对话确认正式采用或有效自主采用后，按本轮范围继续；兼容人工流程沿其继续规则。创作新轮由专属生产 agent 准备并校验 stage_startup.md。"
     )
     task_context = _CONTEXT_ID.get()
+    if target_skill == "creative-director" and not testing:
+        python = ROOT / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+        command = [str(python), str(ROOT / "scripts/stage_context_cli.py"), "prepare",
+                   "--project", str(project), "--skill", target_skill]
+        if task_context:
+            command.extend(["--context-id", task_context])
+        lines.append("- 编导开工命令参数：" + json.dumps(command, ensure_ascii=False) +
+                     "。补齐本轮 objective、request-json、actor-id 和 task-id 后执行。")
     lines.extend([
         "", "## 本轮依据与停止点", "",
         f"- 项目路径：`{project}`。相对产物路径从这里解析。仓库入口：`{ROOT / 'AGENTS.md'}` 与目标 Skill。",
