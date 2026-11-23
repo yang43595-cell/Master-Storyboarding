@@ -19,6 +19,11 @@ def uses_wardrobe(req):
     return req.get('category') == 'CHARACTER' and character_type(req) in {'HUMAN', 'HUMANOID'}
 
 
+def requires_face_certification(asset, output_kind):
+    """Fixed human appearance follows the asset across canvas stages and revisions."""
+    return uses_wardrobe(asset) and output_kind not in {'服装', '服装三视图'}
+
+
 def production_kinds(req):
     if req.get('category') == 'CHARACTER' and not uses_wardrobe(req):
         return ['角色外观']

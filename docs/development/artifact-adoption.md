@@ -19,7 +19,7 @@ python scripts/stage_context_cli.py confirm-script-in-chat \
 
 对话交稿使用 `python scripts/review_text_cli.py prepare --project <项目> --narrative <项目内叙事包> --output <项目内阅读稿.md> --artifact-id <产物ID> --chat-review`。同时导出阅读稿并登记候选，重试可复用同版交付。将返回的阅读稿路径和版本交用户。稿件列出合格硬字幕 ID 及同版对白证据登记的原声疑点。准确整稿通过即按已披露文字、说话人和疑点办理，确认程序自动读取已登记阅读稿并核对字节。保留未人工听核、未核时码的事实。其他未决问题、来源冲突或未定位说话人先处理。旧对话导出仍可在确认依据中显式提供 `review_markdown` 的路径和散列。
 
-整稿采用前若用户要求改待审稿，编导普通 prepare 的本轮请求写入 `revise_candidate_id`（准确旧候选 ID）和用户修改内容。旧候选自本次返修启动起停止接受迟到的批准。改稿另存新的 JSON、修订、产物 ID 和阅读稿路径；交稿命令在原参数后加 `--replaces <旧候选ID>`。同一回执包含新产物 ID、源稿和阅读稿的校验值。登记新候选和替代旧候选一次写入清单，原文件留在原处；已登记阅读稿若有用户手改，保留该手改版本，并将按原稿重建且散列匹配的首次交付版本存入 `99_历史与废弃/编导手改`。同版交稿成功后即可交用户审阅。已正式采用的稿件仍走活动变更案。
+整稿采用前若用户要求改待审稿，编导普通 prepare 的本轮请求写入 `revise_candidate_id`（准确旧候选 ID）和用户修改内容。旧候选自本次返修启动起停止接受迟到的批准。改稿另存新的 JSON、修订、产物 ID 和阅读稿路径；交稿命令在原参数后加 `--replaces <旧候选ID>`。同一回执包含新产物 ID、源稿和阅读稿的校验值。新版交稿的 revision_changes 按稳定编号列出段落、对白和资产的增删改及顺序变化，并列其余变动字段。协调方用它定位本次修改，定向回看有变化的内容及相关接缝，再交完整阅读稿。登记新候选和替代旧候选一次写入清单，原文件留在原处；已登记阅读稿若有用户手改，保留该手改版本，并将按原稿重建且散列匹配的首次交付版本存入 `99_历史与废弃/编导手改`。同版交稿成功后即可交用户审阅。已正式采用的稿件仍走活动变更案。
 
 回读确认版本和 `current` 后，按[编导采用后的资产与导演交接](#编导采用后的资产与导演交接)派发资产工作，再按独立的导演路线与授权派发导演工作。临时改走工作台时，资产发布仍依赖同版编导的网站通过。有新一版编导时复查受影响的导演和资产依赖。
 
@@ -70,7 +70,7 @@ python scripts/stage_context_cli.py accept-artifact \
 
 ## 自主修订
 
-自主返修仍用 `scripts.core.revision_control` 的 `open_change(..., authorization_id=<已登记流程授权ID>)` 保留原目标、依赖冻结及失效传播，用 `record_candidate(...)` 登记新修订和准确依赖。之后使用现有 `accept-artifact` 附加 `--change-id`，在同一次调用中验收本版自查、提交原变更案并回读采用状态；底层继续复用 `confirm_agent_candidate` 和 `commit_change`。报告须针对新候选重新绑定；提交前仍核授权、报告、来源和实际字节。该分支不调用 `confirm_impact`／`confirm_candidate` 生成逐稿人审；既有人审变更仍沿原 API，也不绕过原有生成段增删、重排、覆盖与正文替换对账。
+已采用的编导、导演、资产等产物收到内容修改时，可运行 `python scripts/stage_context_cli.py open-change --project <项目> --change-id <编号> --target-logical-id <产物逻辑ID> --reason <具体修改>`。已有活动变更案时沿原编号继续；图片制作等普通准备使用同一 `prepare --change-id <编号> --target-logical-id <产物逻辑ID>`。自主返修在开案命令追加 `--authorization-id <已有授权ID>`。共用的 `open_change` 保留原目标、依赖冻结及失效传播，用 `record_candidate(...)` 登记新修订和准确依赖。之后使用现有 `accept-artifact` 附加 `--change-id`，在同一次调用中验收本版自查、提交原变更案并回读采用状态；底层继续复用 `confirm_agent_candidate` 和 `commit_change`。报告须针对新候选重新绑定；提交前仍核授权、报告、来源和实际字节。该分支不调用 `confirm_impact`／`confirm_candidate` 生成逐稿人审；既有人审变更仍沿原 API，也不绕过原有生成段增删、重排、覆盖与正文替换对账。
 
 ### 单段采用与写前预检
 

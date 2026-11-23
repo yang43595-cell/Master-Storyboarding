@@ -8,7 +8,7 @@ from .agent_acceptance import (require_asset_workflow_authorization, require_wor
                                validate_agent_acceptance)
 from .artifacts import (artifact_is_adopted, cache_file_digests, digest, exact_narrative_approval, load_manifest,
                         project_path, validate_current_dependencies)
-from .asset_batch_receipt import summarize_asset_batch_receipt
+from .asset_batch_receipt import summarize_asset_batch_receipt, validate_asset_batch_targets
 from .asset_refs import asset_index, load_asset_list
 from .candidate_test import require_production_manifest
 from .character_assets import final_output_problems, scoped_output_requirements
@@ -195,13 +195,17 @@ def _pending_asset_batches(project, narrative, assets, waiting):
             if (not request.is_relative_to(project) or digest(request) != batch['request_sha256']
                     or read_json(request).get('image_targets') != batch['targets']):
                 continue
-            result = summarize_asset_batch_receipt(project, batch['receipt'], batch['targets'], binding=batch)
-            for item in result['items']:
-                asset_id, _, output_id = item['target'].partition('@')
+            relevant = []
+            for target in validate_asset_batch_targets(batch['targets']):
+                asset_id, _, output_id = target.partition('@')
                 current = assets.get(asset_id, {}).get('image', {}).get('outputs', [])
-                if asset_id not in waiting or any(existing['output_id'] == output_id
-                                                  for existing in current if existing.get('sha256')):
-                    continue
+                if asset_id in waiting and not any(existing['output_id'] == output_id
+                                                   for existing in current if existing.get('sha256')):
+                    relevant.append(target)
+            if not relevant:
+                continue
+            result = summarize_asset_batch_receipt(project, batch['receipt'], relevant, binding=batch)
+            for item in result['items']:
                 record = output.setdefault(item['target'], {'statuses': set(), 'receipts': set()})
                 record['statuses'].add(item['status'])
                 record['receipts'].add(result['receipt_path'])

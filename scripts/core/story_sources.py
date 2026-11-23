@@ -7,6 +7,7 @@ import json
 import re
 import sys
 from collections.abc import Iterator
+from functools import cache, partial
 from pathlib import Path
 
 from .schema_contracts import require_schema
@@ -69,9 +70,8 @@ def _origin(row):
     return kind
 
 
-def _validate_source_projection(record, root):
+def _validate_source_projection(record, root, validate_baseline):
     """Optional fidelity binding to an existing extraction, not another script."""
-    import hashlib
     binding = record.get('source_baseline')
     changes = record.get('source_changes', [])
     if not isinstance(changes, list):
@@ -84,12 +84,13 @@ def _validate_source_projection(record, root):
             or any(not isinstance(binding[k], str) or not binding[k].strip() for k in binding)):
         raise ValueError('原片基线须绑定已有审核记录 path/sha256')
     path = project_path(root, binding['path'])
-    if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != binding['sha256']:
+    raw = path.read_bytes() if path.is_file() else None
+    if raw is None or hashlib.sha256(raw).hexdigest() != binding['sha256']:
         raise ValueError('原片基线文件缺失或字节改变')
-    baseline = json.loads(path.read_text(encoding='utf-8-sig'))
+    baseline = json.loads(raw.decode('utf-8-sig'))
     if not isinstance(baseline, dict) or baseline.get('source_baseline') is not None:
         raise ValueError('原片基线须直接引用原始抽取，不建立基线链')
-    validate_dialogue_review(baseline, root)
+    validate_baseline(baseline)
     if any(_origin(row) != 'source_reproduction' for row in baseline['dialogues']):
         raise ValueError('原片基线不能包含作者新增或授权改编')
     originals = {row['dialogue_id']: row for row in baseline['dialogues']}
@@ -139,6 +140,12 @@ def _validate_source_projection(record, root):
 
 def validate_dialogue_review(record, project_root):
     """Check declared evidence and provenance, not pixels, sound or human approval."""
+    # Revisions and their extraction baseline share one call-scoped evidence snapshot.
+    resolve_path = cache(partial(project_path, project_root))
+    return _check_dialogue_review(record, project_root, resolve_path, {}, {})
+
+
+def _check_dialogue_review(record, project_root, resolve_path, evidence_digests, evidence_payloads):
     import math
     if not isinstance(record, dict) or not isinstance(record.get('sources'), list):
         raise ValueError('对白审核记录须为对象且 sources 为数组')
@@ -156,7 +163,7 @@ def validate_dialogue_review(record, project_root):
         if any(not isinstance(source.get(k), str) or not source[k].strip()
                for k in ('text', 'evidence_path', 'evidence_sha256', 'locator', 'producer')):
             raise ValueError('原始证据缺少文字、路径、hash、定位或记录者/模型')
-        path = project_path(project_root, source['evidence_path'])
+        path = resolve_path(source['evidence_path'])
         pointer = source.get('text_pointer')
         if source['kind'] == 'asr_hypothesis' and not pointer:
             raise ValueError('ASR 原始证据须定位原输出 text_pointer')
@@ -167,10 +174,9 @@ def validate_dialogue_review(record, project_root):
         sources[ident] = source
         evidence_paths[ident] = path
 
-    evidence_digests, evidence_payloads = {}, {}
     for ident, source in sources.items():
         path = evidence_paths[ident]
-        if path not in evidence_digests:
+        if path not in evidence_digests or (path in structured_paths and path not in evidence_payloads):
             if not path.is_file():
                 raise ValueError('原始证据文件缺失或 hash 不符：' + ident)
             if path in structured_paths:
@@ -298,7 +304,8 @@ def validate_dialogue_review(record, project_root):
                         continue
                     raise ValueError('已核时码需要本行核对及独立对齐依据：' + ident)
                 verified_times.append(ident)
-    fidelity_checked = _validate_source_projection(record, project_root)
+    fidelity_checked = _validate_source_projection(record, project_root, lambda baseline:
+        _check_dialogue_review(baseline, project_root, resolve_path, evidence_digests, evidence_payloads))
     return {'verification': 'source_consistency_only', 'conflicts': conflicts,
             'source_fidelity_checked': fidelity_checked,
             'unresolved_ids': unresolved, 'awaiting_creative_approval_ids': awaiting_creative_approval,
@@ -554,11 +561,11 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
     if narrative.get('dialogue_evidence_path') and candidate_source_evidence is None:
         if project_root is None:
             raise ValueError('绑定对白审核记录需要 project_root')
-        from .artifacts import digest
         evidence_path = project_path(project_root, narrative['dialogue_evidence_path'])
-        if digest(evidence_path) != narrative.get('dialogue_evidence_sha256'):
+        raw = evidence_path.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != narrative.get('dialogue_evidence_sha256'):
             raise ValueError('对白审核记录已偏离绑定字节')
-        evidence = json.loads(evidence_path.read_text(encoding='utf-8-sig'))
+        evidence = json.loads(raw.decode('utf-8-sig'))
         report = validate_dialogue_review(evidence, project_root)
         if test_report is not None:
             test_report['source_fidelity_checked'] = report['source_fidelity_checked']

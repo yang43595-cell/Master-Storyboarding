@@ -27,6 +27,21 @@ _REF = re.compile(r"\{\{ref ([1-9][0-9]*)\}\}\Z")
 _IMAGE_TYPES = {'remote-imageNode', 'remote-imageGenerationNode'}
 
 
+def _valid_face_certificate(cert, url, sha256):
+    return (isinstance(cert, dict) and isinstance(cert.get('assetId'), str) and bool(cert['assetId'].strip())
+            and bool(url) and cert.get('sourceUrl') == url and cert.get('imageDigest') == sha256)
+
+
+def _project_face_asset(project, asset_id, output_kind):
+    from .asset_refs import current_narrative, effective, read_choices
+    from .character_assets import requires_face_certification
+    requirements = effective(current_narrative(project), read_choices(project))
+    asset = next((row for row in requirements if row['asset_id'] == asset_id), None)
+    if asset is None:
+        raise ValueError('源卡缺当前项目资产身份：' + asset_id)
+    return requires_face_certification(asset, output_kind)
+
+
 class ImageUIError(RuntimeError):
     def __init__(self, operation, detail, *, node_id=None, mutation_unknown=False):
         self.operation, self.node_id, self.mutation_unknown = operation, node_id, mutation_unknown
@@ -191,13 +206,16 @@ class RedframeImageUI:
         return [node for node in self.workspace.read_canvas()['nodes']
                 if node['id'] not in previous_ids and node.get('type') == kind]
 
-    def _new_node(self, x, y, *, path=None, menu_name='图片', generation_kind='remote-imageGenerationNode'):
+    def _new_node(self, x, y, *, path=None, menu_name='图片', generation_kind='remote-imageGenerationNode',
+                  save_baseline=None):
         self.assert_target()
         viewport = self.page.viewport_size
         if not viewport or not 0 < x < viewport['width'] or not 0 < y < viewport['height']:
             raise ValueError('creation point must be in the task viewport')
         # The caller selects a visually checked empty point; no fixed screen coordinate.
         before = {node['id'] for node in self.workspace.read_canvas()['nodes']}
+        if save_baseline:
+            save_baseline(sorted(before))
         self.page.mouse.click(x, y, button='right')
         kind = 'remote-imageNode' if path else generation_kind
         try:
@@ -217,7 +235,7 @@ class RedframeImageUI:
                 if len(found) > 1:
                     raise ImageUIError('create image node', 'multiple new nodes; inspect original canvas', mutation_unknown=True)
                 return found[0]['id'] if found else None
-            return self._wait_canvas(created, 'create image node')
+            return self._wait_canvas(created, 'create image node', timeout=60 if save_baseline else 10)
         except ImageUIError as exc:
             exc.previous_node_ids = sorted(before)
             raise
@@ -228,6 +246,30 @@ class RedframeImageUI:
 
     def create_image_node(self, x, y):
         return self._new_node(x, y)
+
+    def resume_image_node(self, receipt, save_receipt, x, y):
+        """Resume an unsubmitted candidate on its original canvas, or checkpoint its first creation."""
+        self.assert_target()
+        if receipt.get('image_submission') is not None or receipt.get('image_result') or receipt.get('file'):
+            raise ImageUIError('resume image', 'use the existing submission or result')
+        for key, value in (('canvas_id', self.canvas_id), ('project_id', self.project_id)):
+            if key in receipt and receipt[key] != value:
+                raise ImageUIError('resume image', 'receipt belongs to another canvas or project')
+        if receipt.get('node_id'):
+            node_id = _ident(receipt['node_id'])
+            _one(self.workspace.read_canvas()['nodes'], node_id, {'remote-imageGenerationNode'})
+            return node_id
+        previous = receipt.get('previous_node_ids', receipt.get('before'))
+        if previous is not None:
+            raise ImageUIError('resume image', 'inspect find_new_nodes on the original canvas before binding a node')
+
+        def checkpoint(ids):
+            receipt.update(previous_node_ids=ids, canvas_id=self.canvas_id, project_id=self.project_id)
+            save_receipt(receipt)
+
+        receipt['node_id'] = self._new_node(x, y, save_baseline=checkpoint)
+        save_receipt(receipt)
+        return receipt['node_id']
 
     def upload_source(self, path, x, y):
         path = Path(path).resolve()
@@ -240,6 +282,74 @@ class RedframeImageUI:
         except (OSError, ValueError, Image.DecompressionBombError) as exc:
             raise ValueError(f'cannot decode local reference image as PNG, JPEG or WebP: {path}') from exc
         return self._new_node(x, y, path=path)
+
+    def ensure_face_certification(self, node_id, sha256, attempts, save, *, expected_url=None):
+        """Bind provider certification to the exact card and original bytes."""
+        self.assert_target()
+        node = _one(self.workspace.read_canvas()['nodes'], _ident(node_id))
+        actual, = self.workspace.digest_image_outputs([node])
+        if expected_url is not None:
+            if _image_output_path(node) != expected_url:
+                raise ImageUIError('face certification', 'original output changed', node_id=node_id)
+            if sha256 is None:
+                sha256 = actual.get('sha256')
+        if not _SHA.fullmatch(sha256 or '') or actual.get('status') != 200 or actual.get('sha256') != sha256:
+            raise ImageUIError('face certification', 'source bytes differ', node_id=node_id)
+
+        def verified(current):
+            cert = current['data'].get('faceCertification') or {}
+            url = _image_output_path(current)
+            if (expected_url is None or expected_url == url) and _valid_face_certificate(cert, url, sha256):
+                return dict(node_id=node_id, source_url=url, faceCertification=deepcopy(cert))
+
+        observed = verified(node)
+        if observed:
+            return observed
+        if attempts.get(node_id) != sha256:
+            host = self.focus(node_id)
+            button = host.get_by_role('button', name='人脸认证', exact=True).and_(host.locator('button:visible'))
+            self._unique(button, 'face certification')
+            if not button.is_enabled():
+                raise ImageUIError('face certification', 'native control disabled', node_id=node_id)
+            attempts[node_id] = sha256
+            save()  # An unknown click result may only be queried on resume.
+            self._click(button, 'face certification', mutation=True, node_id=node_id)
+        return self._wait_canvas(lambda graph: verified(_one(graph['nodes'], node_id)),
+                          '等待原源卡认证；未确认前不能引用', timeout=60)
+
+    def ensure_asset_card(self, project, asset_id, output_kind, node_id, sha256, receipt, save, *, expected_url=None):
+        """Check the same asset on upload, replenishment and reuse."""
+        if _project_face_asset(project, asset_id, output_kind):
+            result = self.ensure_face_certification(node_id, sha256, receipt.setdefault('face_certification_attempts', {}), save,
+                                                    expected_url=expected_url)
+            records = receipt.setdefault('face_certifications', {})
+            if records.get(node_id) != result:
+                records[node_id] = result
+                save()
+
+    def finish_asset_image(self, project, receipt, save, *, output_kind):
+        """Finish the original asset result, including after an interruption."""
+        self.assert_target()
+        for record in (receipt, receipt.get('image_submission') or {}):
+            if (record.get('canvas_id', self.canvas_id) != self.canvas_id or
+                    record.get('project_id', self.project_id) != self.project_id):
+                raise ImageUIError('finish asset', 'receipt belongs to another project/canvas')
+        result = receipt.get('image_result')
+        if result is None:
+            result = self.query(receipt)
+            receipt['image_result'] = result
+            save()
+        if result.get('status') != 'output_observed' or not result.get('output'):
+            raise ValueError('缺少原成图回执')
+        asset_id = receipt['target'].partition('@')[0]
+        if asset_id.startswith('AST-'):
+            if receipt.get('output_kind') != output_kind:
+                receipt['output_kind'] = output_kind
+                save()
+            self.ensure_asset_card(project, asset_id, output_kind, result['node_id'],
+                                   (receipt.get('file') or {}).get('sha256'), receipt, save,
+                                   expected_url=result['output'])
+        return result
 
     def rename(self, node_id, label):
         if not isinstance(label, str) or not label.strip():
@@ -473,3 +583,40 @@ def image_browser_session(task_browser, *, project_id, canvas_url, action_timeou
             except Exception:
                 if not interrupted:
                     raise
+
+
+def image_resume_step(project, receipt):
+    """Read-only recovery from one candidate's existing receipt."""
+    submission = receipt.get('image_submission')
+    result = receipt.get('image_result')
+    node_ids = {_ident(record['node_id']) for record in (receipt, submission, result)
+                if record is not None and record.get('node_id') is not None}
+    if len(node_ids) > 1:
+        raise ValueError('conflicting node IDs in image receipt')
+    file = receipt.get('file')
+    if file and result and result.get('status') == 'output_observed':
+        from .io import sha256_file
+        path = (project / file['path']).resolve()
+        if not path.is_relative_to(project):
+            raise ValueError('image file outside project')
+        if path.is_file() and sha256_file(path) == file['sha256']:
+            target = receipt.get('target', '')
+            if isinstance(target, str) and target.startswith('AST-') and _project_face_asset(
+                    project, target.partition('@')[0], receipt.get('output_kind')):
+                node_id = result.get('node_id')
+                record = receipt.get('face_certifications', {}).get(node_id, {})
+                if (not node_id or record.get('node_id') != node_id or
+                        not _valid_face_certificate(record.get('faceCertification'), result.get('output'), file['sha256'])):
+                    return 'certify_original_card'
+            return 'review_local_file'
+    if result and result.get('status') == 'output_observed':
+        return 'retrieve_original_output'
+    if submission is not None:
+        return 'query_original_submission'
+    if file or result:
+        raise ValueError('incomplete image result; inspect the original receipt')
+    if node_ids:
+        return 'resume_original_node'
+    if 'previous_node_ids' in receipt or 'before' in receipt:
+        return 'inspect_creation_on_original_canvas'
+    return 'verify_canvas_before_creation'
