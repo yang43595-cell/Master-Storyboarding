@@ -17,7 +17,7 @@ from .native_references import redframe_reference_labels
 from .product_reference_pack import resolve_product_pack
 from .project_kickoff import load_kickoff
 from .project_state import load_project_state
-from .recreation_segments import PLAN, PROMPTS, segment_reference_keys, segment_steps
+from .recreation_segments import PLAN, PROMPTS, prompt_narrative_issue, segment_reference_keys, segment_steps
 from .redframe_image_ui import _valid_face_certificate
 from .redframe_workspace import NativeTag, _image_output_path, video_generation_records
 
@@ -88,9 +88,10 @@ def recreation_groups(project, group_path, *, for_write=False, required_faces=No
         raise ValueError('分组稿缺少本项目复刻分段与源提示词依赖')
     plan = read_json(_checked_path(project, PLAN, groups['plan_sha256']))
     source = read_json(_checked_path(project, PROMPTS, groups['source_prompt_sha256']))
-    if (source['narrative_id'], source['narrative_sha256'], source['plan_sha256']) != (
-            entry['artifact_id'], entry['checksum'], groups['plan_sha256']):
-        raise ValueError('复刻源提示词与采用稿或分段不符')
+    if issue := prompt_narrative_issue(source, entry):
+        raise ValueError(issue)
+    if source.get('plan_sha256') != groups['plan_sha256']:
+        raise ValueError('复刻源提示词的 plan_sha256 与当前分段不符')
     if any(row['status'] == 'waiting' for row in segment_steps(project, narrative, entry, plan=plan, kickoff=kickoff)):
         raise ValueError('复刻分段存在未就绪的素材或工序')
     saved = load_draft_receipt(project).get('recreation', {})

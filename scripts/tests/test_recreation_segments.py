@@ -54,6 +54,7 @@ def test_route_only_rewrites_the_affected_segment_and_checks_prompt_sources(tmp_
         tmp_path / PROMPTS,
         dict(
             narrative_id=entry["artifact_id"],
+            narrative_sha256=entry["checksum"],
             plan_sha256=digest(tmp_path / PLAN),
             segments=[dict(id="first", prompt="@depth 跟随进门动作。")],
         ),
@@ -93,7 +94,8 @@ def test_product_segment_requires_the_chosen_pack_and_canvas_readback(tmp_path):
     assert run(kickoff)[0]["status"] == "waiting"
     plan["product_pack"]["product_id"] = "fixture-mask"
     assert run(kickoff)[0]["status"] == "ready"
-    write_json(tmp_path / PROMPTS, dict(narrative_id="source", plan_sha256=digest(tmp_path / PLAN),
+    write_json(tmp_path / PROMPTS, dict(narrative_id="source", narrative_sha256=entry["checksum"],
+                                       plan_sha256=digest(tmp_path / PLAN),
                                        segments=[dict(id="S", prompt="见 @act。")]))
     assert [(s["action"], s["status"]) for s in run(kickoff)] == [
         ("video", "complete"), ("product-canvas", "ready")]

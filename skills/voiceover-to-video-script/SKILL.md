@@ -27,7 +27,7 @@ description: 根据导演包或采用的复刻分段、原文对白和真实素�
 
 本轮操作红帧时按[连接与登录](../_shared/redframe-operations.md#连接与登录)和[视频画布定位](../_shared/redframe-operations.md#视频画布)核当前目标。有跨场边界时按[红帧跨场写前检查](modules/video-method.md#红帧跨场写前检查)核对。
 
-**按编导分段的复刻线。** 按[分段交接](../depth-guided-recreation/modules/recreation-method.md#分段交接)写稿。单段或局部批次首次取稿及来源变化时，使用[按段读取写词输入](../depth-guided-recreation/modules/recreation-method.md#按段读取写词输入)，仅传本轮实际负责的段号。复用上下文中已读的同版范围。正文用原生 @ 标明参考职责，写清身份、对白、声音和接缝。对深度视频写明[使用范围和字幕、旧商品等排除项](../depth-guided-recreation/modules/recreation-method.md#深度参考职责与排除项)，合并组依实际切点说明无产品剧情与产品参考的分工。段内切镜、走位与节奏按各自参考。缺实操参考只补对应工序，只有戏剧动作发生实质变化才派本段导演。写入项目 `06_视频/复刻视频提示词.json`（narrative_id、plan_sha256 与 segments，每项 id、prompt），运行普通 handoff 核对交稿状态。平台能力、草稿保存、生成授权及实际看片分别核实。
+**按编导分段的复刻线。** 按[分段交接](../depth-guided-recreation/modules/recreation-method.md#分段交接)写稿。单段或局部批次首次取稿及来源变化时，使用[按段读取写词输入](../depth-guided-recreation/modules/recreation-method.md#按段读取写词输入)，仅传本轮实际负责的段号。复用上下文中已读的同版范围。正文用原生 @ 标明参考职责，写清身份、对白、声音和接缝。对深度视频写明[使用范围和字幕、原声等排除项](../depth-guided-recreation/modules/recreation-method.md#深度参考职责与排除项)，合并组依实际切点和[本轮产品分流](../depth-guided-recreation/modules/recreation-method.md#原片产品核对与制作分流)说明各镜的参考分工。段内切镜、走位与节奏按各自参考。缺实操参考只补对应工序，只有戏剧动作发生实质变化才派本段导演。写入项目 `06_视频/复刻视频提示词.json`（narrative_id、narrative_sha256、plan_sha256 与 segments，每项 id、prompt），沿用按段入口返回的编导及分段标识。运行普通 handoff 核对交稿状态，先修正缺失或与采用稿不符的编导标识。平台能力、草稿保存、生成授权及实际看片分别核实。
 
 以下导演稿、逐镜视觉交接和正式导演来源要求适用于导演重拍线。
 

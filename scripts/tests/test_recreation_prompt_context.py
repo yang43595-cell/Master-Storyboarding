@@ -177,11 +177,25 @@ def test_normal_handoff_points_to_read_scope_and_completed_prompt_can_still_be_r
     report = json.loads(capsys.readouterr().out)
     card = (project / report["path"]).read_text(encoding="utf-8")
     assert "recreation-prompt-input --project <业务项目> --segment-id" in card
+    assert "recreation-method.md#原片产品核对与制作分流" in card
+    assert "画布转换的深度沿复刻 Skill 核输入窗及引用" in card
 
-    write_json(project / PROMPTS, {
+    draft = {
         "narrative_id": plan["narrative_id"], "plan_sha256": digest(project / PLAN),
         "segments": [{"id": "SEG-03", "prompt": "用 @深度03。主角说‘这句原话03。’"}],
-    })
+    }
+    for source_fields, issue in (
+        ({}, "缺少 narrative_sha256"),
+        ({"narrative_sha256": "older-draft"}, "narrative_sha256 与当前采用编导稿不符"),
+    ):
+        write_json(project / PROMPTS, {**draft, **source_fields})
+        assert cli.main(["handoff", "--project", str(project)]) == 0
+        handoff = json.loads(capsys.readouterr().out)
+        action = next(step for step in handoff["next_actions"] if step["action"] == "video")
+        assert "SEG-03" in action["segment_ids"] and issue in action["reason"]
+        assert not any(step["action"] == "video" and step["status"] == "complete" for step in handoff["steps"])
+
+    write_json(project / PROMPTS, {**draft, "narrative_sha256": plan["narrative_sha256"]})
     steps = resolve_production_handoff(project, actions={"video"})["steps"]
     assert any(step["action"] == "video" and step["status"] == "complete"
                and step["segment_ids"] == ["SEG-03"] for step in steps)

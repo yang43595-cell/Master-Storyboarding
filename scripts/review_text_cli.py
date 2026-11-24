@@ -80,11 +80,18 @@ def _source(project: Path, value: str | Path, *, chat=False) -> tuple[dict, dict
                      "awaiting_subtitle_approval_ids": review_check["awaiting_subtitle_approval_ids"]}
 
 
-def _projection(project: Path, package: dict, value: str | Path, *, subtitle_review_ids=()) -> tuple[str, dict]:
+def _projection(project: Path, package: dict, value: str | Path, *, subtitle_review_ids=(),
+                refresh_from=None) -> tuple[str, dict]:
     path = _path(project, value)
     raw = path.read_bytes()
-    if raw not in narrative_review_projections(package, subtitle_review_ids=subtitle_review_ids):
-        raise ValueError("Reading Markdown differs from this exact narrative JSON; export a new copy.")
+    projections = tuple(narrative_review_projections(package, subtitle_review_ids=subtitle_review_ids))
+    if raw not in projections:
+        if refresh_from is None:
+            raise ValueError("Reading Markdown differs from this exact narrative JSON; check the active candidate.")
+        if hashlib.sha256(raw).hexdigest() != refresh_from:
+            raise ValueError("现有阅读稿已手改，先将用户修改合入当前 JSON 并核对阅读稿")
+        raw = projections[0]
+        write_bytes(path, raw)
     return raw.decode("utf-8"), _binding(project, path, raw)
 
 
@@ -298,6 +305,7 @@ def run(args: argparse.Namespace) -> dict:
             package, source = _source(project, args.narrative, chat=chat)
             output = _path(project, args.output)
             ids = source["awaiting_subtitle_approval_ids"]
+            refresh_from = None
             if ident:
                 require_production(project)
                 manifest = load_manifest(project)
@@ -307,8 +315,14 @@ def run(args: argparse.Namespace) -> dict:
                 if entry is None and not replaces and any(row.get("revision_requested") and row["status"] == "candidate"
                                                           for row in manifest["artifacts"]):
                     raise ValueError("新编导稿须用 --replaces 指定本次返修的旧候选")
+                if entry is None and not replaces and any(
+                        row["logical_id"] == "narrative.package" and row["status"] == "candidate"
+                        for row in manifest["artifacts"]):
+                    raise ValueError("已有本轮编导候选，请沿用原产物 ID、修订和文件路径")
                 if replaces and entry is None:
                     prior = pending_narrative_candidate(manifest, replaces)
+                    if not prior.get("revision_requested"):
+                        raise ValueError("旧候选尚未登记打回，请沿用本轮原文件和修订")
                     previous_source = _path(project, prior["path_or_url"])
                     previous_raw = previous_source.read_bytes()
                     if prior.get("checksum") not in (None, hashlib.sha256(previous_raw).hexdigest()):
@@ -324,12 +338,20 @@ def run(args: argparse.Namespace) -> dict:
                         raise ValueError("替代候选须另存新修订、JSON 和阅读稿")
                 elif replaces and entry.get("replaces") != replaces:
                     raise ValueError("候选 ID 已用于其他替代关系")
-                if entry and (entry.get("revision_requested") or entry["status"] != "candidate" or any(
-                        entry.get(k) != v for k, v in fields.items() if k != "checksum")
-                        or entry.get("checksum") not in (None, source["sha256"])):
-                    raise ValueError("候选 ID 已用于其他版本")
+                if entry:
+                    if (entry.get("revision_requested") or entry["status"] != "candidate" or entry.get("user_approved")
+                            or any(entry.get(k) != v for k, v in fields.items() if k != "checksum")):
+                        raise ValueError("候选 ID 已用于其他版本")
+                    reading = entry.get("review_markdown") or entry.get("reading_copy")
+                    if reading and _path(project, reading["path"]) != output:
+                        raise ValueError("同一候选须沿用原阅读稿路径")
+                    if entry.get("checksum") not in (None, source["sha256"]):
+                        publication_started = entry.get("website_publication_started", not chat)
+                        if publication_started or not reading:
+                            raise ValueError("候选源稿与登记字节不一致，请核对审核渠道和原回执")
+                        refresh_from = reading["sha256"]
             if ident and output.exists():
-                _, reading = _projection(project, package, output, subtitle_review_ids=ids)
+                _, reading = _projection(project, package, output, subtitle_review_ids=ids, refresh_from=refresh_from)
             else:
                 export_markdown(package, output, subtitle_review_ids=ids)
                 reading = _binding(project, output, output.read_bytes())
@@ -338,6 +360,7 @@ def run(args: argparse.Namespace) -> dict:
                 if replaces:
                     fields["replaces"] = replaces
                 if entry is None:
+                    fields["website_publication_started"] = False
                     if replaces:
                         fields["revision_changes"] = _revision_changes(previous_package, package)
                         _keep_edited_reading(project, prior, previous_package, old_reading)
@@ -345,6 +368,10 @@ def run(args: argparse.Namespace) -> dict:
                     append_workspace_candidate(project, manifest, fields)
                     save_manifest(project, manifest)
                 elif any(entry.get(k) != v for k, v in fields.items()):
+                    if fields.get("review_markdown") and "reading_copy" in entry:
+                        entry.pop("reading_copy")
+                    elif fields.get("reading_copy") and "review_markdown" in entry:
+                        entry.pop("review_markdown")
                     entry.update(fields)
                     save_manifest(project, manifest)
             response = {"source_json": source, "markdown": reading, **({"artifact_id": ident} if ident else {})}
@@ -453,6 +480,16 @@ def run(args: argparse.Namespace) -> dict:
                               "path": "/api/agent/review/" + route, "parameters": parameters}
         if route == "publish":
             receipt["request"].update(text_sha256=markdown["sha256"], text_bytes=markdown["bytes"])
+            manifest = load_manifest(project)
+            candidate = next((row for row in manifest["artifacts"] if (
+                row["logical_id"], row["status"], row.get("path_or_url"), row.get("revision")
+            ) == ("narrative.package", "candidate", source["path"], source["revision"])), None)
+            if candidate:
+                if candidate.get("checksum") not in (None, source["sha256"]):
+                    raise ValueError("待发布的编导稿与候选登记字节不一致，请先核对原文件")
+                if not candidate.get("website_publication_started"):
+                    candidate["website_publication_started"] = True
+                    save_manifest(project, manifest)
         receipt_path.parent.mkdir(parents=True, exist_ok=True)
         # Reserve before networking: a successful remote write must have a local
         # destination. No automatic POST retry is hidden behind this command.

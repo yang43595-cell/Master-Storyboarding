@@ -1180,6 +1180,73 @@ def test_chat_delivery_registers_disclosed_candidate_and_consumes_first_decision
     assert result['confirmation']['subtitle_review_ids'] == ['DLG-01', 'DLG-02']
 
 
+def test_chat_candidate_edit_reuses_source_reading_and_directory(tmp_path, kickoff_review_site, capsys):
+    from scripts.core.project_state import new_project_state, write_project_state
+
+    write_project_state(tmp_path, new_project_state(current_stage="creative-director"))
+    source, package = narrative(tmp_path)
+    command = ["prepare", "--project", str(tmp_path), "--narrative", source.name, "--chat-review"]
+
+    def deliver():
+        assert cli.main([*command, "--output", "R01.md", "--artifact-id", "N-R01"]) == 0
+        return json.loads(capsys.readouterr().out)
+
+    def paths():
+        return {path.relative_to(tmp_path) for path in tmp_path.rglob("*")}
+
+    first = deliver()
+    old_confirmation = chat_args(tmp_path, source)
+    baseline = paths()
+    for line in ("补一处场景动作。", "再调一句旁白。"):
+        package["story_paragraphs"][0]["text"] += line
+        write_json(source, package)
+        result = deliver()
+        assert result["source_json"]["revision"] == "R01"
+        assert result["source_json"]["sha256"] != first["source_json"]["sha256"]
+        assert line in (tmp_path / "R01.md").read_text(encoding="utf-8")
+        assert result == deliver()
+        assert paths() == baseline
+
+    for ident, output, issue in [
+        ("N-R01", "copy/R01.md", "沿用原阅读稿路径"),
+        ("N-other", "copy/R02.md", "已有本轮编导候选"),
+    ]:
+        with pytest.raises(ValueError, match=issue):
+            cli.run(cli._parser().parse_args([*command, "--output", output, "--artifact-id", ident]))
+        assert paths() == baseline
+
+    handoff = stage_cli.handoff(stage_cli.parser().parse_args(["handoff", "--project", str(tmp_path)]))
+    assert any(step["action"] == "creative-review" and step["artifact_ids"] == ["N-R01"]
+               for step in handoff["steps"])
+    assert paths() == baseline
+    with pytest.raises(ValueError, match="字节|SHA-256"):
+        stage_cli.confirm_script_in_chat(old_confirmation)
+    assert stage_cli.confirm_script_in_chat(chat_args(tmp_path, source))["artifact"]["status"] == "current"
+
+
+def test_website_candidate_reuses_reading_before_publication_and_preserves_published_copy(tmp_path, fake_client):
+    source, package = narrative(tmp_path)
+    args = cli._parser().parse_args(["prepare", "--project", str(tmp_path), "--narrative", source.name,
+                                     "--output", "R01.md", "--artifact-id", "N-R01"])
+    cli.run(args)
+    baseline = set(tmp_path.rglob("*"))
+    package["story_paragraphs"][0]["text"] += "发布前修改同一候选。"
+    write_json(source, package)
+    refreshed = cli.run(args)
+    assert refreshed == cli.run(args)
+    assert baseline == set(tmp_path.rglob("*"))
+    published_source = source.read_bytes()
+    published_reading = (tmp_path / "R01.md").read_bytes()
+    cli.run(publish_args(tmp_path))
+    package["story_paragraphs"][0]["text"] += "发布后另有修改意见。"
+    write_json(source, package)
+    with pytest.raises(ValueError, match="核对审核渠道和原回执"):
+        cli.run(args)
+    assert (tmp_path / "R01.md").read_bytes() == published_reading
+    source.write_bytes(published_source)
+    assert cli.run(args) == refreshed
+
+
 def test_replace_returned_candidate_keeps_user_edits_and_blocks_late_approval(tmp_path, kickoff_review_site):
     from scripts.core.project_state import new_project_state, write_project_state
 

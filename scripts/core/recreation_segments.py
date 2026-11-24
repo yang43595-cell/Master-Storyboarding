@@ -212,12 +212,24 @@ def product_canvas_step(root, plan, segment, packing, canvas, entry):
     return result
 
 
+def prompt_narrative_issue(draft, entry):
+    if not isinstance(draft, dict):
+        return "复刻源提示词须为 JSON 对象"
+    if draft.get("narrative_id") != entry["artifact_id"]:
+        return "复刻源提示词的 narrative_id 与当前采用编导稿不符"
+    if not draft.get("narrative_sha256"):
+        return "复刻源提示词缺少 narrative_sha256，须核对当前采用编导稿后补齐"
+    if draft["narrative_sha256"] != entry["checksum"]:
+        return "复刻源提示词的 narrative_sha256 与当前采用编导稿不符，须重新核对写词依据"
+    return None
+
+
 def written_prompts(root, entry):
     if not (root / PROMPTS).is_file():
-        return {}
+        return {}, None
     draft = read_json(root / PROMPTS)
-    if draft.get("narrative_id") != entry["artifact_id"]:
-        return {}
+    if issue := prompt_narrative_issue(draft, entry):
+        return {}, issue
     same_plan = draft.get("plan_sha256") == digest(root / PLAN)
     prompts = {}
     for row in draft["segments"]:
@@ -225,7 +237,7 @@ def written_prompts(root, entry):
             raise ValueError("提示词段号重复")
         if same_plan or row.get("segment_sha256"):
             prompts[row["id"]] = (row["prompt"], None if same_plan else row["segment_sha256"])
-    return prompts
+    return prompts, None
 
 
 def group_steps(steps):
@@ -268,7 +280,7 @@ def segment_steps(root, narrative, entry, *, plan=None, kickoff=None, asset_imag
     if not isinstance(fps, (int, float)) or not 0 < fps <= 240:
         raise ValueError("原片帧率无效")
     ids, lines, hashes, steps, deliveries = set(), [], {}, [], []
-    written = {} if proposed else written_prompts(root, entry)
+    written, prompt_issue = ({}, None) if proposed else written_prompts(root, entry)
     installed = resolve_product_pack(product) if product and product.get("mode") != "none" else None
     custom_packaging = []
     bundle = plan.get("product_pack") or {}
@@ -314,7 +326,7 @@ def segment_steps(root, narrative, entry, *, plan=None, kickoff=None, asset_imag
             skill="voiceover-to-video-script",
             from_skill="depth-guided-recreation",
             status="ready",
-            reason=f"按 {PLAN} 的 {sid} 直接写词",
+            reason=prompt_issue or f"按 {PLAN} 的 {sid} 直接写词",
             segment_ids=[sid],
             artifact_ids=[entry["artifact_id"]],
         )

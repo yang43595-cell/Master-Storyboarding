@@ -126,7 +126,7 @@ def test_depth_delivery_checks_source_window_and_prompt_without_output_review():
             'references': {'深度': ref}}
     group = {'id': 'SEG-01', 'reference_keys': ['深度'], 'prompt': '@深度 不生成字幕。'}
     windows = product_visible_frames(plan, required=True)
-    with pytest.raises(ValueError, match='覆盖产品可见帧'):
+    with pytest.raises(ValueError, match='覆盖产品段排除窗'):
         check_depth_group(plan, group, windows)
 
     ref['frame_count'] = 60
@@ -136,15 +136,37 @@ def test_depth_delivery_checks_source_window_and_prompt_without_output_review():
     check_depth_group(plan, group, windows)
     ref['subtitle_check'] = 'remaining'
     check_depth_group(plan, group, windows)
+    group['prompt'] = group['prompt'].replace('水印，不沿用', '水印、旧商品及包装形态，不沿用')
+    check_depth_group(plan, group, windows)
 
 
 def test_new_depth_delivery_requires_reviewed_product_windows():
     plan = {'first_frame': 0, 'end_frame': 180}
     assert product_visible_frames(plan) is None
-    with pytest.raises(ValueError, match='登记产品可见帧窗'):
+    with pytest.raises(ValueError, match='登记连续产品段排除窗'):
         product_visible_frames(plan, required=True)
     plan['product_visible_frames'] = []
     assert product_visible_frames(plan, required=True) == []
+
+
+def test_depth_preflight_excludes_gaps_inside_one_product_sequence():
+    references = {
+        '产品前剧情': {'role': 'depth', 'source_start_frame': 0, 'frame_count': 30},
+        '两个产品段之间的剧情': {'role': 'depth', 'source_start_frame': 150, 'frame_count': 60},
+        '产品后剧情': {'role': 'depth', 'source_start_frame': 240, 'frame_count': 60},
+        # The product is briefly out of frame during the first sequence.
+        '同次使用中的插镜': {'role': 'depth', 'source_start_frame': 60, 'frame_count': 60},
+    }
+    plan = {'first_frame': 0, 'end_frame': 300, 'product_visible_frames': [[30, 150], [210, 240]],
+            'references': references}
+    group = {'id': 'SEG-01', 'reference_keys': ['产品前剧情', '两个产品段之间的剧情', '产品后剧情'],
+             'prompt': DEPTH_REFERENCE_EXCLUSION}
+    windows = product_visible_frames(plan, required=True)
+    check_depth_group(plan, group, windows)
+
+    group['reference_keys'].append('同次使用中的插镜')
+    with pytest.raises(ValueError, match='同次使用中的插镜.*覆盖产品段排除窗'):
+        check_depth_group(plan, group, windows)
 
 
 def test_product_group_must_keep_normal_shots_before_and_after_product(tmp_path, monkeypatch):
@@ -170,10 +192,10 @@ def test_product_group_must_keep_normal_shots_before_and_after_product(tmp_path,
         {'id': '玄关', 'mode': 'product-display', 'frames': [0, 180]},
     ]}
 
-    def preflight():
+    def preflight(*, source_checksum=checksum):
         write_json(tmp_path / PLAN, plan)
         plan_hash = digest(tmp_path / PLAN)
-        write_json(tmp_path / PROMPTS, {'narrative_id': 'narrative', 'narrative_sha256': checksum,
+        write_json(tmp_path / PROMPTS, {'narrative_id': 'narrative', 'narrative_sha256': source_checksum,
                                         'plan_sha256': plan_hash})
         write_json(group_path, {'canvas': canvas, 'narrative_id': 'narrative', 'narrative_revision': 'R02',
                                 'narrative_sha256': checksum, 'plan_path': str(PLAN), 'plan_sha256': plan_hash,
@@ -181,16 +203,20 @@ def test_product_group_must_keep_normal_shots_before_and_after_product(tmp_path,
                                 'groups': []})
         return redframe_recreation.recreation_groups(tmp_path, group_path)
 
-    with pytest.raises(ValueError, match='登记产品可见帧窗'):
+    with pytest.raises(ValueError, match='缺少 narrative_sha256'):
+        preflight(source_checksum=None)
+    with pytest.raises(ValueError, match='narrative_sha256 与当前采用编导稿不符'):
+        preflight(source_checksum='older-draft')
+    with pytest.raises(ValueError, match='登记连续产品段排除窗'):
         preflight()
     plan['product_visible_frames'] = [[100, 120], [60, 100]]
-    with pytest.raises(ValueError, match='第 0 帧.*保留同窗深度'):
+    with pytest.raises(ValueError, match='第 0 帧.*核对连续产品段起止'):
         preflight()
     plan['segments'] = [
         {'id': '产品前', 'mode': 'depth', 'frames': [0, 60]},
         {'id': '玄关', 'mode': 'product-display', 'frames': [60, 180]},
     ]
-    with pytest.raises(ValueError, match='第 120 帧.*保留同窗深度'):
+    with pytest.raises(ValueError, match='第 120 帧.*核对连续产品段起止'):
         preflight()
     plan['segments'][1]['frames'][1] = 120
     plan['segments'].append({'id': '产品后', 'mode': 'text', 'frames': [120, 180]})

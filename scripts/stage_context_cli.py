@@ -2635,7 +2635,9 @@ def _write_handoff_card(args, project, target_skill, current_stage, inputs, *, t
         *[f"- 导演已绑定输入：`{path}`" for path in director_paths],
         f"- 来源阶段：`{current_stage}`",
         f"- 目标 Skill：`{target_skill}`",
-        *([f"- 制作路线：复刻线。实读 `{ROOT / routed['workflow_entry']}`，沿本阶段现有交接和采用入口。"]
+        *([f"- 制作路线：复刻线。实读 `{ROOT / routed['workflow_entry']}`，沿本阶段现有交接和采用入口。",
+           f"- 原片产品：按 `{ROOT / RECREATION_METHOD}#原片产品核对与制作分流` 核商品归属，"
+           "沿开工记录使用本轮决定。自家产品尚未决定是否延续时，确认后再安排相关产品镜段。"]
           if routed and routed.get("workflow") == RECREATION_WORKFLOW else []),
         f"- 本轮目标：{getattr(args, 'objective', None) or (routed or {}).get('reason') or _HANDOFF_DEFAULT_OBJECTIVE}",
         f"- 本轮停止点：{getattr(args, 'stop_at', None) or '完成本职自查并交回回执，遇缺来源、授权或预算停止相关动作'}",
@@ -2682,7 +2684,7 @@ def _write_handoff_card(args, project, target_skill, current_stage, inputs, *, t
     lines.extend([
         "", "## 本轮依据与停止点", "",
         f"- 项目路径：`{project}`。相对产物路径从这里解析。仓库入口：`{ROOT / 'AGENTS.md'}` 与目标 Skill。",
-        ("- 原始证据：按本段回包实看选中的原始参考，缺口只回查对应帧窗或对白依据。整份编导稿路径供版本定位。"
+        ("- 原始证据：按本段回包核原片窗和实际参考；画布转换的深度沿复刻 Skill 核输入窗及引用。缺口只回查对应帧窗或对白依据。整份编导稿路径供版本定位。"
          if local_recreation_prompt else "- 原始证据：从以上准确产物的 source_artifacts / 来源引用按需实读，不用交接摘要替代。"),
         f"- 决定及授权：实读 `{project / REQUEST_PATH}` 的本轮需求、kickoff 和 `{project / '00_项目管理/project_state.json'}` 的确认及 workflow_authorizations；缺文件或范围保留未决。",
         "- 未决项：核以上当前产物的未决字段、现有 review_report 与 accepted_issues，已接受问题只覆盖原记录的准确范围。",

@@ -984,7 +984,7 @@ def render_markdown(package: dict, *, subtitle_review_ids=(), legacy_paragraph_h
     payload = json.dumps(package, ensure_ascii=False, indent=2)
     fence = '`' * max(3, max((len(m[0]) + 1 for m in re.finditer(r'`+', payload)), default=3))
     return (f"# {package['project_id']} · {package['revision']}\n\n"
-            "本文件是 JSON 的只读阅读导出；修改业务内容请另建 JSON 修订并重新审核确认。\n\n"
+            "本文件是 JSON 的只读阅读导出；同一轮候选沿用原 JSON 修改，打回或已确认版本返修时另存新修订。\n\n"
             + ((SUBTITLE_REVIEW_DISCLOSURE + "\n\n" + "、".join(subtitle_review_ids) + "\n\n")
                if subtitle_review_ids else "")
             + '\n\n'.join(reading) + '\n\n'
@@ -997,8 +997,12 @@ def narrative_review_projections(package: dict, *, subtitle_review_ids=()) -> It
     for legacy_paragraph_headings in (False, True):
         text = render_markdown(package, subtitle_review_ids=subtitle_review_ids,
                                legacy_paragraph_headings=legacy_paragraph_headings)
-        yield text.encode('utf-8')
-        yield text.replace('\n', '\r\n').encode('utf-8')
+        legacy_banner = text.replace(
+            '同一轮候选沿用原 JSON 修改，打回或已确认版本返修时另存新修订。',
+            '修改业务内容请另建 JSON 修订并重新审核确认。', 1)
+        for projection in (text, legacy_banner):
+            yield projection.encode('utf-8')
+            yield projection.replace('\n', '\r\n').encode('utf-8')
 
 
 def export_markdown(package: dict, destination: Path, *, subtitle_review_ids=()) -> None:

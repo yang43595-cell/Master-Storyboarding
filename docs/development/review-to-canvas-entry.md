@@ -10,7 +10,7 @@
 |---|---|
 | 待审编导稿改对白或某一场 | 沿[编导修订交稿](artifact-adoption.md)用原候选 ID 替代交稿，按回执的变更编号定位正文，整稿沿原入口交审。 |
 | 已有资产图或分镜补图改画面 | 沿[红帧生图](../../skills/_shared/redframe-operations.md#生图)的单图返修命令，读取本次请求、原候选回执和原卡；生成结果未知时继续查询同一次提交。 |
-| 只改复刻草稿的提示词或参考 | 按[复刻草稿写入](../../skills/_shared/redframe-operations.md#成批写入和整节点回读)使用 `--append-revision --changed-only`，先预检变更组再保存。 |
+| 只改复刻草稿的提示词或参考 | 同一轮未交付候选更新原提示词和分组文件。已确认的交付需要返修且须保留旧节点时，按[复刻草稿写入](../../skills/_shared/redframe-operations.md#成批写入和整节点回读)用 `--append-revision --changed-only` 先预检变更组。 |
 | 只改复刻段的深度窗 | 处理受影响的源片段并在[红帧转深度](../../skills/depth-guided-recreation/references/depth-video.md)。 |
 | 网站打回、换声或局部改戏 | 网站按[原发布回执](review-workbench-operations.md#网站往返)收齐意见与附件；换声沿既有角色绑定找受影响段；局部改戏沿[复刻分段交接](../../skills/depth-guided-recreation/modules/recreation-method.md#分段交接)只派相关段。 |
 
@@ -37,7 +37,7 @@ python scripts/stage_context_cli.py handoff --project '<业务项目绝对路径
 | <a id="开工确认单"></a><a id="使用已选产品参考包"></a>新项目开工或补齐决定 | [开工确认单](../rules/project-layout.md#开工确认单)，选用商品包时看[产品参考包](../rules/project-layout.md#使用已选产品参考包) | 登记来源、范围及当前工作依赖的决定 |
 | <a id="核对真实使用的固定演示窗"></a>写编导稿 | [编导 Skill](../../skills/creative-director/SKILL.md)，广告真实使用且演示时长固定时查[固定演示窗](../rules/project-layout.md#核对真实使用的固定演示窗) | 交准确版本给用户审核 |
 | <a id="编导文本送审命令"></a><a id="编导对话确认"></a>编导送审或采用 | [网站送审](review-workbench-operations.md#编导文本送审命令)、[网站通过](review-workbench-operations.md#编导网站决定与采用)或[对话确认](artifact-adoption.md#编导对话确认) | 整稿采用后当轮运行普通交接，启动已就绪的资产和拍法任务 |
-| 对标编导整稿已采用，选择拍摄路线 | [开工记录中的路线选择](../rules/project-layout.md#开工确认单) | 路线待选时主动给用户两个选项，按用户选择登记后再运行同一交接命令。导演重拍按导演稿逐镜写词。深度复刻按已采用编导稿分段，剧情用深度视频，产品用目标产品实操参考，直接交视频提示词 Skill。仅改变戏剧动作或人物互动的段落交导演。 |
+| 对标编导整稿已采用，选择拍摄路线 | [开工记录中的路线选择](../rules/project-layout.md#开工确认单) | 路线待选时主动给用户两个选项，按用户选择登记后再运行同一交接命令。导演重拍按导演稿逐镜写词。深度复刻先按[原片产品核对与制作分流](../../skills/depth-guided-recreation/modules/recreation-method.md#原片产品核对与制作分流)登记本轮决定，再把已就绪的段交视频提示词 Skill。仅改变戏剧动作或人物互动的段落交导演。 |
 | <a id="审核站-api-对接要求"></a>资产制作或审核 | [资产 Skill](../../skills/asset-image-assistant/SKILL.md)、[对话逐项确认](../../skills/asset-image-assistant/references/05-asset-manifest-handoff-guide.md#状态规则)或[网站送审](review-workbench-operations.md#资产图送审)与[通过](review-workbench-operations.md#资产网站决定与交接) | 逐项交接已确认且可取用的输出 |
 | 在红帧生成资产图或补图 | [红帧生图 SOP](../../skills/_shared/redframe-operations.md#生图) | 上传素材卡后当场归位，以原生连线和正文引用核对实际生成输入 |
 | 在红帧上传素材、排版或批量整理 | [素材区上传](../../skills/voiceover-to-video-script/references/redframe-canvas-usage.md#素材区上传)、[命名与排版](../../skills/voiceover-to-video-script/references/redframe-canvas-usage.md#命名与排版)、[批量修改节点](../../skills/voiceover-to-video-script/references/redframe-canvas-usage.md#批量修改节点) | 只读实际要执行的小节，核对素材归位与旧节点状态 |

@@ -62,5 +62,5 @@ def test_scoped_depth_repair_only_reads_requested_media(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match='深度段'):
         depth.export(tmp_path, plan, tmp_path / 'out', segment_ids=['B', 'C'])
     plan.update(first_frame=0, end_frame=6, product_visible_frames=[[2, 3]])
-    with pytest.raises(ValueError, match='产品可见帧'):
+    with pytest.raises(ValueError, match='产品段排除窗'):
         depth.export(tmp_path, plan, tmp_path / 'out', segment_ids=['B'])
