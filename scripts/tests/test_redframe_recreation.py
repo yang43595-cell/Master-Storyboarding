@@ -120,8 +120,8 @@ def test_product_png_rendition_is_only_a_proportional_resize(tmp_path, monkeypat
         _require_appearance_outputs(tmp_path, plan, {'mode': 'replace'})
 
 
-def test_depth_delivery_checks_uploaded_frames_and_reference_subtitles():
-    ref = {'role': 'depth', 'source_start_frame': 0, 'frame_count': 90, 'subtitle_check': 'remaining'}
+def test_depth_delivery_checks_source_window_and_prompt_without_output_review():
+    ref = {'role': 'depth', 'source_start_frame': 0, 'frame_count': 90}
     plan = {'first_frame': 0, 'end_frame': 180, 'product_visible_frames': [[60, 90]],
             'references': {'深度': ref}}
     group = {'id': 'SEG-01', 'reference_keys': ['深度'], 'prompt': '@深度 不生成字幕。'}
@@ -134,9 +134,8 @@ def test_depth_delivery_checks_uploaded_frames_and_reference_subtitles():
         check_depth_group(plan, group, windows)
     group['prompt'] += DEPTH_REFERENCE_EXCLUSION
     check_depth_group(plan, group, windows)
-    ref.pop('subtitle_check')
-    with pytest.raises(ValueError, match='subtitle_check'):
-        check_depth_group(plan, group, windows)
+    ref['subtitle_check'] = 'remaining'
+    check_depth_group(plan, group, windows)
 
 
 def test_new_depth_delivery_requires_reviewed_product_windows():

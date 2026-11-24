@@ -1,4 +1,4 @@
-"""Check recorded product and text exclusion for depth-reference delivery."""
+"""Check source windows and prompt exclusions for depth-reference delivery."""
 
 DEPTH_REFERENCE_EXCLUSION = (
     "深度视频只参考构图、机位、运镜、站位和动作节拍。"
@@ -59,7 +59,5 @@ def check_depth_group(plan, group, windows):
         if type(start) is not int or type(length) is not int or length <= 0:
             raise ValueError(f"{key} 缺少实传深度片的原片起点或帧数")
         require_product_free_window(start, start + length, windows, key)
-        if ref.get("subtitle_check") not in {"absent", "removed", "remaining"}:
-            raise ValueError(f"{key} 缺少实看字幕检查 subtitle_check")
     if depth and DEPTH_REFERENCE_EXCLUSION not in group["prompt"]:
         raise ValueError(f"{group['id']} 正文须写明深度参考范围，并明确忽略其中的字幕等内容")

@@ -156,7 +156,7 @@ def main() -> int:
         )
         report("web", "Zod", *run_probe("node", "-e", zod_probe),
                "在仓库根目录执行 npm ci --ignore-scripts --no-audit --no-fund。")
-    print("[待实测] 用到送审时确认工作台凭据和项目权限，用到深度抽取时验证工具和权重。")
+    print("[待实测] 用到送审时确认工作台凭据和项目权限，用到深度复刻时在红帧画布确认「深度动作捕捉」入口。")
 
     if failed:
         print(f"\n必需项有缺口：{', '.join(failed)}")

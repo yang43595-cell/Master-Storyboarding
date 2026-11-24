@@ -11,7 +11,7 @@
 | 待审编导稿改对白或某一场 | 沿[编导修订交稿](artifact-adoption.md)用原候选 ID 替代交稿，按回执的变更编号定位正文，整稿沿原入口交审。 |
 | 已有资产图或分镜补图改画面 | 沿[红帧生图](../../skills/_shared/redframe-operations.md#生图)的单图返修命令，读取本次请求、原候选回执和原卡；生成结果未知时继续查询同一次提交。 |
 | 只改复刻草稿的提示词或参考 | 按[复刻草稿写入](../../skills/_shared/redframe-operations.md#成批写入和整节点回读)使用 `--append-revision --changed-only`，先预检变更组再保存。 |
-| 只改复刻段的深度窗 | 用[局部深度导出](../../skills/depth-guided-recreation/references/depth-video.md)指定受影响的段号。 |
+| 只改复刻段的深度窗 | 处理受影响的源片段并在[红帧转深度](../../skills/depth-guided-recreation/references/depth-video.md)。 |
 | 网站打回、换声或局部改戏 | 网站按[原发布回执](review-workbench-operations.md#网站往返)收齐意见与附件；换声沿既有角色绑定找受影响段；局部改戏沿[复刻分段交接](../../skills/depth-guided-recreation/modules/recreation-method.md#分段交接)只派相关段。 |
 
 ## 阶段结束与恢复
