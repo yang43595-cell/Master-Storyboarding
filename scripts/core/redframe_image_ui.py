@@ -317,9 +317,13 @@ class RedframeImageUI:
         if attempts.get(node_id) != sha256:
             host = self.focus(node_id)
             button = host.get_by_role('button', name='人脸认证', exact=True).and_(host.locator('button:visible'))
-            self._unique(button, 'face certification')
-            if not button.is_enabled():
-                raise ImageUIError('face certification', 'native control disabled', node_id=node_id)
+            from playwright.sync_api import expect
+
+            try:
+                expect(button).to_be_enabled(timeout=25_000)
+            except AssertionError as exc:
+                raise ImageUIError('face certification', 'native control did not become enabled',
+                                   node_id=node_id) from exc
             attempts[node_id] = sha256
             save()  # An unknown click result may only be queried on resume.
             self._click(button, 'face certification', mutation=True, node_id=node_id)

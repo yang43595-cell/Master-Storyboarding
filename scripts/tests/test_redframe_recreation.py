@@ -288,3 +288,16 @@ def test_completed_recreation_retry_returns_before_opening_canvas(tmp_path, monk
                                                   append_revision=True, changed_only=True)
     assert result['written_draft_count'] == 0
     assert path.read_bytes() == before
+
+
+def test_reference_mode_accepts_native_reordering_without_changing_capabilities():
+    import json
+
+    canvas = dict(model='Seedance 2.5', aspect_ratio='9:16', resolution='480p')
+    data = dict(model=json.dumps(redframe_recreation._SEEDANCE_MODEL), videoMode='reference',
+                mode=json.dumps(['videoReference:10', 'imageReference:30', 'audioReference:10']),
+                ratio='9:16', resolution='480p', duration=7)
+    redframe_recreation._verify_parameters(data, 7, canvas, populated=True)
+    data['mode'] = json.dumps(['videoReference:10', 'imageReference:30', 'audioReference:11'])
+    with pytest.raises(ValueError, match='参考模式'):
+        redframe_recreation._verify_parameters(data, 7, canvas, populated=True)

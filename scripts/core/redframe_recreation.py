@@ -5,7 +5,7 @@ import math
 import re
 from contextlib import ExitStack
 from copy import deepcopy
-from itertools import combinations
+from itertools import combinations, permutations
 from pathlib import Path
 
 from .artifacts import artifact_is_adopted, digest, load_manifest, project_path
@@ -24,6 +24,7 @@ from .redframe_workspace import NativeTag, _image_output_path, video_generation_
 
 _SEEDANCE_MODEL = ['volcengineArkVideo', 'doubao-seedance-2-5-260628']
 _SEEDANCE_REFERENCE_MODE = ['imageReference:30', 'videoReference:10', 'audioReference:10']
+_SEEDANCE_REFERENCE_MODES = [list(mode) for mode in permutations(_SEEDANCE_REFERENCE_MODE)]
 
 
 def matches_product_rendition(root, ref, product_images):
@@ -468,7 +469,7 @@ def _verify_parameters(data, duration, canvas, *, populated=False):
     if (canvas['model'] != 'Seedance 2.5'
             or json.loads(data['model']) != _SEEDANCE_MODEL
             or data['videoMode'] != 'reference'
-            or (populated and json.loads(data['mode']) != _SEEDANCE_REFERENCE_MODE)
+            or (populated and json.loads(data['mode']) not in _SEEDANCE_REFERENCE_MODES)
             or data['ratio'] != canvas['aspect_ratio']
             or data['resolution'].lower() != canvas['resolution'].lower()
             or data['duration'] != duration):
@@ -754,7 +755,7 @@ def write_recreation(project, group_path, *, host_browser, append_revision=False
                 raise ValueError(f'刷新后人物源卡缺本图认证：{key}')
         models = {'reference': ('Seedance 2.5', {'providerId': _SEEDANCE_MODEL[0],
                                                 'modelId': _SEEDANCE_MODEL[1],
-                                                'mode': [_SEEDANCE_REFERENCE_MODE]})}
+                                                'mode': _SEEDANCE_REFERENCE_MODES})}
         rows = []
         for group in groups:
             ident = state['nodes'][group['id']]

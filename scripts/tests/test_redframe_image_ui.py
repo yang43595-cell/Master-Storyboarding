@@ -445,7 +445,15 @@ def test_fixed_face_replacement_requires_current_card_certification(monkeypatch)
     cert = dict(assetId='asset-valid', sourceUrl=url, imageDigest=SOURCE_HASH)
     source['data']['faceCertification'] = {'characterId': 'person', 'imageDigest': 'old'}
     monkeypatch.setattr(Control, 'and_', lambda self, _: self, raising=False)
-    monkeypatch.setattr(Control, 'is_enabled', lambda self: True, raising=False)
+    from playwright import sync_api
+
+    readiness = []
+    class CertificationButtonExpectation:
+        def to_be_enabled(self, *, timeout):
+            readiness.append(timeout)
+            assert not any(name == '人脸认证' for name, _ in page.clicks)
+
+    monkeypatch.setattr(sync_api, 'expect', lambda button: CertificationButtonExpectation())
     def observe(check, operation, *, timeout):
         assert check(workspace.graph) is None
         source['data']['faceCertification'] = cert
@@ -456,6 +464,7 @@ def test_fixed_face_replacement_requires_current_card_certification(monkeypatch)
     for _ in range(2):
         result = ui.ensure_face_certification('source', SOURCE_HASH, attempts, lambda: saved.append(dict(attempts)))
         assert result['faceCertification'] == cert
+    assert readiness == [25_000]
     assert saved == [{'source': SOURCE_HASH}]
     assert sum(name == '人脸认证' for name, _ in page.clicks) == 1
     with pytest.raises(ImageUIError, match='bytes differ'):
