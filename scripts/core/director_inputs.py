@@ -116,4 +116,15 @@ def return_binding(row, refs, job_hash):
         "reference_use",
     )
     selected = [row.get(k) for k in fields]
-    return sha256_json([job_hash, selected, [refs[k] for k in [row["motion"], *row["appearance"]]]])
+    motion, appearance = row["motion"], row["appearance"]
+    if not isinstance(appearance, list) or any(not isinstance(key, str) or not key for key in appearance):
+        raise ValueError("局部回传的外观参考无效")
+    if row["mode"] == "product-display":
+        if motion is not None or row["reference_frames"] != [] or not appearance:
+            raise ValueError("商品展示回传须有外观参考且不带动作或参考帧")
+        keys = appearance
+    else:
+        if not isinstance(motion, str) or not motion:
+            raise ValueError("局部回传缺准确动作参考")
+        keys = [motion, *appearance]
+    return sha256_json([job_hash, selected, [refs[key] for key in keys]])
