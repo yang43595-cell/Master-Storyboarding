@@ -4,11 +4,17 @@
 
 ## 首次启动
 
-建议使用 Python 3.12。克隆私有仓库所需的 GitHub 登录由使用者完成，不在仓库保存凭据。
+建议使用 Python 3.12。若系统只提供 `python3` 或 Windows 的 `py -3.12`，可用它运行激活虚拟环境前的 Python 命令。克隆私有仓库所需的 GitHub 登录由使用者完成，不在仓库保存凭据。
 
 ```sh
 git clone https://github.com/yang43595-cell/Master-Storyboarding.git
 cd Master-Storyboarding
+python scripts/check_first_run.py
+```
+
+此检查只依赖 Python 标准库，可在安装项目依赖前运行。第一次遇到核心依赖缺项时，按下列步骤安装，再用项目虚拟环境重跑。脚本默认列出图片、音视频、红帧、转写和网页校验的本机工具状态。核心项缺失返回 1，按需项缺失只提示。需要某项能力时附加 `--require images`、`--require media`、`--require redframe`、`--require asr` 或 `--require web`，可重复指定，此时相应缺项也返回 1。
+
+```sh
 python -m venv .venv
 # macOS/Linux:
 . .venv/bin/activate
@@ -17,9 +23,12 @@ python -m pip install --index-url https://pypi.org/simple --require-hashes --onl
 python -m pip check
 # Node.js 24，用于已有网页契约的离线校验：
 npm ci --ignore-scripts --no-audit --no-fund
-python -m scripts.core.knowledge_runtime
-python scripts/stage_context_cli.py --help
+python scripts/check_first_run.py
 ```
+
+需要处理原片并交到红帧时，运行 `python scripts/check_first_run.py --require images --require media --require redframe`。红帧后台入口可用 `--redframe-helper` 指定。新电脑仍需按[红帧操作](../../skills/_shared/redframe-operations.md#连接与登录)验证独立会话、内网和画布权限，Windows 需核对该机的会话保存适配。
+
+需要本地转写时，先按[本地 ASR](local-asr.md)准备独立环境和模型，再运行 `python scripts/check_first_run.py --require asr --asr-python "<ASR 环境的 Python>" --asr-model "<本地模型目录>"`。该能力还需要 FFmpeg。工具检查通过后用一小段音频实测转写。脚本只报告检查结果。
 
 仅运行核心 CLI 时可以把安装命令的文件换成 `config/requirements.txt`；包含图片资产功能及测试时使用上述 dev 清单。三份 `config/requirements*.txt` 均固定直接和间接依赖版本及发行包 SHA256；对应 `.in` 文件只表达维护时的兼容范围，不作为日常安装入口。依赖只从既定官方包源安装，不把 `.venv/` 或缓存提交到 Git。JavaScript 网页适配/测试使用 Node.js 24 与锁定的 Zod 3.25.76（`package-lock.json`）；ASR 和浏览器生成工具是按需能力，依各自 Skill 安装或连接，不要求普通文字阶段预装所有工具。
 
