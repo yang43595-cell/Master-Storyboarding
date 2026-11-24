@@ -202,6 +202,72 @@ def test_normal_handoff_points_to_read_scope_and_completed_prompt_can_still_be_r
     assert [row["id"] for row in _read_scope(project, capsys, "SEG-03")["segments"]] == ["SEG-03"]
 
 
+def test_normal_handoff_drafts_display_shot_while_packaging_binding_is_pending(tmp_path, capsys):
+    project = tmp_path.resolve()
+    write_project_state(project, new_project_state(current_stage="creative-director"))
+    story = narrative(project)
+    (project / story.pop("human_readable_path")).unlink()
+    story["asset_requirements"][0].update(image_decision="无需独立图", image_reason="本场无需独立人物图")
+    story["asset_requirements"].append(dict(
+        asset_id="AST-BOX", category="REAL_PRODUCT", name="测试包装", narrative_purpose="末镜展示",
+        source_paragraph_ids=["STP-01"], identity_constraints=[], required_states=[], interactions=[],
+        reference_paths=[], unknowns=[], image_decision="复用现有素材", image_reason="沿本项目产品包",
+    ))
+    story_path = project / "叙事.json"
+    write_json(story_path, story)
+    artifact_id = "ART-NARRATIVE-R01"
+    assert cli.main(["adopt-package", "--project", str(project), "--artifact-id", artifact_id,
+                     "--logical-id", "narrative.package", "--path", story_path.name, "--revision", "R01",
+                     "--approval-ref", "synthetic:approved"]) == 0
+    capsys.readouterr()
+    write_json(project / "00_项目管理/project_request.json", {"kickoff": {
+        "decision_ref": "synthetic:product-display", "creation": {"workflow": "depth-guided-recreation"},
+        "product": {"mode": "retain", "product_id": "fixture-box", "product_usage": "display"},
+    }})
+    (project / PLAN.parent).mkdir()
+    depth = project / PLAN.parent / "depth.mp4"
+    box = project / PLAN.parent / "box.png"
+    depth.write_bytes(b"fixture depth")
+    box.write_bytes(b"fixture package")
+    box_ref = dict(path=str(box.relative_to(project)), sha256=digest(box), role="appearance")
+    common = dict(paragraph_ids=["STP-01"], visible_asset_ids=[])
+    plot = dict(common, id="SEG-PLOT", mode="depth", frames=[0, 25], motion="深度", reference_frames=[0, 25],
+                dialogue_ids=["DLG-01"], appearance=[])
+    display = dict(common, id="SEG-DISPLAY", mode="product-display", frames=[25, 50], motion=None,
+                   reference_frames=[], dialogue_ids=[], appearance=["包装"])
+    plan = dict(narrative_id=artifact_id, narrative_sha256=digest(story_path), fps=25, first_frame=0, end_frame=50,
+                product_visible_frames=[[25, 50]], segments=[plot, display],
+                references={"深度": dict(path=str(depth.relative_to(project)), sha256=digest(depth), role="depth",
+                                       source_start_frame=0, frame_count=25), "包装": box_ref},
+                product_pack=dict(product_id="fixture-box", packaging=["包装"], source=box_ref))
+
+    def handoff():
+        write_json(project / PLAN, plan)
+        assert cli.main(["handoff", "--project", str(project)]) == 0
+        flow = json.loads(capsys.readouterr().out)
+        return {sid: step for step in flow["steps"] if step["action"] == "video" for sid in step["segment_ids"]}
+
+    assert {sid: step["status"] for sid, step in handoff().items()} == {"SEG-PLOT": "ready", "SEG-DISPLAY": "ready"}
+    assert set(_read_scope(project, capsys, "SEG-PLOT")["references"]) == {"深度"}
+    display["appearance"] = []
+    steps = handoff()
+    assert steps["SEG-PLOT"]["status"] == "ready"
+    assert steps["SEG-DISPLAY"]["status"] == "ready"
+    assert steps["SEG-DISPLAY"]["pending_asset_bindings"] == {
+        "SEG-DISPLAY": ["商品展示段须引用所选产品包的包装外观"]}
+    assert "SEG-PLOT" not in steps["SEG-PLOT"]["pending_asset_bindings"]
+    scope = _read_scope(project, capsys, "SEG-DISPLAY")
+    assert scope["pending_asset_bindings"]["SEG-DISPLAY"]["issues"] == ["待挂所选产品包的包装外观"]
+    from scripts.core.recreation_segments import segment_steps
+    strict_steps = segment_steps(project, story, {"artifact_id": artifact_id, "checksum": digest(story_path)}, plan=plan)
+    assert next(step for step in strict_steps if "SEG-DISPLAY" in step["segment_ids"])["status"] == "waiting"
+    assert "包装" not in scope["references"]
+
+    display["appearance"] = ["包装"]
+    assert "pending_asset_bindings" not in handoff()["SEG-DISPLAY"]
+    assert set(_read_scope(project, capsys, "SEG-DISPLAY")["references"]) == {"包装"}
+
+
 @pytest.mark.parametrize("segment_ids", [("SEG-99",), ("SEG-03", "SEG-03")])
 def test_scope_rejects_unknown_or_repeated_segments(recreation_project, capsys, segment_ids):
     project, _, _ = recreation_project

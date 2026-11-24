@@ -686,7 +686,8 @@ def asset_export_snapshot(project, entry, previous=None, *, file_digest=None):
     identity = (project.resolve(), *(entry.get(key) for key in ('artifact_id', 'path_or_url', 'checksum')))
     if previous is not None and previous[0] == identity:
         return previous
-    return identity, registered_output_snapshot(project, entry, file_digest=file_digest)
+    return identity, registered_output_snapshot(project, entry, file_digest=file_digest,
+                                                include_discarded=entry.get('status') in {'current', 'stale'})
 
 
 def asset_output_impact(project, manifest, baseline, replacement):

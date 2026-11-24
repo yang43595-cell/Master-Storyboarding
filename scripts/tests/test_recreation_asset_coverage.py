@@ -37,6 +37,9 @@ def test_only_affected_segment_waits_for_the_visible_appearance(tmp_path):
         return {s['status']: s['segment_ids'] for s in segment_steps(tmp_path, story, entry, asset_images=images)}
 
     assert steps() == {'ready': ['first', 'third'], 'waiting': ['second']}
+    drafts = segment_steps(tmp_path, story, entry, asset_images=images, allow_pending_assets=True)
+    assert drafts[0]['segment_ids'] == ['first', 'second', 'third']
+    assert drafts[0]['pending_asset_bindings'] == {'second': ['缺本段人物或场景确认输出：AST-A']}
     plan['segments'][1]['appearance'] = ['板', '旧脸']
     assert steps() == {'ready': ['first', 'third'], 'waiting': ['second']}
     plan['segments'][1]['appearance'] = ['板']

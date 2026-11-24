@@ -1841,6 +1841,163 @@ class ProjectTests(unittest.TestCase):
                                                 confirmation=confirmation)
         self.assertEqual(again['export'], result['export'])
 
+    def test_workbench_reuses_chat_approved_head_and_preserves_confirmed_outputs(self):
+        from scripts import chat_asset_review as direct
+        from core.agent_acceptance import register_asset_workflow_authorization
+        from core.asset_refs import confirmed_images
+        from core.io import sha256_json
+
+        def requirement(ast, category, name, decision):
+            return {'asset_id': ast, 'category': category, 'name': name,
+                    'narrative_purpose': '合成项目验收', 'source_paragraph_ids': ['STP-01'],
+                    'identity_constraints': [], 'required_states': [], 'interactions': [],
+                    'reference_paths': [], 'unknowns': [], 'image_decision': decision,
+                    'image_reason': '合成测试图片'}
+
+        ast, prop = 'AST-PERSON', 'AST-PROP-CUP'
+        character = {**requirement(ast, 'CHARACTER', '测试角色', '需要制作'), 'entity_id': 'CHR-PERSON',
+                     'character_output_kind': '人物1x4',
+                     'wardrobe_states': [{'name': '日常装', 'evidence': '剧情指定日常装', 'output_id': 'HOME-FINAL'}]}
+        root, service, project = self.kickoff_project('mixed-entry', [
+            character, requirement(prop, 'PROP', '水杯', '复用现有素材')])
+        payload = {'project_id': project['id'], 'ast_id': ast}
+        pmod.prepare_character(service, payload)
+        job_id = service.row(service.get(project['id']), ast)['job_id']
+
+        def job():
+            return self.lib.get(job_id, 'jobs')
+
+        outfit = job()['character_workflow']['outfits'][0]['id']
+        pmod.choose_character_route(service, {**payload, 'outfit_id': outfit, 'route': 'build'})
+        head_index = next(i for i, step in enumerate(job()['steps']) if step['key'] == 'shared_head')
+        cloth_index = next(i for i, step in enumerate(job()['steps']) if step['key'] == outfit + '_wardrobe')
+        with self.assertRaisesRegex(ValueError, '确认共用大头照'):
+            self.lib.step_request(job(), cloth_index)
+
+        narrative = next(r for r in load_manifest(root)['artifacts'] if r['logical_id'] == 'narrative.package')
+        requirements = direct.effective_requirements(root, narrative)
+        packet = {'narrative': narrative['checksum'], 'narrative_id': narrative['artifact_id'], 'items': []}
+        for owner, output, kind, color in ((ast, 'shared_head', '大头照', 'blue'),
+                                           (prop, 'CUP', '道具', 'yellow')):
+            image = root / (owner + '.png')
+            Image.new('RGB', (400, 300), color).save(image)
+            packet['items'].append({'target': owner + '@' + output, 'path': image.name, 'sha256': pmod.digest(image),
+                                    'purpose': kind, 'output_kind': kind, 'candidate_id': 'test-' + output,
+                                    'visual_status': 'passed', 'requirement_sha256': sha256_json(requirements[owner])})
+        shown = sha256_json(packet)
+        pmod.write(root / direct.SHOWN / (shown + '.json'), packet)
+        decision = self.base / 'approve-head-and-cup.json'
+        pmod.write(decision, {'quote': '这两张通过', 'at': '2026-11-24T09:00:00+08:00',
+                              'scope': 'all_shown', 'review_ref': 'synthetic:head-and-cup'})
+        approved = subprocess.run([sys.executable, direct.__file__, '--project', str(root),
+                                   'confirm', '--shown', shown, '--confirmation-json', str(decision)],
+                                  capture_output=True, text=True)
+        self.assertEqual(approved.returncode, 0, approved.stderr)
+        original = confirmed_images(root)
+        head, cup = original[ast]['outputs'][0], original[prop]['outputs'][0]
+        workbench_head = service.row(service.detail(project['id']), ast)['job']['steps'][head_index]
+        self.assertFalse(workbench_head['generation_enabled'])
+        self.assertEqual(workbench_head['confirmed_project_output']['confirmation_ref'], head['confirmation_ref'])
+        with self.assertRaisesRegex(ValueError, '已有已确认大头照'):
+            self.lib.step_request(job(), head_index)
+        prepared = self.lib.prepare(job_id, cloth_index, project_id=project['id'])
+        request = pmod.read(prepared['path'])
+        attached = next(record for record in request['reference_records'] if record.get('project_confirmed'))
+        self.assertEqual((attached['original'], attached['sha256']), (head['path'], head['sha256']))
+        self.assertEqual(request['reference_paths'][0], head['path'])
+
+        cloth = self.base / 'wardrobe.png'
+        Image.new('RGB', (400, 300), 'green').save(cloth)
+        selected, _ = self.lib.import_file(cloth, category='服装三视图')
+        service.select({**payload, 'job_id': job_id, 'index': cloth_index, 'asset_id': selected['id']})
+        step = job()['steps'][cloth_index]
+        output_id = pmod.step_output_id(step)
+        auth = 'MIXED-REVIEW'
+        register_asset_workflow_authorization(root, authorization_id=auth,
+            authorization_ref='synthetic approval for the workbench clothing')
+        confirm = self.base / 'approve-workbench-clothing.json'
+        pmod.write(confirm, {'quote': '服装通过', 'at': '2026-11-24T09:10:00+08:00',
+                            'review_ref': 'synthetic:clothing',
+                            'outputs': [{'ast_id': ast, 'output_id': output_id, 'asset_id': selected['id'],
+                                         'purpose': step['purpose'], 'image_sha256': pmod.digest(cloth)}]})
+        command = [sys.executable, m.__file__, '--library', str(self.lib.root),
+                   '--asset-vault', str(self.lib.vault), 'apply-chat-confirmation',
+                   '--project-id', project['id'], '--authorization-id', auth, '--confirmation-file', str(confirm)]
+        exported = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(exported.returncode, 0, exported.stderr)
+        result = json.loads(exported.stdout)
+        self.assertTrue(result['adopted'])
+        self.assertEqual(result['export']['count'], 3)
+        self.assertIsNone(job()['steps'][head_index]['project_confirmation'])
+        current = confirmed_images(root)
+        self.assertEqual(current[prop]['outputs'], [cup])
+        self.assertEqual({item['output_id'] for item in current[ast]['outputs']}, {'shared_head', output_id})
+        self.assertIn(head, current[ast]['outputs'])
+        retry = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(retry.returncode, 0, retry.stderr)
+        self.assertEqual(json.loads(retry.stdout)['export'], result['export'])
+        candidate = root / 'candidate-cup.png'
+        Image.new('RGB', (400, 300), 'white').save(candidate)
+        trash_decision = self.base / 'discard.json'
+        discard_command = [sys.executable, direct.__file__, '--project', str(root),
+                           'discard', '--decision-json', str(trash_decision)]
+        discard = {'target': prop + '@CUP', 'quote': '这张图不要了', 'at': '2026-11-25T12:00:00+08:00',
+                   'review_ref': 'synthetic:discard-candidate', 'path': str(candidate),
+                   'sha256': pmod.digest(candidate)}
+        pmod.write(trash_decision, discard)
+        deleted = subprocess.run(discard_command, capture_output=True, text=True)
+        self.assertEqual(deleted.returncode, 0, deleted.stderr)
+        self.assertFalse(candidate.exists())
+        self.assertFalse(json.loads(deleted.stdout)['confirmation_revoked'])
+        self.assertEqual(confirmed_images(root)[prop]['outputs'], [cup])
+
+        video = root / 'two-segments.json'
+        segments = [{'segment_id': segment, 'prompt': 'fixture prompt', 'materials': [{'asset_id': asset, 'output_id': image['output_id'],
+                      'path': image['path'], 'sha256': image['sha256']}]}
+                    for segment, asset, image in [('V001', prop, cup), ('V002', ast, head)]]
+        pmod.write(video, {'generation_segments': segments})
+        manifest = load_manifest(root)
+        manifest['artifacts'].append({'artifact_id': 'DISCARD-VIDEO', 'logical_id': 'video.prompt',
+            'type': 'video.prompt', 'path_or_url': video.name, 'checksum': pmod.digest(video),
+            'status': 'current', 'revision': 'R01', 'depends_on': ['visual.asset.manifest']})
+        pmod.write(root / '00_项目管理/artifact_manifest.json', manifest)
+        pmod.write(trash_decision, {**discard, 'review_ref': 'synthetic:discard-confirmed',
+                                    'path': cup['path'], 'sha256': cup['sha256']})
+        for _ in range(2):
+            deleted = subprocess.run(discard_command, capture_output=True, text=True)
+            self.assertEqual(deleted.returncode, 0, deleted.stderr)
+            removed = json.loads(deleted.stdout)
+            self.assertTrue(removed['confirmation_revoked'])
+            self.assertEqual(removed['segment_action'], 'awaiting_asset')
+            self.assertEqual(removed['affected_segments'], {'DISCARD-VIDEO': ['V001']})
+            self.assertFalse(Path(cup['path']).exists())
+        entries = {entry['artifact_id']: entry for entry in load_manifest(root)['artifacts']}
+        self.assertEqual(entries['DISCARD-VIDEO']['stale_reasons'][-1]['asset_output_segment_ids'], ['V001'])
+        self.assertNotIn(prop, confirmed_images(root))
+        replay = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(replay.returncode, 0, replay.stderr)
+        updated = json.loads(replay.stdout)
+        self.assertEqual(updated['export']['count'], 2)
+        self.assertNotIn(prop, {row['asset_id'] for row in pmod.read(updated['export']['manifest'])['assets']})
+        after = {item['output_id']: item for item in confirmed_images(root)[ast]['outputs']}
+        self.assertEqual(after['shared_head'], head)
+        previous_cloth = next(item for item in current[ast]['outputs'] if item['output_id'] == output_id)
+        self.assertEqual((after[output_id]['path'], after[output_id]['sha256']),
+                         (previous_cloth['path'], previous_cloth['sha256']))
+        self.assertEqual(after[output_id]['confirmation_ref'].partition('#')[2],
+                         previous_cloth['confirmation_ref'].partition('#')[2])
+        entries = {entry['artifact_id']: entry for entry in load_manifest(root)['artifacts']}
+        self.assertEqual(entries['DISCARD-VIDEO']['stale_reasons'][-1]['asset_output_segment_ids'], ['V001'])
+        old_approval = subprocess.run([sys.executable, direct.__file__, '--project', str(root),
+                                       'confirm', '--shown', shown, '--confirmation-json', str(decision)],
+                                      capture_output=True, text=True)
+        self.assertNotEqual(old_approval.returncode, 0)
+        self.assertIn(prop + '@CUP', old_approval.stderr)
+
+        Image.new('RGB', (400, 300), 'red').save(head['path'])
+        with self.assertRaisesRegex(ValueError, '前置图片的确认版本已变化'):
+            self.lib.step_request(job(), cloth_index)
+
     def test_chat_confirmation_waits_for_remaining_outputs(self):
         from core.agent_acceptance import register_asset_workflow_authorization, register_workflow_authorization
         extra = {'asset_id': 'AST-PROP-CUP', 'category': 'PROP', 'name': '合成杯子',

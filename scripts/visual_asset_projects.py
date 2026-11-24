@@ -24,7 +24,8 @@ import visual_asset_product_usage as product_usage
 from visual_asset_characters import (character_route, prepare_character, choose_character_route, upstream_outfits,
                                      character_final_ids, final_output_updates, retain_character_labels)
 from core.character_assets import uses_wardrobe, production_kinds, character_type, final_output_problems, step_output_id
-from core.asset_refs import PROP_BUILD_VIEW, PROP_REUSE_VIEW, character_output_contract, legacy_prop_reuse_label
+from core.asset_refs import (PROP_BUILD_VIEW, PROP_REUSE_VIEW, character_output_contract, legacy_prop_reuse_label,
+                             confirmed_images, _confirmed_output, _output_decisions)
 from core.character_layout import BOARD_IMPORT_ONLY, character_layout_reference
 from datetime import datetime, timezone
 from pathlib import Path
@@ -446,6 +447,11 @@ class Projects:
             with self.lib.lock:
                 row['job'] = self.lib.get(row['job_id'], 'jobs') if row.get('job_id') else None
             for step in (row['job'] or {}).get('steps', []):
+                if step['key'] == 'shared_head' and not p['source_error']:
+                    project_head = self.project_head(row['job'])
+                    if project_head:
+                        step['confirmed_project_output'] = project_head
+                        step['generation_enabled'] = False
                 if step['kind'] == '人物1x4' and step['status'] == 'waiting':
                     step['generation_enabled'] = False
                 if legacy_prop_reuse_label(step, step.get('project_confirmation') or {}):
@@ -877,9 +883,52 @@ class Projects:
                     raise ValueError('人物最终输出 ID 已变化，请先打开人物卡片同步服装与输出 ID')
         return row, step
 
-    def dependency_basis(self, job, step):
+    @staticmethod
+    def same_asset_source(root, package, source):
+        binding = package.get('source_narrative') or {}
+        return (all(binding.get(key) == source[key] for key in ('artifact_id', 'revision', 'logical_id'))
+                and isinstance(binding.get('path'), str)
+                and project_path(root, binding['path']) == Path(source['path']).resolve())
+
+    def project_head(self, job, *, file_digest=None):
+        if not job.get('character_workflow'):
+            return None
+        head = next((row for row in job['steps'] if row['key'] == 'shared_head'), None)
+        if not head or (head['status'] == 'confirmed' and head.get('project_confirmation')):
+            return None
+        project = self.get(job['project_id'])
+        root = Path(project['path'])
+        ast = job['ast_id']
+        image = confirmed_images(root, requests=[ast], file_digest=file_digest).get(ast, {})
+        heads = [output for output in image.get('outputs', []) if output.get('output_kind') == '大头照'
+                 and output.get('sha256') and Path(output['path']).is_relative_to(root.resolve())]
+        exact = [output for output in heads if output['output_id'] == step_output_id(head)]
+        selected = exact or heads
+        if len(selected) != 1:
+            return None
+        path = project_path(root, image['manifest'])
+        state = load_project_state(root)
+        if not any(entry.get('logical_id') == 'visual.asset.manifest' and entry.get('status') == 'current'
+                   and entry.get('artifact_id') in state['current_artifacts']
+                   and project_path(root, entry['path_or_url']) == path and artifact_is_adopted(entry, state, root)
+                   for entry in load_manifest(root)['artifacts']):
+            return None
+        if not self.same_asset_source(root, read(path), project['source']):
+            return None
+        return {key: selected[0][key] for key in ('output_id', 'path', 'sha256', 'confirmation_ref')}
+
+    def dependency_basis(self, job, step, *, file_digest=None):
         basis = []
-        for key in step['dependencies']:
+        keys = step['dependencies']
+        external_head = None
+        if 'shared_head' in keys or step['kind'] == '服装':
+            external_head = self.project_head(job, file_digest=file_digest)
+            if external_head and 'shared_head' not in keys:
+                keys = ['shared_head', *keys]
+        for key in keys:
+            if key == 'shared_head' and external_head:
+                basis.append({'output_key': key, 'project_output': external_head})
+                continue
             prior = next(s for s in job['steps'] if s['key'] == key)
             receipt = prior.get('project_confirmation') or {}
             basis.append({'output_key': key, 'asset_id': prior.get('selected'),
@@ -963,7 +1012,7 @@ class Projects:
                 'dependency_confirmations' not in receipt):
             raise ValueError('旧角度确认缺少前置图片版本依据，请重新核对此制作项：' + step['name'])
         if ('dependency_confirmations' in receipt and
-                receipt['dependency_confirmations'] != self.dependency_basis(job, step)):
+                receipt['dependency_confirmations'] != self.dependency_basis(job, step, file_digest=file_digest)):
             raise ValueError('前置图片的确认版本已变化，请重新核对此制作项：' + step['name'])
 
     def validate_export_basis(self, project, *, partial=None, file_digest=None):
@@ -971,7 +1020,7 @@ class Projects:
         if partial is not None:
             for ast_id, output_id, confirmation_id in partial.get('items', []):
                 pending.setdefault(ast_id, {})[output_id] = confirmation_id
-            if not pending or sum(map(len, pending.values())) != partial['count']:
+            if not pending or sum(map(len, pending.values())) != partial.get('workbench_count', partial['count']):
                 raise ValueError('部分导出缺准确的逐图确认登记，请重新核对交接')
         for row in project['rows']:
             ast_id = row['requirement']['asset_id']
@@ -993,6 +1042,8 @@ class Projects:
                     if (step.get('project_confirmation') or {}).get('id') != confirmation_id:
                         raise ValueError('已导出图片的确认已变化：' + ast_id + ' / ' + step['name'])
                 if step['status'] != 'confirmed' or not step.get('project_confirmation'):
+                    if step['key'] == 'shared_head' and self.project_head(job, file_digest=file_digest):
+                        continue
                     raise ValueError('尚未逐项确认：' + ast_id + ' / ' + step['name'])
                 self.dependencies(job, step, file_digest=file_digest)
                 asset = self.lib.get(step['selected'], require_file=True, file_digest=file_digest)
@@ -1013,7 +1064,6 @@ class Projects:
     def validate_export_snapshot(self, project, exported, *, complete, file_digest=None):
         # The project copy is independent of the Vault original. Check its
         # own receipt too before returning a previously cached handoff.
-        from core.asset_refs import _confirmed_output
         root = Path(project['path'])
         state = load_project_state(root)
         entries = [entry for entry in load_manifest(root)['artifacts']
@@ -1059,6 +1109,8 @@ class Projects:
         for key in step['dependencies']:
             prior = next(s for s in job['steps'] if s['key'] == key)
             if not prior.get('project_confirmation') or prior['status'] != 'confirmed':
+                if key == 'shared_head' and self.project_head(job, file_digest=file_digest):
+                    continue
                 raise ValueError('先在项目表中确认前置制作项：' + prior['name'])
             self.validate_dependency_confirmation(job, prior, file_digest=file_digest)
             asset = self.lib.get(prior['selected'], require_file=True, file_digest=file_digest)
@@ -1110,13 +1162,19 @@ class Projects:
             raise ValueError('此项采用已有图片；如需生图，请先切换为新制作')
         if job.get('blockers'):
             raise ValueError('需求尚有缺口：' + '；'.join(job['blockers']))
-        if job.get('character_workflow') and step['kind'] == '服装':
-            head = next(s for s in job['steps'] if s['key'] == 'shared_head')
-            if not head.get('project_confirmation') or head['status'] != 'confirmed':
-                raise ValueError('请先选择或生成并确认共用大头照，再生成服装三视图')
+        external_head = None
         refs = self.dependencies(job, step)
         if job.get('character_workflow') and step['kind'] == '服装':
-            refs.append(self.lib.get(head['selected']))
+            head = next(s for s in job['steps'] if s['key'] == 'shared_head')
+            if head.get('project_confirmation') and head['status'] == 'confirmed':
+                self.validate_dependency_confirmation(job, head)
+                refs.append(self.lib.get(head['selected'], require_file=True))
+            else:
+                external_head = self.project_head(job)
+                if external_head is None:
+                    raise ValueError('请先选择或生成并确认共用大头照，再生成服装三视图')
+        if step['key'] == 'shared_head' and self.project_head(job):
+            raise ValueError('当前项目已有已确认大头照，服装制作直接沿用该图')
         refs += [self.lib.get(i) for i in step.get('reference_ids', []) if i not in {a['id'] for a in refs}]
         if any(a.get('trashed_at') for a in refs):
             raise ValueError('参考图片已删除')
@@ -1125,6 +1183,12 @@ class Projects:
         if not refs and not declared_images and row['requirement']['category'] in {'WARDROBE', 'REAL_PRODUCT'}:
             raise ValueError('此类资产须选择真实参考图，不能猜外观')
         reference_records = []
+        if external_head:
+            reference_records.append({'category': '大头照', 'original': external_head['path'],
+                'sha256': external_head['sha256'], 'project_confirmed': True, 'project_output_key': 'shared_head',
+                'project_confirmation_ref': external_head['confirmation_ref'],
+                'project_confirmation_id': external_head['confirmation_ref'].partition('#')[2],
+                'role': '已确认大头照，唯一面部身份来源'})
         prerequisite_keys = set(step.get('dependencies', []))
         if job.get('character_workflow') and step['kind'] == '服装':
             prerequisite_keys.add('shared_head')
@@ -1162,7 +1226,7 @@ class Projects:
             view_index = {'45°': 0, '正面': 1, '反面': 2, '俯视': 3}.get(step['view'], 0) if step['kind'] == '环境' else 0
             seed, template = self.lib.project_template(step['kind'], job['title'], template_notes, view_index,
                 allow_unreferenced_design=allow_design, reference_records=reference_records,
-                has_references=bool(refs or declared_images))
+                has_references=bool(refs or external_head or declared_images))
         return {'mode': 'project', 'project_path': p['path'], 'project_id': p['id'], 'ast_id': job['ast_id'],
                 'source_narrative': p['source'], 'narrative': prompt_context(p['narrative'], [job['ast_id']]), 'requirement': row['requirement'],
                 'job_id': job['id'], 'subject': job['title'], 'template_notes': template_notes,
@@ -1358,6 +1422,11 @@ class Projects:
             return self.detail(p['id'])
 
     def _confirm_step(self, p, job, step, payload, *, website_review=None, chat_review=None):
+        decisions, issues = _output_decisions(Path(p['path']))
+        if issues:
+            raise ValueError(issues[0]['message'])
+        if decisions.get((job['ast_id'], step_output_id(step)), {}).get('status') == 'rejected':
+            raise ValueError('此输出已被用户撤销，请使用当前替代输出')
         if website_review is None and chat_review is None:
             workflow, _ = asset_review_workflow(p['path'])
             if workflow == 'awaiting_kickoff':
@@ -1897,6 +1966,8 @@ class Projects:
                             prior = next(step for step in job['steps'] if step['key'] == dep)
                             if prior['status'] == 'confirmed' and prior.get('project_confirmation'):
                                 self.validate_dependency_confirmation(job, prior)
+                            elif (dep == 'shared_head' and self.project_head(job)):
+                                continue
                             elif (job['id'], dep) not in {item[:2] for item in ordered}:
                                 raise ValueError('先在项目表中确认前置制作项：' + prior['name'])
                         ordered.append((*key, index, review))
@@ -2167,6 +2238,72 @@ class Projects:
             with project_lock(Path(p['path'])):
                 return self._export_locked(payload)
 
+    def carried_asset_records(self, project, active, collected, *, file_digest):
+        if active is None:
+            return {}
+        root = Path(project['path'])
+        state = load_project_state(root)
+        exports = [project.get('export'), project.get('partial_export'), *project.get('export_history', [])]
+        local = [record for record in exports if record]
+        owned_folders = {Path(record['folder']).resolve() for record in local}
+        if active['status'] == 'current':
+            pending_id = 'visual-assets-' + (project.get('export_pending') or {}).get('id', '')
+            if (active['artifact_id'] != pending_id and
+                    (active['artifact_id'] not in state['current_artifacts'] or not artifact_is_adopted(active, state, root))):
+                return {}
+        elif not any(record['artifact_id'] == active['artifact_id'] for record in local):
+            return {}
+        path = project_path(root, active['path_or_url'])
+        if not path.is_relative_to(root.resolve()) or file_digest(path) != active.get('checksum'):
+            raise ValueError('当前资产清单字节已变化，无法安全继承已有确认输出')
+        package = read(path)
+        if not self.same_asset_source(root, package, project['source']):
+            return {}
+        requirements = {req['asset_id']: req for req in project['narrative']['asset_requirements']
+                        if image_decision(req) in {'需要制作', '复用现有素材'}}
+        decisions, issues = _output_decisions(root)
+        if issues:
+            raise ValueError(issues[0]['message'])
+        replaced = {(job['ast_id'], step_output_id(step)) for _, job, step, _, _ in collected}
+        carried = {}
+        cache = {}
+        for asset in package['assets']:
+            ast = asset['asset_id']
+            if ast not in requirements or asset['category'] != requirements[ast]['category']:
+                continue
+            valid = []
+            outputs = asset.get('confirmed_outputs', [])
+            for output in outputs:
+                key = ast, output['output_id']
+                ref = next((output[field] for field in ('derived_confirmation_ref', 'agent_review_ref',
+                                                       'user_confirmation_ref') if output.get(field)), None)
+                if (key in replaced or decisions.get(key, {}).get('status') == 'rejected' or not ref
+                        or project_path(root, ref.partition('#')[0]).parent in owned_folders):
+                    continue
+                resolved = _confirmed_output(root, ast, output, confirmation_cache=cache,
+                                             file_digest=file_digest, asset_outputs=outputs)
+                if resolved and resolved.get('sha256') and Path(resolved['path']).is_relative_to(root.resolve()):
+                    valid.append(output)
+            if valid:
+                pairs = {(output['candidate_id'], output['path']) for output in valid}
+                carry = {**asset, 'confirmed_outputs': valid, 'confirmed_asset': None,
+                         'candidates': [c for c in asset['candidates'] if (c['candidate_id'], c['path']) in pairs]}
+                carry['confirmed_asset'] = (asset['confirmed_asset'] if asset['confirmed_asset']
+                    and (asset['confirmed_asset']['candidate_id'], asset['confirmed_asset']['path']) in pairs
+                    else {key: value for key, value in valid[0].items()
+                          if key in ('candidate_id', 'path', 'user_confirmation_ref', 'agent_review_ref',
+                                     'derived_confirmation_ref', 'derived_confirmation_sha256')})
+                carried[ast] = carry
+        return carried
+
+    @staticmethod
+    def export_has_rejected_outputs(exported, rejected):
+        path = Path(exported['manifest'])
+        if not rejected or not path.is_file():
+            return False
+        return any((asset['asset_id'], item['output_id']) in rejected
+                   for asset in read(path)['assets'] for item in asset.get('confirmed_outputs', []))
+
     def _export_locked(self, payload, *, website_package=None, chat_package=None, previous_asset_snapshot=None):
         with self.lib.lock:
             record_path = self._record_path(payload['project_id'])
@@ -2181,9 +2318,25 @@ class Projects:
                        **({'authorization_id': chat_package['authorization_id']}
                           if chat_package and 'authorization_id' in chat_package else {})})
             images = _ExportImages()
+            root = Path(p['path'])
+            state = load_project_state(root)
+            current_ids = set(state['current_artifacts'])
+            manifest = load_manifest(root)
+            previous = [entry for entry in manifest['artifacts'] if entry.get('logical_id') == 'visual.asset.manifest']
+            decisions, issues = _output_decisions(root)
+            if issues:
+                raise ValueError(issues[0]['message'])
+            rejected = {key for key, decision in decisions.items() if decision['status'] == 'rejected'}
             if p.get('export'):
-                self.validate_export_basis(p, file_digest=images.digest)
-                return {'adopted': True, 'complete': True, 'export': p['export'], **result} if scoped else p['export']
+                cached_id = p['export']['artifact_id']
+                superseded = any(entry['artifact_id'] == cached_id and entry['status'] == 'superseded'
+                                 for entry in previous)
+                replacement = any(entry['status'] == 'current' and entry['artifact_id'] in current_ids
+                                  and artifact_is_adopted(entry, state, root) for entry in previous)
+                if not (superseded and replacement) and not self.export_has_rejected_outputs(p['export'], rejected):
+                    self.validate_export_basis(p, file_digest=images.digest)
+                    return {'adopted': True, 'complete': True, 'export': p['export'], **result} if scoped else p['export']
+                p.setdefault('export_history', []).append(p.pop('export'))
             if not scoped:
                 workflow, _ = asset_review_workflow(p['path'])
                 if workflow == 'awaiting_kickoff':
@@ -2236,7 +2389,12 @@ class Projects:
                 for i, step in enumerate(job['steps']):
                     if step.get('required') is False:
                         continue
+                    if (ast, step_output_id(step)) in rejected:
+                        missing_outputs = True
+                        continue
                     if step['status'] != 'confirmed' or not step.get('project_confirmation'):
+                        if step['key'] == 'shared_head' and self.project_head(job, file_digest=images.digest):
+                            continue
                         if scoped:
                             missing_outputs = True
                             continue
@@ -2290,15 +2448,13 @@ class Projects:
             current_basis = [[job['ast_id'], step_output_id(step), step['project_confirmation']['id']]
                              for _, job, step, _, _ in collected]
             previous_export = p.get('partial_export')
-            if (previous_export and not p.get('export_pending') and not complete
-                    and previous_export.get('items') == current_basis):
+            if (previous_export and previous_export['artifact_id'] in current_ids
+                    and not self.export_has_rejected_outputs(previous_export, rejected)
+                    and not p.get('export_pending') and not complete and previous_export.get('items') == current_basis):
                 self.validate_export_snapshot(p, previous_export, complete=False, file_digest=images.digest)
                 return {**result, 'export': {key: value for key, value in previous_export.items() if key != 'items'}}
 
-            root = Path(p['path'])
-            manifest = load_manifest(root)
             logical = 'visual.asset.manifest'
-            previous = [a for a in manifest['artifacts'] if a.get('logical_id') == logical]
             active = [entry for entry in previous if entry.get('status') in {'current', 'stale'}]
             previous_asset_snapshot = (asset_export_snapshot(root, active[0], previous_asset_snapshot,
                                                              file_digest=images.digest)
@@ -2365,6 +2521,8 @@ class Projects:
             if p['narrative'].get('_asset_choices'):
                 out['asset_requirement_decisions'] = copy.deepcopy(p['narrative']['_asset_choices'])
                 receipt['asset_requirement_decisions'] = copy.deepcopy(out['asset_requirement_decisions'])
+            carried = self.carried_asset_records(p, active[0] if len(active) == 1 else None, collected,
+                                                 file_digest=images.digest)
             for row in p['rows']:
                 req = row['requirement']
                 row_outputs = [c for c in collected if c[1]['ast_id'] == req['asset_id']]
@@ -2379,7 +2537,11 @@ class Projects:
                           'candidates': [], 'confirmed_asset': None, 'confirmed_outputs': []}
                 if req['category'] == 'CHARACTER':
                     record['character_type'] = character_type(req)
-                for n, (_, job, step, asset, (check, expected)) in enumerate(row_outputs, 1):
+                old = carried.pop(req['asset_id'], None)
+                reserved_ids = {c['candidate_id'] for c in (old or {}).get('candidates', [])}
+                reserved_ids.update(o['candidate_id'] for o in (old or {}).get('confirmed_outputs', []))
+                candidate_number = 0
+                for _, job, step, asset, (check, expected) in row_outputs:
                     output_id = step_output_id(step)
                     original = previous_outputs.get((req['asset_id'], output_id))
                     confirmation = step['project_confirmation']
@@ -2398,7 +2560,11 @@ class Projects:
                             raise ValueError('导出目标已有不同图片，保留现场：' + str(target))
                         raise ValueError('复制校验未通过')
                     verify_image_confirmation(target, confirmation, file_digest=images.digest)
-                    candidate_id = req['asset_id'] + f'-C{n:02d}'
+                    while True:
+                        candidate_number += 1
+                        candidate_id = req['asset_id'] + f'-C{candidate_number:02d}'
+                        if candidate_id not in reserved_ids:
+                            break
                     confirm_ref = str(receipt_path) + '#' + step['project_confirmation']['id']
                     refs = list(dict.fromkeys(req['reference_paths'] + [self.lib.get(i)['original'] for i in step.get('reference_ids', [])]))
                     if not refs:
@@ -2444,7 +2610,14 @@ class Projects:
                                             'confirmation': step['project_confirmation'], 'library_asset_id': asset['id'],
                                             'prompt': step.get('prompt'), 'audit': step.get('audit'),
                                             'authorization': step.get('authorization'), 'provenance': provenance, 'backup': asset['backup']})
+                if old:
+                    record['confirmed_outputs'].extend(old['confirmed_outputs'])
+                    record['candidates'].extend(old['candidates'])
+                    for field in ('reference_paths', 'display_surfaces', 'orientations', 'must_not_inherit'):
+                        record[field] = list(dict.fromkeys([*record[field], *old.get(field, [])]))
                 out['assets'].append(record)
+            out['assets'].extend(carried.values())
+            out['source_asset_requirement_ids'] = [asset['asset_id'] for asset in out['assets']]
             for _, _, _, asset, (_, expected) in collected:
                 if (images.digest(asset['original']) != expected
                         or images.digest(asset['backup']['path']) != expected):
@@ -2555,7 +2728,10 @@ class Projects:
                         if req['asset_id'] not in choices['excluded']:
                             stream.write('- ' + req['asset_id'] + ' ' + req['name'] + '：出现位置 ' + '、'.join(req.get('source_paragraph_ids', req.get('source_event_ids', []))) + '\n')
             exported = {'folder': str(folder), 'manifest': str(path), 'handoff': str(handoff),
-                        'artifact_id': artifact_id, 'revision': revision, 'at': now(), 'count': len(collected)}
+                        'artifact_id': artifact_id, 'revision': revision, 'at': now(),
+                        'count': sum(len(asset['confirmed_outputs']) for asset in out['assets'])}
+            if exported['count'] != len(collected):
+                exported['workbench_count'] = len(collected)
             if complete:
                 p['export'] = exported
                 p.pop('partial_export', None)

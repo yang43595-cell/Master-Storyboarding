@@ -16,6 +16,7 @@ if __package__:
     from .core.asset_batch_receipt import DIRECT_REQUESTS, summarize_asset_batch_receipt, validate_asset_review_targets
     from .core.io import project_lock, read_json, write_json, sha256_json, utc_now
     from .core.derived_character_boards import register
+    from .core.project_kickoff import REQUEST_PATH
     from .core.project_state import write_project_state
     from .core.schema_contracts import require_schema
 else:
@@ -24,6 +25,7 @@ else:
     from core.asset_batch_receipt import DIRECT_REQUESTS, summarize_asset_batch_receipt, validate_asset_review_targets
     from core.io import project_lock, read_json, write_json, sha256_json, utc_now
     from core.derived_character_boards import register
+    from core.project_kickoff import REQUEST_PATH
     from core.project_state import write_project_state
     from core.schema_contracts import require_schema
 
@@ -379,6 +381,113 @@ def collect_output(root, rel, staging, target, item, requirements, out, message,
     )
 
 
+def discard(root, message, narrative, entries):
+    """Revoke an exact confirmed output or delete an unconfirmed candidate."""
+    target, image, checksum = (message.get(key) for key in ("target", "path", "sha256"))
+    (target,) = validate_asset_review_targets([target])
+    if not all(isinstance(message.get(key), str) and message[key].strip()
+               for key in ("quote", "review_ref", "at", "path", "sha256")):
+        raise ValueError("删除资产须绑定文件、字节与明确的用户指令")
+    if datetime.fromisoformat(message["at"]).utcoffset() is None:
+        raise ValueError("删除时间须含时区")
+    ast, output = target.split("@")
+    if ast not in effective_requirements(root, narrative):
+        raise ValueError("删除目标须为本项目登记的资产")
+    path = inside(root, image)
+    if path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
+        raise ValueError("删除对象须为项目内的图片文件")
+
+    decisions, issues = asset_refs._output_decisions(root)
+    if issues:
+        raise ValueError(issues[0]["message"])
+    previous = decisions.get((ast, output), {})
+    key = sha256_json(message)
+    retry = previous.get("decision_id") == key and previous.get("status") == "rejected"
+    if path.exists() and artifacts.digest(path) != checksum:
+        raise ValueError("待删除图片字节已变化，请核对实际文件")
+    if not path.is_file() and not retry:
+        raise ValueError("待删除图片已缺失或不是普通文件")
+
+    active = current(entries, LOGICAL)
+    manifest = artifacts.load_manifest(root)
+    if active and (artifacts.digest(inside(root, active["path_or_url"])) != active["checksum"]
+                   or not artifacts.artifact_is_adopted(active, artifacts.load_project_state(root), root)):
+        raise ValueError("当前资产清单失效，请先核对原确认")
+    selected = (asset_refs.registered_output_snapshot(root, active, include_discarded=True) or {}) if active else {}
+    package = read_json(inside(root, active["path_or_url"])) if active else {}
+    bound = [(asset["asset_id"], item["output_id"]) for asset in package.get("assets", [])
+             for item in asset.get("confirmed_outputs", []) if artifacts.project_path(root, item["path"]) == path]
+    slot = (ast, output)
+    if set(bound) - {slot}:
+        raise ValueError("同一文件仍被其他已确认输出使用，请先核对共用范围")
+    if not bound and not retry:
+        # An unconfirmed candidate can share a slot with a valid older output.
+        # Delete only the selected file and leave that older approval intact.
+        path.unlink()
+        return {"target": target, "file_deleted": True, "confirmation_revoked": False}
+
+    original = selected.get(slot)
+    if not retry and (not original or original["sha256"] != checksum):
+        raise ValueError("待撤销图片和当前确认依据不一致")
+    replacement = message.get("replacement")
+    substitute = None
+    if replacement:
+        (replacement,) = validate_asset_review_targets([replacement])
+        replacement_key = tuple(replacement.split("@"))
+        substitute = selected.get(replacement_key)
+        if (replacement_key == slot or replacement_key[0] != ast or not substitute
+                or decisions.get(replacement_key, {}).get("status") == "rejected"
+                or (original and substitute.get("output_kind") != original.get("output_kind"))):
+            raise ValueError("替代图须为同一资产下可用且同类型的已确认输出")
+    if not retry:
+        changed = {candidate: item for candidate, item in selected.items() if candidate != slot}
+        edges, impacted = artifacts.asset_output_impact(root, manifest, selected, changed)
+        decision = {"decision_id": key, "asset_id": ast, "output_id": output, "status": "rejected",
+                    "scope": "project", "reason": "用户明确删除该图并撤销项目使用",
+                    "user_instruction": message["quote"], "decided_at": message["at"],
+                    "evidence_refs": [message["review_ref"]], "discarded_path": str(path),
+                    "discarded_sha256": checksum, "replacement": replacement,
+                    "affected_segments": impacted}
+        decision_path = root / asset_refs.OUTPUT_DECISIONS
+        ledger = (read_json(decision_path) if decision_path.is_file() else
+                  {"schema_version": "asset-output-applicability-1.0", "decisions": []})
+        # Record downstream impact while the original image is still available.
+        prior_segments = {entry["artifact_id"]: set(reason["asset_output_segment_ids"])
+                          for entry in manifest["artifacts"] for reason in entry.get("stale_reasons", [])
+                          if reason.get("asset_output_segment_ids")}
+        pending = {key: sorted(set(values) | prior_segments.get(key, set())) for key, values in impacted.items()}
+        artifacts.mark_impacted_artifacts_stale(manifest, {LOGICAL}, "已确认资产撤回，相关镜头需换绑或待补",
+                                                narrative["revision"], unchanged_edges=edges,
+                                                asset_output_segments=pending)
+        # Keep the current manifest authoritative for the unrelated outputs.
+        index = next(index for index, entry in enumerate(manifest["artifacts"])
+                     if entry["artifact_id"] == active["artifact_id"])
+        manifest["artifacts"][index] = active
+        artifacts.save_manifest(root, manifest)
+        ledger["decisions"].append(decision)
+        write_json(decision_path, ledger)
+    else:
+        decision = previous
+
+    request_path = root / REQUEST_PATH
+    if request_path.is_file():
+        request = read_json(request_path)
+        targets = request.get("asset_review_targets", [])
+        if target in targets:
+            remaining = [item for item in targets if item != target]
+            if remaining:
+                request["asset_review_targets"] = remaining
+            else:
+                request.pop("asset_review_targets")
+            write_json(request_path, request)
+    path.unlink(missing_ok=True)
+    return {"target": target, "file_deleted": True, "confirmation_revoked": True,
+            "affected_segments": decision["affected_segments"], "replacement": replacement,
+            "segment_action": "rebind" if replacement else "awaiting_asset",
+            **({"replacement_image": {field: substitute[field] for field in ("path", "sha256")}}
+               if substitute else {})}
+
+
 def confirm(root, keys, message, narrative, entries):
     if not all(isinstance(message.get(k), str) and message[k].strip() for k in ("at", "quote", "review_ref")):
         raise ValueError("缺用户确认原话、时间或消息引用")
@@ -411,6 +520,7 @@ def confirm(root, keys, message, narrative, entries):
         message = {**message, "targets": sorted(selected)}
     elif "targets" in message:
         raise ValueError("指定部分通过项时须用 selected 范围")
+    rejected_targets(root, rows)
     key = sha256_json([sorted(set(keys)), message])
     ident = "visual-assets-chat-" + key
     rel = Path(asset_refs.MASTER_DIR) / ident
@@ -487,6 +597,7 @@ def confirm(root, keys, message, narrative, entries):
             if prior["source_narrative"]["artifact_id"] != narrative["artifact_id"]:
                 raise ValueError("当前资产表属于另一编导版本，须核对沿用范围")
             out.update(prior, revision=out["revision"])
+            asset_refs.without_rejected_outputs(root, out)
         confirmed = []
         user_evidence = {k: v for k, v in message.items() if k != "targets"}
         with TemporaryDirectory(dir=root) as tmp:
@@ -587,6 +698,7 @@ def compose_boards(root, specs, reviewed, narrative, entries):
     if artifacts.digest(source) != selection["checksum"]:
         raise ValueError("当前资产清单字节已变化")
     out = read_json(source)
+    asset_refs.without_rejected_outputs(root, out)
     if out["source_narrative"]["artifact_id"] != narrative["artifact_id"]:
         raise ValueError("人物板上游编导版本已变化")
     expected = None
@@ -676,6 +788,7 @@ def main():
     decide = commands.add_parser("confirm")
     decide.add_argument("--shown", action="append", required=True)
     decide.add_argument("--confirmation-json", required=True, type=Path)
+    commands.add_parser("discard").add_argument("--decision-json", required=True, type=Path)
     compose = commands.add_parser("compose-boards", help="从同一角色的已确认源图拼版；实看后按编号登记")
     compose.add_argument("--board", action="append", nargs=3, default=[], metavar=("AST@FINAL", "HEAD", "WARDROBE"),
                          help="仅在指定范围或来源不唯一时提供，可重复")
@@ -700,6 +813,8 @@ def main():
             result = show_round(root, args.context_id, narrative, args.targets_json, args.receipt)
         elif args.command == "confirm":
             result = confirm(root, args.shown, read_json(args.confirmation_json), narrative, entries)
+        elif args.command == "discard":
+            result = discard(root, read_json(args.decision_json), narrative, entries)
         elif args.command == "compose-boards":
             result = compose_boards(root, args.board, args.reviewed, narrative, entries)
         else:

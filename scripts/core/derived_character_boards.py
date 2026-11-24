@@ -124,6 +124,7 @@ def register(root, plan, narrative, entries, base):
             or manifest["source_narrative"].get("artifact_id") != narrative["artifact_id"]
             or plan.get("narrative") != narrative["artifact_id"]):
         raise ValueError("拼版和资产清单须绑定当前采用编导")
+    asset_refs.without_rejected_outputs(root, manifest)
     items = plan.get("items")
     if not isinstance(items, list) or not items or any(not isinstance(i, dict) for i in items):
         raise ValueError("缺本批准确人物拼版")

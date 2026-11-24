@@ -2679,6 +2679,8 @@ def _write_handoff_card(args, project, target_skill, current_stage, inputs, *, t
         lines.append("- 编导开工命令参数：" + json.dumps(command, ensure_ascii=False) +
                      "。补齐本轮 objective、request-json、actor-id 和 task-id 后执行。")
     if local_recreation_prompt:
+        if routed.get("pending_asset_bindings"):
+            lines.append("- 待补资产退回资产阶段。本地提示词按计划用途先写，挂图并核对后交画布。")
         lines.append("- 本段写词输入：运行 `python scripts/stage_context_cli.py recreation-prompt-input --project <业务项目> "
                      "--segment-id <本次实际负责的段号>`。同批多段重复传参数。沿回包读取原文、对白、接缝和参考，旧词仅按本轮段号取用。")
     lines.extend([

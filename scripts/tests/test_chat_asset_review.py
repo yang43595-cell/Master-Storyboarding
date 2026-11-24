@@ -63,6 +63,26 @@ def test_incremental_confirmation_checks_bytes_and_does_not_reactivate_earlier_b
     )
 
 
+    old_image, replacement = [review.asset_refs._confirmed_output(project, asset["asset_id"], output)
+                              for output in asset["confirmed_outputs"]]
+    removed = review.discard(project, {
+        "target": "AST-PROP-PAPER@PAPER-A", "path": old_image["path"], "sha256": old_image["sha256"],
+        "replacement": "AST-PROP-PAPER@PAPER-B", "quote": "删除 A，用 B 替换",
+        "at": "2026-11-25T12:00:00+08:00", "review_ref": "synthetic-discard",
+    }, upstream, artifacts.load_manifest(project)["artifacts"])
+    assert removed["segment_action"] == "rebind"
+    assert removed["replacement_image"] == {field: replacement[field] for field in ("path", "sha256")}
+
+    candidate = {**item, "target": "AST-PROP-PAPER@PAPER-C", "candidate_id": "PAPER-C"}
+    packet = {**packet, "items": [candidate]}
+    key = sha256_json(packet)
+    write_json(project / review.SHOWN / (key + ".json"), packet)
+    third = confirm(key, "synthetic-3")
+    outputs = read_json(Path(third["manifest"]))["assets"][0]["confirmed_outputs"]
+    assert [output["output_id"] for output in outputs] == ["PAPER-B", "PAPER-C"]
+    assert review.asset_refs._confirmed_output(project, asset["asset_id"], outputs[0]) == replacement
+
+
 def round_project(root, outputs=("A", "B")):
     path, story = narrative(root)
     story["asset_requirements"][0]["image_decision"] = "需要制作"

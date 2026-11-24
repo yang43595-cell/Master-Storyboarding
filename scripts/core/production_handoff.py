@@ -440,10 +440,11 @@ def _resolve(project, manifest, state, kickoff, *, actions=None, shot_scope=None
 
     if production_workflow(kickoff) == RECREATION_WORKFLOW and not legacy_video:
         from .recreation_segments import segment_steps
-        if reason := _blocked_change(project, [NARRATIVE, ASSETS]):
+        if reason := _blocked_change(project, [NARRATIVE]):
             return steps + [_step('recreation', 'waiting', reason)]
         images = {ast: a['image'] for ast, a in assets.items()} if include_assets and not asset_error else None
-        return steps + segment_steps(project, narrative, narrative_entry, kickoff=kickoff, asset_images=images)
+        return steps + segment_steps(project, narrative, narrative_entry, kickoff=kickoff, asset_images=images,
+                                     allow_pending_assets=True)
 
     if production_workflow(kickoff) == PENDING_WORKFLOW:
         steps.append(_step('director', 'waiting', '编导整稿已采用；在开工记录选择导演重新拍或按原片结构复刻'))
@@ -641,7 +642,7 @@ def recreation_prompt_context(project, segment_ids):
     _, _, blockers = inspect_revision_status(project)
     if blockers:
         raise ValueError('；'.join(blockers))
-    guard_action(project, logical_ids=[NARRATIVE, ASSETS])
+    guard_action(project, logical_ids=[NARRATIVE])
     entry, narrative = _package(project, load_manifest(project), state, NARRATIVE)
     if entry is None:
         raise ValueError('缺有效采用的编导叙事包')

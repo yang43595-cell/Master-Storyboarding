@@ -8,7 +8,7 @@ from pathlib import Path
 from .artifacts import digest, project_path
 from .io import read_json, sha256_json
 from .director_inputs import job_path, return_binding
-from .asset_refs import MASTER_DIR, confirmed_images
+from .asset_refs import MASTER_DIR, confirmed_images, effective, read_choices
 from .recreation_assets import segment_asset_problems
 from .media_types import MEDIA_EXTENSIONS
 from .product_reference_pack import resolve_product_pack
@@ -17,6 +17,10 @@ from .project_kickoff import load_kickoff
 PLAN = Path("01_原始资料/复刻分段.json")
 PROMPTS = Path("06_视频/复刻视频提示词.json")
 CANVAS_RECEIPT = "06_视频/画布交付回执.json"
+
+
+class PendingPackaging(ValueError):
+    """The selected product is known and its appearance still needs binding."""
 
 
 def checked_file(root, item, hashes):
@@ -105,10 +109,28 @@ def prompt_context(root, narrative, entry, segment_ids):
                     keys.setdefault(key, None)
     references = {}
     hashes = {}
+    kickoff = load_kickoff(root) or {}
+    product = kickoff.get("product")
+    installed = resolve_product_pack(product) if product and product.get("mode") != "none" else None
+    bundle = plan.get("product_pack") or {}
+    packaging = bundle.get("packaging", []) if product and bundle.get("product_id") == product.get("product_id") else []
+    pending = segment_asset_problems(root, narrative, plan, installed, packaging, lambda: confirmed_images(root))
+    pending = {row["id"]: list(pending[row["id"]]) for row in segments if pending.get(row["id"])}
+    for row in segments:
+        if row["mode"] == "product-display" and packaging and not set(packaging).intersection(row["appearance"]):
+            pending.setdefault(row["id"], []).append("待挂所选产品包的包装外观")
     for key in keys:
         if key not in refs:
             raise ValueError(f"所选段缺已登记的参考：{key}")
-        checked_file(root, refs[key], hashes)
+        try:
+            checked_file(root, refs[key], hashes)
+        except (OSError, ValueError) as exc:
+            affected = [row["id"] for row in segments if key in row["appearance"]]
+            if not affected or any(key == row.get("motion") for row in segments):
+                raise
+            for sid in affected:
+                pending.setdefault(sid, []).append(str(exc))
+            continue
         references[key] = refs[key]
     seams = [
         {"frame": right["frames"][0],
@@ -129,6 +151,17 @@ def prompt_context(root, narrative, entry, segment_ids):
         result["story_needs_source_review"] = missing
     if questions:
         result["open_questions"] = questions
+    if pending:
+        requirements = effective(narrative, read_choices(root))
+        result["pending_asset_bindings"] = {
+            row["id"]: {"issues": pending[row["id"]],
+                        "assets": [{key: item[key] for key in ("asset_id", "name", "category", "narrative_purpose")
+                                    if key in item}
+                                   for item in requirements
+                                   if (item["asset_id"] in row.get("visible_asset_ids", [])
+                                       or ("visible_asset_ids" not in row and
+                                           set(item.get("source_paragraph_ids", [])) & set(row["paragraph_ids"])))]}
+            for row in segments if row["id"] in pending}
     return result
 
 
@@ -151,9 +184,6 @@ def product_inputs(root, product, plan, segment, hashes, installed):
     if real_use and (product["product_usage"] != "real_use" or not isinstance(operations, list)
                      or action not in operations):
         raise ValueError("本段动作参考须为该产品包登记的同款真实操作视频")
-    if not real_use and not set(packaging).intersection(segment["appearance"]):
-        raise ValueError("商品展示段须引用所选产品包的包装外观")
-
     if installed:
         allowed = {(row["role"], row["sha256"]) for row in installed["references"]}
         if any(("packaging", refs[key]["sha256"]) not in allowed for key in packaging):
@@ -170,6 +200,8 @@ def product_inputs(root, product, plan, segment, hashes, installed):
         if Path(refs[key]["path"]).suffix.lower() not in (MEDIA_EXTENSIONS["image"] | MEDIA_EXTENSIONS["video"]):
             raise ValueError(f"产品包包装参考须为图像或视频：{key}")
         checked_file(root, refs[key], hashes)
+    if not real_use and not set(packaging).intersection(segment["appearance"]):
+        raise PendingPackaging("商品展示段须引用所选产品包的包装外观")
     return packaging
 
 
@@ -248,12 +280,14 @@ def group_steps(steps):
             grouped[key] = step.copy()
             grouped[key]["segment_ids"] = []
         grouped[key]["segment_ids"].extend(step["segment_ids"])
+        if "pending_asset_bindings" in step:
+            grouped[key].setdefault("pending_asset_bindings", {}).update(step["pending_asset_bindings"])
         if step["reason"] not in grouped[key]["reason"]:
             grouped[key]["reason"] += "；" + step["reason"]
     return list(grouped.values())
 
 
-def segment_steps(root, narrative, entry, *, plan=None, kickoff=None, asset_images=None):
+def segment_steps(root, narrative, entry, *, plan=None, kickoff=None, asset_images=None, allow_pending_assets=False):
     if not (root / PLAN).exists():
         return [
             dict(
@@ -273,8 +307,6 @@ def segment_steps(root, narrative, entry, *, plan=None, kickoff=None, asset_imag
     refs = plan["references"]
     kickoff = kickoff or load_kickoff(root) or {}
     product = kickoff.get("product")
-    product_paragraphs = {p for a in narrative.get("asset_requirements", []) if a.get("category") == "REAL_PRODUCT"
-                          for p in a.get("source_paragraph_ids", [])}
     cursor = plan["first_frame"]
     fps = plan["fps"]
     if not isinstance(fps, (int, float)) or not 0 < fps <= 240:
@@ -336,12 +368,17 @@ def segment_steps(root, narrative, entry, *, plan=None, kickoff=None, asset_imag
             step.update(action="director", skill="storyboard-planner", reason=row["change"])
         else:
             try:
-                if issues := asset_problems.get(sid):
-                    raise ValueError("；".join(issues))
+                pending = list(asset_problems.get(sid, []))
+                if pending and (not allow_pending_assets or any(issue.startswith("visible_asset_ids") for issue in pending)):
+                    raise ValueError("；".join(pending))
                 packaging = None
-                if row["mode"] in ("product", "product-display") or (product and product.get("product_usage") == "display"
-                        and product_paragraphs.intersection(row["paragraph_ids"])):
-                    packaging = product_inputs(root, product, plan, row, hashes, installed)
+                if row["mode"] in ("product", "product-display"):
+                    try:
+                        packaging = product_inputs(root, product, plan, row, hashes, installed)
+                    except PendingPackaging as exc:
+                        if not allow_pending_assets:
+                            raise
+                        pending.append(str(exc))
                 ticket = job_path(root, sid)
                 saved_job = read_json(ticket) if ticket.is_file() else None
                 current_job = (
@@ -386,7 +423,13 @@ def segment_steps(root, narrative, entry, *, plan=None, kickoff=None, asset_imag
                     raise ValueError("未知的复刻参考职责")
                 for key in segment_reference_keys(row):
                     ref = refs[key]
-                    checked_file(root, ref, hashes)
+                    try:
+                        checked_file(root, ref, hashes)
+                    except (OSError, ValueError) as exc:
+                        if not allow_pending_assets or key not in row["appearance"] or key == row.get("motion"):
+                            raise
+                        pending.append(str(exc))
+                        continue
                     path = project_path(root, ref["path"])
                     if path.is_relative_to(root / MASTER_DIR) or (
                         key in row["appearance"] and not path.is_relative_to(root / "01_原始资料")
@@ -399,13 +442,20 @@ def segment_steps(root, narrative, entry, *, plan=None, kickoff=None, asset_imag
                                 for o in a["outputs"]
                             }
                         if path not in masters:
-                            raise ValueError(f"资产确认已失效 {key}")
+                            if not allow_pending_assets or key not in row["appearance"] or key == row.get("motion"):
+                                raise ValueError(f"资产确认已失效 {key}")
+                            pending.append(f"资产确认已失效 {key}")
+                if pending:
+                    step["pending_asset_bindings"] = {sid: list(dict.fromkeys(pending))}
+                    step["reason"] = "按计划资产用途先写本地提示词，资产补齐后挂图"
                 if sid in written:
                     prompt, previous_basis = written[sid]
                     basis = sha256_json(
                         [entry["checksum"], fps, row, [refs[k] for k in segment_reference_keys(row)]]
                     )
                     if previous_basis is not None and previous_basis != basis:
+                        if allow_pending_assets:
+                            step["reason"] = "沿用本地稿，核对本段补挂素材并更新交稿依据"
                         steps.append(step)
                         continue
                     if (
@@ -416,8 +466,8 @@ def segment_steps(root, narrative, entry, *, plan=None, kickoff=None, asset_imag
                     ):
                         step["reason"] = f"{sid} 提示词须补齐参考或原对白"
                     else:
-                        step.update(status="complete", reason="分段提示词已交稿")
-                        if packaging:
+                        step.update(status="complete", reason="本地提示词已写，待补挂资产" if pending else "分段提示词已交稿")
+                        if packaging and not pending:
                             deliveries.append(product_canvas_step(root, plan, row, packaging, kickoff.get("canvas"), entry))
             except (OSError, KeyError, ValueError) as exc:
                 step.update(status="waiting", reason=str(exc))

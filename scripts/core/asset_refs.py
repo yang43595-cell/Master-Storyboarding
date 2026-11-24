@@ -127,6 +127,30 @@ def _output_decisions(root: Path) -> tuple[dict[tuple[str, str], dict], list[dic
     return decisions, issues
 
 
+def without_rejected_outputs(root, package):
+    decisions, issues = _output_decisions(root)
+    if issues:
+        raise ValueError(issues[0]["message"])
+    assets = []
+    for asset in package["assets"]:
+        outputs = asset.get("confirmed_outputs", [])
+        kept = [item for item in outputs if decisions.get((asset["asset_id"], item["output_id"]), {})
+                .get("status") != "rejected"]
+        if kept == outputs:
+            assets.append(asset)
+        elif kept:
+            paths = {item["path"] for item in kept}
+            removed = {item["path"] for item in outputs} - paths
+            assets.append({**asset, "confirmed_outputs": kept,
+                           "confirmed_asset": asset["confirmed_asset"] if (asset.get("confirmed_asset") or {}).get("path") in paths else
+                            {key: value for key, value in kept[0].items()
+                             if key in ("path", "candidate_id", "user_confirmation_ref", "agent_review_ref",
+                                        "derived_confirmation_ref", "derived_confirmation_sha256")},
+                           "candidates": [item for item in asset["candidates"] if item["path"] not in removed]})
+    package["assets"] = assets
+    package["source_asset_requirement_ids"] = [asset["asset_id"] for asset in assets]
+
+
 def _decision_issues_for_request(root: Path, request: str) -> list[str]:
     _, issues = _output_decisions(root)
     asset_id, separator, output_id = request.partition("@")
@@ -332,7 +356,7 @@ def _confirmed_output(root: Path, asset_id: str, output: dict, *, confirmation_c
     }
 
 
-def registered_output_snapshot(root: Path, entry: dict, *, file_digest=None) -> dict[tuple[str, str], dict] | None:
+def registered_output_snapshot(root: Path, entry: dict, *, file_digest=None, include_discarded=False) -> dict[tuple[str, str], dict] | None:
     """Read exact confirmed output identities from one byte-bound asset export."""
     if entry.get('logical_id') != 'visual.asset.manifest' or entry.get('type') != 'visual-asset-manifest':
         return None
@@ -344,6 +368,9 @@ def registered_output_snapshot(root: Path, entry: dict, *, file_digest=None) -> 
         if hashlib.sha256(raw).hexdigest() != entry['checksum']:
             return None
         outputs = {}
+        decisions, issues = _output_decisions(root)
+        if issues:
+            return None
         confirmation_cache = {}
         for asset in json.loads(raw.decode('utf-8-sig'))['assets']:
             if asset.get('status') != 'confirmed':
@@ -352,6 +379,14 @@ def registered_output_snapshot(root: Path, entry: dict, *, file_digest=None) -> 
                 key = (asset['asset_id'], output['output_id'])
                 selected = _confirmed_output(root, key[0], output, confirmation_cache=confirmation_cache,
                                              file_digest=file_digest, asset_outputs=asset["confirmed_outputs"])
+                decision = decisions.get(key, {})
+                if not selected and decision.get("status") == "rejected" and decision.get("discarded_path"):
+                    former = _image_path(root, output["path"])
+                    if former == _image_path(root, decision["discarded_path"]) and not former.exists():
+                        if not include_discarded:
+                            continue
+                        # Impact calculations still need the exact former identity.
+                        selected = {**output, "path": str(former), "sha256": decision["discarded_sha256"]}
                 if (key in outputs or not all(isinstance(value, str) and value for value in key)
                         or not selected or not selected.get('sha256')
                         or not Path(selected['path']).is_relative_to(root.resolve())):
