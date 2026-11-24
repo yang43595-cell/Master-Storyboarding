@@ -222,7 +222,7 @@ def legacy_prop_reuse_label(output: dict, receipt: dict) -> bool:
 
 
 def _confirmed_output(root: Path, asset_id: str, output: dict, *, confirmation_cache=None,
-                      display_label=False, file_digest=None) -> dict | None:
+                      display_label=False, file_digest=None, asset_outputs=None) -> dict | None:
     """Return one explicitly confirmed output, or None when its evidence is incomplete.
 
     Candidates are deliberately absent here.  A confirmation record can be concise, but
@@ -230,7 +230,8 @@ def _confirmed_output(root: Path, asset_id: str, output: dict, *, confirmation_c
     item or be the replacement record for this exact file.
     """
     path_text = output.get("path")
-    reference = output.get("agent_review_ref") or output.get("user_confirmation_ref")
+    derived_ref = output.get("derived_confirmation_ref")
+    reference = derived_ref or output.get("agent_review_ref") or output.get("user_confirmation_ref")
     if not isinstance(path_text, str) or not isinstance(reference, str) or not reference:
         return None
     image_path = _image_path(root, path_text)
@@ -239,6 +240,13 @@ def _confirmed_output(root: Path, asset_id: str, output: dict, *, confirmation_c
     receipt_path, fragment = _confirmation_file(root, reference)
     if receipt_path is None:
         return None
+    if derived_ref:
+        try:
+            if (not receipt_path.is_relative_to(root.resolve())
+                    or (file_digest or digest)(receipt_path) != output.get("derived_confirmation_sha256")):
+                return None
+        except OSError:
+            return None
     receipt, indexed = _confirmation_evidence(receipt_path, {} if confirmation_cache is None else confirmation_cache)
     if receipt is None:
         return None
@@ -284,6 +292,12 @@ def _confirmed_output(root: Path, asset_id: str, output: dict, *, confirmation_c
         elif review:
             return None
         verify_image_confirmation(image_path, image_receipt, file_digest=file_digest)
+        if derived_ref:
+            from .derived_character_boards import validate_consumption
+            validate_consumption(root, asset_id, output, image_receipt, asset_outputs,
+                                 confirmation_cache=confirmation_cache, file_digest=file_digest)
+        elif image_receipt.get("derivation"):
+            return None
         covered_states = output.get('covered_states')
         if covered_states is not None:
             if (not isinstance(covered_states, list) or not covered_states
@@ -337,7 +351,7 @@ def registered_output_snapshot(root: Path, entry: dict, *, file_digest=None) -> 
             for output in asset['confirmed_outputs']:
                 key = (asset['asset_id'], output['output_id'])
                 selected = _confirmed_output(root, key[0], output, confirmation_cache=confirmation_cache,
-                                             file_digest=file_digest)
+                                             file_digest=file_digest, asset_outputs=asset["confirmed_outputs"])
                 if (key in outputs or not all(isinstance(value, str) and value for value in key)
                         or not selected or not selected.get('sha256')
                         or not Path(selected['path']).is_relative_to(root.resolve())):
@@ -474,7 +488,8 @@ def confirmed_images(root: Path, *, requests: Iterable[str] | None = None, file_
                 ):
                     continue
                 confirmed = _confirmed_output(root, asset_id, output, confirmation_cache=confirmation_cache,
-                                              display_label=True, file_digest=file_digest)
+                                              display_label=True, file_digest=file_digest,
+                                              asset_outputs=asset["confirmed_outputs"])
                 if confirmed is not None:
                     outputs.append(confirmed)
         if not outputs:

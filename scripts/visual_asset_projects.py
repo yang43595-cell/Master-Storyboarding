@@ -1049,7 +1049,7 @@ class Projects:
         confirmation_cache = {}
         if (len(outputs) != exported['count'] or any(
                 _confirmed_output(root, ast_id, output, confirmation_cache=confirmation_cache,
-                                  file_digest=file_digest) is None
+                                  file_digest=file_digest, asset_outputs=available[ast_id]) is None
                 for ast_id, output in outputs)):
             raise ValueError('已导出确认图片内容已变化或缺失，请保留原记录并重新核对交接')
 

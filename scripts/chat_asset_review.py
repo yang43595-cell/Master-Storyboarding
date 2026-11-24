@@ -13,12 +13,14 @@ from PIL import Image
 if __package__:
     from . import stage_context_cli as stage
     from .core import artifacts, asset_refs
+    from .core.derived_character_boards import register
     from .core.io import project_lock, read_json, write_json, sha256_json
     from .core.project_state import write_project_state
     from .core.schema_contracts import require_schema
 else:
     import stage_context_cli as stage
     from core import artifacts, asset_refs
+    from core.derived_character_boards import register
     from core.io import project_lock, read_json, write_json, sha256_json
     from core.project_state import write_project_state
     from core.schema_contracts import require_schema
@@ -384,6 +386,7 @@ def main():
     decide = commands.add_parser("confirm")
     decide.add_argument("--shown", action="append", required=True)
     decide.add_argument("--confirmation-json", required=True, type=Path)
+    commands.add_parser("register-derived-boards").add_argument("--board-receipt", required=True, type=Path)
     args = parser.parse_args()
     root = args.project.resolve(strict=True)
     with project_lock(root):
@@ -397,11 +400,13 @@ def main():
             or artifacts.digest(inside(root, narrative["path_or_url"])) != narrative["checksum"]
         ):
             raise ValueError("缺当前已采用的准确编导稿")
-        result = (
-            show(root, args.context_id, narrative)
-            if args.command == "show"
-            else confirm(root, args.shown, read_json(args.confirmation_json), narrative, entries)
-        )
+        if args.command == "show":
+            result = show(root, args.context_id, narrative)
+        elif args.command == "confirm":
+            result = confirm(root, args.shown, read_json(args.confirmation_json), narrative, entries)
+        else:
+            plan = read_json(inside(root, args.board_receipt))
+            result = register(root, plan, narrative, entries, current(entries, LOGICAL))
     print(json.dumps(result, ensure_ascii=False))
 
 
