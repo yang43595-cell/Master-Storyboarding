@@ -9,7 +9,8 @@ from .agent_acceptance import (require_asset_workflow_authorization, require_wor
                                validate_agent_acceptance)
 from .artifacts import (artifact_is_adopted, cache_file_digests, digest, exact_narrative_approval, load_manifest,
                         project_path, validate_current_dependencies)
-from .asset_batch_receipt import DIRECT_RECEIPTS, DIRECT_REQUESTS, summarize_asset_batch_receipt, validate_asset_review_targets
+from .asset_batch_receipt import (DIRECT_RECEIPTS, DIRECT_REQUESTS, summarize_asset_batch_receipt,
+                                  validate_asset_batch_targets, validate_asset_review_targets)
 from .asset_refs import _output_decisions, asset_index, load_asset_list
 from .candidate_test import require_production_manifest
 from . import character_boards
@@ -59,7 +60,10 @@ def _package(project, manifest, state, logical_id):
     entry = matches[0]
     path = project_path(project, entry['path_or_url'])
     if (entry['artifact_id'] not in state['current_artifacts'] or not path.is_relative_to(project)
-            or not path.is_file() or digest(path) != entry.get('checksum')):
+            or not path.is_file()):
+        raise ValueError(f'{entry["artifact_id"]} 缺当前产物登记或准确文件字节')
+    raw = path.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != entry.get('checksum'):
         raise ValueError(f'{entry["artifact_id"]} 缺当前产物登记或准确文件字节')
     if not artifact_is_adopted(entry, state, project):
         if entry.get('agent_acceptance'):
@@ -69,7 +73,7 @@ def _package(project, manifest, state, logical_id):
                 raise ValueError(f'{entry["artifact_id"]} 自主采用依据无效：{exc}') from exc
         raise ValueError(f'{entry["artifact_id"]} 缺有效采用或确认依据')
     validate_current_dependencies(entry, manifest, state, project)
-    payload = read_json(path)
+    payload = json.loads(raw.decode('utf-8'))
     if not isinstance(payload, dict):
         raise ValueError(f'{entry["artifact_id"]} 正文不是 JSON 对象')
     return entry, payload
@@ -175,7 +179,8 @@ def _pending_asset_batches(project, narrative, relevant_assets, confirmed, *, ac
     output = {}
 
     def collect(receipt, targets, binding, kinds):
-        relevant = {target for target in targets if target.partition('@')[0] in relevant_assets and target not in confirmed}
+        relevant = [target for target in validate_asset_batch_targets(targets)
+                    if target.partition('@')[0] in relevant_assets and target not in confirmed]
         if not relevant:
             return
         path = project_path(project, receipt)
@@ -185,12 +190,10 @@ def _pending_asset_batches(project, narrative, relevant_assets, confirmed, *, ac
             document = read_json(path)
         except (OSError, ValueError):
             document = {}
-        result = summarize_asset_batch_receipt(project, path, targets, binding=binding, document=document)
+        result = summarize_asset_batch_receipt(project, path, relevant, binding=binding, document=document)
         rows = document.get('items', []) if isinstance(document, dict) else []
         for item in result['items']:
             target = item['target']
-            if target not in relevant:
-                continue
             record = output.setdefault(target, {'statuses': set(), 'receipts': set(), 'versions': set()})
             status = item['status']
             if status == 'ready_for_review':
@@ -625,6 +628,24 @@ def resolve_production_handoff(project_root, *, manifest=None, state=None, actio
             if step["status"] == "ready" and step["action"] not in {"creative", "assets"}:
                 step.update(workflow=workflow, workflow_entry=RECREATION_ENTRY)
     return {'workflow': workflow, 'steps': steps}
+
+
+def recreation_prompt_context(project, segment_ids):
+    """Read a current segment even when its existing prompt is already complete."""
+    from .recreation_segments import prompt_context
+
+    require_production_manifest(project)
+    state = load_project_state(project)
+    if state['project_status'] != 'active' or production_workflow(load_kickoff(project)) != RECREATION_WORKFLOW:
+        raise ValueError('本入口适用于活动项目的深度复刻局部写词')
+    _, _, blockers = inspect_revision_status(project)
+    if blockers:
+        raise ValueError('；'.join(blockers))
+    guard_action(project, logical_ids=[NARRATIVE, ASSETS])
+    entry, narrative = _package(project, load_manifest(project), state, NARRATIVE)
+    if entry is None:
+        raise ValueError('缺有效采用的编导叙事包')
+    return prompt_context(project, narrative, entry, segment_ids)
 
 
 def require_production_handoff(project_root, action, *, manifest=None, state=None,

@@ -2,9 +2,9 @@
   "schema_version": "1.0",
   "product_id": "creator-polishing-mask-2",
   "product_name": "造物者温泉酸抛光面膜",
-  "revision": "R13",
-  "supersedes_for_new_selection": "R12",
-  "reviewed_on": "2026-11-23",
+  "revision": "R14",
+  "supersedes_for_new_selection": "R13",
+  "reviewed_on": "2026-11-24",
   "visual_scope": "R05大字造物者CREATOR、中央金徽版礼盒及白A/香槟金B。物理SKU与批次未核。",
   "references": [
     {
@@ -17,7 +17,7 @@
         "display",
         "real_use"
       ],
-      "sha256": "1efa3b39806880359131b795f00811bad007c4a034c5798839eb7d92cca9cd3d"
+      "sha256": "6a5cfaf9d4e01e75f8409e94213704366b93e1ff537a56e0c3fd7a3937cd6c8d"
     },
     {
       "id": "ACTION-01",
@@ -576,6 +576,43 @@
         "user_feedback": "这张手持开盒通过，放进产品包。再检查一下礼盒四张图是不是都齐了。",
         "sha256": "76a0abb78515478f91da85ca48ca28c39a83b177ff173a6cc0d6ea649545300a"
       }
+    },
+    {
+      "id": "STATE-BOWL-WHIPPED-HANDHELD-GRAY",
+      "path": "图片/碗内料体/已搅拌面膜_手持透明碗_无刷灰底.png",
+      "role": "state",
+      "usages": [
+        "real_use"
+      ],
+      "sha256": "a55e1c8bcba50c12292c2bbcc117f3c54f854e23d57583a5cdea138c06225392",
+      "source": "Codex 内置 ImageGen，以本包 ACTION-06-LIFT 实拍裁帧为输入。",
+      "coverage": "完成搅拌后，透明横纹碗内的乳白色料体铺开，表面略有起伏且湿润。用于静态料色、质地和状态参考。手部、首饰、灰底属于产品造型。真实搅拌和提刷动作取 ACTION-06-LIFT。",
+      "status": "confirmed",
+      "origin": "codex_imagegen_from_raw_video_frame",
+      "width": 1448,
+      "height": 1086,
+      "source_evidence": {
+        "path": "历史/证据/碗内料体/06B_完全起泡后提刷_帧37裁切.png",
+        "sha256": "492f887aadc828f56b6331ddb5f45faeb4af68fda447f8da46aa52d049d237cd",
+        "action_reference_id": "ACTION-06-LIFT",
+        "action_path": "视频/产品展示/06B_完全起泡后提刷.mp4",
+        "action_sha256": "a7ca41b572c4e525b0370dea556bb59efd0ae244f8969157d78fc743e860e2e4",
+        "source_frame_zero_based": 37,
+        "clip_fps": 30,
+        "crop_xywh": [
+          110,
+          430,
+          520,
+          420
+        ]
+      },
+      "user_confirmation": {
+        "scope": "正式收录为碗内搅拌完成态的生成静态参考",
+        "user_feedback": "这个很好，进入包里吧，记得登记。",
+        "decision_ref": "codex-chat:01a207d7-75d2-7331-bfbe-f460658cc020/msg_01a20974-1995-7543-95a1-933c8b9fdeb8",
+        "decided_at": "2026-11-24T01:28:53.397+08:00",
+        "sha256": "a55e1c8bcba50c12292c2bbcc117f3c54f854e23d57583a5cdea138c06225392"
+      }
     }
   ],
   "evidence_files": [
@@ -752,6 +789,14 @@
       "sha256": "a0156b0c7d230ba5d9fedfcea61eb978a884f632c93580232978a960d5d9413f",
       "source": "正式产品包整理前的生成和采用记录",
       "coverage": "按历史回执追溯，当前图片以本包清单登记的正式原件为准。"
+    },
+    {
+      "path": "历史/证据/碗内料体/06B_完全起泡后提刷_帧37裁切.png",
+      "sha256": "492f887aadc828f56b6331ddb5f45faeb4af68fda447f8da46aa52d049d237cd",
+      "source": "视频/产品展示/06B_完全起泡后提刷.mp4",
+      "source_sha256": "a7ca41b572c4e525b0370dea556bb59efd0ae244f8969157d78fc743e860e2e4",
+      "source_time_seconds": 1.2333333333333334,
+      "coverage": "ACTION-06-LIFT 从零计第37帧的碗内料体实拍裁切，为无刷灰底生成图的输入。"
     }
   ],
   "candidate_visuals": [],

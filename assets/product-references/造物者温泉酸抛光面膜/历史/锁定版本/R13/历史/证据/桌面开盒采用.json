@@ -1,0 +1,20 @@
+{
+  "product_id": "creator-polishing-mask-2",
+  "revision": "R08",
+  "approval_date": "2026-11-23",
+  "id": "TABLETOP-OPEN-BOX",
+  "path": "图片/桌面实景/04_礼盒打开_桌面.png",
+  "source_candidate": "R05/候选/桌面补图/04_礼盒打开_桌面_R04_红帧5.5.png",
+  "source_receipt": "R05/候选/桌面补图/红帧5.5_礼盒打开补图_R04回执.json",
+  "sha256": "3a4028306f34d09f736a4e1aee6b109266cf68a064fbf9387ff95d6f113de01a",
+  "user_feedback": "桌面这张通过，放进产品包。手持这张把右上角的压字去掉就行，其他别动，还是用红帧5.5。",
+  "model": "Doubao Seedream 5.5",
+  "scope": "正式桌面开盒外观、双层内托和摆放参考",
+  "dimensions": [
+    2368,
+    1776
+  ],
+  "platform_watermark_visible": true,
+  "archived_source_receipt": "历史/生成回执/红帧5.5_礼盒打开补图_R04回执.json",
+  "canonical_source": "图片/桌面实景/04_礼盒打开_桌面.png"
+}

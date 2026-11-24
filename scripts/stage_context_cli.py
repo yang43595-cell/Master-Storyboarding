@@ -39,7 +39,9 @@ try:
     from .core.method_documents import MethodDocumentError, render_method_packet, resolve_method_documents
     from .core.product_reference_pack import product_catalog, resolve_product_pack
     from .core.project_state import load_project_state, normalize_project_state, write_project_state
-    from .core.production_handoff import LEGACY_RULE, require_production_handoff, resolve_production_handoff
+    from .core.production_handoff import (
+        LEGACY_RULE, recreation_prompt_context, require_production_handoff, resolve_production_handoff,
+    )
     from .core.project_kickoff import (REQUEST_PATH, RECREATION_ENTRY, RECREATION_METHOD, RECREATION_WORKFLOW,
                                        bind_stage_request, load_kickoff, load_project_request,
                                        product_demo_timing_advisory, production_workflow, validate_kickoff)
@@ -70,7 +72,9 @@ except ImportError:  # direct CLI execution
     from core.method_documents import MethodDocumentError, render_method_packet, resolve_method_documents
     from core.product_reference_pack import product_catalog, resolve_product_pack
     from core.project_state import load_project_state, normalize_project_state, write_project_state
-    from core.production_handoff import LEGACY_RULE, require_production_handoff, resolve_production_handoff
+    from core.production_handoff import (
+        LEGACY_RULE, recreation_prompt_context, require_production_handoff, resolve_production_handoff,
+    )
     from core.project_kickoff import (REQUEST_PATH, RECREATION_ENTRY, RECREATION_METHOD, RECREATION_WORKFLOW,
                                       bind_stage_request, load_kickoff, load_project_request,
                                       product_demo_timing_advisory, production_workflow, validate_kickoff)
@@ -2622,6 +2626,9 @@ def _write_handoff_card(args, project, target_skill, current_stage, inputs, *, t
             path = _context_dir(project, "导演编导来源.json")
             write_json(path, sources(project, entry))
             director_paths = [str(path.relative_to(project))]
+    local_recreation_prompt = (target_skill == "voiceover-to-video-script" and routed
+                               and routed.get("action") == "video"
+                               and routed.get("workflow") == RECREATION_WORKFLOW)
     scope_fields = (*_ROUTED_HANDOFF_SCOPE, "workflow")
     lines = [
         "# 下一阶段交接卡", "",
@@ -2669,10 +2676,14 @@ def _write_handoff_card(args, project, target_skill, current_stage, inputs, *, t
             command.extend(["--context-id", task_context])
         lines.append("- 编导开工命令参数：" + json.dumps(command, ensure_ascii=False) +
                      "。补齐本轮 objective、request-json、actor-id 和 task-id 后执行。")
+    if local_recreation_prompt:
+        lines.append("- 本段写词输入：运行 `python scripts/stage_context_cli.py recreation-prompt-input --project <业务项目> "
+                     "--segment-id <本次实际负责的段号>`。同批多段重复传参数。沿回包读取原文、对白、接缝和参考，旧词仅按本轮段号取用。")
     lines.extend([
         "", "## 本轮依据与停止点", "",
         f"- 项目路径：`{project}`。相对产物路径从这里解析。仓库入口：`{ROOT / 'AGENTS.md'}` 与目标 Skill。",
-        "- 原始证据：从以上准确产物的 source_artifacts / 来源引用按需实读，不用交接摘要替代。",
+        ("- 原始证据：按本段回包实看选中的原始参考，缺口只回查对应帧窗或对白依据。整份编导稿路径供版本定位。"
+         if local_recreation_prompt else "- 原始证据：从以上准确产物的 source_artifacts / 来源引用按需实读，不用交接摘要替代。"),
         f"- 决定及授权：实读 `{project / REQUEST_PATH}` 的本轮需求、kickoff 和 `{project / '00_项目管理/project_state.json'}` 的确认及 workflow_authorizations；缺文件或范围保留未决。",
         "- 未决项：核以上当前产物的未决字段、现有 review_report 与 accepted_issues，已接受问题只覆盖原记录的准确范围。",
         "- 停止点：完成本职目标和自查后交回准确版本、检查结果、未完成项与证据路径。",
@@ -2687,7 +2698,8 @@ def _write_handoff_card(args, project, target_skill, current_stage, inputs, *, t
         ("- 仅按独立测试授权继续候选试写；保留所有未核对事实和素材阻塞。视频 Skill 仍直接读取，不重建准备包。" if testing else startup_requirement),
         *([f"- 准备、读取登记、产前检查和需要的审核包沿本任务 `--context-id {task_context}`；使用原执行者和任务 ID。"]
           if task_context and target_skill in TASK_HANDOFF_SKILLS else []),
-        "- 编导交接须实际读准确正文、核来源和本轮自查结论；关键发现及未核范围复用现有任务记录，程序 ok 不代表叙事充分。",
+        ("- 只按段号取编导源 JSON 的必要内容，复用上下文中已读的同版范围。编导 Markdown 留作人审。"
+         if local_recreation_prompt else "- 编导交接须实际读准确正文、核来源和本轮自查结论；关键发现及未核范围复用现有任务记录，程序 ok 不代表叙事充分。"),
         "- 创作新轮使用干净的专属执行者，同轮返修可续用。核对仓库、规则和执行环境。用户明确要求时才单独审核。",
         "- 图片沿有效确认输出消费。同用途复用已有观察，版本或用途变化时定向实看。资产人审和下游补图自主采用各用原入口。",
         ("- 只消费以上未确认候选及准确稳定 ID；不得读取旧案例答案，不得写入确认记录。" if testing else "- 只消费以上有效采用产物及其稳定 ID；不得读取旧生产对话或未列入启动包的历史内容。"),
@@ -3296,6 +3308,9 @@ def parser() -> argparse.ArgumentParser:
     handoff_cmd.add_argument("--request-json", help="资产批次沿用含 image_targets 的现有请求")
     handoff_cmd.add_argument("--batch-receipt", help="本批实际实看回执的准确项目内路径")
     handoff_cmd.add_argument("--receive-batch", action="store_true", help="只读接收本批的紧凑结果，不更新交接或项目状态")
+    prompt_input = commands.add_parser("recreation-prompt-input", help="只读提取深度复刻写词的本段源文、对白、接缝和参考")
+    prompt_input.add_argument("--project", type=Path, required=True)
+    prompt_input.add_argument("--segment-id", action="append", required=True, help="本次实际负责的分段号，可重复指定不同段")
     for command in (start, gate, receipt, review, handoff_cmd):
         command.add_argument("--context-id", help="可选独立批次上下文 ID；仅隔离准备/阅读/交接文件，不隔离项目状态或批准")
     check = commands.add_parser("validate")
@@ -3387,6 +3402,11 @@ def main(argv: list[str] | None = None) -> int:
         result = review_pack(args)
     elif args.command == "handoff":
         result = handoff(args)
+    elif args.command == "recreation-prompt-input":
+        try:
+            result = recreation_prompt_context(args.project.resolve(strict=True), args.segment_id)
+        except (KeyError, TypeError) as exc:
+            raise StageContextError(f"局部写词输入结构不完整：{exc}") from exc
     else:
         result = validate_text(args.kind, Path(args.path).expanduser().resolve())
     print(json.dumps(result, ensure_ascii=False, indent=2))

@@ -1,0 +1,80 @@
+{
+  "target": "桌面闭盒尺寸返修",
+  "candidate_revision": "R03",
+  "state": "result_saved_pending_review",
+  "user_instruction": "尺寸还是不对，我建议用红帧的5.5去生成试试",
+  "provider": "RedFrame 创作",
+  "model": "Doubao Seedream 5.5",
+  "ratio": "3:2",
+  "resolution": "2K",
+  "count": 1,
+  "references": [
+    {
+      "path": "R05/history/电商与白底外观/造物者温泉酸-礼盒外观.png",
+      "sha256": "5068c644d0e9adb0e67e689767988491276f4031602f23d561048202bc89713b",
+      "purpose": "锁定礼盒长宽厚比例、盒面印刷版式和中央椭圆金徽"
+    },
+    {
+      "path": "R04/证据/生图输入/闭盒_0.30秒.png",
+      "sha256": "cd010ea6f79beb8b4f4cc5af3c583d05d3194441b0cb99cd4887089d12f35611",
+      "purpose": "核对实际盒体与手的比例和腰线处上下两层开合关系"
+    },
+    {
+      "path": "R04/图片/手持效果/01_礼盒_手持.png",
+      "sha256": "f06dc36163e5d16e82a1d6730f3ac585561e8ae2817d75a33584a3545264c5d4",
+      "purpose": "核对已通过手持图中的整体体量和横向长方盒形"
+    }
+  ],
+  "prompt": "﻿\n造物者温泉酸-礼盒外观.png\n \n闭盒_0.30秒.png\n \n01_礼盒_手持.png\n 造物者金徽礼盒桌面真实手机照片。参考图1 锁定礼盒长宽厚比例、盒面印刷版式和中央椭圆金徽；参考图2 核对实际盒体与手的比例和腰线处上下两层开合关系；参考图3 核对已通过手持图中的整体体量和横向长方盒形。一张手机 1× 镜头拍摄的室内桌面照片。保持同款横向大字金徽礼盒的真实长、宽、厚相对比例和体量，不改成扁纸片、窄条小包装或厚方块。礼盒自然平放在有细微纹理的浅暖灰桌面上，盒底稳贴桌面，前缘自然接触阴影。相机从盒子右前方略俯拍，拍清盒面、前长边和右短边，保持常规视距、自然透视。盒盖和下盒是两层有真实厚度的硬纸盒，一条细而真实可开启的横向接缝位于盒身腰线，贯通前长边，转角后顺右侧延伸。两件完全合拢、盒内不露；这条缝来自上下构件交界。保持盒面大字“造物者 CREATOR”、中央原款小椭圆金徽、底部原品名和细字的位置、颜色与尺度。日常室内侧窗光，细微曝光差、自然纸纹和真实接触影。完整盒子，只有桌面和礼盒，不要手、其他产品、背景文字、额外徽标或抽屉。",
+  "native_mentions": [
+    [
+      "造物者温泉酸-礼盒外观.png",
+      "引用图片1：造物者温泉酸-礼盒外观.png"
+    ],
+    [
+      "闭盒_0.30秒.png",
+      "引用图片2：闭盒_0.30秒.png"
+    ],
+    [
+      "01_礼盒_手持.png",
+      "引用图片3：01_礼盒_手持.png"
+    ]
+  ],
+  "submitted_at": "2026-11-22T18:45:55.705641+00:00",
+  "page_url": "https://redframe-ai.xmpaohong.com:28888/#/creation?conversationId=a25f76ff-6938-40b6-9148-0ec874c6cce8",
+  "response_routes": [
+    [
+      409,
+      "/api/workspaces/files/mkdir"
+    ],
+    [
+      409,
+      "/api/workspaces/files/mkdir"
+    ],
+    [
+      200,
+      "/api/workspaces/files/write"
+    ],
+    [
+      200,
+      "/api/workspaces/files/write"
+    ],
+    [
+      200,
+      "/api/workspaces/files/write"
+    ],
+    [
+      200,
+      "/api/agent"
+    ]
+  ],
+  "result": {
+    "file": "01_礼盒_桌面平放_R03_红帧5.5.png",
+    "width": 2368,
+    "height": 1776,
+    "aspect_ratio": "4:3",
+    "sha256": "dca539845aecba79c888bceb47767c52af6e790d099e058397fb4b14157381b5",
+    "platform_watermark_visible": true,
+    "review_note": "前缘和侧边可见上下两层开合缝。与手持实拍相比，盒身观感仍略厚，实际尺寸未核准。红帧原图为 4:3，提交时界面显示 3:2。"
+  }
+}

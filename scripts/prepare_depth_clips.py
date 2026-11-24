@@ -9,6 +9,12 @@ import re
 import subprocess
 from tempfile import TemporaryDirectory
 
+if __package__:
+    from .core.depth_reference_review import product_visible_frames, require_product_free_window
+else:
+    from core.depth_reference_review import product_visible_frames, require_product_free_window
+
+
 def checksum(path):
     with path.open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
@@ -23,6 +29,7 @@ def export(project, plan, output, ffmpeg="ffmpeg", ffprobe="ffprobe", short_edge
     fps = Fraction(str(plan["fps"]))
     if not 0 < fps <= 240:
         raise ValueError("分段帧率无效")
+    excluded = product_visible_frames(plan)
     segments = [row for row in plan["segments"] if row["mode"] == "depth"]
     if segment_ids is not None:
         requested = set(segment_ids)
@@ -52,6 +59,7 @@ def export(project, plan, output, ffmpeg="ffmpeg", ffprobe="ffprobe", short_edge
                     or not 0 <= a < b <= ref["frame_count"]
                     or [ref["source_start_frame"] + k for k in (a, b)] != row["frames"]):
                 raise ValueError(f"{sid} 来源或帧窗不一致")
+            require_product_free_window(*row["frames"], excluded, sid)
             spec = json.dumps([ref["sha256"], a, b, str(fps), short_edge])
             dest = output / f"{sid}_{hashlib.sha256(spec.encode()).hexdigest()[:20]}.mp4"
             tmp = Path(scratch) / dest.name

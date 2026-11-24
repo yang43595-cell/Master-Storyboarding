@@ -399,13 +399,8 @@ class WebReadingTests(unittest.TestCase):
 
     def test_scene_seed_and_package_share_actual_view_order_in_both_web_modes(self):
         import visual_asset_library as library
-        source = self.vault / 'wiki/reference/提示词模板/环境一致性模板提示词.md'
-        blocks = ['身份卡',
-                  '生成【SC-XXX 场景名称】的场景母图，用作后续所有机位的唯一空间锚点。',
-                  '以图一【SC-XXX 场景母图】为唯一场景参考，生成同一环境的反向平视回望图。',
-                  '以图一【SC-XXX 场景母图】为唯一场景参考，生成同一环境的45°斜俯视全景图。',
-                  '同时以图一【场景母图】、图二【反向平视回望图】和图三【45°斜俯视全景图】为参考，生成90°俯视。']
-        source.write_text('\n'.join('```text\n' + block + '\n```' for block in blocks), encoding='utf-8')
+        relative = 'wiki/reference/提示词模板/环境一致性模板提示词.md'
+        shutil.copyfile(ROOT / 'knowledge/runtime' / relative, self.vault / relative)
         expected = ['以用户所选照片为场景参考', '图一（已确认的45°母图）',
                     '图一（已确认的45°母图）和图二（已确认的正面图）',
                     '图一（45°母图）、图二（正面图）和图三（反面图）']
@@ -421,6 +416,13 @@ class WebReadingTests(unittest.TestCase):
                     self.assertEqual(package['production_item']['template']['content'], seed)
                     self.assertIn(expected[index], seed)
                     self.assertNotIn('图二【反向平视回望图】', seed)
+                    if index == 0:
+                        self.assertIn('放在空间一角，朝对角线', seed)
+                        self.assertIn('沿同一布局补全原图裁切、遮挡或没拍到的相邻区域', seed)
+                        self.assertIn('同框交代主要入口、通道、核心行动区', seed)
+                        self.assertNotIn('只改变', seed)
+                    else:
+                        self.assertNotIn('沿同一布局补全原图裁切、遮挡或没拍到的相邻区域', seed)
 
     def test_visual_supplement_shares_same_source_and_other_skill_does_not_load_it(self):
         profile = json.loads((ROOT/'skills/storyboard-director/knowledge-profile.json').read_text(encoding='utf-8'))

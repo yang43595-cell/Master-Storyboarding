@@ -22,6 +22,8 @@
 
 适配器使用机场任务实录中的 `data-id`、`image → in` 端口、节点名、生成提示词、引用参考素材、图片序号、生成图片、适应视图和关闭对话控件。创建与上传坐标由执行者在本任务视口中实看选定空位；不使用固定屏幕点。可复用源卡时直接给准确源节点 ID。接线前检查原边，已存在不再画线；提示词通过原生菜单插入引用，随后从真实 `promptModel` 核源节点身份及完整正文。提交前重新核实际连线、模型/画幅/尺寸/张数，并读取源卡原件字节与已确认文件 SHA-256 比较。当前实现可设置已观察到的比例控件；模型、尺寸、张数以实际原生字段核对，不符则保留节点并报告具体差异，不能猜控件或把期望值写成实采结果。
 
+中断后先运行只读命令 `python -m scripts.core.redframe_image_ui --project <项目> --receipt <本图回执路径>`，按返回的目标、节点和下一步接续。恢复时从本批准确制作请求和该图的回执路径进入；核对 target、请求哈希与画布，源卡和提示词取同一请求及回执。已有 file 时先核本地原件哈希；返回 certify_original_card 时用 finish_asset_image 接续原卡认证，再交执行者实看。创建结果未知时从 previous_node_ids（历史 before）调用 find_new_nodes 核实真实目标，再把经核实的 node_id 写回原回执；仅凭出现了新卡不能认定归属。
+
 ### 已有资产或分镜补图的单图返修
 
 同一资产或分镜请求的一张图打回、沿原生成卡或原参考卡局部修订时，沿本 Skill 的原项目准备、校验与人审范围；已采用的项目走局部修订准备，其他已完成项保留原决定。用户已指出修改方向后，把本项画面要求写入现有单图制作请求的 `prompt`（或该场景的 `scenes[].prompt`），`source_files` 只选本轮适用的底图。空间错、人脸错或后态错的失败图沿[连续性要求](../storyboard-director/references/image-continuity-hard-rules.md#返修参考与固定基准)回到正确母图。多参考按源文件顺序写 `source_roles`。整轮交审仍沿原名单。
@@ -49,15 +51,15 @@ from scripts.core.redframe_image_ui import image_browser_session
 receipt_path = Path(receipt_path)
 receipt = read_json(receipt_path) if receipt_path.exists() else {"target": target}
 with image_browser_session(task_browser, project_id=project_id, canvas_url=canvas_url) as ui:
-    if receipt.get("image_result"):
-        result = receipt["image_result"]  # 续用已观察的原件；从 file 指向的文件和哈希核实本地交付
-    elif receipt.get("image_submission"):
-        result = ui.query(receipt, timeout=60)  # 只查已登记的原节点
-    else:
+    if not receipt.get("image_result") and not receipt.get("image_submission"):
         # 首次需要时：source_id = ui.upload_source(source_file, empty_x, empty_y)
         node_id = ui.resume_image_node(receipt, lambda r: write_json(receipt_path, r), empty_x, empty_y)
         ui.rename(node_id, node_label)
         for source_id in source_hashes:
+            if source_id in project_asset_sources:  # 项目资产按来源列全，包含补图和复用图
+                ast, kind = project_asset_sources[source_id]
+                ui.ensure_asset_card(project, ast, kind, source_id, source_hashes[source_id], receipt,
+                                     lambda: write_json(receipt_path, receipt))
             ui.connect(source_id, node_id)
         # parts 中普通字符串直接写入；引用项写：
         # {"index": 1, "source_id": source_id, "text": "本图准确参考职责；"}
@@ -66,10 +68,11 @@ with image_browser_session(task_browser, project_id=project_id, canvas_url=canva
         ui.submit_once(node_id, settings=settings, sources=source_hashes,
                        prompt=prompt, receipt=receipt,
                        save_receipt=lambda value: write_json(receipt_path, value))
-        result = ui.query(receipt, timeout=60)
-    receipt["image_result"] = result
-    write_json(receipt_path, receipt)
+    result = ui.finish_asset_image(project, receipt, lambda: write_json(receipt_path, receipt),
+                                   output_kind=output_kind)
 ```
+
+固定人物新成图或补图取得原件后，当场对其生成节点或上传源卡调用同一 ensure_asset_card，传实际 AST、输出类型与新文件 SHA-256。首次上传、换图及恢复已有源卡都沿此入口核认证，复用同版有效认证。
 
 `source_hashes` 为按实际平台槽顺序构造的 `{准确源节点ID: 已确认原件SHA256}`；每个原生 `{{ref N}}` 必须指向该顺序的第 N 个源卡，不能只核源 ID 集合。模型使用原生持久化标识，例如当前已观察的 `model='["volcengineArkVideo","doubao-seedream-5-5-261028"]'`，并填写本轮确定的 `ratio`、`size`、`count`。模型、尺寸或张数不同，由实际界面执行者通过本轮已核的原生控件选择，再以持久化字段预检；尚未核到的菜单不假称已支持。参数示例不授予模型或生图授权。
 

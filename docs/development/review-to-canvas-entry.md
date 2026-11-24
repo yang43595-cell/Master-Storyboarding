@@ -22,7 +22,11 @@
 python scripts/stage_context_cli.py handoff --project '<业务项目绝对路径>'
 ```
 
-程序在 `next_actions` 给出已就绪任务，在 `steps` 说明等待范围和原因。编导整稿采用后，直接把同版叙事包和所需资产 ID 交给资产 Skill，导演拍法待选时也可开始盘点、复用及准备。实际出图沿既有授权，候选图按原通道审核。普通阶段沿返回的 `context_id` 使用现有交接卡。视频和草稿接续依赖已就绪的镜段。显式目标用于绑定现有任务的接收者、图片批次或按已选兼容流程办理。
+程序在 `next_actions` 给出已就绪任务，在 `steps` 说明等待范围和原因。编导整稿正式采用后，协调方当轮运行普通交接，按各自交接卡启动全部已就绪任务。资产以同版叙事包为依据，盘点和复用已有图，按既有授权制作已明确的缺图，候选图沿原通道人审。
+
+路线已定时，资产与导演重拍或 1:1 深度复刻同轮并行。路线待选时，协调方启动资产并同时给出两个拍法选项，收到选择后按原交接入口启动所选路线。按具体镜号或段号登记所需图片和用途，缺图或待确认只暂停实际依赖该图的镜段。协调方继续把其余就绪镜段派给当前可接手的制作、写词或草稿交付阶段。
+
+普通阶段沿返回的 `context_id` 使用现有交接卡。显式目标用于绑定现有任务的接收者、图片批次或按已选兼容流程办理。
 
 只读查看时运行 `status --project '<业务项目绝对路径>'`。已登记开工决定的普通项目用同一套交接判断返回 `next_actions` 和 `steps`。有未完成的提交事务时，先沿修订恢复入口处理该事务。
 
@@ -32,7 +36,7 @@ python scripts/stage_context_cli.py handoff --project '<业务项目绝对路径
 | --- | --- | --- |
 | <a id="开工确认单"></a><a id="使用已选产品参考包"></a>新项目开工或补齐决定 | [开工确认单](../rules/project-layout.md#开工确认单)，选用商品包时看[产品参考包](../rules/project-layout.md#使用已选产品参考包) | 登记来源、范围及当前工作依赖的决定 |
 | <a id="核对真实使用的固定演示窗"></a>写编导稿 | [编导 Skill](../../skills/creative-director/SKILL.md)，广告真实使用且演示时长固定时查[固定演示窗](../rules/project-layout.md#核对真实使用的固定演示窗) | 交准确版本给用户审核 |
-| <a id="编导文本送审命令"></a><a id="编导对话确认"></a>编导送审或采用 | [网站送审](review-workbench-operations.md#编导文本送审命令)、[网站通过](review-workbench-operations.md#编导网站决定与采用)或[对话确认](artifact-adoption.md#编导对话确认) | 整稿采用后直接交资产 Skill，导演按已有拍法决定和授权接续 |
+| <a id="编导文本送审命令"></a><a id="编导对话确认"></a>编导送审或采用 | [网站送审](review-workbench-operations.md#编导文本送审命令)、[网站通过](review-workbench-operations.md#编导网站决定与采用)或[对话确认](artifact-adoption.md#编导对话确认) | 整稿采用后当轮运行普通交接，启动已就绪的资产和拍法任务 |
 | 对标编导整稿已采用，选择拍摄路线 | [开工记录中的路线选择](../rules/project-layout.md#开工确认单) | 路线待选时主动给用户两个选项，按用户选择登记后再运行同一交接命令。导演重拍按导演稿逐镜写词。深度复刻按已采用编导稿分段，剧情用深度视频，产品用目标产品实操参考，直接交视频提示词 Skill。仅改变戏剧动作或人物互动的段落交导演。 |
 | <a id="审核站-api-对接要求"></a>资产制作或审核 | [资产 Skill](../../skills/asset-image-assistant/SKILL.md)、[对话逐项确认](../../skills/asset-image-assistant/references/05-asset-manifest-handoff-guide.md#状态规则)或[网站送审](review-workbench-operations.md#资产图送审)与[通过](review-workbench-operations.md#资产网站决定与交接) | 逐项交接已确认且可取用的输出 |
 | 在红帧生成资产图或补图 | [红帧生图 SOP](../../skills/_shared/redframe-operations.md#生图) | 上传素材卡后当场归位，以原生连线和正文引用核对实际生成输入 |

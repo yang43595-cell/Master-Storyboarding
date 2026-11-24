@@ -1,0 +1,24 @@
+{
+  "product_id": "creator-polishing-mask-2",
+  "revision": "R10",
+  "approval_date": "2026-11-23",
+  "id": "BOX-HAND-REFERENCE",
+  "path": "图片/手持效果/01_礼盒_手持.png",
+  "source_candidate": "R05/候选/桌面补图/06_礼盒关闭_手持_R03_灰墙_红帧5.5.png",
+  "source_receipt": "R05/候选/桌面补图/红帧5.5_手持闭盒灰墙返修_R03回执.json",
+  "sha256": "e1624e073bdacc17c0fc1e1a65c9ef0246564f146e695253cde78d59399fe3c6",
+  "user_feedback": "就这样吧",
+  "model": "Doubao Seedream 5.5",
+  "scope": "正式手持闭盒的礼盒外观、相对体量和双手托持参考",
+  "dimensions": [
+    1584,
+    2816
+  ],
+  "replaces": {
+    "revision": "R09",
+    "sha256": "f06dc36163e5d16e82a1d6730f3ac585561e8ae2817d75a33584a3545264c5d4"
+  },
+  "review_detail": "确认前已披露盒子左前角略出画。原图保留红帧水印及源画面数字标记。",
+  "archived_source_receipt": "历史/生成回执/红帧5.5_手持闭盒灰墙返修_R03回执.json",
+  "canonical_source": "图片/手持效果/01_礼盒_手持.png"
+}

@@ -1,0 +1,21 @@
+{
+  "product_id": "creator-polishing-mask-2",
+  "revision": "R06",
+  "approval_date": "2026-11-23",
+  "assets": [
+    {
+      "id": "TABLETOP-BOWL",
+      "path": "图片/桌面实景/02_透明面膜碗_桌面平放.png",
+      "scope": "正式产品包桌面状态参考",
+      "user_feedback": "碗和刷子没问题",
+      "sha256": "13db7e6a40ff342e4764d83e93a8456e9a4f9a99b77d66bae99ced7973aa7f29"
+    },
+    {
+      "id": "TABLETOP-BRISTLE-BRUSH",
+      "path": "图片/桌面实景/03_扇形刷_桌面平放.png",
+      "scope": "正式产品包桌面状态参考",
+      "user_feedback": "碗和刷子没问题",
+      "sha256": "07c6bd56d138c2d19a8d5ee8b2bbb527ab51d5ea1ce812bed70f999c82895303"
+    }
+  ]
+}

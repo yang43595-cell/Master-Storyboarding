@@ -157,3 +157,30 @@ def test_stage_card_allows_second_output_after_first_went_to_its_own_batch(tmp_p
     with pytest.raises(stage.StageContextError, match='图片目标超出'):
         stage._check_preparation_route(tmp_path, 'asset-image-assistant', {'image_targets': [second]},
                                        {**card, 'output_ids': [first]})
+
+
+def test_partial_batch_rechecks_only_outstanding_images(tmp_path, monkeypatch):
+    from scripts.core import asset_batch_receipt as receipts, production_handoff as handoff
+    from test_asset_batch_receipt import _passed_row
+
+    story = dict(artifact_id='N1', checksum='b' * 64, revision='R01')
+    fingerprint = 'a' * 64
+    targets = ['AST-ROOM@WIDE', 'AST-ROOM@REVERSE']
+    rows = [dict(_passed_row(tmp_path, target, f'C{i}'), purpose='场景') for i, target in enumerate(targets)]
+    name = fingerprint + '.json'
+    write_json(tmp_path / receipts.DIRECT_REQUESTS / name, dict(
+        skill='asset-image-assistant', request_sha256=fingerprint, narrative_id='N1',
+        narrative_sha256=story['checksum'], targets=targets, image_output_kinds={}))
+    write_json(tmp_path / receipts.DIRECT_RECEIPTS / name, dict(request_sha256=fingerprint, items=rows))
+    reads = []
+    original = receipts.sha256_file
+    def count(path):
+        reads.append(path.name)
+        return original(path)
+    monkeypatch.setattr(receipts, 'sha256_file', count)
+    def pending():
+        return handoff._pending_asset_batches(tmp_path, story, {'AST-ROOM'}, {targets[0]})
+    assert pending()[targets[1]]['statuses'] == {'ready_for_review'}
+    assert reads == ['C1.png']
+    (tmp_path / 'C1.png').write_bytes(b'changed')
+    assert pending()[targets[1]]['statuses'] == {'pending'}

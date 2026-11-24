@@ -387,6 +387,53 @@ def test_chat_approval_adopts_initial_and_revised_script_for_downstream(
     assert action["action"] == "director" and action["artifact_ids"] == ["N-R02"]
 
 
+@pytest.mark.parametrize("workflow, route_action", [
+    ("pending", None),
+    ("creative", "director"),
+    ("depth-guided-recreation", "recreation"),
+])
+def test_adopted_script_hands_off_assets_and_the_selected_route_together(
+    tmp_path, kickoff_review_site, workflow, route_action,
+):
+    request_path = tmp_path / REQUEST_PATH
+    request = json.loads(request_path.read_text(encoding="utf-8"))
+    request["kickoff"].update(creation={"workflow": workflow}, image_generation={
+        "provider": "redframe", "model": "Doubao Seedream 5.5", "fee_scope": "existing_quota",
+        "reference_upload_authorized": True, "authorization_ref": "synthetic image authorization",
+        "scope": "required_assets_and_supplements",
+    })
+    target = "AST-PROP-PAPER@view"
+    request["asset_review_targets"] = [target]
+    write_json(request_path, request)
+    stage_cli.register_workflow_authorization(
+        tmp_path, authorization_id="FLOW-R01", authorization_ref="synthetic director authorization",
+        skills=["storyboard-planner"],
+    )
+    source, package = narrative(tmp_path)
+    package["asset_requirements"][0].update(image_decision="需要制作", image_reason="验证道具缺图交接")
+    write_json(source, package)
+    cli.run(cli._parser().parse_args([
+        "prepare", "--project", str(tmp_path), "--narrative", source.name,
+        "--output", "R01.md", "--artifact-id", "N-R01", "--chat-review",
+    ]))
+    handoff = stage_cli.parser().parse_args(["handoff", "--project", str(tmp_path)])
+    assert stage_cli.handoff(handoff)["next_actions"] == []
+
+    approval = chat_args(tmp_path, source)
+    stage_cli.confirm_script_in_chat(approval)
+    result = stage_cli.handoff(handoff)
+    actions = {item["action"]: item for item in result["next_actions"]}
+    assert set(actions) == ({"assets", route_action} if route_action else {"assets"})
+    assert actions["assets"]["output_ids"] == [target]
+    assert len({item["context_id"] for item in actions.values()}) == len(actions)
+    for action in actions.values():
+        assert action["artifact_ids"] == ["N-R01"]
+        assert approval.sha256 in Path(action["handoff_path"]).read_text(encoding="utf-8")
+    if workflow == "pending":
+        [director] = [step for step in result["steps"] if step["action"] == "director"]
+        assert director["status"] == "waiting"
+
+
 @pytest.mark.parametrize("blocker, reason", [
     ("no_grant", "缺有效导演流程授权"),
     ("wrong_scope", "缺有效导演流程授权"),

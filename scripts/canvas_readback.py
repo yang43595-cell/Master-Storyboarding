@@ -939,6 +939,8 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             output = asset_outputs.get(f"{ref.get('asset_id', '')}@{ref.get('output_id', '')}")
             packed = formal_redframe and 'product_reference_id' in ref
             face_slot = formal_redframe and slot in (row.get('realistic_face_slots') or [])
+            if output and output.get('requires_face_certification') and not face_slot:
+                raise ValueError(f'固定人物资产第 {slot} 槽须列入 realistic_face_slots 并使用已认证源卡')
             direct_slot = (formal_redframe and not before_upload and identity_mode == 'media_id'
                            and ref.get('canvas_binding', {}).get('mode') == 'direct'
                            and 'sha256' in media_item)

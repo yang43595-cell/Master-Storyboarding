@@ -1,5 +1,8 @@
 """Segment-scoped inputs for ordinary depth-guided prompt drafting."""
 
+import hashlib
+import json
+import re
 from pathlib import Path
 
 from .artifacts import digest, project_path
@@ -29,6 +32,104 @@ def checked_file(root, item, hashes):
 def segment_reference_keys(segment):
     motion = segment.get("motion")
     return [*([motion] if motion else []), *segment["appearance"]]
+
+
+def _require_plan_source(plan, entry):
+    if (plan["narrative_id"], plan["narrative_sha256"]) != (entry["artifact_id"], entry["checksum"]):
+        raise ValueError("复刻分段与当前编导稿不符")
+
+
+def _seam_side(segment, state_key, selected):
+    side = {"id": segment["id"]}
+    if segment.get(state_key):
+        side[state_key] = segment[state_key]
+    elif segment["id"] not in selected and segment.get("event"):
+        side["event"] = segment["event"]
+    return side
+
+
+def prompt_context(root, narrative, entry, segment_ids):
+    """Project exact source data into one read-only input for local prompt writing."""
+    requested = set(segment_ids)
+    if not requested or len(requested) != len(segment_ids):
+        raise ValueError("须指定不重复的复刻写词段号")
+    plan_path = project_path(root, PLAN.as_posix())
+    if not plan_path.is_relative_to(root):
+        raise ValueError("复刻分段路径越出项目")
+    plan_bytes = plan_path.read_bytes()
+    plan = json.loads(plan_bytes)
+    _require_plan_source(plan, entry)
+    rows = plan["segments"]
+    known = {row["id"] for row in rows}
+    if len(known) != len(rows) or requested - known:
+        raise ValueError("复刻分段有重复编号或指定了不存在的段号")
+
+    segments = [row for row in rows if row["id"] in requested]
+    if any(row["mode"] == "rewrite" for row in segments):
+        raise ValueError("所选段须先完成当前局部导演回传")
+    shared = {pid for row in rows if row["id"] not in requested for pid in row["paragraph_ids"]}
+    paragraph_ids = {pid for row in segments for pid in row["paragraph_ids"]}
+    if not paragraph_ids or not paragraph_ids <= {p["paragraph_id"] for p in narrative["story_paragraphs"]}:
+        raise ValueError("所选段缺准确编导段落")
+    # A shared paragraph can contain whole shots outside this task. Use the
+    # plan's registered per-shot action when it covers the selected portion.
+    prose_ids = paragraph_ids - shared
+    prose = {p["paragraph_id"]: p["text"] for p in narrative["story_paragraphs"] if p["paragraph_id"] in prose_ids}
+    source_dialogues = {d["dialogue_id"]: d for d in narrative["dialogues"]}
+    names = {a["entity_id"].removeprefix("CHR-"): a["name"] for a in narrative.get("asset_requirements", [])
+             if a["category"] == "CHARACTER"}
+    dialogues = {}
+    for row in segments:
+        for did in row["dialogue_ids"]:
+            line = source_dialogues.get(did)
+            if line is None or line["source_paragraph_id"] not in row["paragraph_ids"] or did in dialogues:
+                raise ValueError(f"{row['id']} 对白编号不符或重复：{did}")
+            item = dict(line)
+            if name := names.get(line["speaker_id"].removeprefix("CHR-")):
+                item["speaker_name"] = name
+            paragraph = prose.get(line["source_paragraph_id"], "")
+            declaration = (rf"[（(]{re.escape(did)}[）)]\s*[：:]\s*"
+                           rf'["“「『]?{re.escape(line["text"])}["”」』]?(?=[ \t]*(?:\n|$))')
+            if re.search(declaration, paragraph):
+                item.pop("text")
+                item["text_in_paragraph"] = True
+            dialogues[did] = item
+
+    refs = plan["references"]
+    keys = dict.fromkeys(k for row in segments for k in segment_reference_keys(row))
+    operation_keys = (plan.get("product_pack") or {}).get("operations", [])
+    for row in segments:
+        for note in row.get("product_technique_notes", []):
+            for key in operation_keys:
+                if key in note:
+                    keys.setdefault(key, None)
+    references = {}
+    hashes = {}
+    for key in keys:
+        if key not in refs:
+            raise ValueError(f"所选段缺已登记的参考：{key}")
+        checked_file(root, refs[key], hashes)
+        references[key] = refs[key]
+    seams = [
+        {"frame": right["frames"][0],
+         "from": _seam_side(left, "exit_state", requested),
+         "to": _seam_side(right, "entry_state", requested)}
+        for left, right in zip(rows, rows[1:])
+        if (left["id"] in requested) != (right["id"] in requested)
+    ]
+    questions = [q for q in narrative.get("open_questions", [])
+                 if set(re.findall(r"\b(?:DLG|STP)-[A-Z0-9-]+\b", q)) & (dialogues.keys() | paragraph_ids)]
+    result = dict(narrative_id=entry["artifact_id"], narrative_sha256=entry["checksum"],
+                  plan_sha256=hashlib.sha256(plan_bytes).hexdigest(), fps=plan["fps"], segments=segments,
+                  story_paragraphs=[{"paragraph_id": pid, "text": body} for pid, body in prose.items()],
+                  dialogues=list(dialogues.values()), seams=seams, references=references)
+    if missing := {row["id"]: sorted(shared.intersection(row["paragraph_ids"]))
+                   for row in segments
+                   if not row.get("event") and shared.intersection(row["paragraph_ids"])}:
+        result["story_needs_source_review"] = missing
+    if questions:
+        result["open_questions"] = questions
+    return result
 
 
 def product_inputs(root, product, plan, segment, hashes, installed):
@@ -154,8 +255,7 @@ def segment_steps(root, narrative, entry, *, plan=None, kickoff=None, asset_imag
     proposed = plan is not None
     if not proposed:
         plan = read_json(root / PLAN)
-    if (plan["narrative_id"], plan["narrative_sha256"]) != (entry["artifact_id"], entry["checksum"]):
-        raise ValueError("复刻分段与当前编导稿不符")
+    _require_plan_source(plan, entry)
     dialogue = {r["dialogue_id"]: r for r in narrative["dialogues"]}
     paragraphs = {r["paragraph_id"] for r in narrative["story_paragraphs"]}
     refs = plan["references"]
