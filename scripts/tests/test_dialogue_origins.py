@@ -64,6 +64,10 @@ def test_shared_dialogue_evidence_reads_once_and_rechecks_on_next_call(tmp_path,
                 for i, word in enumerate(texts)],
               'dialogues': [dict(dialogue_id=f'DLG-{i}', speaker_id='CHR-A', speaker_status='inferred_unverified',
                 text=word, source_ids=[f'S{i}']) for i, word in enumerate(texts)]}
+    # A revision revalidates the extraction baseline against these same bytes.
+    baseline = tmp_path / 'baseline.json'
+    write_json(baseline, record)
+    record['source_baseline'] = {'path': baseline.name, 'sha256': artifacts.digest(baseline)}
     reads = 0
     read_bytes = Path.read_bytes
     read_text = Path.read_text

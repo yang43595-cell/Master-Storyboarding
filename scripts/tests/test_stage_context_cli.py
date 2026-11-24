@@ -933,9 +933,11 @@ def test_prepare_embeds_active_revision_only_in_existing_startup_packet(tmp_path
             "depends_on": [], "checksum": revision_control.sha256_file(artifact), "user_approved": True,
         }],
     })
-    revision_control.open_change(
-        project, change_id="REV-CONTEXT", tier="T1", logical_ids=["story.main"], reason="修订事实"
-    )
+    command = ["open-change", "--project", str(project), "--change-id", "REV-CONTEXT",
+               "--target-logical-id", "story.main", "--reason", "修订事实"]
+    assert cli.main(command) == 0
+    with pytest.raises(revision_control.RevisionControlError, match="一个活动变更案"):
+        cli.main(command)
     revision_control.confirm_impact(project, change_id="REV-CONTEXT", approval_ref="user:impact")
 
     report = cli.prepare(argparse.Namespace(

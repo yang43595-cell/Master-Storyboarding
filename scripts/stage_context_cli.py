@@ -45,7 +45,7 @@ try:
                                        product_demo_timing_advisory, production_workflow, validate_kickoff)
     from .core.review_publication import ChatScriptApproval, is_recorded_website_script_approval, require_script_approval
     from .core.io import PROJECT_LOCK_RELATIVE, file_lock, project_lock, write_json
-    from .core.revision_control import RevisionControlError, commit_change, guard_action, inspect_revision_status, show_change
+    from .core.revision_control import RevisionControlError, commit_change, guard_action, inspect_revision_status, open_change, show_change
     from .core.review_delta import fingerprint, revision_delta, lightweight_revision
     from .session_usage import checkpoint
 except ImportError:  # direct CLI execution
@@ -76,7 +76,7 @@ except ImportError:  # direct CLI execution
                                       product_demo_timing_advisory, production_workflow, validate_kickoff)
     from core.review_publication import ChatScriptApproval, is_recorded_website_script_approval, require_script_approval
     from core.io import PROJECT_LOCK_RELATIVE, file_lock, project_lock, write_json
-    from core.revision_control import RevisionControlError, commit_change, guard_action, inspect_revision_status, show_change
+    from core.revision_control import RevisionControlError, commit_change, guard_action, inspect_revision_status, open_change, show_change
     from core.review_delta import fingerprint, revision_delta, lightweight_revision
     from session_usage import checkpoint
 
@@ -3174,6 +3174,12 @@ def parser() -> argparse.ArgumentParser:
     authorization.add_argument("--authorization-id", required=True)
     authorization.add_argument("--authorization-ref", required=True, help="用户对本项目及列明阶段的准确流程授权依据")
     authorization.add_argument("--skill", action="append", required=True, help="授权自行验收的阶段，可重复；范围由核心入口核验")
+    change = commands.add_parser("open-change", help="为已采用的一项产物登记内容返修，后续准备复用同一变更案")
+    change.add_argument("--project", required=True)
+    change.add_argument("--change-id", required=True)
+    change.add_argument("--target-logical-id", required=True)
+    change.add_argument("--reason", required=True, help="用户要求的具体修改")
+    change.add_argument("--authorization-id", help="本次适用的既有自主修订授权")
     acceptance = commands.add_parser("accept-artifact", help="凭流程授权及准确自查采用已登记候选；不新增人工确认")
     acceptance.add_argument("--project", required=True)
     acceptance.add_argument("--artifact-id", required=True)
@@ -3304,6 +3310,14 @@ def main(argv: list[str] | None = None) -> int:
         result = status(args)
     elif args.command == "authorize-workflow":
         result = authorize_workflow(args)
+    elif args.command == "open-change":
+        project = Path(args.project).resolve()
+        require_production(project)
+        if not all(value.strip() for value in (args.change_id, args.reason, args.target_logical_id)):
+            raise StageContextError("变更案须有编号、准确目标及本次修改内容")
+        result = open_change(project, change_id=args.change_id, tier="T1", logical_ids=[args.target_logical_id],
+                             reason=args.reason, authorization_id=args.authorization_id)
+        result.update(change_id=args.change_id, target_logical_id=args.target_logical_id)
     elif args.command == "accept-artifact":
         result = accept_artifact(args)
     elif args.command == "adopt-package":

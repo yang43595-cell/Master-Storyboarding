@@ -15,6 +15,7 @@ if __package__:
     from .core import artifacts, asset_refs, character_boards as boards, production_handoff
     from .core.asset_batch_receipt import DIRECT_REQUESTS, summarize_asset_batch_receipt, validate_asset_review_targets
     from .core.io import project_lock, read_json, write_json, sha256_json, utc_now
+    from .core.derived_character_boards import register
     from .core.project_state import write_project_state
     from .core.schema_contracts import require_schema
 else:
@@ -22,6 +23,7 @@ else:
     from core import artifacts, asset_refs, character_boards as boards, production_handoff
     from core.asset_batch_receipt import DIRECT_REQUESTS, summarize_asset_batch_receipt, validate_asset_review_targets
     from core.io import project_lock, read_json, write_json, sha256_json, utc_now
+    from core.derived_character_boards import register
     from core.project_state import write_project_state
     from core.schema_contracts import require_schema
 
@@ -678,6 +680,7 @@ def main():
     compose.add_argument("--board", action="append", nargs=3, default=[], metavar=("AST@FINAL", "HEAD", "WARDROBE"),
                          help="仅在指定范围或来源不唯一时提供，可重复")
     compose.add_argument("--reviewed", help="执行者已实看并通过的准确拼版编号")
+    commands.add_parser("register-derived-boards").add_argument("--board-receipt", required=True, type=Path)
     args = parser.parse_args()
     root = args.project.resolve(strict=True)
     with project_lock(root):
@@ -697,8 +700,11 @@ def main():
             result = show_round(root, args.context_id, narrative, args.targets_json, args.receipt)
         elif args.command == "confirm":
             result = confirm(root, args.shown, read_json(args.confirmation_json), narrative, entries)
-        else:
+        elif args.command == "compose-boards":
             result = compose_boards(root, args.board, args.reviewed, narrative, entries)
+        else:
+            plan = read_json(inside(root, args.board_receipt))
+            result = register(root, plan, narrative, entries, current(entries, LOGICAL))
     print(json.dumps(result, ensure_ascii=False))
 
 

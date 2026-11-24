@@ -88,6 +88,34 @@ def _projection(project: Path, package: dict, value: str | Path, *, subtitle_rev
     return raw.decode("utf-8"), _binding(project, path, raw)
 
 
+def _revision_changes(before, after):
+    """Compact index into the exact old and new JSON used for review."""
+    collections = {'story_paragraphs': 'paragraph_id', 'dialogues': 'dialogue_id',
+                   'asset_requirements': 'asset_id'}
+    changed = {k for k in before.keys() | after.keys()
+               if k not in before or k not in after or before[k] != after[k]}
+    result = {}
+    for field, key in collections.items():
+        if field not in changed:
+            continue
+        before_rows, after_rows = before.get(field), after.get(field)
+        if not all(isinstance(rows, list) and all(isinstance(row, dict) and isinstance(row.get(key), str)
+                   for row in rows) for rows in (before_rows, after_rows)):
+            continue
+        old = {row[key]: row for row in before_rows}
+        new = {row[key]: row for row in after_rows}
+        if len(old) != len(before_rows) or len(new) != len(after_rows):
+            continue  # Unindexed legacy collections stay visible in other_fields.
+        result[field] = {
+            'added': [i for i in new if i not in old],
+            'removed': [i for i in old if i not in new],
+            'updated': [i for i in new if i in old and old[i] != new[i]],
+            'reordered': [i for i in old if i in new] != [i for i in new if i in old],
+        }
+    result['other_fields'] = sorted(changed - result.keys())
+    return result
+
+
 def _archive_reading(project, raw):
     checksum = hashlib.sha256(raw).hexdigest()
     path = _path(project, f"99_历史与废弃/编导手改/{checksum}.md")
@@ -311,6 +339,7 @@ def run(args: argparse.Namespace) -> dict:
                     fields["replaces"] = replaces
                 if entry is None:
                     if replaces:
+                        fields["revision_changes"] = _revision_changes(previous_package, package)
                         _keep_edited_reading(project, prior, previous_package, old_reading)
                         prior.update(status="superseded", superseded_by=ident, superseded_at=utc_now())
                     append_workspace_candidate(project, manifest, fields)
@@ -318,7 +347,10 @@ def run(args: argparse.Namespace) -> dict:
                 elif any(entry.get(k) != v for k, v in fields.items()):
                     entry.update(fields)
                     save_manifest(project, manifest)
-            return {"source_json": source, "markdown": reading, **({"artifact_id": ident} if ident else {})}
+            response = {"source_json": source, "markdown": reading, **({"artifact_id": ident} if ident else {})}
+            if replaces and (changes := (entry or fields).get("revision_changes")) is not None:
+                response.update(replaces=replaces, revision_changes=changes)
+            return response
         if args.command in {"publish", "publish-asset"}:
             require_production(project)
 

@@ -9,13 +9,12 @@ import re
 import subprocess
 from tempfile import TemporaryDirectory
 
-
 def checksum(path):
     with path.open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def export(project, plan, output, ffmpeg="ffmpeg", ffprobe="ffprobe", short_edge=540):
+def export(project, plan, output, ffmpeg="ffmpeg", ffprobe="ffprobe", short_edge=540, *, segment_ids=None):
     project = project.resolve()
     output = output.resolve()
     if not output.is_relative_to(project) or short_edge <= 0 or short_edge % 2:
@@ -24,11 +23,16 @@ def export(project, plan, output, ffmpeg="ffmpeg", ffprobe="ffprobe", short_edge
     fps = Fraction(str(plan["fps"]))
     if not 0 < fps <= 240:
         raise ValueError("分段帧率无效")
+    segments = [row for row in plan["segments"] if row["mode"] == "depth"]
+    if segment_ids is not None:
+        requested = set(segment_ids)
+        unknown = requested - {row["id"] for row in segments}
+        if not requested or unknown:
+            raise ValueError("须指定计划中的深度段：" + "、".join(sorted(unknown)))
+        segments = [row for row in segments if row["id"] in requested]
     hashes, clips, source_rates = {}, {}, {}
     with TemporaryDirectory(dir=output) as scratch:
-        for row in plan["segments"]:
-            if row["mode"] != "depth":
-                continue
+        for row in segments:
             sid = row["id"]
             if not re.fullmatch(r"[\w-]+", sid) or sid in clips:
                 raise ValueError("深度段 ID 无效或重复")
@@ -92,6 +96,7 @@ if __name__ == "__main__":
     parser.add_argument("--ffmpeg", default="ffmpeg")
     parser.add_argument("--ffprobe", default="ffprobe")
     parser.add_argument("--short-edge", type=int, default=540)
+    parser.add_argument("--segment-id", action="append", help="局部导出指定深度段，可重复")
     args = parser.parse_args()
     print(json.dumps(export(args.project, json.loads(args.plan.read_text()), args.output,
-                            args.ffmpeg, args.ffprobe, args.short_edge), ensure_ascii=False, indent=2))
+                            args.ffmpeg, args.ffprobe, args.short_edge, segment_ids=args.segment_id), ensure_ascii=False, indent=2))

@@ -436,3 +436,64 @@ def test_resume_image_node_checkpoints_creation_and_reuses_exact_node(monkeypatc
         ui.resume_image_node(saved[0], save, 10, 10)
     with pytest.raises(ImageUIError, match='another canvas'):
         ui.resume_image_node(dict(receipt, canvas_id='other'), save, 10, 10)
+
+
+def test_fixed_face_replacement_requires_current_card_certification(monkeypatch):
+    ui, page, workspace = adapter()
+    source = workspace.graph['nodes'][0]
+    url = source['data']['outputs']['image']['value']['url']
+    cert = dict(assetId='asset-valid', sourceUrl=url, imageDigest=SOURCE_HASH)
+    source['data']['faceCertification'] = {'characterId': 'person', 'imageDigest': 'old'}
+    monkeypatch.setattr(Control, 'and_', lambda self, _: self, raising=False)
+    from playwright import sync_api
+
+    readiness = []
+    class CertificationButtonExpectation:
+        def to_be_enabled(self, *, timeout):
+            readiness.append(timeout)
+            assert not any(name == '人脸认证' for name, _ in page.clicks)
+
+    monkeypatch.setattr(sync_api, 'expect', lambda button: CertificationButtonExpectation())
+    def observe(check, operation, *, timeout):
+        assert check(workspace.graph) is None
+        source['data']['faceCertification'] = cert
+        return check(workspace.graph)
+    monkeypatch.setattr(ui, '_wait_canvas', observe)
+    attempts = {}
+    saved = []
+    for _ in range(2):
+        result = ui.ensure_face_certification('source', SOURCE_HASH, attempts, lambda: saved.append(dict(attempts)))
+        assert result['faceCertification'] == cert
+    assert readiness == [25_000]
+    assert saved == [{'source': SOURCE_HASH}]
+    assert sum(name == '人脸认证' for name, _ in page.clicks) == 1
+    with pytest.raises(ImageUIError, match='bytes differ'):
+        ui.ensure_face_certification('source', 'b' * 64, attempts, lambda: None)
+
+
+def test_supplemental_image_finishes_on_its_own_card(tmp_path, monkeypatch):
+    import hashlib
+    from scripts.core import redframe_image_ui as image_ui
+    from scripts.core.character_assets import requires_face_certification
+
+    ui, _, workspace = adapter()
+    photo = tmp_path / '补图.png'
+    photo.write_bytes(b'supplemental image')
+    sha = workspace.hash = hashlib.sha256(photo.read_bytes()).hexdigest()
+    node = workspace.graph['nodes'][0]
+    url = node['data']['outputs']['image']['value']['url']
+    cert = dict(assetId='new-asset', sourceUrl=url, imageDigest=sha)
+    monkeypatch.setattr(image_ui, '_project_face_asset', lambda project, asset, kind:
+                        requires_face_certification({'category': 'CHARACTER'}, kind))
+    receipt = dict(target='AST-HERO@PHOTO2', file=dict(path=photo.name, sha256=sha),
+                   image_result=dict(node_id='source', output=url, status='output_observed'),
+                   face_certifications={'old-card': dict(node_id='old-card', faceCertification=cert)})
+    assert image_ui.image_resume_step(tmp_path, receipt) == 'certify_original_card'
+    node['data']['faceCertification'] = cert
+    ui.finish_asset_image(tmp_path, receipt, lambda: None, output_kind='大头照')
+    assert image_ui.image_resume_step(tmp_path, receipt) == 'review_local_file'
+    receipt['image_result']['output'] = url + '-stale'
+    with pytest.raises(ImageUIError, match='original output changed'):
+        ui.finish_asset_image(tmp_path, receipt, lambda: None, output_kind='大头照')
+    assert not requires_face_certification({'category': 'CHARACTER'}, '服装')
+    assert not requires_face_certification({'category': 'LOCATION'}, '环境')

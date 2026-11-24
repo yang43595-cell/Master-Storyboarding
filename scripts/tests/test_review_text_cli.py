@@ -1171,6 +1171,8 @@ def test_replace_returned_candidate_keeps_user_edits_and_blocks_late_approval(tm
     first = deliver("R02", "--replaces", "N-R01")
     assert first == deliver("R02", "--replaces", "N-R01")
     assert first["artifact_id"] == "N-R02"
+    assert first["replaces"] == "N-R01"
+    assert first["revision_changes"] == {"other_fields": ["revision"]}
     previous, current = artifacts.load_manifest(tmp_path)["artifacts"]
     assert previous["status"] == "superseded" and current["status"] == "candidate"
     assert previous["superseded_by"] == current["artifact_id"] and current["replaces"] == previous["artifact_id"]
@@ -1182,3 +1184,19 @@ def test_replace_returned_candidate_keeps_user_edits_and_blocks_late_approval(tm
         deliver("R03", "--replaces", "N-R01")
     assert not (tmp_path / "R03.md").exists()
     assert stage_cli.confirm_script_in_chat(chat_args(tmp_path, tmp_path / "R02.json", "R02"))["artifact"]["status"] == "current"
+
+
+def test_returned_script_delta_lists_changed_content_and_reordering():
+    before = dict(story_paragraphs=[{'paragraph_id': key, 'text': key} for key in ['A', 'B', 'C']],
+                  dialogues=[], asset_requirements=[], open_questions=[])
+    after = dict(before, story_paragraphs=[{'paragraph_id': 'B', 'text': '新'},
+                                            {'paragraph_id': 'D', 'text': '增'}, before['story_paragraphs'][0]],
+                 open_questions=['疑点'])
+    assert cli._revision_changes(before, after) == {
+        'story_paragraphs': {'added': ['D'], 'removed': ['C'], 'updated': ['B'], 'reordered': True},
+        'other_fields': ['open_questions'],
+    }
+
+    legacy = {'story_paragraphs': [{'text': 'old'}]}
+    assert cli._revision_changes(legacy, before) == {
+        'other_fields': ['asset_requirements', 'dialogues', 'open_questions', 'story_paragraphs']}

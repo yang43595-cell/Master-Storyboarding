@@ -45,4 +45,4 @@ ffmpeg -hide_banner -nostats -i '<待核文件>' -map 0:v:0 -an \
 
 ## 红帧首轮写入前导出
 
-分段计划使用共用深度母片时，在任何上传前运行 `python scripts/prepare_depth_clips.py --project <项目> --plan <复刻分段.json> --output <项目内新目录>`。工具按 reference_frames 半开区间裁准确帧、保比例放大、去音轨，核对输出帧数、帧率和尺寸。默认短边 540，本次 9:16 输出为 540×960；其他模型按实际规格用 --short-edge。ffmpeg 和 ffprobe 可传绝对路径。把返回的分段路径、字节哈希、源窗和从零开始的本地帧窗绑定到本轮草稿。产品实操段沿用本轮实际选定的操作视频。
+分段计划使用共用深度母片时，在任何上传前运行 `python scripts/prepare_depth_clips.py --project <项目> --plan <复刻分段.json> --output <项目内新目录>`。若只调整某段深度窗，复用原输出目录，加 `--segment-id <段号>`，多段可重复指定；只更新返回段的草稿引用。工具按 reference_frames 半开区间裁准确帧、保比例放大、去音轨，核对输出帧数、帧率和尺寸。默认短边 540，本次 9:16 输出为 540×960；其他模型按实际规格用 --short-edge。ffmpeg 和 ffprobe 可传绝对路径。把返回的分段路径、字节哈希、源窗和从零开始的本地帧窗绑定到本轮草稿。产品实操段沿用本轮实际选定的操作视频。

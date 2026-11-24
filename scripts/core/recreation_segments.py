@@ -26,6 +26,11 @@ def checked_file(root, item, hashes):
         raise ValueError(f"参考已换版 {item['path']}")
 
 
+def segment_reference_keys(segment):
+    motion = segment.get("motion")
+    return [*([motion] if motion else []), *segment["appearance"]]
+
+
 def product_inputs(root, product, plan, segment, hashes, installed):
     if not product or product["mode"] == "none":
         raise ValueError("请用户先确认本段使用的准确商品")
@@ -222,7 +227,7 @@ def segment_steps(root, narrative, entry, *, plan=None, kickoff=None, asset_imag
                 if issues := asset_problems.get(sid):
                     raise ValueError("；".join(issues))
                 packaging = None
-                if row["mode"] == "product" or (product and product.get("product_usage") == "display"
+                if row["mode"] in ("product", "product-display") or (product and product.get("product_usage") == "display"
                         and product_paragraphs.intersection(row["paragraph_ids"])):
                     packaging = product_inputs(root, product, plan, row, hashes, installed)
                 ticket = job_path(root, sid)
@@ -243,25 +248,31 @@ def segment_steps(root, narrative, entry, *, plan=None, kickoff=None, asset_imag
                         or row["director_return"] != return_binding(row, refs, job["job_sha256"])
                     ):
                         raise ValueError("局部导演改法缺失或已变化，请按原段回传")
-                if row["mode"] not in ("depth", "product") or refs[row["motion"]]["role"] != row["mode"]:
-                    raise ValueError("主参考职责与段落不符")
-                window = row["reference_frames"]
-                if len(window) != 2 or not all(type(frame) is int for frame in window):
-                    raise ValueError("参考帧界无效")
-                if not 0 <= window[0] < window[1] <= refs[row["motion"]]["frame_count"]:
-                    raise ValueError("动作参考窗越界")
-                if row["mode"] == "depth" and window[1] - window[0] != end - start:
-                    raise ValueError("深度窗与剧情窗帧数不同")
-                motion = refs[row["motion"]]
-                if Path(motion["path"]).suffix.lower() not in {".mp4", ".mov", ".webm", ".mkv", ".m4v"}:
-                    raise ValueError("动作参考须为视频")
-                if (
-                    row["mode"] == "depth"
-                    and "source_start_frame" in motion
-                    and motion["source_start_frame"] + window[0] != start
-                ):
-                    raise ValueError("深度参考窗与原片起点不符")
-                for key in [row["motion"], *row["appearance"]]:
+                if row["mode"] in ("text", "product-display"):
+                    if row.get("motion") is not None or row["reference_frames"]:
+                        raise ValueError("仅用文字和图像的段落不能带视频")
+                elif row["mode"] in ("depth", "product"):
+                    if refs[row["motion"]]["role"] != row["mode"]:
+                        raise ValueError("主参考职责与段落不符")
+                    window = row["reference_frames"]
+                    if len(window) != 2 or not all(type(frame) is int for frame in window):
+                        raise ValueError("参考帧界无效")
+                    if not 0 <= window[0] < window[1] <= refs[row["motion"]]["frame_count"]:
+                        raise ValueError("动作参考窗越界")
+                    if row["mode"] == "depth" and window[1] - window[0] != end - start:
+                        raise ValueError("深度窗与剧情窗帧数不同")
+                    motion = refs[row["motion"]]
+                    if Path(motion["path"]).suffix.lower() not in {".mp4", ".mov", ".webm", ".mkv", ".m4v"}:
+                        raise ValueError("动作参考须为视频")
+                    if (
+                        row["mode"] == "depth"
+                        and "source_start_frame" in motion
+                        and motion["source_start_frame"] + window[0] != start
+                    ):
+                        raise ValueError("深度参考窗与原片起点不符")
+                else:
+                    raise ValueError("未知的复刻参考职责")
+                for key in segment_reference_keys(row):
                     ref = refs[key]
                     checked_file(root, ref, hashes)
                     path = project_path(root, ref["path"])
@@ -280,7 +291,7 @@ def segment_steps(root, narrative, entry, *, plan=None, kickoff=None, asset_imag
                 if sid in written:
                     prompt, previous_basis = written[sid]
                     basis = sha256_json(
-                        [entry["checksum"], fps, row, [refs[k] for k in [row["motion"], *row["appearance"]]]]
+                        [entry["checksum"], fps, row, [refs[k] for k in segment_reference_keys(row)]]
                     )
                     if previous_basis is not None and previous_basis != basis:
                         steps.append(step)
@@ -288,7 +299,7 @@ def segment_steps(root, narrative, entry, *, plan=None, kickoff=None, asset_imag
                     if (
                         not isinstance(prompt, str)
                         or not prompt.strip()
-                        or any("@" + k not in prompt for k in [row["motion"], *row["appearance"]])
+                        or any("@" + k not in prompt for k in segment_reference_keys(row))
                         or any(dialogue[k]["text"] not in prompt for k in row["dialogue_ids"])
                     ):
                         step["reason"] = f"{sid} 提示词须补齐参考或原对白"

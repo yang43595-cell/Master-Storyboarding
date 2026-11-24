@@ -39,3 +39,25 @@ def test_final_depth_cache_checks_window_and_bytes(tmp_path, monkeypatch):
     segment["frames"] = [102, 106]
     with pytest.raises(ValueError, match="帧窗"):
         depth.export(tmp_path, plan, output)
+
+
+def test_scoped_depth_repair_only_reads_requested_media(tmp_path, monkeypatch):
+    source = tmp_path / 'depth.mp4'
+    source.write_bytes(b'master')
+    ref = dict(role='depth', path=source.name, sha256=depth.checksum(source), source_start_frame=0, frame_count=6)
+    chosen = dict(id='B', mode='depth', motion='master', reference_frames=[1, 4], frames=[1, 4])
+    plan = dict(fps=30, references={'master': ref}, segments=[
+        dict(id='A', mode='depth', motion='unused'), chosen, dict(id='C', mode='product')])
+    probes = []
+
+    def probe(args):
+        probes.append(args[-1])
+        return json.dumps({'streams': [dict(codec_type='video', avg_frame_rate='30', r_frame_rate='30',
+                                           nb_read_frames='3', start_time='0', width=540, height=960)]})
+
+    monkeypatch.setattr(depth.subprocess, 'check_output', probe)
+    monkeypatch.setattr(depth.subprocess, 'run', lambda args, check: Path(args[-1]).write_bytes(b'clip'))
+    assert list(depth.export(tmp_path, plan, tmp_path / 'out', segment_ids=['B'])) == ['B']
+    assert len(probes) == 2
+    with pytest.raises(ValueError, match='深度段'):
+        depth.export(tmp_path, plan, tmp_path / 'out', segment_ids=['B', 'C'])

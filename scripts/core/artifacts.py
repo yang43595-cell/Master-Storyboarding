@@ -105,7 +105,8 @@ def save_manifest(project_root: Path, manifest: dict[str, Any]) -> None:
     previous = load_manifest(project_root)
     prior_protected = {item.get("artifact_id"): item for item in previous.get("artifacts", [])
                        if item.get("agent_acceptance") or
-                       item.get("asset_review_sha256") and item.get("status") != "candidate" or
+                       (item.get("asset_review_sha256") or item.get("derived_character_boards_sha256"))
+                       and item.get("status") != "candidate" or
                        item.get("logical_id") in _FORMAL_PACKAGE_LOGICAL_IDS and item.get("status") == "current"}
     prior_current = {ident: item for ident, item in prior_protected.items() if item.get("status") == "current"}
     guarded_logical_ids = _FORMAL_PACKAGE_LOGICAL_IDS | {
@@ -121,6 +122,8 @@ def save_manifest(project_root: Path, manifest: dict[str, Any]) -> None:
         protected_fields = immutable + (("quality_evidence", "product_reference") if existing.get("agent_acceptance") else ())
         if existing.get("asset_review_sha256"):
             protected_fields += ("asset_review_sha256", "confirmation_ref")
+        if existing.get("derived_character_boards_sha256"):
+            protected_fields += ("derived_character_boards_sha256", "confirmation_ref")
         if any(item.get(key) != existing.get(key) for key in protected_fields):
             raise ValueError("save_manifest 不能改写 current 正式稿件身份、来源或确认 hash；请创建经校验的新修订")
     for item in manifest.get("artifacts", []):
@@ -901,11 +904,14 @@ def promote_candidate(project_root: Path, logical_id: str, artifact_id: str, *,
     # Compute on the adopted graph before replacement; existing manual callers
     # may already have invalidated it, so stale rows must remain idempotent.
     if logical_id == 'visual.asset.manifest':
-        delegated = new_item.get('user_approved') is False
+        derived = new_item.get('derived_character_boards_sha256')
+        if derived and not _derived_character_boards_receipt_valid(new_item, project_root):
+            raise ValueError('机械拼版资产导出缺少有效的两源确认记录')
+        delegated = new_item.get('user_approved') is False and not derived
         if delegated and not _asset_review_receipt_valid(new_item, project_root):
             raise ValueError('代审资产导出缺少有效的逐图采用记录')
         replacement = asset_export_snapshot(project_root, new_item, file_digest=file_digest)[1]
-        if delegated and not replacement:
+        if (delegated or derived) and not replacement:
             raise ValueError('代审资产导出缺少有效的逐图采用记录')
         baseline = (asset_export_snapshot(project_root, active[0], previous_asset_snapshot, file_digest=file_digest)[1]
                     if active else None)
@@ -1094,10 +1100,26 @@ def require_current_agent_acceptance(entry, state, root, *, file_digest=None):
     return validate_agent_acceptance(root, entry, state=state, file_digest=file_digest)
 
 
+def _derived_character_boards_receipt_valid(entry, root):
+    if (entry.get('logical_id') != 'visual.asset.manifest'
+            or entry.get('type') != 'visual-asset-manifest'
+            or entry.get('user_approved') is not False):
+        return False
+    try:
+        path = project_path(root, entry['confirmation_ref'])
+        return (path.is_relative_to(root.resolve())
+                and digest(path) == entry['derived_character_boards_sha256']
+                and read_json(path).get('kind') == 'derived-character-boards')
+    except (AttributeError, KeyError, OSError, TypeError, ValueError):
+        return False
+
+
 def artifact_is_adopted(entry, state, root=None):
     """Read human adoption or separately authorized, byte-bound agent acceptance."""
     if artifact_is_confirmed(entry, state, root):
         return True
+    if entry.get('derived_character_boards_sha256'):
+        return _eligible_agent_adoption(entry, state, root) and _derived_character_boards_receipt_valid(entry, root)
     if entry.get('asset_review_sha256'):
         return _eligible_agent_adoption(entry, state, root) and _asset_review_receipt_valid(entry, root)
     if not entry.get('agent_acceptance'):
