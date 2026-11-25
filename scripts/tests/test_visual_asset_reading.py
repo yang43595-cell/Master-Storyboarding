@@ -26,6 +26,7 @@ class WebReadingTests(unittest.TestCase):
             'docs/rules/visual-production.md': {'导演稿之后的生产顺序'},
             'skills/asset-image-assistant/SKILL.md': {'后续交接'},
             CONTINUITY: {'按任务读取'},
+            'docs/rules/execution.md': {'等待与工具回传'},
         }.items():
             import re
             original = (ROOT / ref).read_text(encoding='utf-8')
@@ -36,8 +37,8 @@ class WebReadingTests(unittest.TestCase):
                     self.assertIn(section, projected)
             self.assertLess(len(projected), len(original))
             self.assertEqual(asset._writing_rules(ref, original, False),
-                             projected if ref == CONTINUITY else original)
-        for ref in ['docs/rules/execution.md', 'PROJECT_RULES.md',
+                             projected if ref in {CONTINUITY, 'docs/rules/execution.md'} else original)
+        for ref in ['PROJECT_RULES.md',
                     'skills/_shared/product-reference.md',
                     'skills/voiceover-to-video-script/references/prompt-language-hard-rules.md']:
             original = (ROOT / ref).read_text(encoding='utf-8')
@@ -53,7 +54,7 @@ class WebReadingTests(unittest.TestCase):
             execution = 'docs/rules/execution.md'
             self.assertEqual(rules[execution],
                              asset._writing_rules(execution, (ROOT / execution).read_text(), True))
-            self.assertIn('## 等待与工具回传', rules[execution])
+            self.assertNotIn('## 等待与工具回传', rules[execution])
             self.assertIn('用户调整资产图需求', rules['docs/rules/visual-production.md'])
             self.assertNotIn('## 导演稿之后的生产顺序', rules['docs/rules/visual-production.md'])
             self.assertNotIn('docs/rules/experiments.md', rules)
@@ -78,7 +79,7 @@ class WebReadingTests(unittest.TestCase):
                     request['rows'] = [{'requirement': {'category': 'PROP', 'source_event_ids': []}}]
                 rules = asset.build_task_package(request)['rules']
                 self.assertEqual(expected, rules[ref])
-                self.assertIn('## 等待与工具回传', rules['docs/rules/execution.md'])
+                self.assertNotIn('## 等待与工具回传', rules['docs/rules/execution.md'])
 
         for title in required:
             with self.subTest(missing_section=title):
@@ -309,6 +310,7 @@ class WebReadingTests(unittest.TestCase):
         import subprocess
         import visual_asset_codex as bridge
         request = self.request('物品', 'asset-library')
+        request['reference_paths'] = []
         folder = self.root/'transport'
         package, _ = asset.prepare(folder, request)
         result = {'prompt': '隔离测试返回，不用于生成。', 'passed': True,
@@ -318,7 +320,7 @@ class WebReadingTests(unittest.TestCase):
             self.assertIn(package, kwargs['input'])
             return subprocess.CompletedProcess(command, 0, '', '')
         with patch.object(bridge, '_run_prompt_cli', side_effect=simulated_cli) as cli:
-            bridge.run('simulated-codex', folder, 'draft', request, '', package)
+            bridge.write_prompt('simulated-codex', folder, {**request, 'prompt': ''}, package)
         self.assertEqual(cli.call_count, 1)
 
     def test_design_template_and_real_transport_use_normalized_body_without_changing_source(self):
@@ -340,6 +342,11 @@ class WebReadingTests(unittest.TestCase):
                 request.update(subject='海城高级中学角色', template_notes='保留标识4K-24；量规4K。',
                     allow_unreferenced_design=True, reference_records=records,
                     reference_paths=[] if not records else ['confirmed-face.png'])
+                if records:
+                    from PIL import Image
+                    face = self.root / 'face.png'
+                    Image.new('RGB', (32, 32)).save(face)
+                    request['reference_paths'] = [str(face)]
                 seed, path = library.template_prompt(kind, request['subject'], request['template_notes'],
                     allow_unreferenced_design=True, reference_records=records, has_references=bool(records))
                 request.update(prompt=seed, template_source=path)
@@ -360,18 +367,18 @@ class WebReadingTests(unittest.TestCase):
                 if records:
                     self.assertIn('图1：已确认大头照，唯一面部身份来源', seed)
                     self.assertIn('穿搭设定：', seed)
-                result = {'prompt': seed, 'passed': True, 'observations': [], 'uncertainties': [],
-                          'checks': [c['id'] + '：本测试检查证据' for c in json.loads(package)['review_checks']], 'issues': []}
+                result = {'prompt': seed}
                 def simulated_cli(command, **kwargs):
                     delivered = kwargs['input']
                     self.assertIn(package, delivered)
+                    self.assertIn(seed, delivered)
                     self.assertIn('生成一张虚构人物的正面大头照' if kind == '大头照' else '穿搭设定：', delivered)
                     self.assertIn('保留标识4K-24', delivered)
                     self.assertNotIn('4K，高细节', delivered)
                     (folder / 'draft.json').write_text(json.dumps(result), encoding='utf-8')
                     return subprocess.CompletedProcess(command, 0, '', '')
                 with patch.object(bridge, '_run_prompt_cli', side_effect=simulated_cli) as cli:
-                    bridge.run('simulated-codex', folder, 'draft', request, seed, package)
+                    bridge.write_prompt('simulated-codex', folder, request, package)
                 self.assertEqual(cli.call_count, 1)
         self.assertEqual(source.read_bytes(), before)
 

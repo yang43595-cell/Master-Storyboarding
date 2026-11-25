@@ -227,7 +227,7 @@ class CharacterRoutes(unittest.TestCase):
         self.assertEqual(Path(board['original']).read_bytes(), path.read_bytes())
         self.assertEqual((board['width'], board['height']), (750, 360))
         service.select({**task, 'asset_id': board['id']})
-        confirmed = service.confirm({**task, 'confirm': True})['rows'][0]['job']['steps'][index]
+        confirmed = service.confirm({**task, 'asset_id': board['id'], 'confirm': True})['rows'][0]['job']['steps'][index]
         self.assertEqual(len(confirmed['project_confirmation']['dependency_confirmations']), 2)
 
     def test_legacy_board_hides_generation_without_rewriting_saved_task(self):
@@ -302,31 +302,6 @@ class CharacterRoutes(unittest.TestCase):
         self.assertIn('用参考图 2 制作同一套服装', request['prompt'])
         self.assertIn('参考图 3 是服装灰模，只参考', request['prompt'])
         self.assertNotIn('[逐件填写款式、颜色、材质和叠穿方式]', request['prompt'])
-
-    def test_character_template_fields_block_review_and_existing_approval(self):
-        skill = self.lib.projects.skill
-        for kind, template, completed in (
-            ('大头照', '[具体脸型]', '鹅蛋脸'),
-            ('服装', '[逐件填写款式、颜色、材质和叠穿方式]', '灰色棉质衬衫叠穿深蓝针织背心'),
-        ):
-            with self.subTest(kind=kind):
-                checks = [c['id'] + '：合成测试' for c in skill.checks('project', kind)]
-                review = skill.validate_review({'prompt': template, 'passed': True, 'checks': checks, 'issues': []},
-                                               'project', kind)
-                self.assertFalse(review['passed'])
-                self.assertIn(template, review['issues'][0])
-                step = {'kind': kind, 'prompt': template, 'audit': {'status': 'passed', 'prompt': template,
-                        'skill_execution': {'mode': 'project', 'version': skill.profile()['version']}},
-                        'prompt_approval': {'prompt': template}}
-                job = {'project_id': self.project['id'], 'steps': [step]}
-                self.assertFalse(self.lib.prompt_is_approved(job, 0))
-                review = skill.validate_review({'prompt': completed, 'passed': True, 'checks': checks, 'issues': []},
-                                               'project', kind)
-                self.assertTrue(review['passed'])
-                self.assertEqual(review['issues'], [])
-                step.update(prompt=completed, prompt_approval={'prompt': completed})
-                step['audit']['prompt'] = completed
-                self.assertTrue(self.lib.prompt_is_approved(job, 0))
 
     def test_upstream_clothes_ignore_skin_and_preserve_unassigned_legacy_image(self):
         path=Path(self.project['path'])/'narrative.json'

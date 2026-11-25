@@ -5,12 +5,14 @@ fixtures assert positive repairs plus source, authority and archive boundaries.
 """
 import argparse
 import copy
+import hashlib
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -176,6 +178,28 @@ def test_light_revision_requires_real_change_description_and_keeps_scope(tmp_pat
     value = json.loads(request.read_text()); value["scope"] = "STP-002"; write(request, value)
     cli.prepare(args)
     with pytest.raises(cli.StageContextError, match="任务依据"): cli.review_pack(revision)
+
+
+@pytest.mark.parametrize("formal", [False, True])
+def test_review_round_key_is_computed_only_for_the_formal_archive(tmp_path, monkeypatch, formal):
+    project, _, _, candidate, _, _, _ = fixture(tmp_path)
+    hashed = []
+
+    def track_sha256(data):
+        hashed.append(data)
+        return hashlib.sha256(data)
+
+    monkeypatch.setattr(cli, "hashlib", SimpleNamespace(sha256=track_sha256))
+    report = cli.review_pack(review_args(project, candidate, formal_archive=formal))
+    scope_path = Path(report["review_scope_path"])
+    scope = json.loads(scope_path.read_text(encoding="utf-8"))
+    seed = json.dumps([scope, None], ensure_ascii=False, sort_keys=True).encode("utf-8")
+    assert hashed.count(seed) == int(formal)
+    folder = project / cli.CONTEXT_DIR
+    if formal:
+        folder = folder / "review_rounds" / hashlib.sha256(seed).hexdigest()[:16]
+    assert scope_path == folder / "review_scope.json"
+    assert (folder / "review_packet.md").read_bytes() == Path(report["path"]).read_bytes()
 
 
 def test_legacy_byte_hash_scope_remains_strict_and_cannot_downgrade(tmp_path):

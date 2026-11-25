@@ -20,7 +20,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from . import confirmation_scope
-from .io import project_lock, project_locked, read_json, sha256_json, utc_now, write_json
+from .io import canonical_json_bytes, project_lock, project_locked, read_json, sha256_json, utc_now, write_json
 from .project_state import load_project_state
 
 MANIFEST_PATH = Path("00_项目管理") / "artifact_manifest.json"
@@ -236,7 +236,7 @@ def _video_revision_visual_rows(root, payload, segments, prior, director, known_
     ignored = {"generation_segments", "revision", "document", "self_check", "segment_reconciliation"}
     before = {key: value for key, value in baseline.items() if key not in ignored}
     after = {key: value for key, value in payload.items() if key not in ignored}
-    if sha256_json(before) != sha256_json(after):
+    if canonical_json_bytes(before) != canonical_json_bytes(after):
         return segments
     if ([row["segment_id"] for row in previous] != [row["segment_id"] for row in segments]
             or {shot for row in previous for shot in source_shot_ids(row)} != known_shots):
@@ -245,7 +245,7 @@ def _video_revision_visual_rows(root, payload, segments, prior, director, known_
            or any(old.get(key) != new.get(key) for key in ("source_dialogue_ids", "source_paragraph_ids"))
            for old, new in zip(previous, segments)):
         return segments
-    return [new for old, new in zip(previous, segments) if sha256_json(old) != sha256_json(new)]
+    return [new for old, new in zip(previous, segments) if canonical_json_bytes(old) != canonical_json_bytes(new)]
 
 
 def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
@@ -632,7 +632,7 @@ def unchanged_director_usage(project, baseline, replacement, shot_ids) -> bool:
             if not set(shot_ids) <= scope.keys():
                 return False
             # Retain the scene's shared context and all preceding scenes.
-            prefixes.append(sha256_json(scenes[:max(scope[shot] for shot in shot_ids) + 1]))
+            prefixes.append(canonical_json_bytes(scenes[:max(scope[shot] for shot in shot_ids) + 1]))
             context = {key: value for key, value in package.items() if key not in {
                 'scenes', 'revision', 'status', 'human_readable_path', 'rebuild_provenance'}}
             timing = context.get('timing_basis')
@@ -640,7 +640,7 @@ def unchanged_director_usage(project, baseline, replacement, shot_ids) -> bool:
                 # The descriptive summary may change with a later scene's budget.
                 # Timing status and exact source identity remain bound.
                 context['timing_basis'] = {key: value for key, value in timing.items() if key != 'source_type'}
-            package_contexts.append(sha256_json(context))
+            package_contexts.append(canonical_json_bytes(context))
     except (AttributeError, KeyError, OSError, TypeError, ValueError):
         return False
     return prefixes[0] == prefixes[1] and package_contexts[0] == package_contexts[1]
@@ -905,15 +905,11 @@ def promote_candidate(project_root: Path, logical_id: str, artifact_id: str, *,
     # Compute on the adopted graph before replacement; existing manual callers
     # may already have invalidated it, so stale rows must remain idempotent.
     if logical_id == 'visual.asset.manifest':
-        derived = new_item.get('derived_character_boards_sha256')
-        if derived and not _derived_character_boards_receipt_valid(new_item, project_root):
-            raise ValueError('机械拼版资产导出缺少有效的两源确认记录')
-        delegated = new_item.get('user_approved') is False and not derived
-        if delegated and not _asset_review_receipt_valid(new_item, project_root):
-            raise ValueError('代审资产导出缺少有效的逐图采用记录')
+        if new_item.get('user_approved') is not True:
+            raise ValueError('资产清单须有用户对准确图片的确认')
         replacement = asset_export_snapshot(project_root, new_item, file_digest=file_digest)[1]
-        if (delegated or derived) and not replacement:
-            raise ValueError('代审资产导出缺少有效的逐图采用记录')
+        if replacement is None:
+            raise ValueError('资产表含未获用户确认或字节不符的输出')
         baseline = (asset_export_snapshot(project_root, active[0], previous_asset_snapshot, file_digest=file_digest)[1]
                     if active else None)
         unchanged_edges, segments = asset_output_impact(project_root, manifest, baseline, replacement)
@@ -1064,28 +1060,6 @@ def artifact_is_confirmed(entry, state, root=None):
     return bool(root and formal_adoption(entry, root))
 
 
-def _asset_review_receipt_valid(entry, root):
-    if (entry.get('logical_id') != 'visual.asset.manifest' or entry.get('type') != 'visual-asset-manifest'
-            or entry.get('user_approved') is not False or not entry.get('asset_review_sha256')
-            or not entry.get('checksum')):
-        return False
-    try:
-        path = project_path(root, entry['path_or_url'])
-        receipt = project_path(root, entry['confirmation_ref'])
-        if (not path.is_relative_to(Path(root).resolve()) or not receipt.is_relative_to(Path(root).resolve())
-                or digest(path) != entry['checksum']):
-            return False
-        raw = receipt.read_bytes()
-        if hashlib.sha256(raw).hexdigest() != entry['asset_review_sha256']:
-            return False
-        record = json.loads(raw)
-        return (record.get('kind') == 'delegated-asset-export' and record.get('revision') == entry['revision']
-                and 'visual-assets-' + record['id'] == entry['artifact_id']
-                and any(item['confirmation'].get('agent_review') for item in record['items']))
-    except (AttributeError, KeyError, OSError, TypeError, ValueError):
-        return False
-
-
 def _eligible_agent_adoption(entry, state, root):
     return (root is not None and entry.get('status') == 'current' and entry.get('user_approved') is False
             and not (entry.get('candidate_test') or entry.get('production_blocked') or state.get('candidate_test')))
@@ -1101,28 +1075,12 @@ def require_current_agent_acceptance(entry, state, root, *, file_digest=None):
     return validate_agent_acceptance(root, entry, state=state, file_digest=file_digest)
 
 
-def _derived_character_boards_receipt_valid(entry, root):
-    if (entry.get('logical_id') != 'visual.asset.manifest'
-            or entry.get('type') != 'visual-asset-manifest'
-            or entry.get('user_approved') is not False):
-        return False
-    try:
-        path = project_path(root, entry['confirmation_ref'])
-        return (path.is_relative_to(root.resolve())
-                and digest(path) == entry['derived_character_boards_sha256']
-                and read_json(path).get('kind') == 'derived-character-boards')
-    except (AttributeError, KeyError, OSError, TypeError, ValueError):
-        return False
-
-
 def artifact_is_adopted(entry, state, root=None):
     """Read human adoption or separately authorized, byte-bound agent acceptance."""
     if artifact_is_confirmed(entry, state, root):
         return True
-    if entry.get('derived_character_boards_sha256'):
-        return _eligible_agent_adoption(entry, state, root) and _derived_character_boards_receipt_valid(entry, root)
-    if entry.get('asset_review_sha256'):
-        return _eligible_agent_adoption(entry, state, root) and _asset_review_receipt_valid(entry, root)
+    if entry.get('logical_id') == 'visual.asset.manifest':
+        return False
     if not entry.get('agent_acceptance'):
         return False
     try:

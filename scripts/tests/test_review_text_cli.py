@@ -598,7 +598,14 @@ def asset_review_site(tmp_path, kickoff_review_site, monkeypatch):
 
 def publish_asset_args(project, receipt, *, ast="AST-PROP-PAPER", output_id="paper",
                        operation=OPERATION[:-1] + "6", references=(), script_publication="publish.json"):
-    args = ["publish-asset", "--project", str(project), "--script-publication", script_publication,
+    from scripts import chat_asset_review as review
+    image = project / "candidate.png"
+    source = next((e for e in artifacts.load_manifest(project)["artifacts"]
+                   if e["logical_id"] == "narrative.package" and e["status"] == "current"), None)
+    shown = (review.store_shown(project, source, [dict(target=ast + "@" + output_id,
+             candidate_id=f"IMAGE-{output_id}", candidate_revision="R01", path=image.name,
+             sha256=artifacts.digest(image), purpose="合成选图用途")])["shown"] if source else "unused")
+    args = ["publish-asset", "--shown", shown, "--project", str(project), "--script-publication", script_publication,
             "--image", "candidate.png", "--artifact-id", f"IMAGE-{output_id}", "--ast-id", ast,
             "--output-id", output_id, "--purpose", "合成选图用途", "--operation-id", operation,
             "--token-file", "/not-read-by-mock", "--receipt", receipt]
@@ -653,7 +660,7 @@ def test_asset_publication_checks_exact_final_character_canvas_before_post(tmp_p
                               operation=OPERATION[:-1] + "7")
     cli.run(head)
     Image.new("RGB", (160, 90)).save(candidate)
-    cli.run(final)
+    cli.run(publish_asset_args(tmp_path, "final.json", ast="AST-LEAD", output_id="HOME-FINAL"))
     assert [post["outputId"] for post in asset_review_site.posts] == ["HEAD", "HOME-FINAL"]
     assert base64.b64decode(asset_review_site.posts[-1]["dataBase64"]) == candidate.read_bytes()
 
@@ -729,7 +736,9 @@ def test_asset_post_receipt_survives_status_failure_and_is_reusable(tmp_path, as
     first = cli.run(publish_asset_args(tmp_path, "first.json"))
     assert first["readback"]["status"] == "unknown"
     assert first["readback"]["error"]["code"] == "TRANSPORT_ERROR"
-    assert json.loads((tmp_path / "first.json").read_text())["response"] == first["response"]
+    saved = json.loads((tmp_path / "first.json").read_text())
+    assert saved["response"] == first["response"]
+    assert saved["request"]["parameters"]["artifactId"] == asset_review_site.posts[0]["artifactId"] == "IMAGE-paper"
 
     asset_review_site.on_status = None
     second = cli.run(publish_asset_args(tmp_path, "second.json", output_id="second",

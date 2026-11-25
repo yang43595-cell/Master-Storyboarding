@@ -87,6 +87,8 @@ except ImportError:  # direct CLI execution
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTEXT_DIR = Path("00_项目管理") / "执行上下文"
+RECOVERY_DOCUMENT = Path("skills/_shared/knowledge-access.md")
+RECOVERY_HEADING = "压缩后的主动恢复核对"
 LIMITS = {"startup": 48 * 1024, "review": 12 * 1024, "handoff": 8 * 1024}
 BANNED = {
     "图片载荷": re.compile(r"data:image|image_url|base64[,;]", re.I),
@@ -603,7 +605,8 @@ def _load_review_profile(skill: str) -> tuple[Path, dict[str, Any]]:
         raise StageContextError(f"Skill 审核 profile 不存在或无效：{profile_path}")
     if profile.get("schema_version") != "1.0" or profile.get("skill") != skill:
         raise StageContextError(f"Skill 审核 profile 身份无效：{profile_path}")
-    for field in ("skill_contract_checks", "production_artifact_checks"):
+    sections = ("skill_contract_checks",) if skill == "asset-image-assistant" else ("skill_contract_checks", "production_artifact_checks")
+    for field in sections:
         items = profile.get(field)
         if not isinstance(items, list) or not items:
             raise StageContextError(f"Skill 审核 profile 缺少非空 {field}：{profile_path}")
@@ -880,9 +883,9 @@ def _confirmed_project_inputs(project: Path, state: dict[str, Any], *, manifest=
             else:
                 validate_current_dependencies(item, manifest, state, project,
                                               checked=checked_dependencies, file_digest=file_digest)
-                if item.get("asset_review_sha256"):
-                    if not registered_output_snapshot(project, item):
-                        raise ValueError("资产交接存在无效的逐图代审或图片字节依据：" + artifact_id)
+                if item.get("logical_id") == "visual.asset.manifest" and registered_output_snapshot(
+                        project, item, file_digest=file_digest) is None:
+                    raise ValueError("资产交接缺同版用户确认或图片字节已变化：" + artifact_id)
         except ValueError as exc:
             raise StageContextError(str(exc)) from exc
         inputs.append(item)
@@ -1159,22 +1162,25 @@ def _candidate_packet(candidates: list[Any], scopes: dict[str, str] | None = Non
     return "\n".join(lines).rstrip() + "\n"
 
 
-def _candidate_manifest_matches(block: Any, record: dict[str, Any]) -> bool:
-    return _candidate_record(block) == record
-
-
-def _evidence_current(project: Path, requested_skill: str | None = None, *, basis=None) -> tuple[dict[str, Any], dict[str, Any], Path] | None:
+def _evidence_current(project: Path, requested_skill: str | None = None, *, basis=None, reading_files=None) -> tuple[dict[str, Any], dict[str, Any], Path] | None:
     if basis is None:
         basis = _read_json(_task_basis_path(project), default={})
     if not isinstance(basis, dict) or basis.get("context_id") != _CONTEXT_ID.get():
         return None
     manifest = basis.get("reading_manifest")
-    try:
-        evidence = _read_json(_context_dir(project, "method_reading_evidence.json"), default=None)
-    except StageContextError:
-        return None  # Broken optional reading state is unread, not a preparation failure.
     packet = _context_dir(project, "method_reading_packet.md")
-    if not isinstance(manifest, dict) or not isinstance(evidence, dict) or not packet.is_file():
+    if reading_files is None:
+        try:
+            evidence = _read_json(_context_dir(project, "method_reading_evidence.json"), default=None)
+        except StageContextError:
+            return None  # Broken optional reading state is unread, not a preparation failure.
+        if not isinstance(evidence, dict) or not packet.is_file():
+            return None
+    else:
+        evidence, packet_bytes = reading_files
+        if packet_bytes is None:
+            return None
+    if not isinstance(manifest, dict) or not isinstance(evidence, dict):
         return None
     key = basis.get('reading_reuse_key')
     if key and evidence.get('reading_reuse_key') != key:
@@ -1186,7 +1192,8 @@ def _evidence_current(project: Path, requested_skill: str | None = None, *, basi
         return None
     if not all(isinstance(manifest.get(key), str) and manifest[key] for key in ("skill", "project_path", "actor_id", "task_id", "vault_root")):
         return None
-    packet_bytes = packet.read_bytes()
+    if reading_files is None:
+        packet_bytes = packet.read_bytes()
     if evidence.get("packet_sha256") != hashlib.sha256(packet_bytes).hexdigest():
         return None
     base_length = manifest.get("method_packet_bytes")
@@ -1417,16 +1424,6 @@ def _task_source_roles(skill: str, request: dict[str, Any]) -> list[str]:
     return roles
 
 
-def _recovery_check_text() -> str:
-    """Project one authoritative section; do not maintain a second checklist."""
-    path = _local_knowledge_path(ROOT / "skills/_shared/knowledge-access.md")
-    text = path.read_text(encoding="utf-8")
-    match = re.search(r"(?ms)^## 压缩后的主动恢复核对\n.*?(?=^## |\Z)", text)
-    if not match:
-        raise StageContextError(f"主动恢复核对正文缺失：{path}")
-    return match.group(0).rstrip()
-
-
 # Cross-Skill reading registry (必读集边界规范 P5; approved by the user on
 # 2026-11-09 after the BUG-3 review). A document owned by another Skill may
 # enter a stage's standard set only through an entry here, and only as a
@@ -1517,7 +1514,8 @@ def _registered_read_path(reference: str) -> Path | None:
     return None
 
 
-def _local_standard_documents(skill_dir: Path, request: dict[str, Any] | None = None) -> list[Path]:
+def _local_standard_documents(skill_dir: Path, request: dict[str, Any] | None = None, *,
+                              read_document=Path.read_bytes) -> list[Path]:
     """Freeze applicable contracts plus exact linked dependencies.
 
     Unknown conditions retain the conservative local set. References for
@@ -1637,7 +1635,7 @@ def _local_standard_documents(skill_dir: Path, request: dict[str, Any] | None = 
                           if document.is_relative_to(skills_root) else None)
         if document_owner is not None and document_owner not in {skill_dir.name, "_shared"}:
             continue
-        text = _local_knowledge_path(document).read_text(encoding="utf-8")
+        text = read_document(_local_knowledge_path(document)).decode("utf-8")
         references = re.findall(r"(?:skills/|\.\./)*_shared/[A-Za-z0-9_-]+\.md", text)
         if document.parent == shared_root:
             references.extend(re.findall(r"\]\(([A-Za-z0-9_-]+\.md)(?=[#)])", text))
@@ -1865,7 +1863,7 @@ def _read_candidate_exact(vault: Path, record: dict[str, Any], *, verified_manif
         matches = [item for item in parse_knowledge_blocks(path, vault) if item.id == record.get("id")]
     except Exception as exc:
         raise StageContextError(f"候选知识无法按目录精确读取：{relative}: {exc}") from exc
-    if len(matches) != 1 or not _candidate_manifest_matches(matches[0], record):
+    if len(matches) != 1 or _candidate_record(matches[0]) != record:
         raise StageContextError(f"候选知识版本、路径、状态或范围已变更：{record.get('id')}；请重新 prepare。")
     return matches[0]
 
@@ -1882,9 +1880,24 @@ def _task_basis_path(project: Path) -> Path:
     return _context_dir(project, "task_basis.json")
 
 
-def _load_task_basis(project: Path, skill: str) -> tuple[Path, dict[str, Any]]:
+def _review_basis_bytes(path: Path, *, optional=False) -> bytes | None:
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        if optional and isinstance(exc, FileNotFoundError):
+            return None
+        raise StageContextError(f"无法读取本次审核的任务依据 {path}；请重新准备并打包：{exc}") from exc
+    if not raw:
+        raise StageContextError(f"审核依据为空：{path}；请重新准备并打包。")
+    return raw
+
+
+def _load_task_basis(project: Path, skill: str, *, raw=None) -> tuple[Path, dict[str, Any]]:
     path = _task_basis_path(project)
-    basis = _read_json(path, default=None)
+    try:
+        basis = json.loads(raw.decode("utf-8")) if raw is not None else _read_json(path, default=None)
+    except ValueError as exc:
+        raise StageContextError(f"无法读取任务依据：{path}；请重新准备并打包。") from exc
     if not isinstance(basis, dict) or basis.get("schema_version") != "1.0" or basis.get("skill") != skill:
         raise StageContextError(f"缺少与当前 Skill 匹配的任务依据：{path}；先运行 prepare，不能由审核包另选标准。")
     if basis.get("context_id") != _CONTEXT_ID.get():
@@ -1943,9 +1956,23 @@ def _producer_response_value(raw: str) -> Path | dict[str, Any]:
     return value
 
 
+def _read_recovery_authority(path: Path) -> bytes:
+    try:
+        content = path.read_bytes()
+    except FileNotFoundError as exc:
+        raise StageContextError(f"必需共享规范缺失：{path}#{RECOVERY_HEADING}") from exc
+    text = content.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+    section = re.search(rf"(?ms)^## {RECOVERY_HEADING}\n(.*?)(?=^## |\Z)", text)
+    if section is None or not section.group(1).strip():
+        raise StageContextError(f"主动恢复核对正文缺失或为空：{path}#{RECOVERY_HEADING}")
+    return content
+
+
 @_context_scoped
 def prepare(args: argparse.Namespace) -> dict[str, Any]:
     _require_preparation_skill(args.skill)
+    recovery_path = _local_knowledge_path(ROOT / RECOVERY_DOCUMENT)
+    recovery_bytes = _read_recovery_authority(recovery_path)
     usage = _check_run_budget(args)
     project = Path(args.project).expanduser().resolve()
     if not project.is_dir():
@@ -1962,7 +1989,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
                 stack.enter_context(file_lock(lock_path, timeout_seconds=0))
             except TimeoutError as exc:
                 raise StageContextError("同一编导上下文正在准备，请继续等待原调用返回") from exc
-        return _prepare(args, project, supplied_vault, usage)
+        return _prepare(args, project, supplied_vault, usage, recovery_path, recovery_bytes)
 
 
 def _direct_asset_binding(project, path, request_sha, targets, kinds, snapshot):
@@ -1989,7 +2016,8 @@ def _direct_asset_binding(project, path, request_sha, targets, kinds, snapshot):
     return binding
 
 
-def _prepare(args: argparse.Namespace, project: Path, supplied_vault: Path | None, usage: dict | None) -> dict[str, Any]:
+def _prepare(args: argparse.Namespace, project: Path, supplied_vault: Path | None, usage: dict | None,
+             recovery_path: Path, recovery_bytes: bytes) -> dict[str, Any]:
     started = time.perf_counter()
     skill_dir = ROOT / "skills" / args.skill
     profile_path = skill_dir / "knowledge-profile.json"
@@ -2213,7 +2241,12 @@ def _prepare(args: argparse.Namespace, project: Path, supplied_vault: Path | Non
             "packet_sha256": hashlib.sha256(trial_bundle.encode("utf-8")).hexdigest(),
         }
     reading_manifest = {"schema_version": "1.0", "skill": args.skill, "project_path": str(project), "vault_root": str(vault), **_reading_identity(args), "methods": methods_records, "method_packet_sha256": hashlib.sha256(base_packet.encode("utf-8")).hexdigest(), "method_packet_bytes": len(base_packet.encode("utf-8")), "test_only_proposed_method_ids": sorted(test_method_ids), "selected": [_candidate_record(item) for item in result.selected], "candidate_catalog": [_candidate_record(item) for item in result.candidates], "candidate_reasons": result.candidate_reasons, "applicable_confirmed": [_candidate_record(item) for item in result.applicable_confirmed], "candidate_trial": trial_record}
-    local_documents = _local_standard_documents(skill_dir, request)
+
+    def read_document(path: Path) -> bytes:
+        # Link discovery and the existing shared-contract hash use the same validated bytes.
+        return recovery_bytes if path == recovery_path else path.read_bytes()
+
+    local_documents = _local_standard_documents(skill_dir, request, read_document=read_document)
     rule_documents = [path for path in local_documents
                       if path.is_relative_to((ROOT / "docs/rules").resolve())]
     character_inputs = {}
@@ -2250,9 +2283,9 @@ def _prepare(args: argparse.Namespace, project: Path, supplied_vault: Path | Non
             "selected_knowledge": [_candidate_record(item) for item in result.selected],
             "applicable_confirmed": [_candidate_record(item) for item in result.applicable_confirmed],
             "review_profile": {"path": str(review_profile_path), "sha256": hashlib.sha256(review_profile_path.read_bytes()).hexdigest(), "schema_version": review_profile["schema_version"]},
-            "local_documents": [{"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()} for path in local_documents],
+            "local_documents": [{"path": str(path), "sha256": hashlib.sha256(read_document(path)).hexdigest()} for path in local_documents],
         },
-        "review_acceptance": {"delivery_object": delivery_contract["delivery_object"], "delivery_contract": delivery_contract, "production": {"required_checks": _applicable_checks(review_profile["production_artifact_checks"], delivery_contract), "manual_checks": manual_checks}, "skill_contract": {"required_checks": review_profile["skill_contract_checks"], "manual_checks": manual_checks}},
+        "review_acceptance": {"delivery_object": delivery_contract["delivery_object"], "delivery_contract": delivery_contract, "production": {"required_checks": _applicable_checks(review_profile.get("production_artifact_checks", []), delivery_contract), "manual_checks": manual_checks}, "skill_contract": {"required_checks": review_profile["skill_contract_checks"], "manual_checks": manual_checks}},
         "reading_manifest": reading_manifest,
         "candidate_trial": trial_record,
         "revision": revision,
@@ -2282,7 +2315,8 @@ def _prepare(args: argparse.Namespace, project: Path, supplied_vault: Path | Non
         f"- 交付意图：`{json.dumps(delivery_contract, ensure_ascii=False)}`；按本轮交付对象及适用检查项审核。",
         f"- 根规则：`{ROOT / 'PROJECT_RULES.md'}`",
         f"- Skill 入口：`{skill_dir / 'SKILL.md'}`",
-        "- 上下文较长或压缩恢复后：重读根规则与当前 Skill；以下细则原文已不可用时重新读取。冻结与阅读记录不证明内容仍在上下文。",
+        f"- 上下文压缩、会话恢复、工作区重置或需要找回任务状态时，首次续作前实读 `{recovery_path}#{RECOVERY_HEADING}`。"
+        f"回读 `{_context_dir(project, 'stage_startup.md')}`，沿用本任务原有的上下文选择和执行者、任务身份运行 `ensure-prepared --show-task-basis` 核对当前版本与任务依据。",
         *(["- 本轮适用细则（准确版本已冻结在 task_basis.json）：",
            *[f"  - `{path}`" for path in rule_documents]] if rule_documents else []),
         "- 执行分工：遵守根规则的干净上下文启动规则；新一轮编导等创作生产或实质重跑由全新专属生产 agent 执行，不继承长主会话；本轮执行者读取、准备、产出并自查。其他任务按根规则执行。",
@@ -2299,7 +2333,7 @@ def _prepare(args: argparse.Namespace, project: Path, supplied_vault: Path | Non
         *(["- 人物生图按输出类型读取 task_basis.json 的 character_prompt_templates 与 character_layout_references，使用对应模板正文，原参考在前、灰模在最后。按实际槽位绑定原生引用。"]
           if task_basis.get("character_layout_references") else []),
         "- prepare 只生成文件，不清空宿主对话。普通阶段按 skills/_shared/knowledge-access.md#普通阶段准备与选知 读取。仅在适用计量时看 docs/development/token-budget.md#普通准备的计量检查点。",
-        _recovery_check_text(), "",
+        "",
         "## 本轮范围", "",
         "- 交付对象、非目标、输入版本、范围字段和适用标准仅维护在上列 `task_basis.json`；本启动包不复制第二份范围记录。", "",
         "## 当前项目事实", "", "```json",
@@ -2378,7 +2412,7 @@ def _asset_batch_dispatch(project, args, batch, entry, kickoff):
         "message": (f"按 {ROOT / 'skills/asset-image-assistant/SKILL.md'} 执行项目 {project} 的图片批次 {context}。"
                     f"本轮入口 {entry}。在项目内读请求 {batch['request']}，按所列目标与本批授权制作。"
                     f"阅读身份 {identity_line or '沿用本批实际执行者与任务 ID'}。"
-                    f"实看后写回 {batch['receipt']}，只回传结果或阻塞和回执位置。"),
+                    f"保存候选后写回 {batch['receipt']}，只回传结果或阻塞和回执位置。"),
     }
     return result
 
@@ -2417,13 +2451,13 @@ def _asset_batch_binding_entries(text):
 def _asset_batch_delivery_lines(batch):
     return [
         "", "## 本批交回", "", _asset_batch_binding_line(batch),
-        "- 本批执行者跟到准确成图落盘和实看自查，或出现需交回的真实阻塞。提示词和提交清单是中间结果。",
-        "- 完成时更新上述现有实看回执，顶层沿用本卡的 `context_id` 和 `request_sha256`。每项实看写准确的 `target`、`candidate_id`、`observer`、`visual_status: passed|failed`、`observations`；所有已有成图均写 `purpose`、`path` 和 `sha256`，有偏差时附 `blocking_issue`。普通对话完成本批即回传实看回执。协调方按整轮目标用 chat_asset_review.py show-round 一次交审；清单就绪即发给用户，事后再统计性能。",
+        "- 本批执行者跟到准确候选成图落盘，或出现需交回的真实阻塞。提示词和提交清单是中间结果。",
+        "- 完成时更新上述候选记录，顶层沿用本卡的 `context_id` 和 `request_sha256`。每项候选写准确的 `target`、`candidate_id`；所有已有成图均写 `purpose`、`path` 和 `sha256`，有偏差时附 `blocking_issue`。普通对话完成本批即回传实看回执。协调方按整轮目标用 chat_asset_review.py show-round 一次交审；清单就绪即发给用户，事后再统计性能。",
         "- 回执写齐后再通知协调方。完成通知只回批次、已完成目标、真实阻塞和回执路径；途中只通知可接续的新结果或需决策的阻塞。",
-        "- 无成图可实看且确实需交回的阻塞，沿原回执 `items` 写准确 `target`、`observer`、`status: blocked` 和简短 `blocking_issue`。",
+        "- 无成图可实看且确实需交回的阻塞，沿原回执 `items` 写准确 `target`、`status: blocked` 和简短 `blocking_issue`。",
         "- 主对话直接制作时核对现有回执。委派批次由协调方按 `docs/rules/execution.md#等待与工具回传` 续等。超时不叠加 `read_thread`、`list_agents`、目录/日志查询或提前调用 `--receive-batch`；沿原等待渠道和游标续等；收到需核验的可接续新结果时只核受影响项。超过本轮已约定总等待期限仍无终态时，只读回查原任务一次，不重新提交。收到终态后用 `handoff --receive-batch` 验收准确回执一次，缺项交原执行者补核。",
         "- 接收时保留返回的逐项 `issue`，据此修正原回执；原回执和候选未变时沿用这次结果，等执行者补齐后再验。",
-        "- 回执只证明本批候选自查，网站或明确授权的对话确认继续走原入口。", "",
+        "- 回执列出本批候选，网站或明确授权的对话确认继续走原入口。", "",
     ]
 
 
@@ -2735,6 +2769,8 @@ def review_pack(args: argparse.Namespace) -> dict[str, Any]:
     review_kind = getattr(args, "review_kind", "production")
     if review_kind not in {"production", "skill_contract"}:
         raise StageContextError(f"未知审核类型：{review_kind}")
+    if args.skill == "asset-image-assistant" and review_kind == "production":
+        raise StageContextError("请将资产候选交给用户验收")
     artifacts = [_review_target(project, Path(item), review_kind) for item in args.artifact]
     external_evidence = [Path(item).expanduser().resolve() for item in (getattr(args, "evidence", None) or [])]
     external_evidence = list(dict.fromkeys(external_evidence))
@@ -2746,11 +2782,25 @@ def review_pack(args: argparse.Namespace) -> dict[str, Any]:
     missing_evidence = [str(item) for item in external_evidence if not item.is_file()]
     if missing_evidence:
         raise StageContextError(f"外部审核证据不存在或不是文件：{missing_evidence}")
-    basis_path, task_basis = _load_task_basis(project, args.skill)
-    manifest = task_basis.get("reading_manifest")
-    if isinstance(manifest, dict) and manifest.get("test_only_proposed_method_ids"):
+    basis_path = _task_basis_path(project)
+    basis_bytes = _review_basis_bytes(basis_path)
+    _, task_basis = _load_task_basis(project, args.skill, raw=basis_bytes)
+    manifest = task_basis.get("reading_manifest") or {}
+    if manifest.get("test_only_proposed_method_ids"):
         raise StageContextError("隔离测试方法不能用于正式审核；请重新 prepare。")
-    input_validation = _validate_current_inputs(project, task_basis)
+    # prepare omits both reading files for stages without methods or candidates.
+    optional = not (manifest.get("methods") or manifest.get("candidate_catalog"))
+    evidence_path = _context_dir(project, "method_reading_evidence.json")
+    packet_path = _context_dir(project, "method_reading_packet.md")
+    evidence_bytes = _review_basis_bytes(evidence_path, optional=optional)
+    packet_bytes = _review_basis_bytes(packet_path, optional=optional)
+    try:
+        evidence = json.loads(evidence_bytes.decode("utf-8")) if evidence_bytes is not None else None
+    except ValueError as exc:
+        raise StageContextError(f"阅读证据无法解析：{evidence_path}；请重新准备并打包。") from exc
+    reading = _evidence_current(project, args.skill, basis=task_basis, reading_files=(evidence, packet_bytes))
+    adopted = reading[1].get("adopted_candidates", []) if reading else []
+    input_validation = _validate_current_inputs(project, task_basis, adopted_candidates=adopted)
     delivery_contract = task_basis.get("delivery_contract")
     if not isinstance(delivery_contract, dict):
         raise StageContextError(f"任务依据缺少交付意图：{basis_path}；先重新 prepare。")
@@ -2804,12 +2854,11 @@ def review_pack(args: argparse.Namespace) -> dict[str, Any]:
         except (KeyError, TypeError, ValueError) as exc:
             raise StageContextError(f"复审输入无效：{exc}") from exc
         checks = [*required_checks, *manual_checks]
-    reading = _evidence_current(project, args.skill)
     adopted_knowledge = [{**item, **({"adoption_scope": reading[1]["candidate_scopes"][item["id"]]}
                           if item["id"] in reading[1].get("candidate_scopes", {}) else {})}
-                         for item in reading[1].get("adopted_candidates", [])] if reading else []
+                         for item in adopted]
     scope = {"skill": args.skill, "review_kind": review_kind, "task_basis_path": str(basis_path),
-             "task_basis_sha256": hashlib.sha256(basis_path.read_bytes()).hexdigest(),
+             "task_basis_sha256": hashlib.sha256(basis_bytes).hexdigest(),
              "task_basis_identity": _review_identity(task_basis, adopted_knowledge),
              "artifacts": [fingerprint(p) for p in artifacts],
              "direct_evidence": [fingerprint(p) for p in external_evidence]}
@@ -2830,8 +2879,10 @@ def review_pack(args: argparse.Namespace) -> dict[str, Any]:
             raise StageContextError("候选在轻复审打包中变化；重新生成，不混用版本。")
     if delta is not None and delta["current_direct_evidence"] != scope["direct_evidence"]:
         raise StageContextError("直接证据在增量计算与审核范围登记之间变化；重新生成，不混用版本。")
-    round_key = hashlib.sha256(json.dumps([scope, delta], ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()[:16]
-    round_dir = _context_dir(project, "review_rounds", round_key) if formal else _context_dir(project)
+    round_dir = _context_dir(project)
+    if formal:
+        round_key = hashlib.sha256(json.dumps([scope, delta], ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()[:16]
+        round_dir = _context_dir(project, "review_rounds", round_key)
     scope_path, delta_path = round_dir / "review_scope.json", round_dir / "review_delta.json"
     review_boundary = (
         "本包仅用于用户明确要求的独立审核；生成文件本身不构成派发授权。默认自查在当前对话完成，不新建审核agent。已获独立审核授权时只读检查，不继承生产对话，不修改产物。"
@@ -2877,16 +2928,14 @@ def review_pack(args: argparse.Namespace) -> dict[str, Any]:
         lines.append("- 只核对 task_basis 已列当前输入与相关确认；不读取全部候选或历史登记。")
         lines.extend(["", "## 项目状态与用户确认事实", ""])
         lines.append(f"- {'缺少：' if not state_path.is_file() else ''}`{state_path}`")
-        candidate_evidence = _evidence_current(project, args.skill)
         lines.extend(["", "## 本轮按需知识依据", ""])
-        raw_candidate_evidence = _read_json(_context_dir(project, "method_reading_evidence.json"), default=None)
-        if candidate_evidence:
-            _, _, candidate_packet = candidate_evidence
-            lines.extend([f"- 完整方法/已采用知识快照：`{candidate_packet}`", f"- 读取声明与版本证据：`{_context_dir(project, 'method_reading_evidence.json')}`"])
-        elif isinstance(raw_candidate_evidence, dict) and raw_candidate_evidence.get("skill") == args.skill and raw_candidate_evidence.get("adopted_candidates"):
-            lines.append("- 已登记候选证据无效：`method_reading_evidence.json`（不得作为本轮依据）")
+        if reading:
+            lines.extend([f"- 完整方法/已采用知识快照：`{reading[2]}`", f"- 读取声明与版本证据：`{_context_dir(project, 'method_reading_evidence.json')}`"])
         else:
-            lines.append("- 无有效读取快照；若任务依据列有必读方法，先完成读取登记再打包审核。")
+            if isinstance(evidence, dict) and evidence.get("skill") == args.skill and evidence.get("adopted_candidates"):
+                lines.append("- 已登记候选证据无效：`method_reading_evidence.json`（不得作为本轮依据）")
+            else:
+                lines.append("- 无有效读取快照；若任务依据列有必读方法，先完成读取登记再打包审核。")
     else:
         lines.extend(["", "## 合同审核边界", "", "- 仅审核当前 Skill 合同候选的触发、职责、输入输出、引用和硬禁区；不把真实项目产物结论混入本轮。"])
     if delta is not None:
@@ -2914,6 +2963,9 @@ def review_pack(args: argparse.Namespace) -> dict[str, Any]:
     content = "\n".join(lines)
     output = _context_dir(project, "review_packet.md")
     report = validate_text("review", output, content)
+    for path, initial in ((basis_path, basis_bytes), (evidence_path, evidence_bytes), (packet_path, packet_bytes)):
+        if _review_basis_bytes(path, optional=initial is None) != initial:
+            raise StageContextError(f"审核依据在打包期间变化：{path}；请重新准备或重新打包。")
     write_text(scope_path, json.dumps(scope, ensure_ascii=False, indent=2) + "\n")
     if delta is not None:
         write_text(delta_path, json.dumps(delta, ensure_ascii=False, indent=2) + "\n")
@@ -2940,7 +2992,7 @@ def review_pack(args: argparse.Namespace) -> dict[str, Any]:
     return report
 
 
-def _ensure_prepared(args: argparse.Namespace, *, file_digest=None) -> dict[str, Any]:
+def _ensure_prepared(args: argparse.Namespace, *, file_digest) -> dict[str, Any]:
     """产前硬门禁：生产某 stage 产物前，校验阶段启动包存在且 Skill 匹配。
 
     校验结构、已选知识正文和调用方声明的任务必需项。
@@ -3028,8 +3080,6 @@ def _ensure_prepared(args: argparse.Namespace, *, file_digest=None) -> dict[str,
             raise StageContextError(f"当前任务必需动态规则未命中：{rule}")
     required_references = getattr(args, "required_reference", None) or []
     if required_references:
-        if file_digest is None:
-            file_digest = cache_file_digests(digest, check_for_changes=True)
         frozen = {item["path"]: item["sha256"] for item in basis["standards"].get("local_documents", [])}
         frozen[basis["standards"]["root_rules"]] = basis["standards"]["root_rules_sha256"]
         for reference in required_references:
@@ -3090,11 +3140,15 @@ def _ensure_prepared(args: argparse.Namespace, *, file_digest=None) -> dict[str,
 def ensure_prepared(args: argparse.Namespace) -> dict[str, Any]:
     project = Path(args.project).expanduser().resolve()
     testing = _test_request(args, project)
-    file_digest = None
+    recovery_path = _local_knowledge_path(ROOT / RECOVERY_DOCUMENT)
+
+    def current_digest(path: Path) -> str:
+        if path == recovery_path:
+            return hashlib.sha256(_read_recovery_authority(path)).hexdigest()
+        return digest(path)
+
+    file_digest = cache_file_digests(current_digest, check_for_changes=True)
     if getattr(args, "mark_read", False):
-        # Recheck mutable inputs after writing reading evidence, but reuse the
-        # byte digests for unchanged source files within this invocation.
-        file_digest = cache_file_digests(digest, check_for_changes=True)
         _record_method_reading(args, file_digest=file_digest)
     result = _ensure_prepared(args, file_digest=file_digest)
     if testing:

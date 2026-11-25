@@ -58,7 +58,7 @@ class AssetRuntimeRegressions(unittest.TestCase):
     def confirm(self, index, asset=None):
         self.service.select({'job_id': self.job_id, 'index': index,
                              'asset_id': (asset or self.asset)['id']})
-        self.service.confirm({'job_id': self.job_id, 'index': index, 'confirm': True})
+        self.service.confirm({'job_id': self.job_id, 'index': index, 'asset_id': (asset or self.asset)['id'], 'confirm': True})
 
     def confirmed_scene(self):
         for index in range(4):
@@ -186,7 +186,7 @@ class AssetRuntimeRegressions(unittest.TestCase):
     def test_library_job_operations_reject_project_mismatch_before_any_side_effect(self):
         payload = {'id': self.job_id, 'index': 0, 'project_id': 'another-project',
                    'prompt': '当前场景提示词', 'authorize': True, 'redo': True}
-        operations = [lambda: self.lib.save_prompt(payload), lambda: self.lib.audit_prompt(payload),
+        operations = [lambda: self.lib.save_prompt(payload), lambda: self.lib.write_prompt(self.job_id, 0, project_id=payload.get('project_id')),
             lambda: self.lib.reject_result(payload), lambda: self.lib.reset_imagegen(payload),
             lambda: self.lib.recover_imagegen(payload), lambda: self.lib.submit_imagegen(payload),
             lambda: self.lib.submit(payload),

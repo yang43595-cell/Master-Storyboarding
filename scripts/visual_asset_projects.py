@@ -52,8 +52,7 @@ from core.io import project_lock
 from core.project_state import load_project_state, write_project_state
 from core.project_kickoff import grant_covers_asset, load_kickoff, load_project_request, validate_kickoff
 from core.product_reference_pack import resolve_product_pack
-from core.agent_acceptance import (asset_authorization_digest, require_asset_workflow_authorization,
-                                   validate_asset_review)
+from core.agent_acceptance import require_asset_workflow_authorization
 from core.schema_contracts import require_schema
 
 
@@ -121,11 +120,13 @@ def reference_evidence(project, requirements, assets=()):
             try:
                 path = Path(resolve_reference(root, raw, artifacts, state).partition('#')[0])
             except ValueError as exc:
+                if Path(str(raw).partition('#')[0]).suffix.lower() not in TEXT_REFERENCE_SUFFIXES:
+                    raise
                 unavailable.append(str(exc))
                 continue
             if path.suffix.lower() in TEXT_REFERENCE_SUFFIXES:
                 paths.append(path)
-            elif path.suffix.lower() in {'.png', '.jpg', '.jpeg', '.webp'}:
+            else:
                 images.append(str(path))
     for asset in assets:
         parent = Path(asset['source']).parent
@@ -141,7 +142,7 @@ def reference_evidence(project, requirements, assets=()):
         else:
             documents.append({'path': str(path.resolve()), 'content': path.read_text(encoding='utf-8-sig')})
     return {'reference_documents': documents, 'unavailable_references': unavailable,
-            'reference_images': list(dict.fromkeys(images))}
+            'reference_images': images}
 
 
 class _ExportImages:
@@ -259,6 +260,19 @@ class Projects:
         return [{k: p.get(k) for k in ('id', 'path', 'name', 'source', 'planning', 'export', 'batch')}
                 for p in (read(f) for f in self.root.glob('*.json'))]
 
+    def link_workbench(self, project, *, new=False):
+        from chat_asset_review import SHOWN
+        root = Path(project['path'])
+        pointer = root / SHOWN / "工作台位置.json"
+        expected = {'project': str(self._record_path(project['id']))}
+        with project_lock(root):
+            if pointer.is_file() and read(pointer) != expected:
+                raise ValueError('项目已绑定其他素材库')
+            if new:
+                self.save(project)
+            if not pointer.is_file():
+                write(pointer, expected)
+
     def bind(self, path):
         root = asset_project_root(path)
         if root.is_relative_to(self.lib.vault):
@@ -266,12 +280,13 @@ class Projects:
         with self.lib.lock:
             previous = next((p for p in self.summaries() if Path(p['path']) == root), None)
             if previous:
+                self.link_workbench(previous)
                 return self.sync(previous['id'])
             _, source, narrative = source_project(root)
             p = {'id': uid(), 'path': str(root), 'name': narrative['project_id'], 'source': source,
                  'narrative': narrative, 'rows': [{'requirement': r, 'reference_ids': [], 'job_id': None} for r in image_work_items(narrative)],
                  'created_at': now()}
-            self.save(p)
+            self.link_workbench(p, new=True)
             product_usage.schedule(self, p)
             return self.detail(p['id'])
 
@@ -421,7 +436,7 @@ class Projects:
             if self.row_character_mode(row) == mode:
                 return self.detail(p['id'])
             job = self.lib.get(row['job_id'], 'jobs') if row.get('job_id') else None
-            if p.get('planning', {}).get('status') == 'running' or p.get('batch', {}).get('status') == 'running' or (job and any(s['status'] in BUSY or s.get('audit', {}).get('status') in {'drafting', 'reviewing'} for s in job['steps'])):
+            if p.get('planning', {}).get('status') == 'running' or p.get('batch', {}).get('status') == 'running' or (job and any(s['status'] in BUSY for s in job['steps'])):
                 raise ValueError('人物图片正在处理，请完成后调整路线')
             if job:
                 row.setdefault('job_history', []).append(job['id'])
@@ -510,7 +525,7 @@ class Projects:
                 raise ValueError('请选择对应需求的制作方式')
             if row.get('job_id'):
                 job = self.lib.get(row['job_id'], 'jobs')
-                if any(s['status'] in BUSY or s.get('audit', {}).get('status') in {'drafting', 'reviewing'} for s in job['steps']):
+                if any(s['status'] in BUSY for s in job['steps']):
                     raise ValueError('图片正在处理，请稍后调整')
                 for step in job['steps']:
                     step['generation_enabled'] = payload['route'] == 'build' and (
@@ -537,7 +552,7 @@ class Projects:
                 source = job['steps'][0].get('selected')
                 if source:
                     return self.scene_reference({**payload, 'asset_id': source})
-            if any(s['status'] in BUSY or s.get('audit', {}).get('status') in {'drafting', 'reviewing'} for s in job['steps']):
+            if any(s['status'] in BUSY for s in job['steps']):
                 raise ValueError('场景正在处理，请完成后调整')
             # Older jobs did not store scene_output_mode.  Compare the effective
             # delivery contract instead of the saved mode label, so a repeated
@@ -668,7 +683,7 @@ class Projects:
             if p.get('planning', {}).get('status') == 'running':
                 raise ValueError('正在盘点，请完成后添加环境参考')
             job = self.lib.get(row['job_id'], 'jobs') if row.get('job_id') else None
-            if job and any(s['status'] in BUSY or s.get('audit', {}).get('status') in {'drafting', 'reviewing'} for s in job['steps']):
+            if job and any(s['status'] in BUSY for s in job['steps']):
                 raise ValueError('环境正在处理，请完成后添加参考')
             self.copy_to_project(p, asset)
             row['reference_ids'] = [asset['id']]
@@ -702,9 +717,7 @@ class Projects:
             for step in job['steps']:
                 step['generation_enabled'] = True
                 if step['status'] == 'waiting' and step.get('reference_ids') != [asset['id']]:
-                    step.update(reference_ids=[asset['id']], audit={'status': 'stale'})
-                    step.pop('prompt', None)
-                    step.pop('prompt_approval', None)
+                    step['reference_ids'] = [asset['id']]
             if not job.get('scene_output_mode'):
                 job['scene_output_mode'] = 'four' if len(job['steps']) == 4 else 'coverage'
             self.lib.save(job, 'jobs')
@@ -948,7 +961,7 @@ class Projects:
             if step['key'] not in keys:
                 continue
             previous = {k: copy.deepcopy(step.get(k)) for k in (
-                'selected', 'outputs', 'project_confirmation', 'prompt', 'audit',
+                'selected', 'outputs', 'project_confirmation', 'prompt', 'prompt_approval', 'audit',
                 'generation_run_id', 'submit_id', 'authorization', 'visual_self_check', 'output_id')}
             step.setdefault('history', []).append(previous)
             if review_change is not None:
@@ -956,7 +969,7 @@ class Projects:
                 if previous['selected']:
                     step.update(status='awaiting_review', project_confirmation=None)
                     continue
-            step.update(status='waiting', outputs=[], project_confirmation=None, audit={'status': 'stale'})
+            step.update(status='waiting', outputs=[], project_confirmation=None)
             step.pop('selected', None)
             if step['kind'] == '物品':
                 set_prop_layout(step, build=step.get('generation_enabled') is not False)
@@ -1006,8 +1019,8 @@ class Projects:
         if receipt:
             asset = self.lib.get(step['selected'], require_file=True, file_digest=file_digest)
             verify_image_confirmation(asset['original'], receipt, file_digest=file_digest)
-            if receipt.get('agent_review'):
-                validate_asset_review(self.get(job['project_id'])['path'], receipt['agent_review'])
+            if receipt.get('agent_review') or not receipt.get('image_sha256'):
+                raise ValueError('此历史候选需要用户确认当前图片')
         if (receipt and step.get('kind') == '环境' and step['dependencies'] and
                 'dependency_confirmations' not in receipt):
             raise ValueError('旧角度确认缺少前置图片版本依据，请重新核对此制作项：' + step['name'])
@@ -1099,7 +1112,7 @@ class Projects:
         confirmation_cache = {}
         if (len(outputs) != exported['count'] or any(
                 _confirmed_output(root, ast_id, output, confirmation_cache=confirmation_cache,
-                                  file_digest=file_digest, asset_outputs=available[ast_id]) is None
+                                  file_digest=file_digest) is None
                 for ast_id, output in outputs)):
             raise ValueError('已导出确认图片内容已变化或缺失，请保留原记录并重新核对交接')
 
@@ -1205,7 +1218,9 @@ class Projects:
                          '本项目已确认前置图片' if prior else '用户提供的生成参考，按可见内容采用')})
         existing_paths = {record['original'] for record in reference_records}
         for original in declared_images:
-            if original not in existing_paths:
+            if original in existing_paths:
+                existing_paths.remove(original)
+            else:
                 reference_records.append({'original': original, 'sha256': digest(Path(original)),
                     'project_confirmed': False, 'role': '当前 AST 登记的原始参考，按可见内容与本次要求采用'})
         allow_design = (row['requirement']['category'] == 'PROP' or step['kind'] == '角色外观'
@@ -1241,14 +1256,14 @@ class Projects:
                 'generation_direction': step.get('generation_direction', ''),
                 'allow_unreferenced_design': allow_design,
                 'design_scope': '新制作所需的未锁定外观可作为设计候选；保留已确认身份与故事约束，明确要求还原真实外貌时仍须参考。',
-                'gap_resolution': job.get('resolved_blockers'),
+                'gap_resolution': job.get('resolved_blockers'), 'feedback': step.get('feedback', ''),
                 **evidence_inputs}
 
     def select(self, payload):
         with self.lib.lock:
             job = self.lib.get(payload['job_id'], 'jobs')
             p, row, step = self.context(job, int(payload['index']), payload.get('project_id'))
-            if step['status'] in BUSY or step.get('audit', {}).get('status') in {'drafting', 'reviewing'}:
+            if step['status'] in BUSY:
                 raise ValueError('制作项正在处理，完成后再选择')
             if step.get('required') is False:
                 raise ValueError('此步骤当前不需要，请先切换为新制作')
@@ -1271,20 +1286,14 @@ class Projects:
                     raise ValueError('此步骤请选择' + expected + '资产')
             if payload.get('as_reference'):
                 if step['status'] != 'waiting':
-                    raise ValueError('已有结果不能更换生成参考，请先重做')
+                    raise ValueError('制作项正在处理或已有结果，不能更换生成参考')
                 step['reference_ids'] = list(dict.fromkeys(step.get('reference_ids', []) + [asset['id']]))
-                step['audit'] = {'status': 'stale'}
-                step.pop('prompt_approval', None)
             else:
                 self.dependencies(job, step)
                 if step.get('project_confirmation'):
                     raise ValueError('已确认图片保留原版本；先点击重新选图')
                 step.update(selected=asset['id'], status='awaiting_review')
-                self.lib.sync_visual_self_check(step, asset)
-                if step.get('visual_self_check'):
-                    step['message'] = self.lib.visual_self_check_message(step['visual_self_check'])
-                else:
-                    step.pop('message', None)
+                step.pop('message', None)
                 if step.get('generation_enabled') is False and (job.get('direct_reuse') or step['kind'] == '物品'):
                     if step['kind'] == '物品':
                         set_prop_layout(step, build=False)
@@ -1304,13 +1313,10 @@ class Projects:
             text = str(payload.get('explanation', '')).strip()
             if len(text) < 4:
                 raise ValueError('请具体说明补充的事实或参考')
-            if any(s['status'] != 'waiting' or s.get('audit', {}).get('status') in {'drafting', 'reviewing'} for s in job['steps']):
+            if any(s['status'] != 'waiting' for s in job['steps']):
                 raise ValueError('请在开始制作前补充缺口；已有结果时可核对图片后逐项确认')
             job['resolved_blockers'] = {'items': job['blockers'], 'explanation': text, 'at': now()}
             job['blockers'] = []
-            for step in job['steps']:
-                step['audit'] = {'status': 'stale'}
-                step.pop('prompt_approval', None)
             self.lib.save(job, 'jobs')
             return self.detail(p['id'])
 
@@ -1318,10 +1324,9 @@ class Projects:
         with self.lib.lock:
             job = self.lib.get(payload['job_id'], 'jobs')
             p, _, step = self.context(job, int(payload['index']), payload.get('project_id'))
-            if step['status'] != 'waiting' or step.get('audit', {}).get('status') in {'drafting', 'reviewing'}:
+            if step['status'] != 'waiting':
                 raise ValueError('此项正在处理或已有结果，不能清除参考')
-            step.update(reference_ids=[], audit={'status': 'stale'})
-            step.pop('prompt_approval', None)
+            step['reference_ids'] = []
             self.lib.save(job, 'jobs')
             return self.detail(p['id'])
 
@@ -1333,7 +1338,9 @@ class Projects:
         approval = previous.get('approval') or {}
         scope = review['approval']['scope']
         return (confirmation.get('source') == source
+                and confirmation.get('asset_id') == review['candidate_id']
                 and previous.get('asset_id') == review['asset_id']
+                and previous.get('candidate_revision') == review.get('candidate_revision')
                 and confirmation.get('image_sha256') == review['image_sha256']
                 and previous.get('purpose', review['purpose']) == review['purpose']
                 and all((approval.get('scope') or {}).get(key) == scope[key]
@@ -1355,22 +1362,14 @@ class Projects:
                 and confirmation.get('asset_id') == previous.get('asset_id') == basis.get('asset_id')
                 and confirmation.get('image_sha256') == previous.get('image_sha256') == basis.get('image_sha256')
                 and previous.get('purpose') == basis.get('purpose')
+                and previous.get('candidate_revision') == basis.get('candidate_revision')
                 and all(key not in previous or previous[key] == basis.get(key) for key in ('ast_id', 'output_id'))
                 and previous.get('authorization_id') == basis.get('authorization_id')
                 and previous.get('authorization_ref') == basis.get('authorization_ref')
                 and previous_confirmation.get('quote') == current.get('quote')
                 and previous_confirmation.get('at') == current.get('at')
-                and previous_confirmation.get('review_ref') == current.get('review_ref'))
-
-    @staticmethod
-    def _same_scoped_asset(confirmation, basis, source):
-        if basis.get('channel') != 'agent_review':
-            return Projects._same_chat_asset(confirmation, basis, source)
-        stored = (confirmation or {}).get('agent_review') or {}
-        return ((confirmation or {}).get('source') == source
-                and (confirmation or {}).get('asset_id') == basis.get('asset_id')
-                and (confirmation or {}).get('image_sha256') == basis.get('image_sha256')
-                and all(stored.get(key) == value for key, value in basis.items()))
+                and previous_confirmation.get('review_ref') == current.get('review_ref')
+                and previous_confirmation.get('message_id') == current.get('message_id'))
 
     @staticmethod
     def _chat_confirmation_basis(confirmation):
@@ -1380,6 +1379,10 @@ class Projects:
         basis = {key: confirmation.get(key) for key in ('quote', 'at', 'review_ref')}
         if any(not isinstance(value, str) or not value.strip() for value in basis.values()):
             raise ValueError('对话确认依据须包含用户原话、确认时间与协调方复核结论位置')
+        if 'message_id' in confirmation:
+            if not isinstance(confirmation['message_id'], str) or not confirmation['message_id'].strip():
+                raise ValueError('对话消息 ID 不能为空')
+            basis['message_id'] = confirmation['message_id']
         return basis
 
     @staticmethod
@@ -1432,16 +1435,18 @@ class Projects:
             if workflow == 'awaiting_kickoff':
                 raise ValueError(ASSET_KICKOFF_REQUIRED)
             if workflow == 'website':
-                raise ValueError('本项目资产采用需要当前版审核站真实通过回执，或获准的对话确认、代审依据')
+                raise ValueError('本项目资产采用需要当前版审核站真实通过回执，或获准的用户对话确认')
         self.dependencies(job, step)
-        ident = payload.get('asset_id') or step.get('selected')
+        ident = payload.get('asset_id')
         if ident not in step['outputs'] or payload.get('confirm') is not True:
             raise ValueError('请明确选择并确认本制作项的一张图片')
         if website_review is not None and (
-                step.get('selected') != ident or step['purpose'] != website_review['purpose']):
+                step.get('selected') != ident or ident != website_review['candidate_id']
+                or step['purpose'] != website_review['purpose']):
             raise ValueError('当前选图或用途已变化，请核对审核包')
         if chat_review is not None and (
-                step.get('selected') != ident or step['purpose'] != chat_review['purpose']):
+                step.get('selected') != ident or ident != chat_review['asset_id']
+                or step['purpose'] != chat_review['purpose']):
             raise ValueError('当前选图或用途已变化，请核对对话确认依据')
         if step.get('project_confirmation') or step['status'] == 'confirmed':
             if step.get('project_confirmation') and step['status'] == 'confirmed' and step.get('selected') == ident:
@@ -1450,12 +1455,14 @@ class Projects:
                 if website_review is not None and self._same_website_asset(
                         step['project_confirmation'], website_review, p['source']):
                     return
-                if chat_review is not None and self._same_scoped_asset(
+                if chat_review is not None and self._same_chat_asset(
                         step['project_confirmation'], chat_review, p['source']):
                     return
             raise ValueError('已确认图片保留原版本；请先点击重新选图 / 返工，再确认其他图片')
         if step['status'] != 'awaiting_review':
             raise ValueError('只有待核对的图片可以确认，请刷新制作项状态')
+        if step.get('selected') and step['selected'] != ident:
+            raise ValueError('当前选图与决定绑定的候选 ID 不符')
         asset = self.lib.get(ident, require_file=True)
         if asset.get('reference_only'):
             raise ValueError('项目参考图不能确认为制作结果')
@@ -1470,10 +1477,14 @@ class Projects:
             job['resolved_blockers'] = {'items': job['blockers'], 'at': now(), 'method': '用户核对实际选图并确认缺口已解决'}
             job['blockers'] = []
         image_sha256 = digest(Path(asset['original']))
-        if website_review is not None and image_sha256 != website_review['image_sha256']:
+        if website_review is not None and (image_sha256 != website_review['image_sha256']
+                                           or asset.get('candidate_revision') != website_review['candidate_revision']):
             raise ValueError('当前选图字节已变化，请核对审核包')
-        if chat_review is not None and image_sha256 != chat_review['image_sha256']:
+        if chat_review is not None and (image_sha256 != chat_review['image_sha256']
+                                        or asset.get('candidate_revision') != chat_review['candidate_revision']):
             raise ValueError('当前选图字节已变化，请核对对话确认依据')
+        if asset.get('image_sha256', image_sha256) != image_sha256:
+            raise ValueError('候选图片入库后已变化，请重新导入并展示新版本')
         receipt = {'id': uid(), 'at': now(), 'asset_id': ident, 'source': p['source'], 'method': '项目制作格逐项视觉确认', 'technical_qc': check,
                    'image_sha256': image_sha256,
                    'dependency_confirmations': self.dependency_basis(job, step)}
@@ -1481,12 +1492,8 @@ class Projects:
             receipt.update(method='审核站资产图通过', website_review={
                 key: value for key, value in website_review.items() if key != '_verified_confirmation_id'})
         if chat_review is not None:
-            if chat_review.get('channel') == 'agent_review':
-                receipt.update(method='授权逐图代审', agent_review=dict(chat_review))
-            else:
-                receipt.update(method='用户对话整批确认', chat_confirmation=dict(chat_review))
+            receipt.update(method='用户对话整批确认', chat_confirmation=dict(chat_review))
         step.update(selected=ident, status='confirmed', project_confirmation=receipt)
-        self.lib.sync_visual_self_check(step, asset)
         asset.update(status='confirmed', confirmation=receipt)
         asset.setdefault('project_confirmations', []).append({'project_id': p['id'], 'ast_id': job['ast_id'], **receipt})
         asset['backup'] = {'status': 'pending'}
@@ -1626,7 +1633,7 @@ class Projects:
         return self._finish_review_backup(result, backup, resume)
 
     def _apply_website_review(self, ident, publication_path, client):
-        from review_text_cli import read_decision, read_publication
+        from review_text_cli import read_decision, read_publication, verify_submission
         from core.agent_review_api import effective_approval
         with self.lib.lock:
             p = self.get(ident)
@@ -1661,6 +1668,7 @@ class Projects:
                     # confirmed under an earlier exact review of this script.
                     decision_status = decision['decisionStatus']
                     if decision_status == 'changes' and decision['validity']['isCurrent']:
+                        verify_submission(root, publication)
                         result.update(self._withdraw_website_approval(p, publication, (root / publication_path).resolve(),
                                                                      source_json['sha256'], decision))
                     earlier_approval = decision_status == 'approved' and not decision['validity']['isCurrent']
@@ -1690,18 +1698,24 @@ class Projects:
                         if member is None:
                             continue
                         label = ' / '.join(key)
-                        if not step.get('selected') or step['purpose'] != member['request']['parameters']['purpose']:
+                        parameters = member['request']['parameters']
+                        candidate_id = verify_submission(root, member)
+                        if step.get('selected') != candidate_id:
+                            raise ValueError('网站送审候选 ID 与当前选图不符：' + label)
+                        if step['purpose'] != parameters['purpose']:
                             raise ValueError('网站通过的审核包没有覆盖准确制作项及用途：' + label)
                         _, step = self._project_step(p, job, index, required_finals=required_finals)
                         self.dependencies(job, step)
                         asset = self.lib.get(step['selected'], require_file=True)
                         check = self.skill.technical_check(asset['original'], None if step['kind'] == '人物1x4' else step['ratio'])
-                        if (digest(Path(asset['original'])) != member['image']['sha256']
+                        if (asset.get('candidate_revision') != member['candidate_revision']
+                                or digest(Path(asset['original'])) != member['image']['sha256']
                                 or step['status'] not in {'awaiting_review', 'confirmed'} or job.get('blockers')
                                 or asset.get('reference_only') or asset.get('trashed_at')
                                 or not check['passed'] or check['format'] not in {'PNG', 'JPEG', 'WEBP'}):
                             raise ValueError('当前选图已变化或制作项尚未就绪：' + label)
                         review = {'approval': approval, 'asset_id': member['response']['assetId'],
+                                  'candidate_id': candidate_id, 'candidate_revision': member['candidate_revision'],
                                   'publication': package['publication'], 'purpose': step['purpose'],
                                   'image_sha256': member['image']['sha256'],
                                   'binding': {'base_url': client.base_url, 'script_version': publication['script_version'],
@@ -1725,7 +1739,7 @@ class Projects:
             p, client, publication, script, local_publications, package, targets)
 
     def _resume_website_export(self, project, client, publication, script, receipts, package, targets):
-        from review_text_cli import read_decision, read_publication
+        from review_text_cli import read_decision, read_publication, verify_submission
         from core.agent_review_api import effective_approval
         root = Path(project['path'])
         with self.lib.lock, project_lock(root):
@@ -1735,6 +1749,8 @@ class Projects:
             for (path, stage), receipt in receipts.items():
                 if read_publication(root, path, client, stage) != receipt:
                     raise ValueError('备份期间发布回执已变化，请重新核对审核包')
+                if stage == 'assets':
+                    verify_submission(root, receipt)
             decision = read_decision(client, publication)
             if not effective_approval(decision):
                 result = {'adopted': False, 'decision_status': decision['decisionStatus'],
@@ -1768,84 +1784,68 @@ class Projects:
                     or (job['ast_id'], step_output_id(step)) != (binding['ast_id'], binding['output_id'])
                     or not matches(receipt, review, p['source'])):
                 raise ValueError('备份期间已确认的选图、用途或审核依据已变化')
+            if review.get('candidate_revision') != self.lib.get(asset_id).get('candidate_revision'):
+                raise ValueError('备份期间候选修订已变化')
             if p.get('export'):
                 asset = self.lib.get(asset_id, require_file=True)
                 if asset.get('reference_only') or asset.get('trashed_at'):
                     raise ValueError('备份期间选图已失效，请重新核对审核范围')
 
-    @staticmethod
-    def _chat_output_scope(confirmation):
-        if not isinstance(confirmation, dict):
-            raise ValueError('对话确认依据必须是包含用户原话、时间与复核结论位置的记录')
-        if 'outputs' not in confirmation:
-            return None
-        raw = confirmation['outputs']
-        fields = {'ast_id', 'output_id', 'asset_id', 'image_sha256', 'purpose'}
-        if (not isinstance(raw, list) or any(not isinstance(row, dict) or set(row) != fields
-                or not all(isinstance(row[key], str) and row[key].strip() for key in fields)
-                or not re.fullmatch(r'[a-f0-9]{64}', row['image_sha256']) for row in raw)):
-            raise ValueError('对话确认输出须指定准确 AST、输出 ID、选图 ID、图片 SHA-256 及用途')
-        scope = {(row['ast_id'], row['output_id']): row for row in raw}
-        if len(scope) != len(raw):
-            raise ValueError('对话确认包含重复制作项')
-        return scope
+    def show_chat_candidates(self, ident, message_id, targets):
+        from chat_asset_review import SHOWN, web_history, web_messages
+        with self.lib.lock:
+            p = self.get(ident)
+            root = Path(p['path'])
+            with project_lock(root):
+                self.fresh(p)
+                self.link_workbench(p)
+                if (not isinstance(message_id, str) or not message_id.strip() or not targets
+                        or not isinstance(targets, list) or len(set(targets)) != len(targets)):
+                    raise ValueError('展示需要原消息 ID 和唯一的制作项')
+                for _, saved in web_messages(root):
+                    if (saved.get('decision') or {}).get('message_id') == message_id and saved['message_id'] != message_id:
+                        raise ValueError('这条用户消息已有决定')
+                    if saved.get('message_id') == message_id:
+                        if (saved.get('display_source') != p['source']
+                                or set(targets) != {r['ast_id'] + '@' + r['output_id'] for r in saved['outputs']}):
+                            raise ValueError('原展示范围不能更改')
+                        images = [str(project_path(root, row['source_path'])) for row in saved['outputs']]
+                        for path, row in zip(images, saved['outputs']):
+                            verify_image_confirmation(path, row)
+                        return dict(message_id=message_id, outputs=saved['outputs'], images=images)
+                if any(web_history(root, {'message_id': message_id})):
+                    raise ValueError('已有历史决定，不能重新绑定展示消息')
+                outputs = []
+                for row in p['rows']:
+                    if not row.get('job_id'):
+                        continue
+                    job = self.lib.get(row['job_id'], 'jobs')
+                    for step in job['steps']:
+                        output = step_output_id(step)
+                        if job['ast_id'] + '@' + output not in targets or step.get('required') is False:
+                            continue
+                        asset = self.lib.get(step.get('selected'), require_file=True)
+                        if (not isinstance(asset.get('candidate_revision'), str) or not asset['candidate_revision'].strip()
+                                or not asset.get('image_sha256') or asset['id'] not in step['outputs']):
+                            raise ValueError('所选候选缺少准确的版本绑定')
+                        source_path = self.copy_to_project(p, asset)
+                        verify_image_confirmation(source_path, asset)
+                        outputs.append(dict(ast_id=job['ast_id'], output_id=output, asset_id=asset['id'],
+                                            candidate_id=asset['id'], candidate_revision=asset['candidate_revision'],
+                                            image_sha256=asset['image_sha256'], purpose=step['purpose'],
+                                            source_path=source_path.relative_to(root).as_posix()))
+                if len(outputs) != len(targets) or len({(o['ast_id'], o['output_id']) for o in outputs}) != len(outputs):
+                    raise ValueError('展示的制作项不完整或重复')
+                shown = dict(message_id=message_id, outputs=outputs)
+                write(root / SHOWN / 'Web对话消息' / (uid() + '.json'), {**shown, 'display_source': p['source']})
+                return {**shown, 'images': [str(root / row['source_path']) for row in outputs]}
 
     def apply_chat_confirmation(self, ident, *, authorization_id, confirmation, backup=None):
-        """Apply the exact new approval and carry forward independently confirmed outputs."""
-        result, resume = self._apply_scoped_review(ident, authorization_id, confirmation)
+        """Apply the outputs captured with the user's message and retain earlier approvals."""
+        result, resume = self._confirm_chat_outputs(ident, authorization_id, confirmation)
         return self._finish_review_backup(result, backup, resume)
 
-    def apply_agent_review(self, ident, *, authorization_id, review, backup=None):
-        result, resume = self._apply_scoped_review(ident, authorization_id, review, delegated=True)
-        return self._finish_review_backup(result, backup, resume)
-
-    def _delegated_scope(self, project, authorization, report):
-        if not isinstance(report, dict) or not isinstance(report.get('outputs'), list):
-            raise ValueError('逐图代审须列出准确 outputs')
-        basis = {'channel': 'agent_review', 'authorization_id': authorization['id'],
-                 'authorization_sha256': asset_authorization_digest(authorization)}
-        if not report['outputs']:
-            return basis, {}, {}
-        source = {**project['source'], 'sha256': digest(Path(project['source']['path']))}
-        if report.get('source_narrative') != source:
-            raise ValueError('逐图代审须绑定当前编导身份、修订和字节')
-        basis.update(source_narrative=source, **{key: report.get(key) for key in ('agent_id', 'checked_at', 'report_ref')})
-        fields = {'ast_id', 'output_id', 'asset_id', 'image_sha256', 'purpose'}
-        scope = self._chat_output_scope({'outputs': [
-            {key: row.get(key) for key in fields} if isinstance(row, dict) else row
-            for row in report['outputs']]})
-        observations = {(row['ast_id'], row['output_id']): {
-            'result': row.get('result'), 'observation': row.get('observation'),
-            'locator': row.get('locator'), 'product_check': row.get('product_check')}
-            for row in report['outputs']}
-        return basis, scope, observations
-
-    def _validate_delegated_product(self, project, job, step, review):
-        requirement = self.row(project, job['ast_id'])['requirement']
-        if requirement['category'] != 'REAL_PRODUCT':
-            if review['product_check'] is not None:
-                raise ValueError('产品专项核对仅适用于真实产品资产')
-            return
-        root = Path(project['path'])
-        manifest = load_manifest(root)
-        state = load_project_state(root)
-        references = {resolve_reference(root, raw, manifest['artifacts'], state)
-                      for raw in requirement['reference_paths']}
-        references.update(asset['original'] for asset in (
-            self.lib.get(ident, require_file=True) for ident in step.get('reference_ids', []))
-                          if asset.get('product_reference') and not asset.get('trashed_at'))
-        pack = resolve_product_pack(load_kickoff(root)['product'])
-        if pack and references.intersection({pack['manifest_path'], pack.get('current_manifest_path')}):
-            references.update(item['path'] for item in pack['references']
-                              if item['role'] in {'packaging', 'material', 'state'})
-        check = review.get('product_check')
-        if (not isinstance(check, dict) or not isinstance(check.get('references'), list)
-                or not check['references'] or any(not isinstance(ref, dict) or ref.get('path') not in references
-                    or Path(ref['path']).suffix.lower() not in {'.png', '.jpg', '.jpeg', '.webp'}
-                    for ref in check['references'])):
-            raise ValueError('真实产品代审须核对本项实际登记的产品参考图')
-
-    def _apply_scoped_review(self, ident, authorization_id, confirmation, *, delegated=False):
+    def _confirm_chat_outputs(self, ident, authorization_id, confirmation):
         with self.lib.lock:
             p = self.get(ident)
             root = Path(p['path'])
@@ -1853,20 +1853,59 @@ class Projects:
                 self.fresh(p)
                 if not load_kickoff(root):
                     raise ValueError('资产按范围采用只适用于已登记开工决定的项目')
-                authorization = require_asset_workflow_authorization(root, authorization_id, delegated=delegated)
-                channel = 'agent_review' if delegated else 'chat_confirmation'
-                if delegated:
-                    basis, scope, observations = self._delegated_scope(p, authorization, confirmation)
-                else:
-                    scope = self._chat_output_scope(confirmation)
-                    basis = {'channel': channel, 'authorization_id': authorization['id'],
-                             'authorization_ref': authorization['authorization_ref']}
-                    if scope != {}:
-                        basis['confirmation'] = self._chat_confirmation_basis(confirmation)
-                if scope == {}:
-                    resume_basis = {'channel': channel, 'authorization_id': authorization['id']} if delegated else {}
+                authorization = require_asset_workflow_authorization(root, authorization_id)
+                channel = 'chat_confirmation'
+                if not isinstance(confirmation, dict):
+                    raise ValueError('对话确认依据必须为消息记录')
+                resume_only = confirmation == {'outputs': []}
+                basis = {'channel': channel, 'authorization_id': authorization['id'],
+                         'authorization_ref': authorization['authorization_ref']}
+                if not resume_only:
+                    basis['confirmation'] = self._chat_confirmation_basis(confirmation)
+                if resume_only:
+                    resume_basis = {}
                     result = self._export_locked({'project_id': ident}, chat_package=resume_basis)
                     return result, lambda: self._resume_chat_export(p, authorization, resume_basis, [])
+                from chat_asset_review import prior_channel_decision, same_message, web_display, web_history, web_messages
+                message = basis['confirmation']
+                display_id = confirmation.get('reply_to_message_id', message.get('message_id'))
+                message_path, saved = web_display(root, display_id)
+                outputs = saved.get('outputs')
+                if saved['display_source'] != p['source'] or not isinstance(outputs, list) or not outputs or any(
+                        not isinstance(row, dict) or not all(isinstance(row.get(k), str) and row[k].strip() for k in ('asset_id', 'candidate_id', 'candidate_revision',
+                                                      'ast_id', 'output_id', 'image_sha256', 'purpose', 'source_path'))
+                        or row['candidate_id'] != row['asset_id'] for row in outputs):
+                    raise ValueError('原展示候选绑定不完整或上游已变化')
+                if 'outputs' in confirmation and confirmation['outputs'] != outputs:
+                    raise ValueError('原确认范围不能扩大或更改')
+                scope = {(row['ast_id'], row['output_id']): row for row in outputs}
+                if len(scope) != len(outputs) or not message.get('message_id'):
+                    raise ValueError('展示清单或用户消息 ID 不完整')
+                decision = confirmation.get('decision', 'approved')
+                if decision not in ('approved', 'returned'):
+                    raise ValueError('未知用户决定')
+                if prior_channel_decision(root, message, outputs, decision, from_web=True):
+                    return {'status': decision, 'already_recorded': True}, None
+                for path, other in web_messages(root):
+                    recorded = other.get('decision') or (other if 'quote' in other else None)
+                    if recorded and same_message(recorded, message) and (
+                            path != message_path or recorded != message or other.get('outcome') != decision):
+                        raise ValueError('同一条用户消息已用于其他决定')
+                if saved.get('decision') and (saved['decision'] != message or saved.get('outcome') != decision):
+                    raise ValueError('原展示已有不同决定')
+                prior_approved = set()
+                for outcome, review in web_history(root, message):
+                    if not saved.get('decision'):
+                        raise ValueError('已有历史决定，不能以新展示重新绑定')
+                    if (outcome != decision or outcome == 'approved' and
+                            not any(all(review.get(k) == v for k, v in output.items()) for output in outputs)):
+                        raise ValueError('同一条用户消息已用于其他历史决定')
+                    if outcome == 'approved':
+                        prior_approved.add((review['ast_id'], review['output_id']))
+                if decision == 'returned':
+                    if not saved.get('decision'):
+                        write(message_path, {**saved, 'decision': message, 'outcome': decision})
+                    return {'status': 'returned', 'outputs': outputs, 'feedback': message['quote']}, None
                 slots = {}
                 for row in p['rows']:
                     if not row.get('job_id'):
@@ -1879,46 +1918,14 @@ class Projects:
                         if key in slots:
                             raise ValueError('当前制作项含有重复的 AST / 输出身份')
                         slots[key] = (job, index, step)
-                def matching_basis(step):
-                    stored = (step.get('project_confirmation') or {}).get(channel) or {}
-                    return stored if all(stored.get(key) == value for key, value in basis.items()) else None
-
-                current_approvals = {key: stored for key, (_, _, step) in slots.items()
-                                     if (stored := matching_basis(step))}
-                historical_steps = [old for _, _, step in slots.values() for old in step.get('history', [])]
-                old_jobs = {row['job_id'] for row in p.get('history', []) if row.get('job_id')}
-                old_jobs.update(job_id for row in p['rows'] for job_id in row.get('job_history', []))
-                for job_id in old_jobs:
-                    try:
-                        old_job = self.lib.get(job_id, 'jobs')
-                    except ValueError:
-                        continue  # Obsolete job records may have been deleted.
-                    historical_steps.extend(old_job['steps'])
-                historical_approvals = [stored for step in historical_steps if (stored := matching_basis(step))]
-                prior_approvals = [*current_approvals.values(), *historical_approvals]
-                if scope is None:
-                    # Legacy requests can repeat the original receipt or identify
-                    # the only selected output. An old approval cannot select a new one.
-                    targets = list(current_approvals)
-                    if not targets:
-                        if historical_approvals:
-                            raise ValueError('此对话只确认历史输出；新图须提供新的确认依据')
-                        targets = [key for key, (_, _, step) in slots.items()
-                                   if step.get('selected') and not step.get('project_confirmation')]
-                        if len(targets) != 1:
-                            raise ValueError('对话确认须列出本批准确 outputs；无新确认时可传空列表续跑导出')
-                else:
-                    if set(scope) - slots.keys():
-                        raise ValueError('对话确认输出不在当前必需制作项范围')
-                    declared = [output for prior in prior_approvals for output in prior.get('approved_outputs', [])]
-                    if prior_approvals and any(key not in current_approvals and output not in declared
-                                               for key, output in scope.items()):
-                        raise ValueError('此对话的原确认范围不能扩大到新输出')
-                    targets = list(scope)
+                if set(scope) - slots.keys():
+                    raise ValueError('原展示的制作项已失效')
+                if any(not slots[key][2].get('project_confirmation') for key in prior_approved):
+                    raise ValueError('原消息只确认历史候选')
                 pending = {}
                 reviewed = []
                 required_finals = self._reviewed_character_outputs(p)
-                for key in targets:
+                for key in scope:
                     job, index, _ = slots[key]
                     label = ' / '.join(key)
                     _, step = self._project_step(p, job, index, required_finals=required_finals)
@@ -1929,30 +1936,26 @@ class Projects:
                     self.validate_dependency_confirmation(job, step)
                     asset = self.lib.get(step['selected'], require_file=True)
                     actual = {'ast_id': key[0], 'output_id': key[1], 'asset_id': asset['id'],
-                              'purpose': step['purpose'], 'image_sha256': digest(Path(asset['original']))}
-                    if scope is not None and scope[key] != actual:
+                              'purpose': step['purpose'], 'image_sha256': digest(Path(asset['original'])),
+                              'candidate_id': asset['id'], 'candidate_revision': asset.get('candidate_revision'),
+                              'source_path': scope[key]['source_path']}
+                    if scope[key] != actual:
                         raise ValueError('对话确认的选图、用途或字节与当前制作项不符：' + label)
+                    verify_image_confirmation(project_path(root, actual['source_path']), actual)
                     review = {**basis, **actual}
-                    if delegated:
-                        review.update(observations[key])
-                        self._validate_delegated_product(p, job, step, review)
-                        validate_asset_review(root, review)
                     reviewed.append((job['id'], index, asset['id'], review))
                     existing = step.get('project_confirmation')
                     if existing:
                         self.dependencies(job, step)
                         if not self._has_current_confirmation(p, job, step, asset):
                             raise ValueError('已有确认的来源、图片或用途已变化：' + label)
-                        if delegated and not self._same_scoped_asset(existing, review, p['source']):
-                            raise ValueError('已采用图片保留原代审依据；请先重新选图或返工：' + label)
                         continue
                     check = self.skill.technical_check(asset['original'], None if step['kind'] == '人物1x4' else step['ratio'])
                     if (step['status'] != 'awaiting_review' or job.get('blockers')
                             or asset.get('reference_only') or asset.get('trashed_at') or not check['passed']
                             or check['format'] not in {'PNG', 'JPEG', 'WEBP'}):
                         raise ValueError('当前选图已变化或制作项尚未就绪：' + label)
-                    pending[(job['id'], step['key'])] = (job, index, {**review,
-                        'approved_outputs': list(scope.values()) if scope is not None else [actual]})
+                    pending[(job['id'], step['key'])] = (job, index, review)
                 ordered = []
                 while pending:
                     # Topologically order and validate all selected outputs before mutation.
@@ -1971,6 +1974,8 @@ class Projects:
                             elif (job['id'], dep) not in {item[:2] for item in ordered}:
                                 raise ValueError('先在项目表中确认前置制作项：' + prior['name'])
                         ordered.append((*key, index, review))
+                if not saved.get('decision'):
+                    write(message_path, {**saved, 'decision': message, 'outcome': decision})
                 self._confirm_reviewed_outputs(p, [
                     (job_id, index, review['asset_id'], review) for job_id, _, index, review in ordered
                 ], channel='chat_review', required_finals=required_finals)
@@ -1983,7 +1988,7 @@ class Projects:
             p = self._current_workbench(project)
             if require_asset_workflow_authorization(root, authorization['id']) != authorization:
                 raise ValueError('备份期间资产确认授权已变化，请重新核对')
-            self._validate_reviewed_export(p, targets, self._same_scoped_asset)
+            self._validate_reviewed_export(p, targets, self._same_chat_asset)
             return self._export_locked({'project_id': p['id']}, chat_package=basis)
 
     def _has_current_confirmation(self, project, job, step, asset, *, file_digest=digest):
@@ -1991,16 +1996,13 @@ class Projects:
         if (step['status'] != 'confirmed' or not receipt.get('id') or receipt.get('source') != project['source']
                 or receipt.get('asset_id') != asset['id'] or not receipt.get('image_sha256')):
             return False
-        review = receipt.get('agent_review')
-        if review:
-            validate_asset_review(project['path'], review)
-            return self._same_scoped_asset(receipt, {**review, 'ast_id': job['ast_id'],
-                'output_id': step_output_id(step), 'asset_id': asset['id'], 'purpose': step['purpose'],
-                'image_sha256': file_digest(Path(asset['original']))}, project['source'])
+        if receipt.get('agent_review'):
+            return False
         chat = receipt.get('chat_confirmation')
         if chat:
             authorization = require_asset_workflow_authorization(project['path'], chat.get('authorization_id'))
-            return (chat.get('authorization_ref') == authorization['authorization_ref']
+            return (('candidate_revision' not in chat or chat['candidate_revision'] == asset.get('candidate_revision'))
+                    and chat.get('authorization_ref') == authorization['authorization_ref']
                     and self._chat_confirmation_basis(chat.get('confirmation'))
                     and self._same_chat_asset(receipt, {**chat, 'ast_id': job['ast_id'],
                         'output_id': step_output_id(step), 'asset_id': asset['id'], 'purpose': step['purpose'],
@@ -2010,6 +2012,8 @@ class Projects:
             binding = web.get('binding') or {}
             scope = (web.get('approval') or {}).get('scope') or {}
             return (scope.get('stage') == 'assets' and scope.get('caseId') and scope.get('version')
+                    and web.get('candidate_id', receipt['asset_id']) == asset['id']
+                    and ('candidate_revision' not in web or web['candidate_revision'] == asset.get('candidate_revision'))
                     and web.get('purpose') == step['purpose']
                     and web.get('image_sha256') == receipt['image_sha256']
                     and (not binding or (binding.get('ast_id'), binding.get('output_id'),
@@ -2022,9 +2026,23 @@ class Projects:
             job = self.lib.get(payload['job_id'], 'jobs')
             p, _, step = self.context(job, int(payload['index']), payload.get('project_id'))
             keys = self.dependent_keys(job, {step['key']})
-            if any(s['status'] in BUSY or s.get('audit', {}).get('status') in {'drafting', 'reviewing'} for s in job['steps'] if s['key'] in keys):
+            if any(s['status'] in BUSY for s in job['steps'] if s['key'] in keys):
                 raise ValueError('关联图片仍在生成，请等待后再返工')
+            decision = None
+            if payload.get('message_id'):
+                from chat_asset_review import web_display
+                _, shown = web_display(Path(p['path']), payload.get('reply_to_message_id', payload['message_id']))
+                decision = shown.get('decision')
+                if (shown.get('outcome') != 'returned' or not decision or decision['message_id'] != payload['message_id']
+                        or decision['quote'] != payload.get('feedback')
+                        or not any((r['ast_id'], r['output_id'], r['asset_id']) ==
+                                   (job['ast_id'], step_output_id(step), step.get('selected')) for r in shown['outputs'])):
+                    raise ValueError('返工意见与已退回的展示候选不符')
             self.reset_steps(job, keys)
+            if payload.get('feedback'):
+                step['feedback'] = str(payload['feedback'])
+                step['history'][-1]['feedback'] = ({**decision, 'outputs': shown['outputs']}
+                                                  if decision else step['feedback'])
             self._save_output_changes(p, [(job, keys)], '用户重新选择资产，相关制作项待再次确认')
             return self.detail(p['id'])
 
@@ -2059,7 +2077,7 @@ class Projects:
             if self.batch_running:
                 raise ValueError('已有批次正在执行，请等本批完成')
             mode = payload['mode']
-            if mode not in {'prepare', 'write', 'review', 'generate'}:
+            if mode not in {'prepare', 'write', 'generate'}:
                 raise ValueError('无效批次类型')
             tasks = payload['tasks']
             if not tasks or len(tasks) > 100 or len({(t['job_id'], int(t['index'])) for t in tasks}) != len(tasks):
@@ -2085,7 +2103,7 @@ class Projects:
                 step = job['steps'][index]
                 if step['kind'] == '人物1x4':
                     raise ValueError(BOARD_IMPORT_ONLY)
-                if step['status'] != 'waiting' or step.get('audit', {}).get('status') in {'drafting', 'reviewing'}:
+                if step['status'] != 'waiting':
                     raise ValueError('只可提交待制作且未在处理的项目')
                 direction = t.get('generation_direction', step.get('generation_direction', ''))
                 if not isinstance(direction, str) or len(direction) > 2000:
@@ -2096,16 +2114,11 @@ class Projects:
                     raise ValueError('生成方向已变化，请重新准备提示词')
                 if changed:
                     step['generation_direction'] = direction
-                    step['audit'] = {}
-                    step.pop('prompt_approval', None)
                 try:
                     request = self.request(job, index)
                 except (ValueError, FileNotFoundError) as exc:
                     if mode == 'generate':
                         raise
-                    step['audit'] = {'status': 'error', 'message': str(exc)[:500], 'finished_at': now()}
-                    step.pop('prompt_approval', None)
-                    self.lib.save(job, 'jobs')
                     entries.append({'job_id': job['id'], 'index': index, 'status': 'error',
                                     'message': str(exc)[:500]})
                     continue
@@ -2116,18 +2129,14 @@ class Projects:
                     if grant and not grant_covers_asset(grant, job['ast_id'], output_id):
                         raise ValueError('制作项不在开工生图授权范围：' + job['ast_id'] + ' / ' + output_id)
                     if ((grant is None and payload.get('authorize') is not True)
-                            or not self.skill.approved(step) or t.get('prompt') != step.get('prompt')):
-                        raise ValueError('请审查通过并确认本批全部最终提示词、工具、模型和额度消耗')
-                    if step.get('audit', {}).get('prompt') != step.get('prompt'):
-                        raise ValueError('提示词修改后需要重新审查')
-                operation = 'write' if changed or not step.get('prompt') else 'repair' if step.get('audit', {}).get('status') in {'needs_changes', 'error'} else 'review'
-                entries.append({'operation': operation if mode == 'prepare' else mode, 'job_id': job['id'], 'index': index, 'prompt': step.get('prompt'),
-                                'request': request, 'status': 'queued'})
+                            or t.get('prompt', request['prompt']) != request['prompt']):
+                        raise ValueError('请核对本批提示词、工具和生成授权')
+                entries.append({'job_id': job['id'], 'index': index, 'prompt': request['prompt'],
+                                'request': request, 'status': 'queued',
+                                'write_prompt': mode == 'write' or changed or not step.get('prompt') or bool(step.get('feedback'))})
             for job_id, index, direction in updates:
                 job = self.lib.get(job_id, 'jobs')
                 job['steps'][index]['generation_direction'] = direction
-                job['steps'][index]['audit'] = {}
-                job['steps'][index].pop('prompt_approval', None)
                 self.lib.save(job, 'jobs')
             p['batch'] = {'id': uid(), 'mode': mode, 'status': 'running', 'entries': entries,
                           'provider': provider, 'model': model, 'started_at': now(),
@@ -2136,12 +2145,11 @@ class Projects:
                 p['batch']['kickoff_generation'] = grant
             self.save(p)
             self.batch_running = True
-            threading.Thread(target=self._batch_worker, args=(p['id'],), daemon=True).start()
-            return {'message': f'已检查 {len(entries)} 项，最多 3 项并行；' + ('生成失败不重复提交' if mode == 'generate' else 'Luna自动修复提示词最多一次，缺失素材单独列明')}
+            threading.Thread(target=self._batch_worker, args=(p['id'], p['batch']), daemon=True).start()
+            return {'message': f'已检查 {len(entries)} 项，最多 3 项并行；' + ('生成失败不重复提交' if mode == 'generate' else '按项保存提示词，缺失素材单独列明')}
 
-    def _batch_worker(self, ident):
+    def _batch_worker(self, ident, batch):
         try:
-            batch = self.get(ident)['batch']
             def run_entry(item):
                 n, entry = item
                 if entry['status'] == 'error':
@@ -2149,6 +2157,12 @@ class Projects:
                 try:
                     with self.lib.lock:
                         p = self.get(ident)
+                        live_batch = p['batch']
+                        if live_batch['id'] != batch['id']:
+                            return
+                        if (live_batch['entries'][n] != entry or any(live_batch.get(k) != v
+                                for k, v in batch.items() if k != 'entries')):
+                            raise ValueError('排队期间批次请求或用户授权已改变')
                         self.fresh(p)
                         job = self.lib.get(entry['job_id'], 'jobs')
                         step = job['steps'][entry['index']]
@@ -2164,17 +2178,16 @@ class Projects:
                                     and (not current_grant or current_grant != batch.get('kickoff_generation'))):
                                 raise ValueError('开工生图授权在排队期间已改变，停止提交本项')
                             job.update(provider=batch['provider'], model=batch['model'])
-                            step['prompt_approval'] = {'at': batch['authorized_at'], 'prompt': step['prompt'], 'batch_id': batch['id']}
                             self.lib.save(job, 'jobs')
                             action = self.lib.submit_imagegen if batch['provider'] == 'imagegen' else self.lib.submit
-                            action({'id': job['id'], 'index': entry['index'], 'authorize': True})
-                        else:
-                            self.lib.audit_prompt({'id': job['id'], 'index': entry['index'], 'mode': entry.get('operation', batch['mode'])})
-                    deadline = time.monotonic() + 1800
-                    next_query_at = 0.0
-                    while True:
-                        step = self.lib.get(entry['job_id'], 'jobs')['steps'][entry['index']]
-                        if batch['mode'] == 'generate':
+                            action({'id': job['id'], 'index': entry['index'], 'authorize': True, 'batch_id': batch['id']})
+                    if batch['mode'] != 'generate' and entry['write_prompt']:
+                        self.lib.write_prompt(entry['job_id'], entry['index'], project_id=ident, expected=entry['request'])
+                    elif batch['mode'] == 'generate':
+                        deadline = time.monotonic() + 1800
+                        next_query_at = 0.0
+                        while True:
+                            step = self.lib.get(entry['job_id'], 'jobs')['steps'][entry['index']]
                             if step['status'] == 'submitted':
                                 if step.get('query_blocked'):
                                     raise ValueError(step.get('message', '自动查询已暂停，请核实原任务'))
@@ -2185,29 +2198,31 @@ class Projects:
                                 if step['status'] not in {'awaiting_review', 'confirmed'}:
                                     raise ValueError(step.get('message', '生成未完成，请核实；未重试'))
                                 break
-                        elif step.get('audit', {}).get('status') not in {'drafting', 'reviewing'}:
-                            if step['audit']['status'] != 'passed':
-                                raise ValueError('；'.join(step['audit'].get('issues') or []) or step['audit'].get('message') or '提示词审查未通过，请修改')
-                            break
-                        if time.monotonic() > deadline:
-                            raise ValueError('等待超时，当前项需核实，未重复提交')
-                        time.sleep(1)
+                            if time.monotonic() > deadline:
+                                raise ValueError('等待超时，当前项需核实，未重复提交')
+                            time.sleep(1)
                     status, message = 'done', '已完成'
                 except Exception as exc:
                     status, message = 'error', str(exc)[:500]
                 with self.lib.lock:
                     p = self.get(ident)
+                    if p['batch']['id'] != batch['id']:
+                        return
                     p['batch']['entries'][n].update(status=status, message=message, finished_at=now())
                     self.save(p)
             with ThreadPoolExecutor(max_workers=3, thread_name_prefix='asset-batch') as pool:
                 list(pool.map(run_entry, enumerate(batch['entries'])))
             with self.lib.lock:
                 p = self.get(ident)
+                if p['batch']['id'] != batch['id']:
+                    return
                 p['batch'].update(status='done', finished_at=now())
                 self.save(p)
         except Exception as exc:
             with self.lib.lock:
                 p = self.get(ident)
+                if p['batch']['id'] != batch['id']:
+                    return
                 p['batch'].update(status='error', message='本批处理已停止：' + str(exc)[:300], finished_at=now())
                 for entry in p['batch']['entries']:
                     if entry['status'] in {'queued', 'running'}:
@@ -2275,13 +2290,12 @@ class Projects:
             outputs = asset.get('confirmed_outputs', [])
             for output in outputs:
                 key = ast, output['output_id']
-                ref = next((output[field] for field in ('derived_confirmation_ref', 'agent_review_ref',
-                                                       'user_confirmation_ref') if output.get(field)), None)
+                ref = output.get('user_confirmation_ref')
                 if (key in replaced or decisions.get(key, {}).get('status') == 'rejected' or not ref
                         or project_path(root, ref.partition('#')[0]).parent in owned_folders):
                     continue
                 resolved = _confirmed_output(root, ast, output, confirmation_cache=cache,
-                                             file_digest=file_digest, asset_outputs=outputs)
+                                             file_digest=file_digest)
                 if resolved and resolved.get('sha256') and Path(resolved['path']).is_relative_to(root.resolve()):
                     valid.append(output)
             if valid:
@@ -2291,8 +2305,7 @@ class Projects:
                 carry['confirmed_asset'] = (asset['confirmed_asset'] if asset['confirmed_asset']
                     and (asset['confirmed_asset']['candidate_id'], asset['confirmed_asset']['path']) in pairs
                     else {key: value for key, value in valid[0].items()
-                          if key in ('candidate_id', 'path', 'user_confirmation_ref', 'agent_review_ref',
-                                     'derived_confirmation_ref', 'derived_confirmation_sha256')})
+                          if key in ('candidate_id', 'path', 'user_confirmation_ref')})
                 carried[ast] = carry
         return carried
 
@@ -2344,7 +2357,7 @@ class Projects:
                 if workflow == 'website':
                     if not p['rows'] and all(image_decision(req) != '待定' for req in p['narrative']['asset_requirements']):
                         raise ValueError('本轮无资产图交付项，协调方可沿已授权流程继续')
-                    raise ValueError('资产正式采用需要审核站真实通过回执，或获准的对话确认、代审依据')
+                    raise ValueError('资产正式采用需要审核站真实通过回执，或获准的用户对话确认')
                 if payload.get('confirm') is not True:
                     raise ValueError('兼容项目请确认整张需求表后交接')
             requirements = p['narrative']['asset_requirements']
@@ -2490,15 +2503,11 @@ class Projects:
             asset_dir = '06_参考帧与临时素材/资产母版' if (root / '06_参考帧与临时素材').is_dir() and not (root / '04_资产').is_dir() else '04_资产/母版'
             folder = root / asset_dir / (revision + '_' + transaction['id'])
             folder.mkdir(parents=True, exist_ok=True)
-            delegated_export = any(step['project_confirmation'].get('agent_review') for _, _, step, _, _ in collected)
-            receipt_path = folder / ('资产采用记录.json' if delegated_export else '用户确认记录.json')
+            receipt_path = folder / '用户确认记录.json'
             path = folder / 'visual-asset-manifest.json'
             receipt = {'id': transaction['id'], 'at': transaction['at'],
-                       'method': ('含授权代审的资产交接' if delegated_export
-                                  else '逐项确认后整表确认交接' if complete else '已确认输出阶段交接'),
+                       'method': ('逐项确认后整表确认交接' if complete else '已确认输出阶段交接'),
                        'source_narrative': p['source'], 'items': []}
-            if delegated_export:
-                receipt.update(kind='delegated-asset-export', revision=revision)
             if 'summary' in transaction:
                 receipt.update(transaction['summary'])
             elif scoped and receipt_path.exists():
@@ -2585,16 +2594,13 @@ class Projects:
                                     'naming_valid': True, 'reference_traceable': True}
                     if req['category'] != 'REAL_PRODUCT':
                         technical_qc['product_fact_check'] = 'not_applicable'
-                    elif confirmation.get('agent_review'):
-                        technical_qc['product_fact_check'] = 'passed'
                     record['candidates'].append({'candidate_id': candidate_id, 'path': str(target),
-                        'status': 'candidate' if confirmation.get('agent_review') else 'awaiting_user_review',
+                        'status': 'awaiting_user_review',
                         'source_references': refs or [asset['source']],
                         'technical_qc': technical_qc,
                         'generation_record': dict(external) if external else ({'tool': actual_provider, 'model': actual_model,
                             'user_authorization_ref': str(receipt_path) + '#' + output_id} if step.get('authorization') and provenance.get('kind') != 'manual_result_import' else None)})
-                    basis_field = 'agent_review_ref' if confirmation.get('agent_review') else 'user_confirmation_ref'
-                    confirmed = {'candidate_id': candidate_id, 'path': str(target), basis_field: confirm_ref}
+                    confirmed = {'candidate_id': candidate_id, 'path': str(target), 'user_confirmation_ref': confirm_ref}
                     covered_states = (scene_state_coverage(p['narrative'], req).get(step['state'], [])
                                       if req['category'] == 'LOCATION' else [])
                     record['confirmed_outputs'].append({**confirmed, 'output_id': output_id, 'purpose': step['purpose'],
@@ -2608,7 +2614,7 @@ class Projects:
                     record['must_not_inherit'] += step.get('must_not_inherit', [])
                     receipt['items'].append({'ast_id': job['ast_id'], 'output_id': output_id,
                                             'confirmation': step['project_confirmation'], 'library_asset_id': asset['id'],
-                                            'prompt': step.get('prompt'), 'audit': step.get('audit'),
+                                            'prompt': step.get('prompt'),
                                             'authorization': step.get('authorization'), 'provenance': provenance, 'backup': asset['backup']})
                 if old:
                     record['confirmed_outputs'].extend(old['confirmed_outputs'])
@@ -2635,10 +2641,10 @@ class Projects:
                     'logical_id': logical, 'type': 'visual-asset-manifest', 'revision': revision,
                     'path_or_url': str(path),
                     'depends_on': ['narrative.package'] + (['narrative.assets'] if p['narrative'].get('_asset_table') else []),
-                    'user_approved': not delegated_export, 'confirmation_ref': str(receipt_path)})
+                    'user_approved': True, 'confirmation_ref': str(receipt_path)})
             if (registered.get('status') not in {'candidate', 'current'}
                     or registered.get('logical_id') != logical or registered.get('revision') != revision
-                    or registered.get('user_approved') is delegated_export
+                    or registered.get('user_approved') is not True
                     or project_path(root, registered['path_or_url']) != path
                     or project_path(root, registered.get('confirmation_ref', '')) != receipt_path):
                 raise ValueError('待恢复的资产导出登记不一致，请保留现场并核对')
@@ -2680,8 +2686,6 @@ class Projects:
                 manifest = load_manifest(root)
                 entry = next(a for a in manifest['artifacts'] if a['artifact_id'] == artifact_id)
                 entry['checksum'] = digest(path)
-                if delegated_export:
-                    entry['asset_review_sha256'] = digest(receipt_path)
                 save_manifest(root, manifest)
                 promote_candidate(root, logical, artifact_id, previous_asset_snapshot=previous_asset_snapshot,
                                   file_digest=images.digest)
@@ -2692,7 +2696,7 @@ class Projects:
             current = state.get('current_artifacts', [])
             state['current_artifacts'] = [a for a in current if a not in previous_ids | {artifact_id}]
             state['current_artifacts'].append(artifact_id)
-            if not delegated_export and not any(artifact_id in c.get('artifact_ids', []) for c in state['user_confirmations']):
+            if not any(artifact_id in c.get('artifact_ids', []) for c in state['user_confirmations']):
                 methods = {step['project_confirmation']['method'] for _, _, step, _, _ in collected}
                 method = '资产网页整表确认'
                 if scoped:
@@ -2702,7 +2706,7 @@ class Projects:
             # Asset work can run alongside planning; never overwrite its stage or next_stage.
             write_project_state(root, state)
             handoff = folder / '资产交接.md'
-            record_label = '资产采用记录' if delegated_export else '用户确认记录'
+            record_label = '用户确认记录'
             handoff.write_text('# 项目资产交接\n\n- 正式清单：' + str(path) + '\n- ' + record_label + '：' + str(receipt_path) +
                 '\n- 上游版本：' + p['source']['revision']
                 + ('' if complete else '\n- 本版范围：已确认并完成备份的输出。其他输出待交接。')
@@ -2711,11 +2715,7 @@ class Projects:
             product_ids = [a['asset_id'] for a in out['assets'] if a['category'] == 'REAL_PRODUCT']
             if product_ids:
                 with handoff.open('a', encoding='utf-8') as stream:
-                    if delegated_export:
-                        stream.write('\n产品事实核对：' + '、'.join(product_ids) +
-                                     '。逐图观察和来源见采用记录。仅明确记录的 product_fact_check 为通过。\n')
-                    else:
-                        stream.write('\n产品事实核对：' + '、'.join(product_ids) +
+                    stream.write('\n产品事实核对：' + '、'.join(product_ids) +
                                      ' 的图片已有准确用户选图确认；本导出入口未记录 Agent 产品事实核对结果。'
                                      '清单省略 product_fact_check 不表示通过，不得据此声称已核对产品事实。\n')
             if out.get('asset_requirement_decisions'):
@@ -2804,8 +2804,6 @@ class Projects:
                 current, row, step = self.context(job, int(payload['index']))
                 if current['id'] != p['id'] or step['status'] != 'waiting':
                     raise ValueError('请在当前项目待制作步骤中上传参考图')
-                if step.get('audit', {}).get('status') in {'drafting', 'reviewing'}:
-                    raise ValueError('提示词正在处理，请完成后上传参考')
                 category = {'环境': '场景', '服装': '服装三视图', '角色外观': '宠物'}.get(step['kind'], step['kind'])
             else:
                 row = self.row(p, payload['ast_id'])
@@ -2857,6 +2855,7 @@ class Projects:
                 raise ValueError('未知的产品动作核对方式')
         from visual_asset_choices import change
         actions = {'character-output-mode': lambda: self.character_output_mode(payload), 'scene-reference': lambda: self.scene_reference(payload), 'asset-choice': lambda: change(self, payload), 'scene-output-mode': lambda: self.scene_output_mode(payload), 'prepare-reuse': lambda: self.prepare_reuse(payload), 'prepare-character': lambda: prepare_character(self, payload), 'production-route': lambda: self.production_route(payload), 'character-route': lambda: choose_character_route(self, payload), 'bind': lambda: self.bind(payload['path']), 'detail': lambda: self.detail(payload['project_id']),
+                   'show-chat-candidates': lambda: self.show_chat_candidates(payload['project_id'], payload['message_id'], payload['targets']),
                    'sync': lambda: self.sync(payload['project_id']), 'references': lambda: self.references(payload),
                    'plan': lambda: self.plan(payload['project_id'], payload.get('ast_id')), 'select': lambda: self.select(payload),
                    'confirm': lambda: self.confirm(payload), 'reopen': lambda: self.reopen(payload),

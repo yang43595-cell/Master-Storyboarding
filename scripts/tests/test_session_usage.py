@@ -172,3 +172,24 @@ def test_usage_docs_keep_routine_waits_and_budget_routes_separate():
     assert "prepare ... --usage-log" not in direct
     assert "--usage-contract-json" in candidate and "不能在同项目更换 run ID" in candidate
     assert "--usage-contract-json" not in ordinary + direct
+
+
+
+def test_host_wait_exception_returns_original_session():
+    import subprocess
+
+    execution = (Path(__file__).resolve().parents[2] / "docs/rules/execution.md").read_text(encoding="utf-8")
+    example = execution.split("// @exec:", 1)[1].split("\n", 1)[1].split("```", 1)[0]
+    harness = """
+        const calls = [], results = [], command = "fixture";
+        const tools = {
+          exec_command: async () => {calls.push("start"); return {session_id: 831, output: ""}},
+          write_stdin: async ({session_id}) => {calls.push(session_id); throw new Error("broken pipe")}
+        };
+        const text = r => results.push(r);
+    """
+    result = subprocess.run(["node", "--input-type=module", "-e",
+                             harness + example + "console.log(JSON.stringify({calls, results}))"],
+                            capture_output=True, text=True, check=True)
+    assert json.loads(result.stdout) == {"calls": ["start", 831], "results": [
+        {"session_id": 831, "error": "Error: broken pipe", "ok": False}]}

@@ -13,6 +13,7 @@ from .asset_refs import resolve_final_images
 from .depth_reference_review import check_depth_coverage, check_depth_group, product_visible_frames
 from .draft_delivery import DELIVERY_RECEIPT, draft_delivery_lock, load_draft_receipt
 from .io import read_json, write_json
+from .media_types import MEDIA_EXTENSIONS
 from .native_references import redframe_reference_labels
 from .product_reference_pack import resolve_product_pack
 from .project_kickoff import load_kickoff
@@ -305,8 +306,8 @@ def _position(ui, positions):
 
 
 def _reload(ui):
-    ui.page.reload(wait_until='domcontentloaded', timeout=20000)
-    ui.page.get_by_role('button', name='适应视图', exact=True).wait_for(timeout=22000)
+    ui.page.reload(wait_until='domcontentloaded', timeout=30000)
+    ui.page.get_by_role('button', name='适应视图', exact=True).wait_for(timeout=60000)
     ui.assert_target()
 
 
@@ -429,7 +430,13 @@ def _serialize(group, identities, tokens):
 
 
 def _media_kind(material):
-    return 'image' if material['role'] == 'appearance' else 'video'
+    """A still stays an image whatever pack role it carries on the plan."""
+    suffix = Path(material['path']).suffix.lower()
+    if suffix in MEDIA_EXTENSIONS['image']:
+        return 'image'
+    if suffix in MEDIA_EXTENSIONS['video']:
+        return 'video'
+    raise ValueError(f"复刻参考须为图像或视频：{material['reference']}")
 
 
 def _read_images(ui, image_nodes):
@@ -664,7 +671,7 @@ def write_recreation(project, group_path, *, host_browser, append_revision=False
         workspace = session.enter_context(open_workspace(host_browser, url, project_id))
         page = workspace.page
         page.set_viewport_size({'width': 2480, 'height': 1660})
-        page.get_by_role('button', name='适应视图', exact=True).wait_for(timeout=22000)
+        page.get_by_role('button', name='适应视图', exact=True).wait_for(timeout=60000)
         ui = RedframeVideoDraftUI(page, project_id, url, workspace=workspace)
         ui.close_dialog()
         existing_pack = pack_receipt.get('packaging', {})

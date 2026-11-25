@@ -108,7 +108,7 @@ def round_board_source_gaps(root, assets, candidates):
     return gaps
 
 
-def plans(root, selection, specs, reviewed=None):
+def plans(root, selection, specs):
     raw_assets = {a["asset_id"]: a for a in selection["assets"]}
     explicit = {}
     for target, head, outfit in specs:
@@ -165,20 +165,11 @@ def plans(root, selection, specs, reviewed=None):
                 raise ValueError("服装确认时登记的最终人物板与目标不同：" + target)
             sources = [dict(output_id=o["output_id"], path=project_file(root, o["path"]).relative_to(root).as_posix(),
                             sha256=o["sha256"], confirmation_ref=o["confirmation_ref"]) for o in (head, outfit)]
-            if reviewed is not None:
-                expected = reviewed[target]
-                if expected["sources"] != sources or expected["state"] != outfit["state"]:
-                    raise ValueError("实看后拼版源图或用途已变化：" + target)
             if existing:
                 if [(s["output_id"], s["sha256"]) for s in previous] == [(s["output_id"], s["sha256"]) for s in sources]:
-                    if reviewed is not None and existing["sha256"] != expected["image_sha256"]:
-                        raise ValueError("已登记人物板与此次实看版本不同：" + target)
                     reused.append(target)
                     continue
-            prior = {k: existing[k] for k in ("sha256", "confirmation_ref")} if existing else None
             plan = dict(ast_id=ast, output_id=final, sources=sources, state=outfit["state"])
-            if prior:
-                plan["prior_output"] = prior
             ready.append(plan)
     return ready, reused, pending
 

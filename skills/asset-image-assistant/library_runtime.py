@@ -4,7 +4,7 @@ import hashlib
 import re
 import sys
 from core.character_assets import production_kinds
-from core.character_layout import BOARD_IMPORT_ONLY, CHARACTER_PROMPT_PATH, render_character_prompt, unfilled_character_prompt_fields
+from core.character_layout import BOARD_IMPORT_ONLY, CHARACTER_PROMPT_PATH, render_character_prompt
 from core.image_technical import technical_check
 from core.knowledge_runtime import resolve_knowledge_root, verify_selected_file
 from pathlib import Path
@@ -17,40 +17,25 @@ def profile():
     return json.loads((SKILL / 'library-profile.json').read_text(encoding='utf-8'))
 
 
-def checks(mode='asset-library', kind=None):
-    return json.loads((SKILL / 'review-profile.json').read_text(encoding='utf-8'))[
-        'object_prompt_checks' if kind == '物品' else 'production_artifact_checks' if mode == 'project' else 'library_checks']
-
-
-def recipe(kind):
+def recipe(kind, library=None):
     try:
-        return profile()['recipes'][kind]
+        return (library if library is not None else profile())['recipes'][kind]
     except KeyError as exc:
         raise ValueError('资产Skill未提供此输出类型') from exc
 
 
-def language_issues(prompt):
-    # Only unambiguous quality expressions are deterministic blockers.
-    # Bare adjectives can be source names (高级中学) or visible quantities
-    # (大片草地); the existing PROMPT-LANG semantic review owns those cases.
-    terms = re.findall(r'(?i)(?<![a-z0-9])(?:[248]\s*[kｋ])(?![a-z0-9])|影视级|高级感|(?:高级|高端|唯美|大片)\s*(?:的\s*)?(?:画质|质感|风格|画面|摄影|影像|效果)|大片感|电影感|大师摄影|最佳画质|超高清|高细节|(?<![\w])(?:高级|高端|唯美|大片)(?![\w])', prompt)
-    return ['PROMPT-LANG：将含糊画质词改为可观察描述：' + '、'.join(dict.fromkeys(terms))] if terms else []
-
-
 def _output_kinds(kind, rows):
-    if not rows:
-        return [kind]
     kinds = []
-    for row in rows:
+    for row in rows or ():
         requirement = row['requirement']
         try:
             kinds.append(production_kinds(requirement)[0])
         except KeyError as exc:
             raise ValueError('资产 Skill 未提供此 AST 类别：' + str(requirement.get('category'))) from exc
-    return kinds
+    return kinds or [kind]
 
 
-def local_references(kind, request=None):
+def local_references(kind, request=None, *, library=None):
     rows = request.get('rows', []) if request else []
     common = ['docs/rules/execution.md', 'docs/rules/artifacts.md',
         'docs/rules/visual-production.md', 'PROJECT_RULES.md', 'skills/asset-image-assistant/SKILL.md',
@@ -59,7 +44,6 @@ def local_references(kind, request=None):
         'skills/asset-image-assistant/modules/web-input-contract.md',
         'skills/asset-image-assistant/knowledge-profile.json',
         'skills/asset-image-assistant/library-profile.json',
-        'skills/asset-image-assistant/review-profile.json',
         'skills/asset-image-assistant/references/00-asset-production-workflow.md',
         'skills/asset-image-assistant/references/00a-asset-complexity-routing-guide.md',
         'skills/asset-image-assistant/references/05-asset-manifest-handoff-guide.md',
@@ -70,7 +54,7 @@ def local_references(kind, request=None):
     common += ['skills/_shared/' + name + '.md' for name in
                ['skill-layers', 'draft-lifecycle', 'product-reference', 'path-delivery', 'user-confirmation', 'knowledge-access', 'prompt-language']]
     # Continuity rules specific to a kind come from its existing category guide.
-    common.extend('skills/asset-image-assistant/references/' + recipe(output_kind)['guide']
+    common.extend('skills/asset-image-assistant/references/' + recipe(output_kind, library)['guide']
                   for output_kind in _output_kinds(kind, rows))
     if request and request.get('mode') == 'project':
         common.remove('skills/asset-image-assistant/modules/library-mode.md')
@@ -86,16 +70,16 @@ def local_references(kind, request=None):
     return list(dict.fromkeys(common))
 
 
-def method_request(request):
+def method_request(request, *, library=None):
     """Derive applicability from actual output kinds/AST rows, never free-text keywords."""
     kinds = _output_kinds(request['kind'], request.get('rows'))
-    scopes = {recipe(kind)['method_scope']: True for kind in kinds}
+    scopes = {recipe(kind, library)['method_scope']: True for kind in kinds}
     return {**request, 'asset_method_scopes': scopes,
             'knowledge_topics': ['image-prompt', 'prompt-pollution'],
             'language_review': '提示词污染 画质大词 8K 超高清'}
 
 
-def _knowledge(request):
+def _knowledge(request, library):
     # Reuse the existing selector, method resolver and read-only context helpers.
     # No stage CLI is executed; a Web request owns its files, not the project stage.
     scripts = str(ROOT / 'scripts')
@@ -142,7 +126,7 @@ def _knowledge(request):
         request, state, _tombstone_fingerprints(vault, policy), profile=knowledge_profile)
     if any(item.get('reason') == 'blocking_conflict' for item in selected.blocking_conflicts):
         raise ValueError('资产 Web 知识存在 confirmed 冲突：' + json.dumps(selected.blocking_conflicts, ensure_ascii=False))
-    missing = set(profile()['required_rules']) - {block.id for block in selected.selected}
+    missing = set(library['required_rules']) - {block.id for block in selected.selected}
     if missing:
         raise ValueError('资产 Web 必需动态规则缺失：' + ', '.join(sorted(missing)))
     return resolved.required, render_knowledge_bundle('asset-image-assistant', selected), str(vault)
@@ -153,9 +137,9 @@ def _digest(value):
     return hashlib.sha256(value.encode('utf-8')).hexdigest()
 
 
-def template_source(kind, raw=''):
+def template_source(kind, raw='', *, spec=None):
     """Resolve a recipe source for both Web seed text and the final model input."""
-    spec = recipe(kind)
+    spec = spec or recipe(kind)
     guide = SKILL / 'references' / spec['guide']
     if 'template' not in spec or (raw and Path(raw).resolve() == guide.resolve()):
         if not guide.is_file() or not guide.resolve().is_relative_to(SKILL.resolve()):
@@ -168,9 +152,9 @@ def template_source(kind, raw=''):
     return template
 
 
-def template_step(kind, view='', index=None):
+def template_step(kind, view='', index=None, *, spec=None):
     """Resolve display labels/legacy arguments once; unknown scene views fail closed."""
-    spec = recipe(kind)
+    spec = spec or recipe(kind)
     if index is not None:
         if type(index) is not int or not 0 <= index < len(spec['steps']):
             raise ValueError('无效视图序号')
@@ -187,16 +171,16 @@ def template_step(kind, view='', index=None):
     raise ValueError('未知环境视角：' + str(view))
 
 
-def _template_excerpt(raw, kind, view='', index=None):
-    spec = recipe(kind)
-    path = template_source(kind, raw)
+def _template_excerpt(raw, kind, view='', index=None, *, spec=None):
+    spec = spec or recipe(kind)
+    path = template_source(kind, raw, spec=spec)
     text = path.read_text(encoding='utf-8-sig')
     if not text.strip():
         raise ValueError('模板或分类合同正文为空：' + str(path))
     if 'template' not in spec or path == (SKILL / 'references' / spec['guide']).resolve():
         return {'path': str(path), 'content': text, 'status': 'category-guide'}
     blocks = re.findall(r'```text\s*\n(.*?)```', text, re.S)
-    step = template_step(kind, view, index)
+    step = template_step(kind, view, index, spec=spec)
     index = spec['blocks'][step]
     if index >= len(blocks) or not blocks[index].strip():
         raise ValueError('提示词模板缺少对应视图正文：' + spec['template'])
@@ -205,7 +189,7 @@ def _template_excerpt(raw, kind, view='', index=None):
 
 
 def executable_template(kind, subject='', notes='', *, raw='', view='', index=None,
-                        allow_unreferenced_design=False, reference_records=(), has_references=True):
+                        allow_unreferenced_design=False, reference_records=(), has_references=True, spec=None):
     """Render the same bounded template for the seed and the model's task package."""
     if kind == '人物1x4':
         raise ValueError(BOARD_IMPORT_ONLY)
@@ -217,7 +201,7 @@ def executable_template(kind, subject='', notes='', *, raw='', view='', index=No
                 'content': body, 'content_sha256': _digest(body), 'status': 'loaded'}
     if kind in {'大头照', '服装'}:
         if raw and Path(raw).resolve() != CHARACTER_PROMPT_PATH:
-            template_source(kind, raw)
+            template_source(kind, raw, spec=spec)
         refs = reference_records or ([{}] if has_references else [])
         body = render_character_prompt(kind, refs)
         roles = [(index, ref['role']) for index, ref in enumerate(refs, 1) if ref.get('role')]
@@ -229,22 +213,15 @@ def executable_template(kind, subject='', notes='', *, raw='', view='', index=No
             body += '\n用户补充：' + notes
         return {'path': str(CHARACTER_PROMPT_PATH), 'sha256': _digest(CHARACTER_PROMPT_PATH.read_text(encoding='utf-8')),
                 'content': body, 'content_sha256': _digest(body), 'status': 'loaded'}
-    template = _template_excerpt(raw, kind, view, index)
+    spec = spec or recipe(kind)
+    template = _template_excerpt(raw, kind, view, index, spec=spec)
     if template['status'] != 'loaded':
         return template
     block = template['content']
-    # Only these known legacy template sentences are rewritten, before inserting
-    # user names/notes. Never scrub a source name or a numeric product specification.
-    replacements = {
-        '超写实专业人物摄影，真实自然，4K，高细节': '人物摄影，皮肤纹理自然，发丝边缘和五官轮廓清楚',
-        '超写实服装电商棚拍，4K，高细节': '服装电商棚拍，织物纹理、缝线和配件边缘清楚',
-    }
-    for old, new in replacements.items():
-        block = block.replace(old, new)
     fields = {'永久固定项': '参考图中的空间边界、建筑、门窗、通道、家具数量和位置、材质、颜色与光源方向',
               '状态编号与仅允许变化项': '保持参考图中的时间、光照与场景状态；只改变本步规定的视角'}
     if kind == '环境':
-        step = template_step(kind, view, index)
+        step = template_step(kind, view, index, spec=spec)
         if step == 0:
             block = block.replace('以图一【SC-XXX 场景母图】为唯一场景参考', '以用户所选照片为场景参考')
             block = block.replace(
@@ -309,7 +286,9 @@ def _writing_rules(ref, content, single_item):
         'docs/rules/visual-production.md': {'导演稿之后的生产顺序'},
         'skills/asset-image-assistant/SKILL.md': {'后续交接'},
     }.get(ref, set()) if single_item else set()
-    if ref == 'skills/storyboard-director/references/image-continuity-hard-rules.md':
+    if ref == 'docs/rules/execution.md':
+        omitted = {'等待与工具回传'}
+    elif ref == 'skills/storyboard-director/references/image-continuity-hard-rules.md':
         omitted = {'按任务读取'}
     if not omitted:
         return content
@@ -317,24 +296,24 @@ def _writing_rules(ref, content, single_item):
     return ''.join(part for part in parts if part.split('\n', 1)[0].removeprefix('## ').strip() not in omitted)
 
 
-def build_task_package(request, refs=None, startup_text='', methods=()):
-    """One input contract for planning, drafting and review; no experimental branch."""
+def build_task_package(request, refs=None, startup_text='', methods=(), *, library=None):
+    """Assemble the applicable production inputs for planning and writing."""
     refs = refs or local_references(request['kind'], request)
-    # Schemas/profiles are consumed by code; the model receives actual rules and
-    # only the applicable review checks, not all recipes and both review modes.
     rules = {}
     for ref in refs:
         path = (ROOT / ref).resolve()
         if not path.is_relative_to(ROOT.resolve()) or not path.is_file():
             raise ValueError('资产 Web 本地合同缺失或越界：' + ref)
-        content = path.read_text(encoding='utf-8')
-        if not content.strip():
-            raise ValueError('资产 Web 本地合同为空：' + ref)
         if ref.endswith('.md'):
+            content = path.read_text(encoding='utf-8')
+            if not content.strip():
+                raise ValueError('资产 Web 本地合同为空：' + ref)
             rules[ref] = _writing_rules(ref, content, not request.get('rows'))
+        elif not path.stat().st_size:
+            raise ValueError('资产 Web 本地合同为空：' + ref)
     rules['startup_dynamic_knowledge'] = startup_text
     context = {k: v for k, v in request.items()
-               if k not in {'prompt', 'task_package_cache', 'asset_token_pilot'}}
+               if k not in {'prompt', 'task_package_cache', 'asset_token_pilot', 'model', 'provider', 'codex_model', 'repair_issues'}}
     if request.get('mode') == 'project':
         narrative = request['narrative']
         requirements = [request['requirement']] if request.get('requirement') else [r['requirement'] for r in request.get('rows', [])]
@@ -347,7 +326,7 @@ def build_task_package(request, refs=None, startup_text='', methods=()):
         context['narrative'][content_key] = [item for item in narrative.get(content_key, []) if item.get(id_key) in selected]
         context['narrative']['asset_requirements'] = requirements
     package = {'package_version': 'asset-task-package-v3', 'mode': request.get('mode', 'asset-library'),
-               'request': context, 'rules': rules, 'review_checks': checks(request.get('mode', 'asset-library'), request.get('kind') if not request.get('rows') else None),
+               'request': context, 'rules': rules,
                'professional_methods': [{'id': m.id, 'path': m.vault_path, 'version': m.version,
                    'sha256': m.checksum, 'content': m.content,
                    **({'template_path': m.template_path, 'template_sha256': m.template_checksum,
@@ -359,7 +338,7 @@ def build_task_package(request, refs=None, startup_text='', methods=()):
             request.get('template_notes', ''), raw=request.get('template_source', ''), view=request.get('view', ''),
             index=request.get('index') if request.get('mode', 'asset-library') == 'asset-library' else None,
             allow_unreferenced_design=request.get('allow_unreferenced_design', False),
-            reference_records=request.get('reference_records', []), has_references=bool(actual_paths))
+            reference_records=request.get('reference_records', []), has_references=bool(actual_paths), spec=recipe(request['kind'], library))
         if request['kind'] == '环境' and template['status'] == 'loaded' and not request.get('reference_paths'):
             raise ValueError('场景派生模板需要参考母图；首张场景请使用分类指南')
         if template['status'] == 'category-guide':
@@ -372,48 +351,27 @@ def build_task_package(request, refs=None, startup_text='', methods=()):
     return package
 
 
+def current_package(request, *, library=None):
+    library = library or profile()
+    mode = 'project' if request.get('mode') == 'project' else 'asset-library'
+    request = method_request({**request, 'mode': mode}, library=library)
+    refs = local_references(request['kind'], request, library=library)
+    methods, dynamic, vault = _knowledge(request, library)
+    return build_task_package(request, refs, dynamic, methods, library=library), refs, vault
+
+
 def prepare(folder, request):
     """Web-specific restricted reading input; does not impersonate an agent's reading."""
     folder.mkdir(parents=True, exist_ok=True)
-    mode = 'project' if request.get('mode') == 'project' else 'asset-library'
-    request = method_request({**request, 'mode': mode})
-    refs = local_references(request['kind'], request)
-    methods, dynamic, vault = _knowledge(request)
-    package = build_task_package(request, refs, dynamic, methods)
-    evidence = {'version': profile()['version'], 'mode': mode, 'skill': 'asset-image-assistant',
+    library_profile = profile()
+    package, refs, vault = current_package(request, library=library_profile)
+    evidence = {'version': library_profile['version'], 'mode': package['mode'], 'skill': 'asset-image-assistant',
         'reading_route': 'web-bounded-input', 'input_complete': True,
         'attestation': 'input_assembled_not_agent_reading', 'vault_root': vault,
-        'references': refs, 'required_rules': profile()['required_rules'],
-        'methods': [{k: v for k, v in m.items() if k not in {'content', 'template_content'}} for m in package['professional_methods']],
-        'check_ids': [c['id'] for c in checks(mode, request.get('kind') if not request.get('rows') else None)]}
+        'references': refs, 'required_rules': library_profile['required_rules'],
+        'methods': [{k: v for k, v in m.items() if k not in {'content', 'template_content'}} for m in package['professional_methods']]}
     package_text = json.dumps(package, ensure_ascii=False, indent=2)
     (folder / 'task-package.json').write_text(package_text, encoding='utf-8')
     evidence['task_package'] = {'version': package['package_version'], 'path': str(folder / 'task-package.json')}
     (folder / 'skill-evidence.json').write_text(json.dumps(evidence, ensure_ascii=False, indent=2), encoding='utf-8')
     return package_text, evidence
-
-
-def prompt_issues(prompt, kind):
-    issues = [] if kind == '物品' else language_issues(prompt)
-    fields = unfilled_character_prompt_fields(kind, prompt)
-    if fields:
-        issues.append('请填写人物提示词模板中的字段：' + '、'.join(fields))
-    return issues
-
-
-def validate_review(data, mode='asset-library', kind=None):
-    issues = prompt_issues(data['prompt'], kind)
-    found = {line.split(':', 1)[0].split('：', 1)[0].strip() for line in data.get('checks', [])}
-    missing = [c['id'] for c in checks(mode, kind) if c['id'] not in found]
-    if missing:
-        issues.append('Skill审查项缺失：' + '、'.join(missing))
-    if issues:
-        data['issues'] = list(dict.fromkeys(data.get('issues', []) + issues))
-        data['passed'] = False
-    return data
-
-
-def approved(step, job_kind=None):
-    a = step.get('audit', {})
-    return (a.get('status') == 'passed' and a.get('skill_execution', {}).get('version') == profile()['version']
-            and not prompt_issues(step.get('prompt', ''), step.get('kind', job_kind)))

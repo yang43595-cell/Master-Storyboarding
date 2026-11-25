@@ -552,17 +552,22 @@ def test_preparation_contract_rejects_unknown_delivery_object() -> None:
 
 
 
-def test_review_pack_accepts_only_real_project_artifacts(tmp_path: Path) -> None:
+def test_review_pack_accepts_only_real_project_artifacts(tmp_path: Path, monkeypatch) -> None:
     project = _project(tmp_path)
     _prepared(project)
     manifest = project / "00_项目管理" / "artifact_manifest.json"
     manifest.write_text('{"schema_version":"1.0","artifacts":[]}', encoding="utf-8")
     artifact = project / "candidate.md"
     artifact.write_text("candidate", encoding="utf-8")
+    from unittest.mock import Mock
+    reading = Mock(wraps=cli._evidence_current)
+    monkeypatch.setattr(cli, "_evidence_current", reading)
     report = cli.review_pack(argparse.Namespace(
         project=str(project), skill="creative-director",
         artifact=[str(artifact)], check=[],
     ))
+    reading.assert_called_once()
+    assert reading.call_args.kwargs["basis"]["skill"] == "creative-director"
     assert report["bytes"] <= cli.LIMITS["review"]
     assert report["required_check_count"] > 0
     assert report["manual_check_count"] == 0
@@ -1671,28 +1676,152 @@ def test_default_creative_rules_not_hidden_in_legacy_branch():
     assert cli.ROOT / 'docs/rules/legacy-review.md' not in selected
 
 
-def test_active_recovery_checklist_is_embedded_from_frozen_authority(tmp_path):
+def test_normal_startup_links_to_frozen_recovery_authority(tmp_path):
     project = _project(tmp_path)
     _prepared(project)
-    startup = (project / cli.CONTEXT_DIR / 'stage_startup.md').read_text()
-    section = cli._recovery_check_text()
-    assert startup.count(section) == 1
-    for check in ('REC-STATE', 'REC-OPTION', 'REC-PARAM', 'REC-ADOPT', 'REC-FLOW', 'REC-RESULT'):
-        assert check in section
+    startup_path = project / cli.CONTEXT_DIR / 'stage_startup.md'
+    startup = startup_path.read_text(encoding='utf-8')
+    recovery = next(line for line in startup.splitlines() if '#压缩后的主动恢复核对' in line)
+    authority_path, heading = recovery.split('`')[1].rsplit('#', 1)
+    authority = Path(authority_path)
+    assert authority == cli.ROOT / 'skills/_shared/knowledge-access.md'
+    assert heading == '压缩后的主动恢复核对'
+    assert all(trigger in recovery for trigger in ('上下文压缩', '会话恢复', '工作区重置', '找回任务状态'))
+    assert str(startup_path) in recovery
+    assert 'ensure-prepared --show-task-basis' in recovery
+
+    # Follow the startup link as an executor would after a real interruption.
+    _, separator, remaining = authority.read_text(encoding='utf-8').partition(f'\n## {heading}\n')
+    assert separator
+    section = remaining.split('\n## ', 1)[0].strip()
+    for check, evidence in (
+        ('REC-STATE', '准确修订、已有授权与确认范围'),
+        ('REC-OPTION', '可选分支与画幅'),
+        ('REC-PARAM', '核准确平台及既有参数'),
+        ('REC-ADOPT', '不造 user_confirmations'),
+        ('REC-FLOW', '核下一步的本职范围'),
+        ('REC-RESULT', '下一步与停止点'),
+    ):
+        row = next(line for line in section.splitlines() if line.startswith(f'| {check} '))
+        assert evidence in row
+        assert row not in startup
+    assert '## 压缩后的主动恢复核对' not in startup
+    assert '## 当前项目事实' in startup
+    assert '## 选择记录' in startup
+    assert str(project / cli.CONTEXT_DIR / 'task_basis.json') in startup
+
     basis = json.loads((project / cli.CONTEXT_DIR / 'task_basis.json').read_text())
-    authority = cli.ROOT / 'skills/_shared/knowledge-access.md'
     assert {'path': str(authority), 'sha256': cli.digest(authority)} in basis['standards']['local_documents']
 
 
-def test_missing_active_recovery_section_cannot_silently_prepare(tmp_path, monkeypatch):
+def _with_recovery_body(text, body):
+    heading = '压缩后的主动恢复核对'
+    before, marker, following = text.partition(f'\n## {heading}\n')
+    assert marker
+    next_heading = following.index('\n## ')
+    replacement = '' if body is None else marker + body + '\n'
+    return before + replacement + following[next_heading:]
+
+
+def _project_tree(project):
+    # Reads may update access times. A write or replacement changes the bytes or file metadata.
+    tree = {}
+    for path in (project, *project.rglob('*')):
+        info = path.stat()
+        tree[path.relative_to(project)] = (info.st_ino, info.st_mode, info.st_mtime_ns, info.st_ctime_ns,
+                                          path.read_bytes() if path.is_file() else None)
+    return tree
+
+
+@pytest.mark.parametrize('body', [None, '  \t'], ids=['missing-section', 'empty-body'])
+@pytest.mark.parametrize('existing', [False, True], ids=['fresh', 'prepared-batch'])
+def test_prepare_rejects_invalid_recovery_authority(tmp_path, body, existing):
+    import subprocess
+    import sys
+
+    repo = copy_source_fixture(cli.ROOT, tmp_path / 'repo')
+    authority = repo / 'skills/_shared/knowledge-access.md'
+    project = _project(tmp_path)
+    args = ['--project', str(project), '--skill', 'creative-director',
+            '--actor-id', 'test-agent', '--task-id', 'test-method-binding']
+    if existing:
+        args += ['--context-id', 'existing-batch']
+    command = [sys.executable, '-B', str(repo / 'scripts/stage_context_cli.py')]
+    prepare = [*command, 'prepare', *args, '--objective', '检查恢复权威正文']
+    if existing:
+        subprocess.run(prepare, cwd=repo, capture_output=True, check=True)
+        assert (project / cli.CONTEXT_DIR.parent / '.prepare-batch-existing-batch.lock').is_file()
+    authority.write_text(_with_recovery_body(authority.read_text(encoding='utf-8'), body), encoding='utf-8')
+    before = _project_tree(project)
+    prepared = subprocess.run(prepare, cwd=repo, capture_output=True, text=True)
+    assert prepared.returncode == 1
+    assert '主动恢复核对正文缺失或为空' in prepared.stderr
+    assert f'{authority}#压缩后的主动恢复核对' in prepared.stderr
+    assert _project_tree(project) == before
+    if existing:
+        return
+    resumed = subprocess.run([*command, 'ensure-prepared', *args, '--show-task-basis'],
+                             cwd=repo, capture_output=True, text=True)
+    assert resumed.returncode == 1
+    assert '阶段启动包' in resumed.stderr
+
+
+@pytest.mark.parametrize('remove_section', [False, True], ids=['modified', 'deleted'])
+def test_resuming_prepared_task_detects_recovery_authority_drift(tmp_path, monkeypatch, remove_section):
     repo = copy_source_fixture(cli.ROOT, tmp_path / 'repo')
     monkeypatch.setattr(cli, 'ROOT', repo)
+    project = _project(tmp_path)
+    _prepared(project)
+    args = cli.parser().parse_args([
+        'ensure-prepared', '--project', str(project), '--skill', 'creative-director',
+        '--actor-id', 'test-agent', '--task-id', 'test-method-binding', '--show-task-basis',
+    ])
+    assert cli.ensure_prepared(args)['ok']
     path = repo / 'skills/_shared/knowledge-access.md'
-    text = path.read_text()
-    section = cli._recovery_check_text()
-    path.write_text(text.replace(section, ''))
-    with pytest.raises(cli.StageContextError, match='主动恢复核对正文缺失'):
-        _prepared(_project(tmp_path))
+    body = None if remove_section else '恢复正文已修改。'
+    path.write_text(_with_recovery_body(path.read_text(encoding='utf-8'), body), encoding='utf-8')
+    error = '主动恢复核对正文缺失或为空' if remove_section else '规范已改变'
+    with pytest.raises(cli.StageContextError, match=error):
+        cli.ensure_prepared(args)
+
+
+@pytest.mark.parametrize('body', [None, '  ', '有效的新正文'], ids=['deleted', 'empty', 'modified'])
+def test_prepare_uses_recovery_snapshot_when_authority_changes_at_lock(tmp_path, monkeypatch, body):
+    repo = copy_source_fixture(cli.ROOT, tmp_path / 'repo')
+    monkeypatch.setattr(cli, 'ROOT', repo)
+    authority = repo / 'skills/_shared/knowledge-access.md'
+    original_digest = cli.digest(authority)
+    project = _project(tmp_path)
+    args = cli.parser().parse_args([
+        'prepare', '--project', str(project), '--skill', 'creative-director', '--objective', '恢复检查',
+    ])
+    replacement = _with_recovery_body(authority.read_text(encoding='utf-8'), body)
+    lock = cli.file_lock
+
+    def change_before_lock(path, **kwargs):
+        if path.name == '.prepare-stage.lock':
+            authority.write_text(replacement, encoding='utf-8')
+        return lock(path, **kwargs)
+
+    monkeypatch.setattr(cli, 'file_lock', change_before_lock)
+    opened = Path.open
+    reads = []
+
+    def count_reads(path, mode='r', *args, **kwargs):
+        if path == authority and mode.startswith('r'):
+            reads.append(mode)
+        return opened(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, 'open', count_reads)
+    startup = Path(cli.prepare(args)['path'])
+    assert len(reads) == 1
+    basis = json.loads(startup.with_name('task_basis.json').read_bytes())
+    assert {'path': str(authority), 'sha256': original_digest} in basis['standards']['local_documents']
+    reads.clear()
+    error = '规范已改变' if body and body.strip() else '主动恢复核对正文缺失或为空'
+    with pytest.raises(cli.StageContextError, match=error):
+        cli.ensure_prepared(args)
+    assert len(reads) == 1
 
 
 def test_video_links_active_recovery_without_reintroducing_prepare():
@@ -1788,3 +1917,44 @@ def test_director_recreation_method_requires_route_or_explicit_read(workflow, ex
         request["local_references"] = [cli.RECREATION_METHOD]
     docs = cli._local_standard_documents(cli.ROOT / "skills/storyboard-planner", request)
     assert (cli.ROOT / cli.RECREATION_METHOD in docs) == expected
+
+
+@pytest.mark.parametrize("filename", ["task_basis.json", "method_reading_evidence.json", "method_reading_packet.md"])
+@pytest.mark.parametrize("change", ["replace", "delete", "empty", "unreadable"])
+def test_storyboard_basis_changed_before_publication(tmp_path, monkeypatch, filename, change):
+    project = _project(tmp_path)
+    skill = "storyboard-director"
+    _prepared(project, skill)
+    artifact = project / "candidate.md"
+    artifact.write_text("分镜初稿")
+    args = argparse.Namespace(project=str(project), skill=skill, artifact=[str(artifact)], formal_archive=True)
+    first = cli.review_pack(args)
+    packet = Path(first["path"])
+    assert "完整方法/已采用知识快照" in packet.read_text()
+    scope = Path(first["review_scope_path"])
+    before = {path: path.read_bytes() for path in (packet, scope, scope.with_name(packet.name))}
+    artifact.write_text("分镜修订稿")
+    target = packet.parent / filename
+    validate = cli.validate_text
+
+    def change_after_validation(*args):
+        result = validate(*args)
+        if change == "unreadable":
+            read = Path.read_bytes
+
+            def deny_target(path):
+                if path == target:
+                    raise PermissionError("测试读取失败")
+                return read(path)
+            monkeypatch.setattr(Path, "read_bytes", deny_target)
+        elif change == "delete":
+            target.unlink()
+        else:
+            target.write_bytes(target.read_bytes() + b" " if change == "replace" else b"")
+        return result
+
+    monkeypatch.setattr(cli, "validate_text", change_after_validation)
+    with pytest.raises(cli.StageContextError, match="重新准备"):
+        cli.review_pack(args)
+    assert {path: path.read_bytes() for path in before} == before
+    assert list(scope.parent.parent.iterdir()) == [scope.parent]

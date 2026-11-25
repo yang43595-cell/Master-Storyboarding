@@ -35,7 +35,7 @@ def checked_file(root, item, hashes):
 
 def segment_reference_keys(segment):
     motion = segment.get("motion")
-    return [*([motion] if motion else []), *segment["appearance"]]
+    return [*([motion] if motion else []), *segment.get("technique_refs", []), *segment["appearance"]]
 
 
 def _require_plan_source(plan, entry):

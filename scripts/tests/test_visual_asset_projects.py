@@ -11,7 +11,7 @@ import sys
 import tempfile
 import tracemalloc
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from PIL import Image
 
@@ -21,6 +21,7 @@ import visual_asset_projects as pmod
 from core.artifacts import load_manifest
 from core.character_layout import character_layout_reference
 from core.project_state import new_project_state, write_project_state, load_project_state
+from test_visual_asset_library import save_job_prompt
 
 
 @contextmanager
@@ -244,6 +245,74 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(request['reference_records'][0]['sha256'], pmod.digest(original))
         self.assertFalse(request['reference_records'][0]['project_confirmed'])
 
+    def registered_pair(self):
+        root = Path(self.p['path'])
+        first, second = root / 'left.png', root / 'right.tiff'
+        for path, color in ((first, 'red'), (second, 'blue')):
+            Image.new('RGB', (32, 24), color).save(path)
+        story = root / 'narrative.json'
+        narrative = pmod.read(story)
+        narrative['asset_requirements'][1]['reference_paths'] = [first.name, second.name]
+        pmod.write(story, narrative)
+        update_narrative_checksum(root)
+        service = self.lib.projects
+        service.sync(self.p['id'])
+        project = service.get(self.p['id'])
+        row = project['rows'][1]
+        row.update(reference_ids=[], job_id=None)
+        service.save(project)
+        service.apply_plan(project, [row], {'rows': [plan_result()['rows'][1]]}, {})
+        job = self.job(1)
+        job['steps'][0]['prompt'] = '蓝色杯子，16:9 横图，呈现正侧背俯四视图。'
+        self.lib.save(job, 'jobs')
+        self.assertEqual(self.lib.step_request(job, 0)['reference_paths'], [str(first), str(second)])
+        return job, second
+
+    def test_imagegen_receives_saved_prompt_and_registered_pixels_then_waits_for_user(self):
+        job, _ = self.registered_pair()
+        job['provider'] = 'imagegen'
+        self.lib.save(job, 'jobs')
+        generated = self.base / 'generated_images' / 'candidate.png'
+        generated.parent.mkdir()
+        prompt = job['steps'][0]['prompt']
+
+        def imagegen_cli(command, **options):
+            inputs = [Path(command[i + 1]) for i, arg in enumerate(command) if arg == '--image']
+            self.assertEqual(len(inputs), 2)
+            for path, pixel in zip(inputs, [(255, 0, 0), (0, 0, 255)]):
+                with Image.open(path) as image:
+                    self.assertEqual(image.getpixel((0, 0)), pixel)
+                    self.assertEqual(image.size, (32, 24))
+            self.assertIn(prompt, options['input'])
+            Image.new('RGB', (320, 180), 'blue').save(generated)
+            result = Path(command[command.index('--output-last-message') + 1])
+            pmod.write(result, {'status': 'generated', 'output_path': str(generated), 'message': ''})
+            return subprocess.CompletedProcess(command, 0)
+
+        originals = []
+        for version in range(2):
+            with patch.object(m.codex_bridge, 'executable', return_value='fixture-codex'), patch.object(
+                    m.threading.Thread, 'start', autospec=True) as start:
+                self.lib.submit_imagegen({'id': job['id'], 'index': 0, 'authorize': True})
+            with patch.dict(m.os.environ, {'CODEX_HOME': str(self.base)}), patch.object(
+                    m.codex_bridge.subprocess, 'run', side_effect=imagegen_cli) as cli:
+                start.call_args.args[0].run()
+                cli.assert_called_once()
+            step = self.lib.get(job['id'], 'jobs')['steps'][0]
+            self.assertEqual(step['status'], 'awaiting_review', step.get('message'))
+            item = self.lib.get(step['outputs'][0])
+            self.assertEqual(item['status'], 'unreviewed')
+            self.assertEqual(Path(item['original']).read_bytes(), generated.read_bytes())
+            originals.append(Path(item['original']))
+            if version == 0:
+                self.lib.reject_result({'id': job['id'], 'index': 0, 'feedback': '保留蓝色，换角度'})
+                step = self.lib.get(job['id'], 'jobs')['steps'][0]
+                self.assertEqual(step['result_history'][-1]['feedback'], '保留蓝色，换角度')
+                prompt = '蓝色杯子，换角度，16:9 横图。'
+                self.lib.save_prompt({'id': job['id'], 'index': 0, 'prompt': prompt})
+        self.assertNotEqual(*originals)
+        self.assertTrue(all(path.is_file() for path in originals))
+
     def test_manual_attach_checks_current_project_and_active_state(self):
         job = self.job()
         source = self.base / 'manual-result.png'
@@ -358,7 +427,7 @@ class ProjectTests(unittest.TestCase):
             Image.new('RGB', (1600, 900), 'blue').save(path)
             asset, _ = self.lib.import_file(path, category='物品')
         self.lib.projects.select({'job_id': job['id'], 'index': index, 'asset_id': asset['id']})
-        return self.lib.projects.confirm({'job_id': job['id'], 'index': index, 'confirm': True})
+        return self.lib.projects.confirm({'job_id': job['id'], 'index': index, 'asset_id': asset['id'], 'confirm': True})
 
     def backup(self):
         self.lib.vault = self.base / 'vault'
@@ -423,7 +492,13 @@ class ProjectTests(unittest.TestCase):
         service = self.lib.projects
         for asset in (self.asset, other):
             service.select({'job_id': job['id'], 'index': 0, 'asset_id': asset['id']})
+        with self.assertRaisesRegex(ValueError, '明确选择'):
+            service.confirm({'job_id': job['id'], 'index': 0, 'confirm': True})
+        self.assertIsNone(self.lib.get(job['id'], 'jobs')['steps'][0]['project_confirmation'])
         payload = {'job_id': job['id'], 'index': 0, 'asset_id': self.asset['id'], 'confirm': True}
+        with self.assertRaisesRegex(ValueError, '候选 ID'):
+            service.confirm(payload)
+        service.select({'job_id': job['id'], 'index': 0, 'asset_id': self.asset['id']})
         service.confirm(payload)
         self.select_confirm(self.job(), 1)
         before = self.lib.get(job['id'], 'jobs')
@@ -564,47 +639,6 @@ class ProjectTests(unittest.TestCase):
         self.assertTrue(Path(result['manifest']).is_file())
         self.assertTrue(all(not s['project_confirmation'] for s in self.job()['steps']))
 
-    def test_image_observations_follow_selection_and_reopen_preserves_history(self):
-        from test_imagegen_visual_self_check import observations
-        asset = self.lib.get(self.asset['id'])
-        asset['provenance']['visual_self_check'] = observations(Path(asset['original']), 'Synthetic prompt')
-        self.lib.save(asset)
-        job = self.job()
-        self.lib.projects.select({'job_id': job['id'], 'index': 0, 'asset_id': asset['id']})
-        self.assertEqual(self.job()['steps'][0]['visual_self_check']['status'], 'pass')
-        replacement = self.base / 'replacement.png'
-        Image.new('RGB', (400, 300), 'green').save(replacement)
-        other, _ = self.lib.import_file(replacement, category='场景')
-        self.lib.projects.select({'job_id': job['id'], 'index': 0, 'asset_id': other['id']})
-        self.assertNotIn('visual_self_check', self.job()['steps'][0])
-        self.lib.projects.select({'job_id': job['id'], 'index': 0, 'asset_id': asset['id']})
-        self.lib.projects.confirm({'job_id': job['id'], 'index': 0, 'confirm': True})
-        checked = self.job()['steps'][0]['visual_self_check']
-        self.lib.projects.reopen({'job_id': job['id'], 'index': 0})
-        reset = self.job()['steps'][0]
-        self.assertNotIn('visual_self_check', reset)
-        self.assertEqual(reset['history'][-1]['visual_self_check'], checked)
-        self.assertIsNone(reset['project_confirmation'])
-
-    def test_export_keeps_observations_in_existing_confirmation_provenance(self):
-        from test_imagegen_visual_self_check import observations
-        asset = self.lib.get(self.asset['id'])
-        evidence = observations(Path(asset['original']), 'Synthetic prompt')
-        asset['provenance']['visual_self_check'] = evidence
-        self.lib.save(asset)
-        for row in self.lib.projects.detail(self.p['id'])['rows']:
-            for index in range(len(row['job']['steps'])):
-                self.select_confirm(row['job'], index)
-        self.backup()
-        result = self.lib.projects.export({'project_id': self.p['id'], 'confirm': True})
-        receipt = pmod.read(Path(result['manifest']).parent / '用户确认记录.json')
-        preserved = [item['provenance']['visual_self_check'] for item in receipt['items']
-                     if item['library_asset_id'] == asset['id']]
-        self.assertTrue(preserved)
-        self.assertTrue(all(item == evidence for item in preserved))
-        # Existing human confirmation is still a separate exact-byte receipt.
-        self.assertTrue(all(item['confirmation']['image_sha256'] for item in receipt['items']))
-
     def test_product_export_does_not_invent_fact_review_from_user_selection(self):
         lib, project, reference = fixture(self.base / 'product-case', product=True)
         service = lib.projects
@@ -623,8 +657,9 @@ class ProjectTests(unittest.TestCase):
                 path = self.base / (job['ast_id'] + '-' + str(index) + '.png')
                 Image.new('RGB', (width * 100, height * 100), 'blue').save(path)
                 image, _ = lib.import_file(path, category=step['kind'])
-                service.select({'job_id': job['id'], 'index': index, 'asset_id': image['id']})
-                service.confirm({'job_id': job['id'], 'index': index, 'confirm': True})
+                selection = {'job_id': job['id'], 'index': index, 'asset_id': image['id']}
+                service.select(selection)
+                service.confirm({**selection, 'confirm': True})
         lib.vault.mkdir(exist_ok=True)
         with patch.object(m.management, 'guard'):
             m.visual_asset_backup.run(lib, m.management)
@@ -692,8 +727,9 @@ class ProjectTests(unittest.TestCase):
                     request = service.request(self.job(), index)
                     self.assertIn(self.asset['id'], [a['id'] for a in request['reference_records']])
                     self.assertIn('输入参考可能是俯视', request['prompt'])
-                    service.select({'job_id': job['id'], 'index': index, 'asset_id': output['id']})
-                    service.confirm({'job_id': job['id'], 'index': index, 'confirm': True})
+                    selection = {'job_id': job['id'], 'index': index, 'asset_id': output['id']}
+                    service.select(selection)
+                    service.confirm({**selection, 'confirm': True})
 
         p = service.get(self.p['id'])
         p['rows'][0]['job_id'] = None
@@ -718,7 +754,7 @@ class ProjectTests(unittest.TestCase):
 
     def test_generation_gate_and_restart_do_not_resubmit(self):
         task = {'job_id': self.job()['id'], 'index': 0, 'prompt': '未经审查'}
-        with self.assertRaisesRegex(ValueError, '审查'):
+        with self.assertRaisesRegex(ValueError, '提示词'):
             self.lib.projects.batch({'project_id': self.p['id'], 'mode': 'generate', 'tasks': [task], 'authorize': True})
         p = self.lib.projects.get(self.p['id'])
         p['batch'] = {'status': 'running', 'entries': [{'status': 'queued'}, {'status': 'running'}]}
@@ -729,12 +765,11 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(p['batch']['status'], 'interrupted')
         self.assertTrue(all(e['status'] == 'interrupted' for e in p['batch']['entries']))
 
-    def test_project_uses_project_checks_not_library_scope(self):
+    def test_requirement_and_narrative_reach_saved_candidate(self):
         job = self.job(1)
         request = self.lib.step_request(job, 0)
-        data = {'prompt': '白色背景，蓝色杯子正面，保留杯柄形状。', 'passed': True,
-                'issues': [], 'checks': [c['id'] + '：已核对' for c in m.asset_skill.checks('project')]}
-        self.assertTrue(m.asset_skill.validate_review(data, 'project')['passed'])
+        prompt = request['requirement']['name'] + '，16:9 横图，保留杯柄形状。'
+        job = save_job_prompt(self.lib, job, prompt)
         self.assertIn('requirement', request)
         self.assertIn('narrative', request)
         self.lib.attach(job['id'], 0, [self.asset['original']])
@@ -787,45 +822,6 @@ class ProjectTests(unittest.TestCase):
         self.assertIn('无头隐形人台', package['production_item']['template']['content'])
         self.assertTrue(Path(evidence['task_package']['path']).is_file())
 
-    def test_check_current_prompt_does_not_replay_old_observations(self):
-        """An explicit recheck uses source inputs, not previous model assertions."""
-        request = self.lib.step_request(self.job(1), 0)
-        folder = self.base / 'review-input'
-        result = {'prompt': '最终服装提示词', 'passed': True, 'observations': ['独立观察'],
-                  'uncertainties': [], 'checks': ['ASSET-SCOPE：当前 AST'], 'issues': []}
-        def fake_run(command, **kwargs):
-            self.assertIn('最终服装提示词', kwargs['input'])
-            self.assertNotIn('写作者私有观察', kwargs['input'])
-            self.assertIn('已组装实际输入', kwargs['input'])
-            Path(command[command.index('--output-last-message') + 1]).write_text(json.dumps(result, ensure_ascii=False), encoding='utf-8')
-            return pmod.subprocess.CompletedProcess(command, 0, '{"type":"completed"}', '')
-        with patch.object(m.codex_bridge, '_run_prompt_cli', side_effect=fake_run):
-            reviewed = m.codex_bridge.run('codex.exe', folder, 'review', request,
-                                          {'prompt': '最终服装提示词', 'observations': ['写作者私有观察']}, '已组装实际输入')
-        self.assertEqual(reviewed['prompt'], '最终服装提示词')
-
-    def test_single_call_self_check_enforces_evidence_for_both_actions(self):
-        request = self.lib.step_request(self.job(1), 0)
-        for phase in ('draft', 'review'):
-            for defect in (None, 'observations', 'checks', 'issues'):
-                with self.subTest(phase=phase, defect=defect):
-                    result = {'prompt': '最终服装提示词', 'passed': True,
-                              'observations': ['参考图中的蓝色衣服'],
-                              'uncertainties': [], 'checks': ['ASSET-SCOPE：当前 AST'], 'issues': []}
-                    if defect:
-                        result[defect] = ['未解决的冲突'] if defect == 'issues' else []
-                    def fake_run(command, **kwargs):
-                        self.assertIn('写出简短提示词并自查' if phase == 'draft' else 'prompt逐字保留用户原文', kwargs['input'])
-                        self.assertNotIn('单独的审查轮次', kwargs['input'])
-                        Path(command[command.index('--output-last-message') + 1]).write_text(
-                            json.dumps(result, ensure_ascii=False), encoding='utf-8')
-                        return pmod.subprocess.CompletedProcess(command, 0, '', '')
-                    with patch.object(m.codex_bridge, '_run_prompt_cli', side_effect=fake_run) as call:
-                        checked = m.codex_bridge.run('codex.exe', self.base / 'self-check',
-                                                     phase, request, '当前稿', '实际输入')
-                    call.assert_called_once()
-                    self.assertEqual(checked['passed'], defect in (None, 'observations'))
-
     def test_prepare_preflight_failure_does_not_block_other_items(self):
         service = self.lib.projects
         payload = {'project_id': self.p['id'], 'mode': 'prepare', 'tasks': [
@@ -840,17 +836,16 @@ class ProjectTests(unittest.TestCase):
         batch = service.get(self.p['id'])['batch']
         self.assertEqual([e['status'] for e in batch['entries']], ['error', 'queued'])
         self.assertIn('缺少卧室空间参考图', batch['entries'][0]['message'])
-        self.assertEqual(self.job()['steps'][0]['audit']['status'], 'error')
         service.batch_running = False
 
     def test_batch_scheduler_failure_is_terminal_and_does_not_keep_spinning(self):
         service = self.lib.projects
         p = service.get(self.p['id'])
-        p['batch'] = {'status': 'running', 'entries': [{'status': 'queued'}]}
+        p['batch'] = {'id': 'queue', 'status': 'running', 'entries': [{'status': 'queued'}]}
         service.save(p)
         service.batch_running = True
         with patch.object(pmod, 'ThreadPoolExecutor', side_effect=RuntimeError('本机工作线程未启动')):
-            service._batch_worker(p['id'])
+            service._batch_worker(p['id'], service.get(p['id'])['batch'])
         batch = service.get(p['id'])['batch']
         self.assertEqual(batch['status'], 'error')
         self.assertEqual(batch['entries'][0]['status'], 'error')
@@ -860,17 +855,6 @@ class ProjectTests(unittest.TestCase):
         for path in ['', '   ', None]:
             with self.assertRaisesRegex(ValueError, '请填写项目文件夹'):
                 pmod.source_project(path)
-
-    def test_object_plan_and_review_use_minimal_four_view_contract(self):
-        job = self.job(1)
-        step = job['steps'][0]
-        self.assertEqual(step['ratio'], '16:9')
-        self.assertEqual(step['view'], '正面、左侧、背面、俯视四视图')
-        request = self.lib.step_request(job, 0)
-        package = m.asset_skill.build_task_package(request)
-        self.assertEqual([c['id'] for c in package['review_checks']], ['ASSET-SCOPE', 'ASSET-QC'])
-        result = {'prompt':'用户自写的物品四视图，高清。','passed':True,'issues':[], 'checks':['ASSET-SCOPE：符合用户物品','ASSET-QC：正侧背俯四格，16:9']}
-        self.assertTrue(m.asset_skill.validate_review(result, 'project', '物品')['passed'])
 
     def test_prop_can_generate_without_reference_but_advertised_product_cannot(self):
         job = self.job(1)
@@ -885,23 +869,6 @@ class ProjectTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, '真实参考'):
                 self.lib.projects.request(job, 0)
 
-    def test_direction_change_persists_and_invalidates_old_approval(self):
-        job = self.job()
-        job['steps'][0].update(prompt='旧稿', audit={'status': 'passed', 'prompt': '旧稿'}, prompt_approval={'prompt': '旧稿'})
-        self.lib.save(job, 'jobs')
-        task = {'job_id': job['id'], 'index': 0, 'generation_direction': '明亮现代客厅'}
-        with self.assertRaisesRegex(ValueError, '生成方向'):
-            self.lib.projects.batch({'project_id': self.p['id'], 'mode': 'generate', 'tasks': [task], 'authorize': True})
-        with patch.object(pmod.threading.Thread, 'start'):
-            self.lib.projects.batch({'project_id': self.p['id'], 'mode': 'prepare', 'tasks': [task]})
-        step = self.lib.get(job['id'], 'jobs')['steps'][0]
-        self.assertEqual(step['generation_direction'], '明亮现代客厅')
-        self.assertEqual(step['audit'], {})
-        self.assertNotIn('prompt_approval', step)
-        entry = self.lib.projects.get(self.p['id'])['batch']['entries'][0]
-        self.assertEqual(entry['operation'], 'write')
-        self.assertEqual(entry['request']['generation_direction'], '明亮现代客厅')
-
     def test_first_scene_uses_guide_and_derived_template_requires_reference(self):
         job = self.job()
         job['steps'][0]['reference_ids'] = []
@@ -913,67 +880,12 @@ class ProjectTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '参考母图'):
             m.asset_skill.build_task_package(request)
 
-    def test_prepare_handles_missing_and_existing_prompts_in_one_batch(self):
-        jobs = [self.job(), self.job(1)]
-        jobs[0]['steps'][0]['prompt'] = ''
-        jobs[1]['steps'][0].update(prompt='用户已修改的提示词', audit={'status': 'stale'})
-        for job in jobs:
-            self.lib.save(job, 'jobs')
-        tasks = [{'job_id': j['id'], 'index': 0} for j in jobs]
-        with patch.object(pmod.threading.Thread, 'start'):
-            self.lib.projects.batch({'project_id': self.p['id'], 'mode': 'prepare', 'tasks': tasks})
-        calls = []
-        def audit(payload):
-            calls.append(payload['mode'])
-            job = self.lib.get(payload['id'], 'jobs')
-            step = job['steps'][0]
-            if payload['mode'] == 'write':
-                step['prompt'] = '新提示词'
-            step['audit'] = {'status': 'passed', 'prompt': step['prompt']}
-            self.lib.save(job, 'jobs')
-        with patch.object(self.lib, 'audit_prompt', side_effect=audit), patch.object(self.lib, 'submit_imagegen') as generate:
-            self.lib.projects._batch_worker(self.p['id'])
-        self.assertCountEqual(calls, ['write', 'review'])
-        self.assertEqual(self.lib.get(jobs[1]['id'], 'jobs')['steps'][0]['prompt'], '用户已修改的提示词')
-        generate.assert_not_called()
-        self.assertEqual(self.lib.projects.get(self.p['id'])['batch']['status'], 'done')
-
-    def test_batch_starts_second_item_before_first_finishes(self):
-        tasks = [{'job_id': self.job(i)['id'], 'index': 0} for i in range(2)]
-        with patch.object(pmod.threading.Thread, 'start'):
-            self.lib.projects.batch({'project_id': self.p['id'], 'mode': 'prepare', 'tasks': tasks})
-        started, completed = [], []
-        def finish():
-            with self.lib.lock:
-                for ident in started:
-                    job = self.lib.get(ident, 'jobs')
-                    job['steps'][0]['audit'] = {'status': 'passed'}
-                    self.lib.save(job, 'jobs')
-                completed.append(len(started))
-        def audit(payload):
-            started.append(payload['id'])
-            job = self.lib.get(payload['id'], 'jobs')
-            job['steps'][0]['audit'] = {'status': 'reviewing'}
-            self.lib.save(job, 'jobs')
-            if len(started) == 2:
-                finish()
-        timer = pmod.threading.Timer(2, finish)
-        timer.start()
-        try:
-            with patch.object(self.lib, 'audit_prompt', side_effect=audit):
-                self.lib.projects._batch_worker(self.p['id'])
-        finally:
-            timer.cancel()
-        self.assertEqual(completed[0], 2)
-        self.assertEqual([e['status'] for e in self.lib.projects.get(self.p['id'])['batch']['entries']], ['done', 'done'])
-
     def test_batch_sends_exact_approved_prompts_and_continues_after_failure(self):
         tasks = []
         for job in [self.job(), self.job(1)]:
-            prompt = '保留参考颜色、轮廓和相对位置。'
-            job['steps'][0].update(prompt=prompt, audit={'status': 'passed', 'prompt': prompt,
-                'skill_execution': {'version': m.asset_skill.profile()['version'], 'mode': 'project'}})
-            self.lib.save(job, 'jobs')
+            request = self.lib.step_request(job, 0)
+            prompt = request['requirement']['name'] + f'，{request["ratio"]} 画幅，保留主体轮廓。'
+            job = save_job_prompt(self.lib, job, prompt)
             tasks.append({'job_id': job['id'], 'index': 0, 'prompt': prompt})
         with patch.object(pmod.threading.Thread, 'start'):
             self.lib.projects.batch({'project_id': self.p['id'], 'mode': 'generate', 'tasks': tasks,
@@ -982,14 +894,13 @@ class ProjectTests(unittest.TestCase):
         def submit(payload):
             calls.append(payload)
             job = self.lib.get(payload['id'], 'jobs')
-            self.assertTrue(self.lib.prompt_is_approved(job, 0))
-            self.assertEqual(job['steps'][0]['prompt'], tasks[0]['prompt'])
+            self.assertEqual(job['steps'][0]['prompt'], next(t['prompt'] for t in tasks if t['job_id'] == payload['id']))
             if len(calls) == 1:
                 raise ValueError('一次调用失败，禁止自动重试')
             job['steps'][0]['status'] = 'awaiting_review'
             self.lib.save(job, 'jobs')
         with patch.object(self.lib, 'submit_imagegen', side_effect=submit), patch.object(pmod.time, 'sleep'):
-            self.lib.projects._batch_worker(self.p['id'])
+            self.lib.projects._batch_worker(self.p['id'], self.lib.projects.get(self.p['id'])['batch'])
         batch = self.lib.projects.get(self.p['id'])['batch']
         self.assertEqual([e['status'] for e in batch['entries']], ['error', 'done'])
         self.assertEqual(len(calls), 2)
@@ -1013,10 +924,8 @@ class ProjectTests(unittest.TestCase):
     def test_project_kickoff_reuses_only_scoped_generation_and_requires_website_review(self):
         job = self.job()
         step = job['steps'][0]
-        prompt = '保留参考颜色、轮廓和相对位置。'
-        step.update(prompt=prompt, audit={'status': 'passed', 'prompt': prompt,
-            'skill_execution': {'version': m.asset_skill.profile()['version'], 'mode': 'project'}})
-        self.lib.save(job, 'jobs')
+        step_request = self.lib.step_request(job, 0)
+        prompt = step_request['requirement']['name'] + f'，{step_request["ratio"]} 画幅，保留主体轮廓。'
         grant = {'provider': 'imagegen', 'model': '5.0', 'fee_scope': 'existing_quota',
                  'reference_upload_authorized': True,
                  'authorization_ref': 'synthetic grant', 'outputs': {job['ast_id']: [step['key']]}}
@@ -1038,6 +947,7 @@ class ProjectTests(unittest.TestCase):
         grant.pop('outputs')
         grant['scope'] = 'required_asset_outputs'
         pmod.write(request, {'kickoff': kickoff})
+        job = save_job_prompt(self.lib, job, prompt)
         with patch.object(pmod.threading.Thread, 'start'):
             service.batch(payload)
         self.assertEqual(service.get(self.p['id'])['batch']['provider'], 'imagegen')
@@ -1045,7 +955,7 @@ class ProjectTests(unittest.TestCase):
         kickoff.pop('image_generation')
         pmod.write(request, {'kickoff': kickoff})
         with patch.object(self.lib, 'submit_imagegen') as submit:
-            service._batch_worker(self.p['id'])
+            service._batch_worker(self.p['id'], service.get(self.p['id'])['batch'])
         submit.assert_not_called()
         self.assertIn('排队期间已改变', service.get(self.p['id'])['batch']['entries'][0]['message'])
         with self.assertRaisesRegex(ValueError, '审核站真实通过回执'):
@@ -1078,24 +988,21 @@ class ProjectTests(unittest.TestCase):
         job = planned['rows'][0]['job']
         service.select({'project_id': p['id'], 'job_id': job['id'], 'index': 0, 'asset_id': self.asset['id']})
         step = self.lib.get(job['id'], 'jobs')['steps'][0]
-        image = root / 'image.png'
-        image.write_bytes(Path(self.asset['original']).read_bytes())
+        image = service.copy_to_project(p, self.asset)
 
         def receipt(stage, command, source, version, **fields):
             sha = pmod.digest(source)
             ids = dict(projectId='fixture-site', scope='live', caseId='12', stage=stage, version=version,
                        assetId=stage, sha256=sha, operationId=stage, ok=True)
-            binding = {'path': source.name, 'sha256': sha}
+            binding = {'path': str(source.relative_to(root)), 'sha256': sha}
             parameters = dict(caseId='12', operationId=stage, **fields)
             return {'kind': 'agent-review-api-receipt', 'command': command, 'project_path': str(root),
                     'base_url': 'https://fixture.invalid', 'response': ids, 'request': {'parameters': parameters},
                     ('image' if stage == 'assets' else 'source_json'): binding}
 
-        pmod.write(root / 'script.json', receipt('script', 'publish', script_path, 'a' * 64))
-        publication = receipt('assets', 'publish-asset', image, 'b' * 64, astId=ast_id,
-                              outputId=step['key'], purpose=step['purpose'], references=[])
-        publication.update(script_publication='script.json', script_version='a' * 64, reference_publications=[])
-        pmod.write(root / 'asset.json', publication)
+        script = receipt('script', 'publish', script_path, 'a' * 64)
+        script['source_json'].update(revision=package['revision'], project_id=package['project_id'])
+        pmod.write(root / 'script.json', script)
         asset_status = 'pending'
         asset_is_current = True
         script_is_current = True
@@ -1111,9 +1018,78 @@ class ProjectTests(unittest.TestCase):
                         approval={'scope': {'projectId': 'fixture-site', 'scope': 'live',
                                             'caseId': target['case_id'], 'stage': target['stage'],
                                             'version': target['version']}, 'actorId': 'test-reviewer'})
-        client = SimpleNamespace(base_url='https://fixture.invalid', decision=decision)
+        import review_text_cli as publishing
+        remote_asset = receipt('assets', 'publish-asset', image, 'b' * 64)['response']
+        client = SimpleNamespace(base_url='https://fixture.invalid', decision=decision,
+                                 publish_asset=MagicMock(return_value=remote_asset),
+                                 status=MagicMock(side_effect=OSError('synthetic offline readback')))
+        with patch.object(publishing, 'AgentReviewClient', return_value=client):
+            publishing.run(publishing._parser().parse_args([
+                'publish-asset', '--project', str(root), '--script-publication', 'script.json',
+                '--image', str(image), '--candidate-id', self.asset['id'], '--ast-id', ast_id,
+                '--output-id', step['key'], '--purpose', step['purpose'], '--operation-id', 'assets',
+                '--token-file', 'unused', '--receipt', 'asset.json']))
+        publication = pmod.read(root / 'asset.json')
+        self.assertEqual(client.publish_asset.call_args.kwargs['artifact_id'], self.asset['id'])
+        self.assertEqual(publication['request']['parameters']['artifactId'], self.asset['id'])
         self.assertEqual(service.apply_website_review(p['id'], 'asset.json', client)['decision_status'], 'pending')
         self.assertEqual(self.lib.get(job['id'], 'jobs')['steps'][0]['status'], 'awaiting_review')
+        asset_status = 'approved'
+        duplicate, _ = self.lib.import_file(image, project='test', category=self.asset['category'])
+        self.assertNotEqual(duplicate['id'], self.asset['id'])
+        self.assertEqual(duplicate['image_sha256'], self.asset['image_sha256'])
+        selection = {'project_id': p['id'], 'job_id': job['id'], 'index': 0}
+        service.select({**selection, 'asset_id': duplicate['id']})
+        with patch.object(publishing, 'AgentReviewClient', return_value=client), self.assertRaisesRegex(ValueError, '路径不属于'):
+            publishing.run(publishing._parser().parse_args([
+                'publish-asset', '--project', str(root), '--script-publication', 'script.json',
+                '--image', str(image), '--candidate-id', duplicate['id'], '--ast-id', ast_id,
+                '--output-id', step['key'], '--purpose', step['purpose'], '--operation-id', 'wrong-source',
+                '--token-file', 'unused', '--receipt', 'wrong-source.json']))
+        reassigned = copy.deepcopy(publication)
+        reassigned['request']['parameters']['artifactId'] = duplicate['id']
+        pmod.write(root / 'changed-request.json', reassigned)
+        with self.assertRaisesRegex(ValueError, '送审关联'):
+            service.apply_website_review(p['id'], 'changed-request.json', client)
+        with self.assertRaisesRegex(ValueError, '候选 ID'):
+            service.apply_website_review(p['id'], 'asset.json', client)
+        service.select({**selection, 'asset_id': self.asset['id']})
+        unbound = copy.deepcopy(publication)
+        del unbound['request']['parameters']['artifactId']
+        pmod.write(root / 'unbound.json', unbound)
+        with self.assertRaisesRegex(ValueError, '候选 ID'):
+            service.apply_website_review(p['id'], 'unbound.json', client)
+        wrong_response = copy.deepcopy(publication)
+        wrong_response['response']['operationId'] = 'other-candidate-publication'
+        pmod.write(root / 'wrong-response.json', wrong_response)
+        with self.assertRaisesRegex(ValueError, 'remote binding'):
+            service.apply_website_review(p['id'], 'wrong-response.json', client)
+        wrong_response = copy.deepcopy(publication)
+        wrong_response['response']['artifactId'] = duplicate['id']
+        pmod.write(root / 'wrong-candidate.json', wrong_response)
+        with self.assertRaisesRegex(ValueError, '候选 ID'):
+            service.apply_website_review(p['id'], 'wrong-candidate.json', client)
+        self.assertIsNone(self.lib.get(job['id'], 'jobs')['steps'][0]['project_confirmation'])
+
+        import review_text_cli as publishing
+        saved_operation = publishing.submission_path(root, publication)
+        operation_bytes = saved_operation.read_bytes()
+        saved_operation.unlink()
+        with self.assertRaisesRegex(ValueError, '本地送审关联'):
+            service.apply_website_review(p['id'], 'asset.json', client)
+        self.assertIsNone(self.lib.get(job['id'], 'jobs')['steps'][0]['project_confirmation'])
+        saved_operation.write_bytes(operation_bytes)
+        echoed = {**remote_asset, 'operationId': 'echo', 'artifactId': self.asset['id']}
+        with patch.object(publishing, 'AgentReviewClient', return_value=client), patch.object(
+                client, 'publish_asset', return_value=echoed):
+            publishing.run(publishing._parser().parse_args([
+                'publish-asset', '--project', str(root), '--script-publication', 'script.json',
+                '--candidate-id', self.asset['id'], '--ast-id', ast_id, '--output-id', step['key'],
+                '--purpose', step['purpose'], '--operation-id', 'echo', '--token-file', 'unused', '--receipt', 'echo.json']))
+        self.assertTrue(service.apply_website_review(p['id'], 'echo.json', client)['waiting_for_backup'])
+        self.assertEqual(self.lib.get(job['id'], 'jobs')['steps'][0]['project_confirmation']['asset_id'], self.asset['id'])
+        asset_status = 'changes'
+        service.apply_website_review(p['id'], 'echo.json', client)
         asset_status = 'approved'
 
         # The remote decision may arrive after the local source has drifted.
@@ -1243,7 +1219,9 @@ class ProjectTests(unittest.TestCase):
         self.assertTrue(result['adopted'])
         self.assertEqual(result['backup']['count'], 1)
         self.assertEqual(load_project_state(root)['user_confirmations'][-1]['method'], '审核站资产图通过')
+        original_confirmation = self.lib.get(job['id'], 'jobs')['steps'][0]['project_confirmation']
         self.assertEqual(service.apply_website_review(p['id'], 'asset.json', client)['export'], result['export'])
+        self.assertEqual(self.lib.get(job['id'], 'jobs')['steps'][0]['project_confirmation'], original_confirmation)
 
         from core.asset_refs import require_final_images
         old_receipt = Path(result['export']['folder']) / '用户确认记录.json'
@@ -1295,7 +1273,11 @@ class ProjectTests(unittest.TestCase):
                        ('source_json' if stage == 'script' else 'image'): binding}
             if stage == 'assets':
                 receipt.update(script_publication='script.json', script_version='a' * 64,
-                               reference_publications=['member.json'] if parameters['references'] else [])
+                               reference_publications=['member.json'] if parameters['references'] else [],
+                               candidate_revision=self.asset['candidate_revision'], candidate_source='workbench')
+                import review_text_cli as publishing
+                pmod.write(publishing.submission_path(root, receipt),
+                           dict(binding=publishing.submission_binding(receipt), remote=receipt['response']))
             pmod.write(root / filename, receipt)
 
         publication('script.json', 'script', root / 'R01.json', 'a' * 64, 'script')
@@ -1311,7 +1293,8 @@ class ProjectTests(unittest.TestCase):
             image.write_bytes(Path(self.asset['original']).read_bytes())
             name = 'bundle' if index else 'member'
             publication(name + '.json', 'assets', image, ('c' if index else 'b') * 64, name,
-                        astId=ast, outputId=output_id, purpose=step['purpose'], references=['member'] if index else [])
+                        artifactId=self.asset['id'], astId=ast, outputId=output_id, purpose=step['purpose'],
+                        references=['member'] if index else [])
             jobs.append(job_id)
             outputs.append(ast + '@' + output_id)
 
@@ -1390,10 +1373,15 @@ class ProjectTests(unittest.TestCase):
                 'source_json' if job is None else 'image': {'path': str(source.relative_to(root)), 'sha256': checksum}}
             if job is not None:
                 step = job['steps'][index]
-                params.update(astId=job['ast_id'], outputId=pmod.step_output_id(step), purpose=step['purpose'],
+                params.update(artifactId=source.parent.name, astId=job['ast_id'],
+                              outputId=pmod.step_output_id(step), purpose=step['purpose'],
                               references=list(references))
+                import review_text_cli as publishing
                 receipt.update(script_publication='script.json', script_version='a' * 64,
-                               reference_publications=[ref + '.json' for ref in references])
+                               reference_publications=[ref + '.json' for ref in references],
+                               candidate_revision=self.asset['candidate_revision'], candidate_source='workbench')
+                pmod.write(publishing.submission_path(root, receipt),
+                           dict(binding=publishing.submission_binding(receipt), remote=receipt['response']))
             pmod.write(root / (name + '.json'), receipt)
             return name + '.json'
 
@@ -1627,149 +1615,6 @@ class ProjectTests(unittest.TestCase):
         service = self.lib.projects
         return root, service, service.bind(str(root))
 
-    def test_delegated_narrative_asset_review_rework_and_handoff(self):
-        from core import agent_acceptance as aa, artifacts
-        from core.asset_refs import require_final_images, resolve_final_images
-        from core.project_kickoff import REQUEST_PATH
-        from test_formal_package_submission import narrative, register
-
-        root = (self.base / 'delegated-review').resolve()
-        root.mkdir()
-        package = narrative(root)
-        package.pop('human_readable_path')
-        package['status'] = 'candidate'
-        package['asset_requirements'][0].update(image_decision='无需独立图', image_reason='合成测试无需人物图')
-        real_reference = root / 'product-reference.png'
-        Image.new('RGB', (400, 300), 'yellow').save(real_reference)
-        package['asset_requirements'].extend([
-            {'asset_id': ast, 'category': category, 'name': name, 'narrative_purpose': '合成验收',
-             'source_paragraph_ids': ['STP-01'], 'identity_constraints': [], 'required_states': [],
-             'interactions': [], 'reference_paths': refs, 'unknowns': [],
-             'image_decision': '复用现有素材', 'image_reason': '合成测试图片'}
-            for ast, category, name, refs in (
-                ('AST-PROP-PAPER', 'PROP', '纸张', []),
-                ('AST-REAL-BOX', 'REAL_PRODUCT', '合成盒', [real_reference.name]))])
-        pmod.write(root / REQUEST_PATH, {'kickoff': {'decision_ref': 'synthetic kickoff',
-            'product': {'mode': 'none'}, 'canvas': {'platform': 'redframe', 'model': 'fixture',
-                'aspect_ratio': '9:16', 'resolution': '720p', 'create_new': True}}})
-        dialogue = root / package['dialogue_evidence_path']
-        evidence = pmod.read(dialogue)
-        evidence['dialogues'][0].pop('verification')
-        pmod.write(dialogue, evidence)
-        package['dialogue_evidence_sha256'] = pmod.digest(dialogue)
-        entry = register(root, 'N-AGENT', 'narrative.package', package)
-        aa.register_workflow_authorization(root, authorization_id='SYNTHETIC-TEXT',
-            authorization_ref='synthetic creative and planning authorization',
-            skills=['creative-director', 'storyboard-planner'])
-        profile = aa.ROOT / 'skills/creative-director/review-profile.json'
-        report_path = root / 'narrative-review.json'
-        checked_at = '2026-11-17T03:00:00Z'
-        report = {'schema_version': '1.0', 'kind': 'agent-self-check', 'scope': 'artifact',
-                  'verdict': 'pass', 'agent_id': 'synthetic reviewer', 'checked_at': checked_at,
-                  'authorization_id': 'SYNTHETIC-TEXT', **aa.acceptance_binding(root, entry),
-                  'review_profile_sha256': pmod.digest(profile),
-                  'checks': [{'id': check['id'], 'result': 'pass', 'observation': 'synthetic check',
-                              'locator': 'synthetic input'}
-                             for check in pmod.read(profile)['production_artifact_checks']]}
-        # A valid whole-report shape cannot clear a dialogue check marked inapplicable.
-        dialogue_check = next(check for check in report['checks'] if check['id'] == 'CREATIVE-DIALOGUE')
-        dialogue_check.update(result='not_applicable', reason='synthetic negative case')
-        pmod.write(report_path, report)
-        with self.assertRaisesRegex(ValueError, '未核对白证据'):
-            artifacts.adopt_initial_agent_artifact(root, entry['artifact_id'], str(report_path))
-        dialogue_check.update(result='pass')
-        dialogue_check.pop('reason')
-        pmod.write(report_path, report)
-        artifacts.adopt_initial_agent_artifact(root, entry['artifact_id'], str(report_path))
-        self.assertEqual(pmod.read(dialogue), evidence)
-
-        service = self.lib.projects
-        project = service.action({'action': 'bind', 'path': str(root)})
-        ident = project['id']
-        grant = subprocess.run([sys.executable, str(Path(m.__file__)), 'authorize-asset-review',
-            '--project', str(root), '--authorization-id', 'SYNTHETIC-ASSETS',
-            '--authorization-ref', 'synthetic delegated authority for image review'], capture_output=True, text=True)
-        self.assertEqual(grant.returncode, 0, grant.stderr)
-        aa.register_asset_workflow_authorization(root, authorization_id='SYNTHETIC-CHAT',
-            authorization_ref='synthetic authority for the human chat route')
-        with self.assertRaisesRegex(ValueError, '未明确覆盖逐图代审'):
-            service.apply_agent_review(ident, authorization_id='SYNTHETIC-CHAT', review={'outputs': []})
-        jobs = {}
-        for ast in ('AST-PROP-PAPER', 'AST-REAL-BOX'):
-            service.prepare_reuse({'project_id': ident, 'ast_id': ast})
-            jobs[ast] = service.row(service.get(ident), ast)['job_id']
-
-        def select(ast, name, color):
-            image = self.base / name
-            Image.new('RGB', (400, 300), color).save(image)
-            asset, _ = self.lib.import_file(image, category='其他')
-            service.select({'project_id': ident, 'job_id': jobs[ast], 'index': 0, 'asset_id': asset['id']})
-            step = self.lib.get(jobs[ast], 'jobs')['steps'][0]
-            return {'ast_id': ast, 'output_id': pmod.step_output_id(step), 'asset_id': asset['id'],
-                    'image_sha256': pmod.digest(Path(asset['original'])), 'purpose': step['purpose'],
-                    'result': 'pass', 'observation': 'synthetic fixture pixels', 'locator': 'whole original image'}
-
-        paper = select('AST-PROP-PAPER', 'paper.png', 'blue')
-        box = select('AST-REAL-BOX', 'box.png', 'yellowgreen')
-        source = project['source']
-        review = {'source_narrative': {**source, 'sha256': pmod.digest(Path(source['path']))},
-                  'agent_id': 'synthetic reviewer', 'checked_at': checked_at, 'report_ref': 'synthetic batch'}
-        authorization = 'SYNTHETIC-ASSETS'
-        with self.assertRaisesRegex(ValueError, '产品参考图'):
-            service.apply_agent_review(ident, authorization_id=authorization, review={**review, 'outputs': [paper, box]})
-        self.assertIsNone(self.lib.get(jobs[paper['ast_id']], 'jobs')['steps'][0]['project_confirmation'])
-        box['product_check'] = {'result': 'pass', 'observation': 'synthetic product check',
-            'locator': 'whole source image', 'references': [{'path': str(real_reference),
-                                                             'sha256': pmod.digest(real_reference)}]}
-        asset_report = root / 'asset-review.json'
-        pmod.write(asset_report, {**review, 'outputs': [paper, box]})
-        command = [sys.executable, str(Path(m.__file__)), '--library', str(self.lib.root),
-            '--asset-vault', str(self.lib.vault), 'apply-agent-review', '--project-id', ident,
-            '--authorization-id', authorization, '--review-file', str(asset_report)]
-        first = subprocess.run(command, capture_output=True, text=True)
-        self.assertEqual(first.returncode, 0, first.stderr)
-        initial = json.loads(first.stdout)['export']
-        queries = [f"{item['ast_id']}@{item['output_id']}" for item in (paper, box)]
-        first_outputs = resolve_final_images(root, queries)
-        self.assertEqual(set(first_outputs), set(queries))
-        receipt_file = Path(initial['folder']) / '资产采用记录.json'
-        first_receipt = receipt_file.read_bytes()
-        first_manifest = Path(initial['manifest']).read_bytes()
-        self.assertTrue(all('agent_review_ref' in asset['confirmed_outputs'][0]
-                            for asset in json.loads(first_manifest)['assets']))
-        self.assertEqual(load_project_state(root)['user_confirmations'], [])
-        repeated = subprocess.run(command, capture_output=True, text=True)
-        self.assertEqual(repeated.returncode, 0, repeated.stderr)
-        self.assertEqual(json.loads(repeated.stdout)['export'], initial)
-
-        service.reopen({'project_id': ident, 'job_id': jobs[box['ast_id']], 'index': 0})
-        self.assertEqual(require_final_images(root, queries[:1]), (True, []))
-        self.assertFalse(require_final_images(root, queries[1:])[0])
-        revised = select(box['ast_id'], 'box-reworked.png', 'orange')
-        revised['product_check'] = box['product_check']
-        outdated = subprocess.run(command, capture_output=True, text=True)
-        self.assertNotEqual(outdated.returncode, 0)
-        self.assertIn('选图、用途或字节', outdated.stderr)
-        pmod.write(asset_report, {**review, 'report_ref': 'synthetic rework', 'outputs': [revised]})
-        second = subprocess.run(command, capture_output=True, text=True)
-        self.assertEqual(second.returncode, 0, second.stderr)
-        new_export = json.loads(second.stdout)['export']
-        final_outputs = resolve_final_images(root, queries)
-        self.assertEqual(final_outputs[queries[0]]['path'], first_outputs[queries[0]]['path'])
-        self.assertEqual(final_outputs[queries[1]]['sha256'], revised['image_sha256'])
-        self.assertNotEqual(new_export['revision'], initial['revision'])
-        self.assertEqual(receipt_file.read_bytes(), first_receipt)
-        self.assertEqual(Path(initial['manifest']).read_bytes(), first_manifest)
-        self.assertEqual(load_project_state(root)['user_confirmations'], [])
-
-        handoff = subprocess.run([sys.executable, str(pmod.ROOT / 'scripts/stage_context_cli.py'),
-            'handoff', '--project', str(root), '--to-skill', 'storyboard-planner'], capture_output=True, text=True)
-        self.assertEqual(handoff.returncode, 0, handoff.stderr)
-        self.assertIn(new_export['artifact_id'], service.continue_project(ident)['content'])
-        real_reference.write_bytes(b'changed product reference')
-        self.assertEqual(require_final_images(root, queries[:1]), (True, []))
-        self.assertFalse(require_final_images(root, queries[1:])[0])
-
     def test_chat_confirmation_adopts_exact_asset_with_dual_basis(self):
         from core.agent_acceptance import register_asset_workflow_authorization, register_workflow_authorization
         root, service, p = self.kickoff_project('chat-confirmation')
@@ -1802,6 +1647,43 @@ class ProjectTests(unittest.TestCase):
         unrelated, _ = self.lib.import_file(unrelated_path, project='other', category='其他', role='候选')
         unrelated['backup'] = {'status': 'pending'}
         self.lib.save(unrelated)
+        step = job['steps'][0]
+        confirmation['outputs'] = [{'ast_id': ast_id, 'output_id': pmod.step_output_id(step),
+                                    'asset_id': self.asset['id'], 'purpose': step['purpose'],
+                                    'image_sha256': pmod.digest(Path(self.asset['original']))}]
+        def apply(message):
+            return service.apply_chat_confirmation(p['id'], authorization_id='FLOW-ASSET-TEST', confirmation=message)
+
+        with self.assertRaisesRegex(ValueError, '候选绑定'):
+            apply({key: value for key, value in confirmation.items() if key != 'outputs'})
+        target = ast_id + '@' + pmod.step_output_id(step)
+        confirmation['message_id'] = 'show-A'
+        with self.assertRaisesRegex(ValueError, '展示消息'):
+            apply(confirmation)
+        shown = json.loads(subprocess.check_output([
+            sys.executable, m.__file__, '--library', str(self.lib.root), '--asset-vault', str(self.lib.vault),
+            'show-chat-candidates', '--project-id', p['id'], '--message-id', 'show-A', '--target', target]))
+        from scripts import chat_asset_review as direct
+        display_path, snapshot = direct.web_display(root, 'show-A')
+        incomplete = copy.deepcopy(snapshot)
+        del incomplete['outputs'][0]['candidate_revision']
+        pmod.write(display_path, incomplete)
+        with self.assertRaisesRegex(ValueError, '绑定不完整'):
+            apply(confirmation)
+        self.assertIsNone(self.lib.get(job['id'], 'jobs')['steps'][0]['project_confirmation'])
+        pmod.write(display_path, snapshot)
+        confirmation.update(outputs=shown['outputs'], message_id='reply-A', reply_to_message_id='show-A')
+        selection = {'project_id': p['id'], 'job_id': job['id'], 'index': 0}
+        service.select({**selection, 'asset_id': unrelated['id']})
+        rebound = {**confirmation['outputs'][0], 'asset_id': unrelated['id'], 'candidate_id': unrelated['id'],
+                   'candidate_revision': unrelated['candidate_revision'], 'image_sha256': unrelated['image_sha256'],
+                   'source_path': service.copy_to_project(p, unrelated).relative_to(root).as_posix()}
+        with self.assertRaisesRegex(ValueError, '原确认范围'):
+            apply({**confirmation, 'outputs': [rebound]})
+        with self.assertRaisesRegex(ValueError, '选图、用途或字节'):
+            apply(confirmation)
+        self.assertIsNone(self.lib.get(job['id'], 'jobs')['steps'][0]['project_confirmation'])
+        service.select({**selection, 'asset_id': self.asset['id']})
         confirmation_path = self.base / 'chat-confirmation.json'
         pmod.write(confirmation_path, confirmation)
         completed = subprocess.run([
@@ -1840,6 +1722,87 @@ class ProjectTests(unittest.TestCase):
         again = service.apply_chat_confirmation(p['id'], authorization_id='FLOW-ASSET-TEST',
                                                 confirmation=confirmation)
         self.assertEqual(again['export'], result['export'])
+        self.assertEqual(self.lib.get(job['id'], 'jobs')['steps'][0]['project_confirmation'], step['project_confirmation'])
+        service.reopen(selection)
+        service.select({**selection, 'asset_id': unrelated['id']})
+        with self.assertRaises(ValueError):
+            apply({key: value for key, value in confirmation.items() if key != 'outputs'})
+        fresh = {**confirmation, 'review_ref': 'synthetic:new-candidate', 'quote': '新图通过', 'outputs': [rebound]}
+        fresh.update(message_id='reply-B', reply_to_message_id='show-B', outputs=service.show_chat_candidates(p['id'], 'show-B', [target])['outputs'])
+        apply(fresh)
+        receipt = self.lib.get(job['id'], 'jobs')['steps'][0]['project_confirmation']
+        self.assertEqual(receipt['asset_id'], unrelated['id'])
+        self.assertNotEqual(receipt['id'], step['project_confirmation']['id'])
+
+    def test_web_return_and_approval_in_job_history_block_direct_cli(self):
+        from core.agent_acceptance import register_asset_workflow_authorization
+        from scripts import chat_asset_review as direct
+        from test_chat_asset_review import image_batch
+
+        root, service, project = self.kickoff_project('cross-channel')
+        ident = project['id']
+        ast = project['rows'][0]['requirement']['asset_id']
+        job = service.prepare_reuse({'project_id': ident, 'ast_id': ast})['rows'][0]['job']
+        selection = {'project_id': ident, 'job_id': job['id'], 'index': 0}
+        target = ast + '@' + pmod.step_output_id(job['steps'][0])
+        register_asset_workflow_authorization(root, authorization_id='FLOW-ASSET-TEST',
+                                              authorization_ref='synthetic:cross-channel')
+        for outcome in ('returned', 'approved'):
+            service.select({**selection, 'asset_id': self.asset['id']})
+            service.show_chat_candidates(ident, outcome, [target])
+            message = dict(message_id=outcome, quote='换蓝色' if outcome == 'returned' else '通过',
+                           at='2026-11-26T09:00:00+08:00', review_ref='fixture:' + outcome)
+            def apply():
+                return service.apply_chat_confirmation(ident, authorization_id='FLOW-ASSET-TEST',
+                                                       confirmation={**message, 'decision': outcome})
+            first = apply()
+            self.assertEqual(apply(), first)
+            feedback = dict(message_id=outcome, feedback=message['quote']) if outcome == 'returned' else {}
+            service.reopen({**selection, **feedback})
+            # Model an older workspace with only the original work-item history.
+            path, _ = direct.web_display(root, outcome)
+            path.unlink()
+        history = self.lib.get(job['id'], 'jobs')['steps'][0]['history']
+        self.assertEqual(history[-2]['feedback']['message_id'], 'returned')
+        self.assertEqual(history[-1]['project_confirmation']['chat_confirmation']['confirmation']['message_id'], 'approved')
+        narrative = direct.current(load_manifest(root)['artifacts'], 'narrative.package')
+        request = pmod.read(root / direct.stage.REQUEST_PATH)
+        pmod.write(root / direct.stage.REQUEST_PATH, {**request, 'asset_review_targets': [target]})
+        batch = image_batch(root, narrative, [target], 'different', direct=True)
+        request_path = root / 'different-request.json'
+        direct.stage._direct_asset_binding(root, request_path, pmod.digest(request_path), [target],
+            {target: '道具'}, {'artifacts': [{'record': narrative, 'file': {'sha256': narrative['checksum']}}]})
+        def cli(*args):
+            return subprocess.run([sys.executable, direct.__file__, '--project', str(root), *args],
+                                  capture_output=True, text=True)
+        shown = cli('show-round', '--receipt', str(batch))
+        self.assertEqual(shown.returncode, 0, shown.stderr)
+        key = json.loads(shown.stdout)['shown']
+        for original in ('returned', 'approved'):
+            with self.subTest(historical_message=original):
+                path = root / 'decision.json'
+                pmod.write(path, dict(message_id=original, quote='通过', scope='all_shown', shown=[key],
+                                      at=message['at'], review_ref='relocated:' + original))
+                rejected = cli('confirm', '--shown', key, '--confirmation-json', str(path))
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertIn('其他', rejected.stderr)
+                self.assertFalse(direct.asset_refs.confirmed_images(root))
+
+        # A replay of the same historical decision is read-only, even across entry points.
+        approved = history[-1]['project_confirmation']['chat_confirmation']
+        batch_data = pmod.read(batch)
+        batch_data['items'][0].update(candidate_id=approved['asset_id'],
+            candidate_revision=approved['candidate_revision'], purpose=approved['purpose'],
+            path=str(service.copy_to_project(project, self.asset)), sha256=approved['image_sha256'])
+        pmod.write(batch, batch_data)
+        displayed = cli('show-round', '--receipt', str(batch))
+        self.assertEqual(displayed.returncode, 0, displayed.stderr)
+        key = json.loads(displayed.stdout)['shown']
+        pmod.write(path, {**approved['confirmation'], 'scope': 'all_shown', 'shown': [key]})
+        replay = cli('confirm', '--shown', key, '--confirmation-json', str(path))
+        self.assertEqual(replay.returncode, 0, replay.stderr)
+        self.assertTrue(json.loads(replay.stdout)['already_recorded'])
+        self.assertFalse(direct.asset_refs.confirmed_images(root))
 
     def test_workbench_reuses_chat_approved_head_and_preserves_confirmed_outputs(self):
         from scripts import chat_asset_review as direct
@@ -1888,7 +1851,7 @@ class ProjectTests(unittest.TestCase):
         pmod.write(root / direct.SHOWN / (shown + '.json'), packet)
         decision = self.base / 'approve-head-and-cup.json'
         pmod.write(decision, {'quote': '这两张通过', 'at': '2026-11-24T09:00:00+08:00',
-                              'scope': 'all_shown', 'review_ref': 'synthetic:head-and-cup'})
+                              'scope': 'all_shown', 'shown': [shown], 'review_ref': 'synthetic:head-and-cup'})
         approved = subprocess.run([sys.executable, direct.__file__, '--project', str(root),
                                    'confirm', '--shown', shown, '--confirmation-json', str(decision)],
                                   capture_output=True, text=True)
@@ -1901,7 +1864,7 @@ class ProjectTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '已有已确认大头照'):
             self.lib.step_request(job(), head_index)
         prepared = self.lib.prepare(job_id, cloth_index, project_id=project['id'])
-        request = pmod.read(prepared['path'])
+        request = prepared
         attached = next(record for record in request['reference_records'] if record.get('project_confirmed'))
         self.assertEqual((attached['original'], attached['sha256']), (head['path'], head['sha256']))
         self.assertEqual(request['reference_paths'][0], head['path'])
@@ -1920,6 +1883,8 @@ class ProjectTests(unittest.TestCase):
                             'review_ref': 'synthetic:clothing',
                             'outputs': [{'ast_id': ast, 'output_id': output_id, 'asset_id': selected['id'],
                                          'purpose': step['purpose'], 'image_sha256': pmod.digest(cloth)}]})
+        displayed = service.show_chat_candidates(project['id'], 'shown-cloth', [ast + '@' + output_id])
+        pmod.write(confirm, {**pmod.read(confirm), 'message_id': displayed['message_id'], 'outputs': displayed['outputs']})
         command = [sys.executable, m.__file__, '--library', str(self.lib.root),
                    '--asset-vault', str(self.lib.vault), 'apply-chat-confirmation',
                    '--project-id', project['id'], '--authorization-id', auth, '--confirmation-file', str(confirm)]
@@ -2018,8 +1983,13 @@ class ProjectTests(unittest.TestCase):
                         'asset_id': self.asset['id']})
         confirmation = {'quote': '确认这批资产，继续推', 'at': '2026-11-13T05:30:00Z',
                         'review_ref': '04_资产/资产清单.md「协调方复核」一节'}
+        step = jobs[first_ast]['steps'][0]
+        first_scope = {'ast_id': first_ast, 'output_id': pmod.step_output_id(step), 'asset_id': self.asset['id'],
+                       'purpose': step['purpose'], 'image_sha256': pmod.digest(Path(self.asset['original']))}
+        confirmation['message_id'] = 'first-shown'
+        first_scope, = service.show_chat_candidates(p['id'], 'first-shown', [first_ast + '@' + first_scope['output_id']])['outputs']
         result = service.apply_chat_confirmation(p['id'], authorization_id='FLOW-ASSET-TEST',
-                                                 confirmation=confirmation)
+                                                 confirmation={**confirmation, 'outputs': [first_scope]})
         self.assertFalse(result['adopted'])
         self.assertTrue(result['waiting_for_remaining_outputs'])
         self.assertNotIn('export', service.get(p['id']))
@@ -2088,10 +2058,14 @@ class ProjectTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '原确认范围不能扩大'):
             service.apply_chat_confirmation(p['id'], authorization_id='FLOW-ASSET-TEST',
                                             confirmation={**confirmation, 'outputs': [scope]})
-        new_basis = {**confirmation, 'quote': '确认这张杯子', 'at': '2026-11-13T06:00:00Z'}
-        with self.assertRaisesRegex(ValueError, '选图、用途或字节'):
+        new_basis = {**confirmation, 'quote': '确认这张杯子', 'at': '2026-11-13T06:00:00Z',
+                     'review_ref': 'synthetic:cup-confirmation'}
+        new_basis['message_id'] = 'second-shown'
+        scope, = service.show_chat_candidates(p['id'], 'second-shown', [other_ast + '@' + second_key])['outputs']
+        with self.assertRaisesRegex(ValueError, '原确认范围'):
             service.apply_chat_confirmation(p['id'], authorization_id='FLOW-ASSET-TEST',
-                                            confirmation={**new_basis, 'outputs': [{**scope, 'purpose': '错误用途'}]})
+                                            confirmation={**new_basis, 'review_ref': 'synthetic:wrong-purpose',
+                                                          'outputs': [{**scope, 'purpose': '错误用途'}]})
         result = service.apply_chat_confirmation(p['id'], authorization_id='FLOW-ASSET-TEST',
                                                  confirmation={**new_basis, 'outputs': [scope]})
         self.assertTrue(result['waiting_for_backup'])
@@ -2180,6 +2154,7 @@ class ProjectTests(unittest.TestCase):
                    'outputs': [{'ast_id': ast, 'output_id': 'HOME-FINAL', 'asset_id': step['selected'],
                                 'purpose': step['purpose'],
                                 'image_sha256': pmod.digest(Path(self.lib.get(step['selected'])['original']))}]}
+        receipt.update(message_id='home-shown', outputs=service.show_chat_candidates(ident, 'home-shown', [ast + '@HOME-FINAL'])['outputs'])
         service.apply_chat_confirmation(ident, authorization_id=auth, confirmation=receipt)
         self.backup()
         partial = service.apply_chat_confirmation(ident, authorization_id=auth, confirmation={'outputs': []})
@@ -2253,8 +2228,9 @@ class ProjectTests(unittest.TestCase):
                     for _ in range(48):
                         stream.write(b'x' * (64 * 1024))
                 asset, _ = self.lib.import_file(path, category='场景' if step['kind'] == '环境' else '物品')
-                service.select({'job_id': job['id'], 'index': index, 'asset_id': asset['id']})
-                service.confirm({'job_id': job['id'], 'index': index, 'confirm': True})
+                selection = {'job_id': job['id'], 'index': index, 'asset_id': asset['id']}
+                service.select(selection)
+                service.confirm({**selection, 'confirm': True})
                 expected[(job['ast_id'], pmod.step_output_id(step))] = pmod.digest(path)
                 total_bytes += path.stat().st_size
         self.backup()

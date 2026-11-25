@@ -420,8 +420,12 @@ class RedframeImageUI:
             start, finish = [(b['x'] + b['width'] / 2, b['y'] + b['height'] / 2) for b in boxes]
             self.page.mouse.move(*start)
             self.page.mouse.down()
+            # The canvas needs the gesture to register before the pointer leaves the handle;
+            # an immediate move/release produces no connection line at all.
+            self.page.wait_for_timeout(180)
             try:
-                self.page.mouse.move(*finish, steps=20)
+                self.page.mouse.move(*finish, steps=25)
+                self.page.wait_for_timeout(260)
             finally:
                 self.page.mouse.up()
             self._wait_canvas(linked, 'wire reference', timeout=save_timeout)

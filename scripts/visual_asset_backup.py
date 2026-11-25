@@ -1,6 +1,5 @@
 """Commit staged originals and catalog changes to the Vault asset folder."""
 import json
-import hashlib
 import re
 import shutil
 from datetime import datetime, timezone
@@ -13,13 +12,11 @@ PREFIX = {'人物单图': 'PERSON', '大头照': 'HEAD', '服装三视图': 'WAR
 def same_file(first, second):
     if first.stat().st_size != second.stat().st_size:
         return False
-    def digest(path):
-        value = hashlib.sha256()
-        with path.open('rb') as stream:
-            for block in iter(lambda: stream.read(1024 * 1024), b''):
-                value.update(block)
-        return value.digest()
-    return digest(first) == digest(second)
+    with first.open('rb') as left, second.open('rb') as right:
+        for block in iter(lambda: left.read(1024 * 1024), b''):
+            if block != right.read(1024 * 1024):
+                return False
+        return not right.read(1)
 
 
 def run(library, management, *, asset_ids=None):
@@ -80,6 +77,7 @@ def run(library, management, *, asset_ids=None):
                     shutil.copy2(source, target)
                 if not same_file(target, source):
                     raise ValueError('知识库复制校验失败')
+                asset['candidate_revision'] = row.get('library_version')
                 row.update(name=asset['name'], category=asset['category'], role=asset['role'],
                            original_source=asset['source'],
                            state='已确认' if asset['status'] == 'confirmed' else '待核对',

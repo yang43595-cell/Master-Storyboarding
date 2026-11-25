@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import json
 import sys
+from urllib.parse import quote
 from io import BytesIO
 from pathlib import Path
 
@@ -180,6 +181,75 @@ def _check_preflight(project, client, path, *, case_id, stage, project_id=None):
     return {"path": path.relative_to(project).as_posix(), "response": current}
 
 
+def _publication_candidate(project, args, source):
+    from chat_asset_review import read_shown, workbench_records
+    if args.shown:
+        packet = read_shown(project, args.shown, source)
+        rows = [row for row in packet["items"] if row["target"] == args.ast_id + "@" + args.output_id
+                and row["candidate_id"] == args.artifact_id and row["purpose"] == args.purpose]
+        if len(rows) != 1:
+            raise ValueError("展示清单没有唯一匹配的送审候选")
+        row = rows[0]
+        image = _path(project, row["path"])
+        revision, checksum = row.get("candidate_revision"), row["sha256"]
+    else:
+        assets = list(workbench_records(project, "assets", args.artifact_id))
+        if len(assets) != 1 or assets[0].get("trashed_at") or assets[0].get("reference_only"):
+            raise ValueError("找不到可送审的本地候选")
+        asset = assets[0]
+        if asset["id"] != args.artifact_id:
+            raise ValueError("素材库候选 ID 不一致")
+        from core.character_assets import step_output_id
+        matches = [step for job in workbench_records(project, "active_jobs") if job["ast_id"] == args.ast_id
+                   and not job.get("project_stale") and not job.get("record_deleted_at")
+                   for step in job["steps"] if step_output_id(step) == args.output_id
+                   and args.artifact_id in step["outputs"] and step["purpose"] == args.purpose]
+        if len(matches) != 1:
+            raise ValueError("本地制作项与送审候选不符")
+        original = Path(asset["original"])
+        image = _path(project, Path("04_资产/知识库参考") / asset["id"] / original.name)
+        revision, checksum = asset.get("candidate_revision"), asset.get("image_sha256")
+        if args.image and Path(args.image).resolve() == original.resolve():
+            supplied = image
+        else:
+            supplied = _path(project, args.image) if args.image else image
+        if supplied != image:
+            raise ValueError("送审图片路径不属于该候选")
+        from visual_asset_backup import same_file
+        if not original.is_file() or not image.is_file() or not same_file(original, image):
+            raise ValueError("制作项的项目副本与候选原图不符")
+    if not isinstance(revision, str) or not revision.strip() or not checksum:
+        raise ValueError("候选缺少修订或图片依据")
+    if args.shown and args.image and _path(project, args.image) != image:
+        raise ValueError("送审图片路径不属于该候选")
+    return image, revision, checksum
+
+
+def submission_path(project, receipt):
+    params = receipt["request"]["parameters"]
+    # Each operation has one frozen request and successful POST result.
+    parts = [receipt["base_url"], params["caseId"], params["operationId"]]
+    return _path(project, Path("00_项目管理/资产交审/网站送审") /
+                 quote(parts[0], safe="") / ("case-" + quote(parts[1], safe="")) /
+                 ("op-" + quote(parts[2], safe="") + ".json"))
+
+
+def submission_binding(receipt):
+    return {key: receipt[key] for key in ("base_url", "request", "image", "candidate_revision",
+                                          "candidate_source", "script_version", "script_publication", "reference_publications")}
+
+
+def verify_submission(project, receipt):
+    path = submission_path(project, receipt)
+    saved = json.loads(path.read_text()) if path.is_file() else {}
+    candidate = receipt["request"]["parameters"].get("artifactId")
+    if (not candidate or receipt.get("candidate_source") != "workbench" or not receipt.get("candidate_revision") or not saved.get("remote")
+            or saved["binding"] != submission_binding(receipt) or saved["remote"] != receipt["response"]
+            or ("artifactId" in saved["remote"] and saved["remote"]["artifactId"] != candidate)):
+        raise ValueError("网站回执缺少准确的本地送审关联或候选 ID 不一致")
+    return saved["binding"]["request"]["parameters"]["artifactId"]
+
+
 def _asset_readback(client, receipt):
     published = receipt["response"]
     try:
@@ -267,8 +337,11 @@ def _parser() -> argparse.ArgumentParser:
     status.add_argument("--stage", choices=("script", "assets"), default="script")
     asset = commands.add_parser("publish-asset", help="Submit a project image against the approved script.")
     asset.add_argument("--script-publication", required=True, type=Path)
-    asset.add_argument("--image", required=True, type=Path)
-    for name in ("artifact-id", "ast-id", "output-id", "purpose", "operation-id"):
+    asset.add_argument("--image", type=Path, help="可选，核对权威候选路径")
+    asset.add_argument("--shown", help="普通对话资产使用的项目展示编号")
+    asset.add_argument("--candidate-id", "--artifact-id", dest="artifact_id", required=True,
+                       help="送审图片的准确本地候选 ID，随网站请求及本地回执保存为 artifactId")
+    for name in ("ast-id", "output-id", "purpose", "operation-id"):
         asset.add_argument("--" + name, required=True)
     asset.add_argument("--reference-publication", action="append", default=[], type=Path)
     asset.add_argument("--preflight", type=Path, help="Asset status receipt checked before publication.")
@@ -433,9 +506,11 @@ def run(args: argparse.Namespace) -> dict:
                 raise ValueError("Referenced assets must belong to the same case and script version.")
             if any(ref["request"]["parameters"]["astId"] not in active_asts for ref in references):
                 raise ValueError("Referenced assets must be active image ASTs in the current project requirements.")
-            image = _path(project, args.image)
+            image, revision, checksum = _publication_candidate(project, args, {**source, "checksum": published_source["sha256"]})
             with image.open("rb") as stream:
                 raw = stream.read(MAX_IMAGE_BYTES + 1)
+            if len(raw) > MAX_IMAGE_BYTES:
+                raise AgentReviewError("Asset image must contain at most 8 MiB.")
             finals = character_output_contract(project, [args.ast_id]).get(args.ast_id, {})
             if finals.get(args.output_id) == "人物1x4" and 0 < len(raw) <= MAX_IMAGE_BYTES:
                 if problem := character_board_image_problem(BytesIO(raw)):
@@ -444,10 +519,12 @@ def run(args: argparse.Namespace) -> dict:
                           "operationId": args.operation_id, "purpose": args.purpose,
                           "artifactId": args.artifact_id, "astId": args.ast_id, "outputId": args.output_id,
                           "references": [ref["response"]["assetId"] for ref in references]}
-            receipt.update(image=_binding(project, image, raw), script_version=script["response"]["version"],
+            receipt.update(image=_binding(project, image, raw), candidate_revision=revision, candidate_source=args.shown or "workbench", script_version=script["response"]["version"],
                            script_publication=_path(project, args.script_publication).relative_to(project).as_posix(),
                            reference_publications=[_path(project, path).relative_to(project).as_posix()
                                                    for path in args.reference_publication])
+            if receipt["image"]["sha256"] != checksum:
+                raise ValueError("送审图片与候选记录的字节不符")
             if args.preflight:
                 receipt["preflight"] = _check_preflight(
                     project, client, args.preflight, case_id=case_id, stage="assets",
@@ -490,6 +567,15 @@ def run(args: argparse.Namespace) -> dict:
                 if not candidate.get("website_publication_started"):
                     candidate["website_publication_started"] = True
                     save_manifest(project, manifest)
+        if route == "publish-assets":
+            operation = submission_path(project, receipt)
+            if receipt_path == operation or operation.parent.parent.parent in receipt_path.parents:
+                raise ValueError("回执位置不能覆盖送审绑定")
+            binding = submission_binding(receipt)
+            saved = json.loads(operation.read_text()) if operation.is_file() else {"binding": binding}
+            if saved["binding"] != binding:
+                raise ValueError("同一网站操作已绑定其他候选或修订")
+            write_json(operation, saved)
         receipt_path.parent.mkdir(parents=True, exist_ok=True)
         # Reserve before networking: a successful remote write must have a local
         # destination. No automatic POST retry is hidden behind this command.
@@ -508,6 +594,12 @@ def run(args: argparse.Namespace) -> dict:
                 raise
             json.dump(receipt, output, ensure_ascii=False, indent=2)
             output.write("\n")
+            if route == "publish-assets":
+                remote = receipt["response"]
+                if (("artifactId" in remote and remote["artifactId"] != args.artifact_id)
+                        or saved.get("remote", remote) != remote):
+                    raise ValueError("网站返回了不同送审候选或操作结果")
+                write_json(operation, {"binding": binding, "remote": remote})
         if "preflight" in receipt and (
                 receipt["response"].get("projectId") != receipt["preflight"]["response"]["case"]["projectId"]):
             raise ValueError("发布回执的网站项目与预读不符，已保留回执供核查")

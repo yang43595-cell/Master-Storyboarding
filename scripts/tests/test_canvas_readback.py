@@ -100,6 +100,82 @@ def test_native_parameter_type_change_is_not_equal():
     assert not compare(frozen, observed)['ok']
 
 
+@pytest.mark.parametrize('field, mutation', [
+    (None, 'same'),
+    ('prompt', 'change'), ('parameters', 'change'), ('parameters', 'boolean'),
+    ('ordered_media', 'reorder'), ('ordered_media', 'change'),
+    ('prompt', 'missing'), ('parameters', 'missing'), ('ordered_media', 'missing'),
+    ('ordered_media', 'none'), ('ordered_media', 'empty'),
+    ('edges', 'reorder'), ('source_nodes', 'reorder'),
+    *[(field, mutation) for field in ('edges', 'source_nodes')
+      for mutation in ('add', 'remove', 'duplicate', 'missing', 'none', 'empty', 'non-list',
+                       'both-empty', 'none-vs-empty')],
+    ('native_mentions', 'change'), ('native_mentions', 'missing'),
+])
+def test_readback_differences_keep_original_digest_values(field, mutation):
+    frozen, observed = sample()
+    row = frozen['drafts'][0]
+    got = observed['drafts'][0]
+    row['parameters']['enabled'] = got['parameters']['enabled'] = True
+    row['native_entity_type'] = 'image'
+    row['reference_checks'] = [
+        {'canvas_binding': {'prompt_reference': include}} for include in (True, False, True)]
+    row['edges'] = [{'slot': slot, 'target_port': 'in'} for slot in (1, 2)]
+    row['source_nodes'] = [{'node_id': node, 'port': 'image'} for node in ('image-1', 'image-2')]
+    if mutation in ('both-empty', 'none-vs-empty'):
+        row[field] = []
+    for graph_field in ('edges', 'source_nodes'):
+        got[graph_field] = copy.deepcopy(row[graph_field])
+    got['native_mentions'] = [
+        {**media, 'entity_type': 'image', 'native_noneditable_entity': True}
+        for media in row['ordered_media'][::2]]
+    observed['frozen_sha256'] = digest(frozen)
+
+    if mutation == 'change':
+        if field == 'prompt':
+            got[field] += ' changed'
+        elif field == 'parameters':
+            got[field]['duration'] = 99
+        else:
+            got[field][0]['media_id'] = 'wrong'
+    elif mutation == 'boolean':
+        got[field]['enabled'] = 1
+    elif mutation == 'reorder':
+        got[field][:2] = reversed(got[field][:2])
+    elif mutation == 'add':
+        got[field].append({'extra': True})
+    elif mutation == 'remove':
+        got[field].pop()
+    elif mutation == 'duplicate':
+        got[field].append(copy.deepcopy(got[field][0]))
+    elif mutation == 'missing':
+        del got[field]
+    elif mutation in ('none', 'none-vs-empty'):
+        got[field] = None
+    elif mutation == 'empty':
+        got[field] = []
+    elif mutation == 'non-list':
+        got[field] = {}
+
+    expected_differences = []
+    graph = field in ('edges', 'source_nodes')
+    if field is not None and not (graph and mutation in ('reorder', 'both-empty')):
+        expected_value = row['ordered_media' if field == 'native_mentions' else field]
+        observed_value = got.get(field)
+        if graph:
+            expected_value = sorted(map(digest, expected_value))
+            observed_value = sorted(map(digest, observed_value)) if isinstance(observed_value, list) else None
+        expected_differences.append({
+            'node_id': row['node_id'], 'field': field, 'expected_sha256': digest(expected_value),
+            'observed_sha256': digest(observed_value) if graph or field in got else None,
+        })
+    report = compare(frozen, observed)
+    assert report['ok'] == (not expected_differences)
+    assert report['differences'] == expected_differences
+    assert report['native_reference_checks'] == {
+        row['node_id']: 'failed' if field == 'native_mentions' else 'passed'}
+
+
 def test_frozen_delivery_cannot_override_project_kickoff(tmp_path):
     from scripts.tests.test_delivery_preflight import bind_synthetic_quality, bind_synthetic_canvas, delivery
 

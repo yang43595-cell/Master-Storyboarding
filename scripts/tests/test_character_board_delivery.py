@@ -41,16 +41,19 @@ def test_approved_outfit_replacement_only_recomposes_its_board(tmp_path, monkeyp
         key = sha256_json(packet)
         write_json(root / review.SHOWN / (key + ".json"), packet)
         review.confirm(root, [key], dict(at="2026-11-22T12:00:00+08:00", quote="synthetic", scope="all_shown",
-                                         review_ref=note), story_entry, entries())
+                                         review_ref=note, shown=[key]), story_entry, entries())
 
     def boards(checked=None, specs=()):
-        return review.compose_boards(root, specs, checked, story_entry, entries())
+        if checked:
+            return review.confirm(root, [checked], dict(at="2026-11-22T13:00:00+08:00", quote="拼版通过",
+                                  scope="all_shown", review_ref=checked, shown=[checked]), story_entry, entries())
+        return review.compose_boards(root, specs, story_entry, entries())
 
     confirm([("FACE", "大头照", None, "red"), ("JACKET", "服装", "DAY", "blue"),
              ("COAT", "服装三视图", "NIGHT", "green")], "first")
     preview = boards()
     assert preview["count"] == 2 and not preview["pending"]
-    day = next(o for o in preview["items"] if o["output_id"] == "DAY")
+    day = next(o for o in preview["items"] if o["target"] == ast + "@DAY")
     with Image.open(root / day["path"]) as im:
         assert im.size == (1000, 480)
         assert im.getpixel((359, 250)) == (255, 0, 0) and im.getpixel((360, 250)) == (0, 0, 255)
@@ -60,28 +63,27 @@ def test_approved_outfit_replacement_only_recomposes_its_board(tmp_path, monkeyp
             raise OSError("synthetic interruption before project state update")
         patch.setattr(review, "select_export", fail_after_promotion)
         with pytest.raises(OSError, match="interruption"):
-            boards(preview["review_key"])
-    adopted = boards(preview["review_key"])
-    assert boards(preview["review_key"])["artifact_id"] == adopted["artifact_id"]
+            boards(preview["shown"])
+    adopted = boards(preview["shown"])
+    assert boards(preview["shown"])["artifact_id"] == adopted["artifact_id"]
     assert set(boards()["reused"]) == {ast + "@DAY", ast + "@NIGHT"}
     confirm([("JACKET", "服装", "DAY", "yellow")], "changed")
     active = read_json(root / review.current(entries(), review.LOGICAL)["path_or_url"])
     outputs = {o["output_id"] for o in active["assets"][0]["confirmed_outputs"]}
     assert "DAY" not in outputs and "NIGHT" in outputs
     assert [g["requested_item"] for g in active["scope_gaps"]] == ["DAY"]
-    with pytest.raises(ValueError, match="源图或用途已变化"):
-        boards(preview["review_key"])
+    assert boards(preview["shown"])["artifact_id"] == adopted["artifact_id"]
     with pytest.raises(ValueError, match="服装确认"):
         boards(specs=[(ast + "@DAY", "FACE", "COAT")])
     new = boards()
-    assert [r["output_id"] for r in new["items"]] == ["DAY"] and new["reused"] == [ast + "@NIGHT"]
+    assert [r["target"].split("@")[1] for r in new["items"]] == ["DAY"] and new["reused"] == [ast + "@NIGHT"]
     picture = root / new["items"][0]["path"]
     raw = picture.read_bytes()
     picture.write_bytes(raw + b"changed")
     with pytest.raises(ValueError, match="字节已变化"):
-        boards(new["review_key"])
+        boards(new["shown"])
     picture.write_bytes(raw)
-    last = boards(new["review_key"])
+    last = boards(new["shown"])
     assert not read_json(Path(last["manifest"]))["scope_gaps"]
     confirm([("FACE", "大头照", None, "black")], "new identity photo")
-    assert {r["output_id"] for r in boards()["items"]} == {"DAY", "NIGHT"}
+    assert {r["target"].split("@")[1] for r in boards()["items"]} == {"DAY", "NIGHT"}

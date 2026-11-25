@@ -43,35 +43,6 @@ class AssetSemanticsTests(unittest.TestCase):
             package = asset.build_task_package(request, refs=['skills/asset-image-assistant/library-profile.json'])
             self.assertEqual(package['production_item']['template']['block_index'],4)
 
-    def test_source_name_is_not_quality_advertising(self):
-        prompt='校园正面平视图；门楣保留剧情指定校名“海城高级中学”，灰色砖墙，午后侧光。'
-        self.assertEqual(asset.language_issues(prompt), [])
-        for literal in ['远处是大片草地。', '一大片的草地与高级中学门牌。', '海城高级中学的画面，机位平视。']:
-            self.assertEqual(asset.language_issues(literal), [])
-        for prompt in ['影视级8K高级感杯子', '高级画质', '唯美风格', '高级，大片，8K', '“高级感”画面', '打造唯美的画面', '呈现高级的画质', '好莱坞大片质感', '高端 的 摄影']:
-            with self.subTest(prompt=prompt):
-                self.assertTrue(asset.language_issues(prompt))
-                review={'prompt':prompt,'passed':True,'issues':[], 'checks':[c['id']+':通过' for c in asset.checks()]}
-                self.assertFalse(asset.validate_review(review)['passed'])
-        data={'prompt':prompt,'passed':True,'issues':[], 'checks':[c['id']+':通过' for c in asset.checks()]}
-        self.assertFalse(asset.validate_review(data)['passed'])
-
-    def test_profile_change_invalidates_prompt_review_not_image_records(self):
-        step={'prompt':'灰色砖墙，午后侧光。','status':'confirmed','selected':'existing-image', 'audit':{'status':'passed','skill_execution':{'version':'asset-library-skill-v3'}}}
-        self.assertFalse(asset.approved(step))
-        step['audit']['skill_execution']['version']=asset.profile()['version']
-        self.assertTrue(asset.approved(step))
-        self.assertEqual(step['selected'],'existing-image')
-        self.assertEqual(step['status'],'confirmed')
-
-    def test_object_lightweight_policy_is_not_expanded(self):
-        checks = asset.checks('project', '物品')
-        self.assertEqual(len(checks), 2)
-        data = {'prompt':'影视级8K高级感杯子', 'passed':True, 'issues':[],
-                'checks':[c['id']+':通过' for c in checks]}
-        # Existing ambiguity R0 remains explicit, not silently changed by A3.
-        self.assertTrue(asset.validate_review(data, 'project', '物品')['passed'])
-
     def test_actual_seed_to_step_request_to_package(self):
         import visual_asset_library as library
         lib=object.__new__(library.Library)

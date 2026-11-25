@@ -19,6 +19,7 @@ from .artifacts import (dependency_closure, load_manifest, mark_impacted_artifac
                         unchanged_director_edges, validate_candidate_submission, validate_agent_submission)
 from .io import (
     PROJECT_LOCK_RELATIVE,
+    canonical_json_bytes,
     file_lock,
     project_lock,
     normalized_text_sha256,
@@ -438,7 +439,7 @@ def inspect_change(project: Path, logical_ids: list[str], candidate: str | None 
             if source.suffix.lower() == ".json" and candidate_path.suffix.lower() == ".json":
                 try:
                     payload = read_json(candidate_path)
-                    same = sha256_json(read_json(source)) == sha256_json(payload)
+                    same = canonical_json_bytes(read_json(source)) == canonical_json_bytes(payload)
                     if (not same and bases[0].get("logical_id") == "storyboard.package"
                             and isinstance(payload, dict)):
                         replacement = {**bases[0], "path_or_url": relative, "status": "candidate",
@@ -552,8 +553,8 @@ def materialize_t0(
             except (OSError, json.JSONDecodeError) as exc:
                 raise RevisionControlError(f"T0 源 JSON 无法解析：{source}") from exc
             write_json(destination, value)
-            if sha256_json(value) != sha256_json(read_json(destination)):
-                raise RevisionControlError("T0 JSON 规范化后语义摘要不一致")
+            if canonical_json_bytes(value) != canonical_json_bytes(read_json(destination)):
+                raise RevisionControlError("T0 JSON 规范化后内容不一致")
         else:
             write_bytes(destination, source.read_bytes())
             if sha256_file(source) != sha256_file(destination):

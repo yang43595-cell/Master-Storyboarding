@@ -42,8 +42,6 @@ def test_exact_requested_output_uses_historical_fields_without_transport_details
         'items': [{
             'target': TARGET, 'status': 'ready_for_review', 'candidate_id': 'C01',
             'path': str(tmp_path / 'C01.png'), 'sha256': passed['sha256'],
-            'observer': '/root/producer', 'visual_status': 'passed',
-            'observation_summary': 'framing: 脚部完整',
         }],
     }
 
@@ -60,66 +58,8 @@ def test_a_received_candidate_does_not_mark_a_partial_batch_complete(tmp_path):
     ]
 
 
-@pytest.mark.parametrize('observation', ['具体观察' * 10000, 'data:image/png;base64,' + 'A' * 100000])
-def test_large_observations_stay_local_and_do_not_expand_coordinator_result(tmp_path, observation):
-    row = _passed_row(tmp_path)
-    row['observed'] = observation
-    row['logs'] = 'PRIVATE LOG' * 10000
-    receipt = _save(tmp_path, row)
-    before = receipt.read_bytes()
-
-    summary = summarize_asset_batch_receipt(tmp_path, receipt, [TARGET])
-
-    assert summary['status'] == 'ready_for_review'
-    assert len(summary['items'][0]['observation_summary']) <= 240
-    assert len(json.dumps(summary)) < 2500
-    assert 'data:image' not in json.dumps(summary)
-    assert 'PRIVATE LOG' not in json.dumps(summary)
-    assert receipt.read_bytes() == before
-
-
-def test_wardrobe_check_uses_receipt_observer_and_exact_per_item_status(tmp_path):
-    passed = _passed_row(tmp_path)
-    failed = _passed_row(tmp_path, SECOND, 'C02')
-    for row, status in ((passed, '通过，可作为待审服装候选'), (failed, '服装外观通过，三视图构图待处理')):
-        row['output_path'] = row.pop('path')
-        row['visual_self_check'] = {'status': status, 'observed': row.pop('observed')}
-        del row['observer'], row['visual_status']
-    receipt = _save(tmp_path, passed, failed, observer='/root/wardrobe', review_status='user approved')
-
-    summary = summarize_asset_batch_receipt(tmp_path, receipt, [TARGET, SECOND])
-
-    assert summary['status'] == 'ready_for_review'
-    assert summary['complete'] is True
-    assert summary['items'][0]['observer'] == '/root/wardrobe'
-    assert summary['items'][0]['status'] == 'ready_for_review'
-    assert summary['items'][1] == {
-        'target': SECOND, 'status': 'ready_for_review', 'candidate_id': 'C02',
-        'observer': '/root/wardrobe', 'visual_status': 'failed', 'issue': '服装外观通过，三视图构图待处理',
-        'observation_summary': 'framing: 脚部完整', 'path': str(tmp_path / failed['output_path']), 'sha256': failed['sha256'],
-    }
-
-
-def test_unique_checked_pass_can_replace_failed_candidate_but_cannot_choose_between_passes(tmp_path):
-    old = _passed_row(tmp_path)
-    new = _passed_row(tmp_path, candidate='C02')
-    old.update(visual_status='failed', blocking_issue='脚底截边')
-    receipt = _save(tmp_path, new, old)
-
-    summary = summarize_asset_batch_receipt(tmp_path, receipt, [TARGET])
-    assert summary['status'] == 'ready_for_review'
-    assert summary['items'][0]['candidate_id'] == 'C02'
-
-    old['visual_status'] = 'passed'
-    receipt = _save(tmp_path, new, old)
-    summary = summarize_asset_batch_receipt(tmp_path, receipt, [TARGET])
-    assert summary['status'] == 'pending'
-    assert 'candidate_id' not in summary['items'][0]
-
-
 @pytest.mark.parametrize('incomplete', [
-    {'observer': None}, {'observed': None}, {'review_result': 'failed'},
-    {'review_actor': '/root/other'}, {'sha256': 'f' * 64}, {'path': 'missing.png'},
+    {'candidate_id': None}, {'sha256': 'f' * 64}, {'path': 'missing.png'},
     {'path': '../outside.png'},
 ])
 def test_missing_conflicting_or_changed_evidence_cannot_be_ready(tmp_path, incomplete):
@@ -151,23 +91,8 @@ def test_worker_can_close_an_exact_target_blocked_before_an_image_exists(tmp_pat
 
     assert summary['status'] == 'blocked'
     assert summary['items'][0]['status'] == 'ready_for_review'
-    assert summary['items'][1] == {'target': SECOND, 'observer': '/root/producer',
+    assert summary['items'][1] == {'target': SECOND,
                                    'status': 'blocked', 'issue': '平台提交后无法确认结果'}
-    blocker.pop('observer')
-    receipt = _save(tmp_path, _passed_row(tmp_path), blocker)
-    assert summarize_asset_batch_receipt(tmp_path, receipt, [TARGET, SECOND])['status'] == 'pending'
-
-
-def test_explicit_short_blocker_is_returned_and_raw_details_stay_in_receipt(tmp_path):
-    row = _passed_row(tmp_path)
-    row.update(visual_status='failed', blocking_issue='脚底截边')
-    summary = summarize_asset_batch_receipt(tmp_path, _save(tmp_path, row), [TARGET])
-    assert summary['items'][0]['issue'] == '脚底截边'
-
-    row.update(blocking_issue='raw screenshot and logs ' * 30)
-    summary = summarize_asset_batch_receipt(tmp_path, _save(tmp_path, row), [TARGET])
-    assert summary['status'] == 'blocked'
-    assert summary['items'][0]['issue'] == '实看未通过，见原回执'
 
 
 def test_receipt_and_image_symlinks_cannot_leave_the_project(tmp_path):

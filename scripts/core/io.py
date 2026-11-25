@@ -111,9 +111,12 @@ def normalized_text_sha256(path: Path) -> str:
     return hashlib.sha256(normalized).hexdigest()
 
 
+def canonical_json_bytes(value: Any) -> bytes:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
 def sha256_json(value: Any) -> str:
-    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
+    return hashlib.sha256(canonical_json_bytes(value)).hexdigest()
 
 
 PROJECT_LOCK_RELATIVE = Path("00_项目管理") / ".revision-control.lock"

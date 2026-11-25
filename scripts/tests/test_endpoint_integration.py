@@ -159,6 +159,29 @@ def test_endpoint_readback_remains_exact(tmp_path, mutation):
     assert not compare(frozen, observed, tmp_path, private_preview=True)['ok']
 
 
+@pytest.mark.parametrize('mutation', ['none', 'missing', 'duplicate', 'port', 'slot', 'control'])
+def test_formal_endpoint_requires_one_exact_upload_mapping(tmp_path, mutation):
+    frozen, _ = integrated(tmp_path, False)
+    manifest = artifacts.load_manifest(tmp_path)
+    bindings = next(a for a in manifest['artifacts'] if a['artifact_id'] == 'FRAME')['upload_bindings']
+    if mutation == 'missing':
+        bindings.clear()
+    elif mutation == 'duplicate':
+        bindings.append(copy.deepcopy(bindings[0]))
+    elif mutation == 'port':
+        bindings[0]['reference_port'] = 'different'
+    elif mutation == 'slot':
+        bindings[0]['slot'] = 2
+    elif mutation == 'control':
+        bindings[0]['control_evidence_sha256'] = '0' * 64
+    write_json(tmp_path / artifacts.MANIFEST_PATH, manifest)
+    if mutation == 'none':
+        assert validate_submission(frozen, tmp_path, formal_delivery=True)['ok']
+    else:
+        with pytest.raises(ValueError, match='no unique exact manifest upload mapping'):
+            validate_submission(frozen, tmp_path, formal_delivery=True)
+
+
 def test_missing_source_strategy_is_not_satisfied_by_valid_platform(tmp_path):
     frozen, _ = integrated(tmp_path, True)
     row = frozen['drafts'][0]

@@ -14,9 +14,8 @@ import sqlite3
 import subprocess
 import sys
 import threading
-import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -38,17 +37,16 @@ RUNTIME_DEPS = ensure_runtime_deps(ROOT)
 _skill_spec = importlib.util.spec_from_file_location('asset_library_skill', ROOT / 'skills/asset-image-assistant/library_runtime.py')
 asset_skill = importlib.util.module_from_spec(_skill_spec)
 _skill_spec.loader.exec_module(asset_skill)
-_management_spec = importlib.util.spec_from_file_location('visual_asset_management', Path(__file__).with_name('visual_asset_management.py'))
-management = importlib.util.module_from_spec(_management_spec)
-_management_spec.loader.exec_module(management)
-_codex_spec = importlib.util.spec_from_file_location('visual_asset_codex', Path(__file__).with_name('visual_asset_codex.py'))
-codex_bridge = importlib.util.module_from_spec(_codex_spec)
-_codex_spec.loader.exec_module(codex_bridge)
-sys.path.insert(0, str(Path(__file__).resolve().parent)) if str(Path(__file__).resolve().parent) not in sys.path else None
-from visual_asset_projects import Projects
+import visual_asset_management as management
+import visual_asset_codex as codex_bridge
+from visual_asset_projects import Projects, now, uid
 import visual_asset_backup
 import visual_asset_upload
 DEFAULT_LIBRARY = ROOT / '.master-storyboarding' / 'visual-library'
+class GenerationInputChanged(ValueError):
+    pass
+
+
 IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tif', '.tiff'}
 VIDEO_EXTS = {'.mp4', '.mov', '.webm'}
 CATEGORIES = ['人物单图', '大头照', '服装三视图', '人物1x4', '宠物', '场景', '物品', '产品', '风格', '视频参考', '其他']
@@ -102,14 +100,6 @@ def template_prompt(kind, subject, notes, index=0, *, allow_unreferenced_design=
         allow_unreferenced_design=allow_unreferenced_design,
         reference_records=reference_records, has_references=has_references)
     return template['content'], template['path']
-
-
-def now():
-    return datetime.now(timezone.utc).isoformat()
-
-
-def uid():
-    return uuid.uuid4().hex[:16]
 
 
 def dump(path, value):
@@ -244,11 +234,12 @@ class Library:
                 record['original'] = str(target)
                 record['backup'] = {'status': 'saved', 'path': str(target)} if target.is_file() else {
                     'status': 'pending', 'message': '原图缺失，请恢复原文件：' + str(target)}
+                # Pending local edits may be newer than the Vault catalog metadata.
+                if cached.get(ident, {}).get('backup', {}).get('status') == 'pending':
+                    record = cached[ident]
+                    record['original'] = str(target)
+                record['candidate_revision'] = row.get('library_version')
                 if ident in cached:
-                    # Pending edits in the local cache have not reached the Vault yet.
-                    if cached[ident].get('backup', {}).get('status') == 'pending':
-                        record = cached[ident]
-                        record['original'] = str(target)
                     db.execute('UPDATE assets SET data=? WHERE id=?', (json.dumps(record, ensure_ascii=False), ident))
                 else:
                     db.execute('INSERT INTO assets VALUES (?,?,?)', (ident, 'vault|' + ident,
@@ -280,7 +271,7 @@ class Library:
                                           file_digest=file_digest)
                 provenance = item.get('provenance') or {}
                 file_digest = digest if file_digest is None else file_digest
-                if provenance.get('external_generation') and file_digest(Path(item['original'])) != provenance.get('image_sha256'):
+                if provenance.get('external_generation') and file_digest(Path(item['original'])) != (item.get('image_sha256') or provenance.get('image_sha256')):
                     raise ValueError('外部生成来源绑定的图片内容已变化，请保留原记录并重新导入候选')
         return item
 
@@ -446,8 +437,7 @@ class Library:
             job = self.get(ident, 'jobs')
             if job.get('project_id'):
                 raise ValueError('项目制作记录由需求表管理；请在项目中重新选图或返工')
-            if any(s['status'] in {'generating', 'submitting', 'submitted', 'querying'} or
-                   s.get('audit', {}).get('status') in {'drafting', 'reviewing'} for s in job['steps']):
+            if any(s['status'] in {'generating', 'submitting', 'submitted', 'querying'} for s in job['steps']):
                 raise ValueError('任务正在处理，请完成后再删除记录；删除不能取消生图')
             job['record_deleted_at'] = now()
             self.save(job, 'jobs')
@@ -534,6 +524,18 @@ class Library:
         if video and stat.st_size > 2 * 1024 ** 3:
             raise ValueError('视频不能超过 2 GB')
         key = f'{os.path.normcase(str(source))}|{stat.st_size}|{stat.st_mtime_ns}'
+        if (provenance or {}).get('generation_run_id'):
+            key = provenance['generation_run_id'] + '|' + key
+        convert_candidate = False
+        if not video:
+            with Image.open(source) as image:
+                if not (reference_project or upload_reference):
+                    convert_candidate = not codex_bridge.delivery_format(image, source)
+                    if getattr(image, 'n_frames', 1) != 1:
+                        raise ValueError('候选资产须为单张图片')
+                image.verify()
+        if convert_candidate:
+            key += '|delivery-png'
         if reference_project:
             key = 'reference|' + reference_project['id'] + '|' + key
         elif upload_reference:
@@ -545,14 +547,16 @@ class Library:
                 if (provenance or {}).get('external_generation') and existing.get('provenance') != provenance:
                     raise ValueError('此文件已导入但生成来源记录不同，保留原记录；请核对后另存候选')
                 return existing, False
-            if not video:
-                with Image.open(source) as im:
-                    im.verify()
             ident = uid()
             folder = self.root / 'assets' / ident
             folder.mkdir(parents=True)
             destination = folder / ('original' + source.suffix.lower())
             shutil.copy2(source, destination)
+            if (provenance or {}).get('external_generation') and digest(destination) != provenance['image_sha256']:
+                shutil.rmtree(folder)
+                raise ValueError('外部生成文件在入库期间已变化')
+            if convert_candidate:
+                destination = codex_bridge.model_image(destination, folder, 1)
             duration = None
             if video:
                 try:
@@ -583,9 +587,11 @@ class Library:
             item = dict(id=ident, name=source.stem, category='视频参考' if video else category or inferred_category,
                         role=role or inferred_role, project=project, tags=[], status='unreviewed',
                         source=str(source), original=str(destination), thumbnail=str(folder / 'thumbnail.webp'),
-                        width=width, height=height, bytes=stat.st_size, created_at=now(),
+                        width=width, height=height, bytes=destination.stat().st_size, created_at=now(),
                         confirmation=None, provenance=provenance or {}, group='', backup={'status': 'pending'},
                         media_type='video' if video else 'image')
+            if not video and not (reference_project or upload_reference):
+                item['image_sha256'] = digest(destination)
             if video:
                 item['duration'] = duration
             item = current_category(item)
@@ -719,9 +725,12 @@ class Library:
                 raise ValueError('请先从垃圾桶恢复图片')
             if item.get('technical_check', {}).get('passed') is False:
                 raise ValueError('图片技术检查未通过：' + item['technical_check']['message'])
+            checksum = digest(Path(item['original']))
+            if item.get('image_sha256', checksum) != checksum:
+                raise ValueError('候选图片入库后已变化，请重新导入并展示新版本')
             item['status'] = 'confirmed'
             item['confirmation'] = {'at': now(), 'method': '用户在资产库点击确认此图片',
-                                    'image_sha256': digest(Path(item['original']))}
+                                    'image_sha256': checksum}
             if item.get('backup'):
                 item['backup'] = {'status': 'pending'}
                 self.backup_wakeup.set()
@@ -734,7 +743,6 @@ class Library:
                     if step['status'] != 'confirmed' and ident in step.get('outputs', []):
                         step['selected'] = ident
                         step['status'] = 'confirmed'
-                        self.sync_visual_self_check(step, item)
                         changed = True
                 if changed:
                     self.save(job, 'jobs')
@@ -763,6 +771,8 @@ class Library:
             destination = folder / ident / filename
             destination.parent.mkdir()
             shutil.copy2(item['original'], destination)
+            if item.get('confirmation'):
+                verify_image_confirmation(destination, item['confirmation'])
             entries.append({**item, 'original': str(destination)})
         dump(folder / 'selection.json', {'schema_version': '1.0', 'created_at': now(), 'assets': entries,
               'product_categories': self.product_categories(),
@@ -839,7 +849,7 @@ class Library:
                 'ratio': asset_skill.recipe(job['kind'])['ratio'], 'resolution': '2k', 'output_is_candidate': True,
                 'must_inherit': job.get('must_inherit', ''), 'must_not_inherit': job.get('must_not_inherit', ''),
                 'reference_records': records,
-                'template_source': template}
+                'template_source': template, 'feedback': step.get('feedback', '')}
 
     def save_prompt(self, p):
         with self.lock:
@@ -847,186 +857,42 @@ class Library:
             index = int(p['index'])
             self.step_request(job, index)
             step = job['steps'][index]
-            if step.get('audit', {}).get('status') in {'drafting', 'reviewing'}:
-                raise ValueError('Codex正在处理此提示词，请完成后再修改')
             if step['status'] != 'waiting':
-                raise ValueError('已提交或已有结果的提示词不能修改；请新建一组资产')
-            prompt = str(p.get('prompt', '')).strip()
-            if not prompt or len(prompt) > 20000:
-                raise ValueError('提示词不能为空，且不能超过20000字')
-            provider = p.get('provider', job['provider'])
-            model = p.get('model', job['model'])
-            if provider not in {'imagegen', 'dreamina'} or model not in MODELS:
+                raise ValueError('只可编辑待制作项的提示词')
+            prompt = p['prompt']
+            if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 20000:
+                raise ValueError('提示词不能为空或超过20000字')
+            provider, model = p.get('provider', job['provider']), p.get('model', job['model'])
+            if provider not in {'dreamina', 'imagegen'} or model not in MODELS:
                 raise ValueError('无效生成工具或模型')
-            if step.get('prompt') != prompt:
-                step['audit'] = {'status': 'stale'}
-                step.pop('prompt_approval', None)
             step['prompt'] = prompt
-            if p.get('approve') is True:
-                audit = step.get('audit', {})
-                if not asset_skill.approved(step, job.get('kind')) or audit.get('prompt') != prompt:
-                    raise ValueError('请先让Codex审查当前提示词并通过，再确认生成')
-                step['prompt_approval'] = {'prompt': prompt, 'at': now()}
             job.update(provider=provider, model=model)
             self.save(job, 'jobs')
-            return self.prepare(job['id'], index)
+            return self.step_request(job, index)
 
-    def audit_prompt(self, p):
-        with self.lock:
-            job = self.operation_job(p['id'], p.get('project_id', _UNSCOPED_PROJECT))
-            index = int(p['index'])
-            request = self.step_request(job, index)
-            if p.get('codex_model'):
-                request['codex_model'] = str(p['codex_model'])
-            step = job['steps'][index]
-            if step['status'] != 'waiting':
-                raise ValueError('已有提交或结果，不能重写提示词；请新建一组')
-            if step.get('audit', {}).get('status') in {'drafting', 'reviewing'}:
-                raise ValueError('此提示词正在处理，请勿重复提交')
-            if sum(s.get('audit', {}).get('status') in {'drafting', 'reviewing'}
-                   for j in self.items('jobs') for s in j['steps']) >= 3:
-                raise ValueError('已有 3 项提示词处理中，请完成后再发起')
-            exe = codex_bridge.executable()
-            if not exe:
-                raise ValueError('未找到本机Codex CLI，请先安装并登录')
-            mode = p.get('mode', 'write')
-            if mode not in {'write', 'review', 'repair'}:
-                raise ValueError('无效的Codex处理方式')
-            run_id = uid()
-            previous_issues = step.get('audit', {}).get('issues', [])
-            request['repair_issues'] = previous_issues if mode == 'repair' else []
-            step['audit'] = {'status': 'drafting' if mode != 'review' else 'reviewing', 'run_id': run_id, 'started_at': now(), 'message': 'Luna正在准备并自查提示词'}
-            step.pop('prompt_approval', None)
-            self.save(job, 'jobs')
-            threading.Thread(target=self._audit_worker, args=(exe, job['id'], index, run_id, mode, request), daemon=True).start()
-            return {'message': 'Codex已开始看图处理，完成后提示词和审查结果会显示在页面', 'run_id': run_id}
-
-    def _audit_worker(self, exe, ident, index, run_id, mode, request):
-        folder = self.root / 'requests' / ident / str(index) / 'codex' / run_id
-        try:
-            rules, evidence = asset_skill.prepare(folder, request)
-            with self.lock:
-                prepared_job = self.get(ident, 'jobs')
-                if prepared_job['steps'][index].get('audit', {}).get('run_id') != run_id:
-                    return
-                prepared_job['steps'][index]['audit']['skill_execution'] = evidence
-                self.save(prepared_job, 'jobs')
-            # Review is read-only even if the model returns an unsolicited rewrite.
-            draft = {'prompt': request['prompt'], 'issues': request.get('repair_issues', [])}
-            review = codex_bridge.run(exe, folder, 'review' if mode == 'review' else 'draft',
-                                      request, draft, rules)
-            original_issues = list(review.get('issues', []))
-            review = asset_skill.validate_review(review, request.get('mode', 'asset-library'), request.get('kind'))
-            missing_checks = any(s.startswith('Skill审查项缺失：') for s in review['issues'])
-            # At most one extra Luna call. Missing evidence is checked again,
-            # never fabricated; a review must still preserve the user's text.
-            can_repair = (missing_checks and not original_issues) or (mode != 'review' and not review['passed'] and review['prompt'].strip())
-            if can_repair:
-                with self.lock:
-                    current = self.get(ident, 'jobs')
-                    if current['steps'][index].get('audit', {}).get('run_id') != run_id:
-                        return
-                    current['steps'][index]['audit'].update(message='Luna正在自动修复并重新自查（最多一次）', repair_attempts=1)
-                    self.save(current, 'jobs')
-                retry_request = {**request, 'prompt': review['prompt']}
-                repair_phase = 'review' if missing_checks and not original_issues else 'draft'
-                repaired = codex_bridge.run(exe, folder / 'repair-1', repair_phase, retry_request, review, rules)
-                if repair_phase == 'review' and repaired['prompt'] != review['prompt']:
-                    repaired.update(prompt=review['prompt'], passed=False,
-                                    issues=repaired.get('issues', []) + ['补充检查时改写了原文，未采用改写或批准生成。'])
-                review = asset_skill.validate_review(repaired, request.get('mode', 'asset-library'), request.get('kind'))
-            if mode == 'review' and review['prompt'] != request['prompt']:
-                review['suggested_prompt'] = review['prompt']
-                review['prompt'] = request['prompt']
-                review['passed'] = False
-                review['issues'] = list(review.get('issues', [])) + ['审查返回了改写建议，原文已保留；请自行决定是否采用。']
-            with self.lock:
-                job = self.get(ident, 'jobs')
-                step = job['steps'][index]
-                if step.get('audit', {}).get('run_id') != run_id:
-                    return
-                if job.get('project_id'):
-                    self.projects.context(job, index)
-                if step.get('prompt', request['prompt']) != request['prompt']:
-                    raise ValueError('正文已变化，本次审查结果不再适用；已保留当前正文')
-                if mode != 'review' and review['prompt'].strip():
-                    if step.get('prompt') and step['prompt'] != review['prompt']:
-                        step.setdefault('prompt_history', []).append({'prompt': step['prompt'], 'at': now(), 'reason': '准备或修复提示词'})
-                    step['prompt'] = review['prompt']
-                started_at = step.get('audit', {}).get('started_at')
-                step['audit'] = {**review, 'status': 'passed' if review['passed'] else 'needs_changes',
-                                 'skill_execution': evidence,
-                                 'run_id': run_id, 'started_at': started_at, 'finished_at': now(),
-                                 'repair_attempts': int(bool(can_repair)),
-                                 'message': '提示词已准备好' if review['passed'] else '自动处理后仍需解决：' + '；'.join(review['issues'])}
-                self.save(job, 'jobs')
-        except Exception as exc:
-            with self.lock:
-                job = self.get(ident, 'jobs')
-                step = job['steps'][index]
-                if step.get('audit', {}).get('run_id') == run_id:
-                    step['audit'].update(status='error', message=str(exc)[:300], finished_at=now())
-                    self.save(job, 'jobs')
-
-    def prompt_is_approved(self, job, index):
-        step = job['steps'][index]
-        return (asset_skill.approved(step, job.get('kind')) and
-                (not job.get('project_id') or step.get('audit', {}).get('skill_execution', {}).get('mode') == 'project') and
-                step.get('audit', {}).get('prompt') == step.get('prompt') and
-                step.get('prompt_approval', {}).get('prompt') == step.get('prompt'))
-
-    def prepare(self, ident, index, *, project_id=_UNSCOPED_PROJECT):
+    def write_prompt(self, ident, index, *, project_id=_UNSCOPED_PROJECT, expected=None):
         with self.lock:
             job = self.operation_job(ident, project_id)
             request = self.step_request(job, index)
-            folder = self.root / 'requests' / ident / str(index)
-            path = folder / 'request.json'
-            for slot, reference in enumerate(request.get('reference_records', []), 1):
-                if (reference.get('layout_only') and reference['role'] not in request['prompt']
-                        and not re.search(rf'参考图 {slot} 是[^。\n]*灰模，只参考', request['prompt'])):
-                    request['prompt'] += f"\n图{slot}：{reference['role']}。"
-            dump(path, request)
-            text = (f"请读取 {path}，使用其中指定的 {'ImageGen' if job['provider'] == 'imagegen' else '即梦 CLI'}，"
-                    '先查看所有 reference_paths 图片，再按 prompt 制作这一张候选。保留独立原图，不覆盖已确认资产。'
-                    '这是跨项目通用资产准备，不创建短剧 AST、不推进生产阶段。'
-                    '生成完成后将输出的绝对路径导入资产库此视图，等待我确认。'
-                    f' 入库使用 {Path(__file__).resolve()} 的 attach-result 子命令，'
-                    f'全局 --library 参数为 {self.root}，--job {ident}，--view {index}，--file 为生成结果的绝对路径。'
-                    '使用已包含 Pillow 的 Codex 内置 Python 运行；不自行升级候选确认状态。')
-            (folder / '交给Codex.txt').write_text(text, encoding='utf-8')
-            if job.get('project_id'):
-                text = f'执行 asset-image-assistant 项目模式，读取 {path}，仅处理 AST {job["ast_id"]} 的此制作项，不推进其他阶段。'
-                (folder / '交给Codex.txt').write_text(text, encoding='utf-8')
-            approved = self.prompt_is_approved(job, index)
-            audit = dict(job['steps'][index].get('audit', {'status': 'idle'}))
-            if audit.get('status') == 'passed' and not asset_skill.approved(job['steps'][index], job.get('kind')):
-                issues = asset_skill.prompt_issues(request['prompt'], request['kind'])
-                audit.update(status='stale', message='；'.join(issues) or '这是旧流程的审查记录，请按资产Skill重新审查。')
-            return {**request, 'path': str(path), 'handoff': text if approved else '',
-                    'audit': audit, 'approved': approved}
+            if job['steps'][index]['status'] != 'waiting' or (expected is not None and expected != request):
+                raise ValueError('制作项已变化，请刷新')
+            folder = self.root / 'requests' / ident / str(index) / 'draft' / uid()
+            package, _ = asset_skill.prepare(folder, request)
+        exe = codex_bridge.executable()
+        if not exe:
+            raise ValueError('未找到本机 Codex 写词工具')
+        prompt = codex_bridge.write_prompt(exe, folder, request, package)
+        with self.lock:
+            job = self.operation_job(ident, project_id)
+            if self.step_request(job, index) != request:
+                raise ValueError('写词期间制作项已变化，保留当前版本')
+            return self.save_prompt({'id': ident, 'index': index, 'prompt': prompt})
 
-    def sync_visual_self_check(self, step, asset):
-        evidence = asset.get('provenance', {}).get('visual_self_check')
-        if evidence is None:
-            step.pop('visual_self_check', None)
-        else:
-            step['visual_self_check'] = codex_bridge.visual_self_check(evidence, asset['original'])
+    def prepare(self, ident, index, *, project_id=_UNSCOPED_PROJECT):
+        with self.lock:
+            return self.step_request(self.operation_job(ident, project_id), index)
 
-    @staticmethod
-    def visual_self_check_message(evidence):
-        summary = {'pass': '执行者成图自查通过，仍待用户审核准确图片',
-                   'fail': '成图自查未通过，作为待修候选保留',
-                   'unknown': '成图自查未验证，作为未核候选保留'}[evidence['status']]
-        problems = list(evidence.get('binding_issues', []))
-        checks = evidence.get('checks') if isinstance(evidence.get('checks'), dict) else {}
-        for key, check in checks.items():
-            if isinstance(check, dict) and check.get('result') in {'fail', 'unknown'}:
-                problems.append(key + '：' + check.get('observation', '') + '（' + check.get('locator', '') + '）')
-        if evidence['status'] != 'pass' and not problems and isinstance(evidence.get('limitations'), list):
-            problems.extend(evidence.get('limitations', []))
-        return summary + ('；' + '；'.join(problems)[:800] if problems else '')
-
-    def attach(self, ident, index, paths, *, project_id=_UNSCOPED_PROJECT, manual=False, visual_self_check=None):
+    def attach(self, ident, index, paths, *, project_id=_UNSCOPED_PROJECT, manual=False):
         with self.lock:
             job = self.operation_job(ident, project_id)
             if not isinstance(index, int) or not 0 <= index < len(job['steps']):
@@ -1036,16 +902,13 @@ class Library:
                 self.projects.dependencies(job, current)
                 if current.get('required') is False:
                     raise ValueError('此制作项当前不需要，请先核对制作路径')
-            if manual and (job['steps'][index]['status'] in {'generating', 'submitting', 'submitted', 'querying'}
-                           or job['steps'][index].get('audit', {}).get('status') in {'drafting', 'reviewing'}):
+            if manual and job['steps'][index]['status'] in {'generating', 'submitting', 'submitted', 'querying'}:
                 raise ValueError('制作项正在处理，不能手动导入覆盖；请先核对原任务结果')
             if job['steps'][index]['status'] == 'confirmed':
                 raise ValueError('已确认视图保留原版本；请新建一组资产进行修改')
             if not job.get('project_id') and job['kind'] != '人物1x4':
                 self.step_request(job, index)
             step = job['steps'][index]
-            if visual_self_check is None:
-                step.pop('visual_self_check', None)
             kind = step['kind'] if job.get('project_id') else job['kind']
             ratio = step['ratio'] if job.get('project_id') else asset_skill.recipe(kind)['ratio']
             resolved_paths = [Path(path).resolve() for path in paths]
@@ -1056,18 +919,14 @@ class Library:
                         raise ValueError(
                             f"大头照未入库：实测 {check['width']}×{check['height']}，要求 {ratio}，请重做。")
             for resolved in resolved_paths:
-                evidence = (codex_bridge.visual_self_check(visual_self_check, resolved)
-                            if visual_self_check is not None else None)
                 if any(resolved.is_relative_to(Path(p['path']).resolve()) for p in self.projects.summaries()):
                     raise ValueError('任务目录中的图片不回流到网页资产库；请在任务内使用该图')
                 provenance = {'job_id': ident, 'view': step['name'], 'inferred_hidden_surfaces': True,
                               'project_id': job.get('project_id'), 'ast_id': job.get('ast_id'), 'output_id': step_output_id(step) if job.get('project_id') else step.get('key'),
                               'source_narrative': job.get('source_narrative'), 'state': step.get('state'), 'prompt': step.get('prompt'),
-                              'audit': step.get('audit'), 'authorization': step.get('authorization'),
+                              'authorization': step.get('authorization'),
                               'provider': job['provider'], 'model': job['model'] if job['provider'] == 'dreamina' else 'Codex 内置 ImageGen'}
-                if evidence is not None:
-                    provenance['visual_self_check'] = evidence
-                    provenance['generation_run_id'] = step.get('generation_run_id')
+                provenance['generation_run_id'] = step.get('generation_run_id') or uid()
                 if manual:
                     provenance['kind'] = 'manual_result_import'
                     for key in ('provider', 'model', 'authorization'):
@@ -1086,26 +945,8 @@ class Library:
                         resolved = fitted
                     visual_asset_upload.validate_dimensions(resolved, category)
                     provenance['dimension_adjustment'] = adjustment
-                # Import may create a new byte sequence when upload normalization is required.
-                # Such a candidate must be looked at again; the pre-crop observation cannot pass it.
-                source_sha256 = digest(resolved)
-                if evidence is not None:
-                    evidence = codex_bridge.visual_self_check(evidence, resolved)
-                    provenance['visual_self_check'] = evidence
                 item, _ = self.import_file(resolved, project=job.get('project_name', '照片转资产'), role='候选', category=asset_skill.recipe(kind)['category'],
                                           provenance=provenance)
-                if evidence is not None:
-                    if digest(resolved) != source_sha256 or digest(Path(item['original'])) != source_sha256:
-                        item.setdefault('provenance', {})['visual_self_check'] = codex_bridge.visual_self_check(evidence, item['original'])
-                        self.save(item)
-                        raise ValueError('导入前后图片字节变化，未绑定成图观察；保留候选等待核对。')
-                    evidence.update(stored_path=item['original'], stored_image_sha256=source_sha256)
-                    # A duplicate import never overwrites a prior human confirmation.
-                    if item.get('status') == 'confirmed':
-                        raise ValueError('此生成结果已是确认资产，保留原确认；请核对原任务。')
-                    item.setdefault('provenance', {}).update(visual_self_check=evidence,
-                        generation_run_id=step.get('generation_run_id'))
-                    step['visual_self_check'] = evidence
                 item['group'] = job['title']
                 item['name'] = job['title'] + '_' + step['name'] + '_' + item['id'][:6]
                 item['backup'] = {'status': 'pending'}
@@ -1128,14 +969,22 @@ class Library:
             self.backup_wakeup.set()
             return job
 
-    def _check_project_generation(self, job, index):
-        kind = job['steps'][index].get('kind') if job.get('project_id') else job.get('kind')
-        if kind == '人物1x4':
-            raise ValueError(BOARD_IMPORT_ONLY)
+    def _check_project_generation(self, job, index, batch_id):
         if not job.get('project_id'):
             return
         from core.candidate_test import require_production
-        root = Path(self.projects.get(job['project_id'])['path'])
+        project = self.projects.get(job['project_id'])
+        if batch_id is not None:
+            batch = project['batch']
+            step = job['steps'][index]
+            if (batch['id'] != batch_id or batch['status'] != 'running' or batch['mode'] != 'generate'
+                    or not batch.get('authorized_at')
+                    or (batch['provider'], batch['model']) != (job['provider'], job['model'])
+                    or not any(e['job_id'] == job['id'] and e['index'] == index and e['status'] == 'running'
+                               and e['prompt'] == step.get('prompt', e['request']['prompt'])
+                               for e in batch['entries'])):
+                raise ValueError('项目批次的提示词或生成授权已变化')
+        root = Path(project['path'])
         require_production(root)
         kickoff = load_kickoff(root)
         if kickoff:
@@ -1143,32 +992,48 @@ class Library:
             if (not grant_covers_asset(grant, job['ast_id'], step_output_id(job['steps'][index]))
                     or grant['provider'] != job['provider'] or grant['model'] != job['model']):
                 raise ValueError('工具、模型或制作项不在当前开工生图授权范围')
+            return grant
 
-    def submit(self, p):
+    def submit(self, p, *, provider='dreamina'):
         with self.lock:
             job = self.operation_job(p['id'], p.get('project_id', _UNSCOPED_PROJECT))
             index = int(p['index'])
-            self._check_project_generation(job, index)
             step = job['steps'][index]
-            if job['provider'] != 'dreamina' or p.get('authorize') is not True:
-                raise ValueError('需要在界面确认此次即梦上传、模型和额度消耗')
+            request = self.step_request(job, index)
+            if job['provider'] != provider or p.get('authorize') is not True:
+                raise ValueError('需要在界面确认此次生成工具、模型、参考图和额度消耗')
             if step['status'] != 'waiting':
                 raise ValueError('本视图已提交或已有产物；不会重复扣费。返工请新建一组。')
-            if not self.prompt_is_approved(job, index):
-                raise ValueError('先完成Codex审查并确认当前提示词，再生成图片')
-            exe = shutil.which('dreamina')
+            grant = self._check_project_generation(job, index, p.get('batch_id'))
+            imagegen = provider == 'imagegen'
+            exe = codex_bridge.executable() if imagegen else shutil.which('dreamina')
             if not exe:
-                raise ValueError('未找到即梦 CLI')
-            request = self.prepare(job['id'], index)
+                raise ValueError('未找到本机生成工具：' + provider)
             run_id = uid()
-            # Each paid attempt owns its logs and downloads; a redo never reads old results.
-            for key in ('submit_id', 'query_failures', 'query_blocked', 'query_retry_after'):
+            folder = self.root / 'requests' / job['id'] / str(index) / 'inputs' / run_id
+            folder.mkdir(parents=True)
+            sources = request['reference_paths']
+            for ref in request['reference_records']:
+                if ref.get('project_confirmed') or ref.get('status') == 'confirmed':
+                    path = Path(ref['original'])
+                    with Image.open(path) as image:
+                        if not codex_bridge.delivery_format(image, path):
+                            raise ValueError('这份历史确认图需另存为支持的格式，并由用户确认新版后使用')
+            copies = []
+            for slot, source in enumerate(map(Path, sources), 1):
+                copy = folder / (str(slot) + source.suffix)
+                shutil.copyfile(source, copy)
+                copies.append(str(copy))
+            request.update(source_paths=sources, reference_paths=copies, batch_id=p.get('batch_id'),
+                           kickoff_generation=grant, authorized_at=now())
+            for key in ('visual_self_check', 'submit_id', 'query_failures', 'query_blocked', 'query_retry_after'):
                 step.pop(key, None)
-            step.update(status='submitting', generation_run_id=run_id,
-                        authorization={'at': now(), 'request': request})
+            step.update(status='generating' if imagegen else 'submitting', generation_run_id=run_id,
+                        authorization={'at': request['authorized_at'], 'request': request})
             self.save(job, 'jobs')
-            threading.Thread(target=self._submit_worker, args=(exe, job['id'], index, request, run_id), daemon=True).start()
-            return {'message': '已开始提交一张图片，请在生成区查看状态'}
+            worker = self._imagegen_worker if imagegen else self._submit_worker
+            threading.Thread(target=worker, args=(exe, job['id'], index, run_id, request), daemon=True).start()
+            return {'message': '已开始生成一张图片，请在生成区查看状态'}
 
     def _dreamina_folder(self, ident, index, run_id=None, submit_id=None):
         folder = self.root / 'requests' / ident / str(index)
@@ -1181,14 +1046,19 @@ class Library:
             return folder / 'dreamina' / 'legacy' / submit_id
         return folder
 
-    def _submit_worker(self, exe, ident, index, request, run_id=None):
+    def _submit_worker(self, exe, ident, index, run_id, request):
         folder = self._dreamina_folder(ident, index, run_id)
-        command = [exe, 'image2image' if request['reference_paths'] else 'text2image', '--prompt', request['prompt'], '--resolution_type', '2k',
-                   '--ratio', request['ratio'], '--model_version', request['model'], '--generate_num', '1', '--poll', '0']
-        for path in request['reference_paths']:
-            command += ['--images', path]
         try:
-            dump(folder / 'request.json', request)
+            prompt = request['prompt']
+            if request.get('feedback'):
+                prompt += '\n用户返修意见：' + request['feedback']
+            command = [exe, 'image2image' if request['reference_paths'] else 'text2image', '--prompt', prompt,
+                       '--resolution_type', request['resolution'], '--ratio', request['ratio'], '--model_version', request['model'],
+                       '--generate_num', str(request['count']), '--poll', '0']
+            for path in request['reference_paths']:
+                command += ['--images', path]
+            if not self._claim_generation(ident, index, run_id, request, folder, 'submitting'):
+                return
             result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', errors='replace',
                                     timeout=180, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
             (folder / 'submit.log').write_text(result.stdout + '\n' + result.stderr, encoding='utf-8')
@@ -1206,7 +1076,7 @@ class Library:
                 job = self.get(ident, 'jobs')
                 if job['steps'][index].get('generation_run_id') != run_id:
                     return
-                job['steps'][index].update(status='unknown', message='提交结果未知：' + str(exc)[:200])
+                job['steps'][index].update(status='waiting' if isinstance(exc, GenerationInputChanged) else 'unknown', message=str(exc)[:300])
                 self.save(job, 'jobs')
 
     def reject_result(self, p):
@@ -1219,7 +1089,7 @@ class Library:
                 self.step_request(job, index)
             elif job.get('project_id'):
                 self.projects.context(job, index)
-            redo = p.get('redo') is True
+            redo = p.get('redo', True) is True
             if step['status'] not in {'awaiting_review', 'discarded'}:
                 raise ValueError('只能处理尚未确认的生成结果；进行中或已确认的图片不能丢弃重做')
             if step['status'] == 'discarded' and not redo:
@@ -1241,16 +1111,17 @@ class Library:
             if any(item['status'] == 'confirmed' for item in items):
                 raise ValueError('结果中有已确认资产，不能在此丢弃')
             active = [item['id'] for item in items if not item.get('trashed_at')]
-            if active:
+            if active and not redo:
                 management.manage(self, active, 'trash')
             if outputs:
                 step.setdefault('result_history', []).append({'at': now(), 'outputs': outputs,
-                    'prompt': step.get('prompt'), 'audit': step.get('audit'),
+                    'prompt': step.get('prompt'), 'feedback': str(p.get('feedback') or p.get('reason') or ''),
                     'generation_run_id': step.get('generation_run_id'), 'submit_id': step.get('submit_id'),
-                    'visual_self_check': step.get('visual_self_check')})
+                    **({'visual_self_check': step['visual_self_check']} if 'visual_self_check' in step else {})})
+            if redo and (p.get('feedback') or p.get('reason')):
+                step['feedback'] = str(p.get('feedback') or p['reason'])
             step.update(outputs=[], status='waiting' if redo else 'discarded',
-                        audit={'status': 'stale'},
-                        message='旧图已移入垃圾桶；修改提示词并重新审查后再生成。' if redo else '不满意的结果已移入垃圾桶，30天内可恢复。')
+                        message='旧版本已保留，可按退回意见修改并重新生成。' if redo else '不满意的结果已移入垃圾桶，30天内可恢复。')
             for key in ('prompt_approval', 'generation_run_id', 'submit_id', 'selected', 'authorization', 'visual_self_check'):
                 step.pop(key, None)
             self.save(job, 'jobs')
@@ -1293,48 +1164,46 @@ class Library:
             return {'message': '已重新准备，尚未提交生图'}
 
     def submit_imagegen(self, p):
-        with self.lock:
-            job = self.operation_job(p['id'], p.get('project_id', _UNSCOPED_PROJECT))
-            index = int(p['index'])
-            self._check_project_generation(job, index)
-            self.step_request(job, index)
-            step = job['steps'][index]
-            if job['provider'] != 'imagegen' or p.get('authorize') is not True:
-                raise ValueError('请在网页确认使用ImageGen生成本次1张图片')
-            if step['status'] != 'waiting':
-                raise ValueError('本视图已经提交或有结果，不会重复生成；请核对已有任务')
-            if not self.prompt_is_approved(job, index):
-                raise ValueError('先完成Codex审查并确认当前提示词，再生成图片')
-            exe = codex_bridge.executable()
-            if not exe:
-                raise ValueError('未找到本机Codex CLI')
-            request = self.prepare(job['id'], index)
-            run_id = uid()
-            step.pop('visual_self_check', None)
-            step.update(status='generating', generation_run_id=run_id,
-                        message='ImageGen正在生成，完成后自动显示图片，无需复制或导入。',
-                        authorization={'at': now(), 'request': request})
-            self.save(job, 'jobs')
-            threading.Thread(target=self._imagegen_worker, args=(exe, job['id'], index, run_id, request), daemon=True).start()
-            return {'message': 'ImageGen已开始生成1张图片，结果将自动回填当前资产组'}
+        return self.submit(p, provider='imagegen')
 
     def attach_imagegen_result(self, ident, index, run_id, result, *, recovered=False):
-        """Persist agent observations with the imported bytes, never a human approval."""
-        result = codex_bridge.image_result(result)
-        job = self.attach(ident, index, [result['output_path']],
-                          visual_self_check=result['visual_self_check'])
+        path = result['output_path'] if isinstance(result, dict) else result
+        job = self.attach(ident, index, [path])
         step = job['steps'][index]
-        evidence = step['visual_self_check']
-        step.setdefault('generation_history', []).append({
-            'generation_run_id': run_id, 'output_path': result['output_path'],
-            'visual_self_check': evidence, 'finished_at': now(), 'recovered': recovered})
-        step['message'] = ('已核对原任务并回填已有图片，没有重复生图；' if recovered else 'ImageGen图片已导入；') + self.visual_self_check_message(evidence)
+        step.setdefault('generation_history', []).append({'generation_run_id': run_id, 'output_path': path,
+                                                         'finished_at': now(), 'recovered': recovered})
+        step['message'] = 'ImageGen 候选图已保存，等待用户验收'
         self.save(job, 'jobs')
         return job
+
+    def _claim_generation(self, ident, index, run_id, request, folder, status):
+        with self.lock:
+            job = self.get(ident, 'jobs')
+            step = job['steps'][index]
+            if not run_id or step.get('generation_run_id') != run_id or step['status'] != status:
+                return False
+            try:
+                live = self.step_request(job, index)
+                grant = self._check_project_generation(job, index, request['batch_id'])
+                original = {key: request[key] for key in live}
+                original['reference_paths'] = request['source_paths']
+                if (step.get('authorization', {}).get('request') != request or live != original
+                        or grant != request['kickoff_generation'] or not all(
+                            visual_asset_backup.same_file(Path(src), Path(copy))
+                            for src, copy in zip(request['source_paths'], request['reference_paths'], strict=True))):
+                    raise ValueError('生成输入或授权已变化')
+                folder.mkdir(parents=True)
+            except FileExistsError:
+                return False  # One worker owns this run, including its external call.
+            except (KeyError, ValueError, OSError, TypeError) as exc:
+                raise GenerationInputChanged('未提交生成：' + str(exc)) from exc
+            return True
 
     def _imagegen_worker(self, exe, ident, index, run_id, request):
         folder = self.root / 'requests' / ident / str(index) / 'imagegen' / run_id
         try:
+            if not self._claim_generation(ident, index, run_id, request, folder, 'generating'):
+                return
             result = codex_bridge.generate_image(exe, folder, request)
             with self.lock:
                 job = self.get(ident, 'jobs')
@@ -1346,7 +1215,7 @@ class Library:
                 job = self.get(ident, 'jobs')
                 step = job['steps'][index]
                 if step.get('generation_run_id') == run_id:
-                    step.update(status='unknown', message=str(exc)[:350])
+                    step.update(status='waiting' if isinstance(exc, GenerationInputChanged) else 'unknown', message=str(exc)[:350])
                     self.save(job, 'jobs')
 
     def query(self, ident, index, *, automatic=False, project_id=_UNSCOPED_PROJECT):
@@ -1543,7 +1412,7 @@ class Handler(BaseHTTPRequestHandler):
                 '/api/job-delete': lambda: library.delete_job(p['id']),
                 '/api/prepare': lambda: library.prepare(p['id'], int(p['index']), project_id=p.get('project_id', _UNSCOPED_PROJECT)),
                 '/api/prompt': lambda: library.save_prompt(p),
-                '/api/codex': lambda: library.audit_prompt(p),
+                '/api/write-prompt': lambda: library.write_prompt(p['id'], int(p['index']), project_id=p.get('project_id', _UNSCOPED_PROJECT)),
                 '/api/attach': lambda: library.attach(p['id'], int(p['index']), p['paths'], project_id=p.get('project_id', _UNSCOPED_PROJECT), manual=True),
                 '/api/submit': lambda: library.submit(p),
                 '/api/imagegen': lambda: library.submit_imagegen(p),
@@ -1590,9 +1459,6 @@ def serve(library, port):
     for job in library.items('jobs'):
         changed = False
         for step in job['steps']:
-            if step.get('audit', {}).get('status') in {'drafting', 'reviewing'}:
-                step['audit'].update(status='error', message='服务重启中断了Codex处理，请重新发起；未自动重试。')
-                changed = True
             if step['status'] in {'submitting', 'querying', 'generating'}:
                 step['status'] = 'submitted' if step.get('submit_id') else 'unknown'
                 changed = True
@@ -1628,19 +1494,15 @@ if __name__ == '__main__':
     review.add_argument('--publication', required=True, type=Path)
     review.add_argument('--token-file', required=True, type=Path)
     review.add_argument('--base-url')
+    show = subs.add_parser('show-chat-candidates', help='保存并展示本条消息对应的候选原图')
+    show.add_argument('--project-id', required=True)
+    show.add_argument('--message-id', required=True)
+    show.add_argument('--target', action='append', required=True, help='AST@输出')
     chat = subs.add_parser('apply-chat-confirmation')
     chat.add_argument('--project-id', required=True)
     chat.add_argument('--authorization-id', required=True)
     chat.add_argument('--confirmation-file', required=True, type=Path,
                       help='JSON with the exact quote, at, review_ref and approved outputs; outputs=[] resumes existing confirmed outputs')
-    delegated = subs.add_parser('apply-agent-review')
-    delegated.add_argument('--project-id', required=True)
-    delegated.add_argument('--authorization-id', required=True)
-    delegated.add_argument('--review-file', required=True, type=Path)
-    grant = subs.add_parser('authorize-asset-review')
-    grant.add_argument('--project', required=True, type=Path)
-    grant.add_argument('--authorization-id', required=True)
-    grant.add_argument('--authorization-ref', required=True)
     usage = subs.add_parser('product-usage')
     usage_project = usage.add_mutually_exclusive_group(required=True)
     usage_project.add_argument('--project', type=Path)
@@ -1650,12 +1512,6 @@ if __name__ == '__main__':
     usage_mode.add_argument('--codex-cli', action='store_true')
     subs.add_parser('list')
     args = parser.parse_args()
-    if args.command == 'authorize-asset-review':
-        from core.agent_acceptance import register_asset_workflow_authorization
-        result = register_asset_workflow_authorization(args.project, authorization_id=args.authorization_id,
-                                                       authorization_ref=args.authorization_ref, delegated=True)
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-        sys.exit(0)
     lib = Library(args.library, vault=args.asset_vault)
     if args.command == 'serve':
         serve(lib, args.port)
@@ -1667,15 +1523,13 @@ if __name__ == '__main__':
         result = apply_project_review(lib, lambda **options: lib.projects.apply_website_review(
             args.project_id, args.publication, client, **options))
         print(json.dumps(result, ensure_ascii=False, indent=2))
+    elif args.command == 'show-chat-candidates':
+        print(json.dumps(lib.projects.show_chat_candidates(args.project_id, args.message_id, args.target),
+                         ensure_ascii=False, indent=2))
     elif args.command == 'apply-chat-confirmation':
         confirmation = json.loads(args.confirmation_file.read_text(encoding='utf-8-sig'))
         result = apply_project_review(lib, lambda **options: lib.projects.apply_chat_confirmation(
             args.project_id, authorization_id=args.authorization_id, confirmation=confirmation, **options))
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-    elif args.command == 'apply-agent-review':
-        review = json.loads(args.review_file.read_text(encoding='utf-8-sig'))
-        result = apply_project_review(lib, lambda **options: lib.projects.apply_agent_review(
-            args.project_id, authorization_id=args.authorization_id, review=review, **options))
         print(json.dumps(result, ensure_ascii=False, indent=2))
     elif args.command == 'product-usage':
         ident = args.project_id or lib.projects.bind(str(args.project))['id']

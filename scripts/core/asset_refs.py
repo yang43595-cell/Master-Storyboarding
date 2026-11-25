@@ -134,8 +134,8 @@ def without_rejected_outputs(root, package):
     assets = []
     for asset in package["assets"]:
         outputs = asset.get("confirmed_outputs", [])
-        kept = [item for item in outputs if decisions.get((asset["asset_id"], item["output_id"]), {})
-                .get("status") != "rejected"]
+        kept = [item for item in outputs if not (item.get("agent_review_ref") or item.get("derived_confirmation_ref"))
+                and decisions.get((asset["asset_id"], item["output_id"]), {}).get("status") != "rejected"]
         if kept == outputs:
             assets.append(asset)
         elif kept:
@@ -144,8 +144,7 @@ def without_rejected_outputs(root, package):
             assets.append({**asset, "confirmed_outputs": kept,
                            "confirmed_asset": asset["confirmed_asset"] if (asset.get("confirmed_asset") or {}).get("path") in paths else
                             {key: value for key, value in kept[0].items()
-                             if key in ("path", "candidate_id", "user_confirmation_ref", "agent_review_ref",
-                                        "derived_confirmation_ref", "derived_confirmation_sha256")},
+                             if key in ("path", "candidate_id", "user_confirmation_ref")},
                            "candidates": [item for item in asset["candidates"] if item["path"] not in removed]})
     package["assets"] = assets
     package["source_asset_requirement_ids"] = [asset["asset_id"] for asset in assets]
@@ -246,7 +245,7 @@ def legacy_prop_reuse_label(output: dict, receipt: dict) -> bool:
 
 
 def _confirmed_output(root: Path, asset_id: str, output: dict, *, confirmation_cache=None,
-                      display_label=False, file_digest=None, asset_outputs=None) -> dict | None:
+                      display_label=False, file_digest=None) -> dict | None:
     """Return one explicitly confirmed output, or None when its evidence is incomplete.
 
     Candidates are deliberately absent here.  A confirmation record can be concise, but
@@ -254,8 +253,9 @@ def _confirmed_output(root: Path, asset_id: str, output: dict, *, confirmation_c
     item or be the replacement record for this exact file.
     """
     path_text = output.get("path")
-    derived_ref = output.get("derived_confirmation_ref")
-    reference = derived_ref or output.get("agent_review_ref") or output.get("user_confirmation_ref")
+    if output.get("agent_review_ref") or output.get("derived_confirmation_ref"):
+        return None
+    reference = output.get("user_confirmation_ref")
     if not isinstance(path_text, str) or not isinstance(reference, str) or not reference:
         return None
     image_path = _image_path(root, path_text)
@@ -264,15 +264,8 @@ def _confirmed_output(root: Path, asset_id: str, output: dict, *, confirmation_c
     receipt_path, fragment = _confirmation_file(root, reference)
     if receipt_path is None:
         return None
-    if derived_ref:
-        try:
-            if (not receipt_path.is_relative_to(root.resolve())
-                    or (file_digest or digest)(receipt_path) != output.get("derived_confirmation_sha256")):
-                return None
-        except OSError:
-            return None
     receipt, indexed = _confirmation_evidence(receipt_path, {} if confirmation_cache is None else confirmation_cache)
-    if receipt is None:
+    if receipt is None or receipt.get("method") == "两份已确认源图等比拼版，执行者实看":
         return None
     items = receipt.get("items")
     if isinstance(items, list) and items:
@@ -303,25 +296,9 @@ def _confirmed_output(root: Path, asset_id: str, output: dict, *, confirmation_c
     else:
         return None
     try:
-        review = image_receipt.get("agent_review")
-        if output.get("agent_review_ref"):
-            from .agent_acceptance import validate_asset_review
-            if (not review or output.get("user_confirmation_ref")
-                    or review.get("ast_id") != asset_id or review.get("output_id") != output.get("output_id")
-                    or review.get("purpose") != output.get("purpose")
-                    or review.get("asset_id") != image_receipt.get("asset_id")
-                    or review.get("image_sha256") != image_receipt.get("image_sha256")):
-                return None
-            validate_asset_review(root, review)
-        elif review:
+        if not image_receipt.get("image_sha256") or image_receipt.get("agent_review") or image_receipt.get("derivation"):
             return None
         verify_image_confirmation(image_path, image_receipt, file_digest=file_digest)
-        if derived_ref:
-            from .derived_character_boards import validate_consumption
-            validate_consumption(root, asset_id, output, image_receipt, asset_outputs,
-                                 confirmation_cache=confirmation_cache, file_digest=file_digest)
-        elif image_receipt.get("derivation"):
-            return None
         covered_states = output.get('covered_states')
         if covered_states is not None:
             if (not isinstance(covered_states, list) or not covered_states
@@ -350,6 +327,9 @@ def _confirmed_output(root: Path, asset_id: str, output: dict, *, confirmation_c
         "candidate_id": output.get("candidate_id"),
         "path": str(image_path),
         "confirmation_ref": reference,
+        **({"source_candidate": image_receipt["source_candidate"], "source_candidate_id": image_receipt.get("candidate_id"),
+            "source_candidate_revision": image_receipt.get("candidate_revision")}
+           if image_receipt.get("source_candidate") else {}),
         **({"sha256": image_receipt["image_sha256"]} if "image_sha256" in image_receipt else {}),
         "confirmed_at": str(receipt.get("at") or ""),
         "path_exists": True,
@@ -378,7 +358,7 @@ def registered_output_snapshot(root: Path, entry: dict, *, file_digest=None, inc
             for output in asset['confirmed_outputs']:
                 key = (asset['asset_id'], output['output_id'])
                 selected = _confirmed_output(root, key[0], output, confirmation_cache=confirmation_cache,
-                                             file_digest=file_digest, asset_outputs=asset["confirmed_outputs"])
+                                             file_digest=file_digest)
                 decision = decisions.get(key, {})
                 if not selected and decision.get("status") == "rejected" and decision.get("discarded_path"):
                     former = _image_path(root, output["path"])
@@ -423,7 +403,8 @@ def _legacy_confirmed_output(root: Path, asset: dict, confirmation_cache: dict, 
         return None
     receipt, indexed = _confirmation_evidence(receipt_path, confirmation_cache)
     image_receipt = indexed.get((asset_id, fragment))
-    if receipt is None or image_receipt is None:
+    if (not image_receipt or not image_receipt.get("image_sha256") or image_receipt.get("agent_review")
+            or image_receipt.get("derivation") or receipt.get("method") == "两份已确认源图等比拼版，执行者实看"):
         return None
     try:
         verify_image_confirmation(image_path, image_receipt, file_digest=file_digest)
@@ -491,6 +472,20 @@ def confirmed_images(root: Path, *, requests: Iterable[str] | None = None, file_
             and (not entry.get("checksum") or digest(manifest_path) == entry["checksum"])
             for entry in entries
         )
+        # Mixed historical exports may contain genuine per-image user confirmations.
+        mixed_history = False
+        for entry in entries or ():
+            historical_receipt = entry.get("asset_review_sha256") or entry.get("derived_character_boards_sha256")
+            if (current_manifest or not historical_receipt or entry.get("status") != "current"
+                    or entry.get("artifact_id") not in state["current_artifacts"]
+                    or entry.get("type") != "visual-asset-manifest" or entry.get("logical_id") != "visual.asset.manifest"
+                    or entry.get("candidate_test") or entry.get("production_blocked") or state.get("candidate_test")
+                    or not entry.get("confirmation_ref") or not entry.get("checksum")):
+                continue
+            receipt = project_path(root, entry["confirmation_ref"])
+            mixed_history = receipt.is_relative_to(root.resolve()) and receipt.is_file() and digest(receipt) == historical_receipt
+            if mixed_history:
+                break
         for asset in manifest.get("assets", []):
             asset_id = asset.get("asset_id")
             if not isinstance(asset_id, str) or (requests is not None and asset_id not in scope):
@@ -500,7 +495,7 @@ def confirmed_images(root: Path, *, requests: Iterable[str] | None = None, file_
             # Resolve the current row before verifying its files. A missing or
             # invalid output in that row must not revive an older master.
             current_assets.pop(asset_id, None)
-            if current_manifest and asset.get("status") == "confirmed":
+            if (current_manifest or (mixed_history and "confirmed_outputs" in asset)) and asset.get("status") == "confirmed":
                 current_assets[asset_id] = (manifest_path, asset)
 
     confirmation_cache = {}
@@ -523,8 +518,7 @@ def confirmed_images(root: Path, *, requests: Iterable[str] | None = None, file_
                 ):
                     continue
                 confirmed = _confirmed_output(root, asset_id, output, confirmation_cache=confirmation_cache,
-                                              display_label=True, file_digest=file_digest,
-                                              asset_outputs=asset["confirmed_outputs"])
+                                              display_label=True, file_digest=file_digest)
                 if confirmed is not None:
                     outputs.append(confirmed)
         if not outputs:

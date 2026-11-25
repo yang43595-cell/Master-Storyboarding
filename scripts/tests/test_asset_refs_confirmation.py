@@ -30,7 +30,7 @@ class AssetReferenceConfirmationTests(unittest.TestCase):
                 else:
                     selected = self.asset
                 self.lib.projects.select({"job_id": job["id"], "index": index, "asset_id": selected["id"]})
-                self.lib.projects.confirm({"job_id": job["id"], "index": index, "confirm": True})
+                self.lib.projects.confirm({"job_id": job["id"], "index": index, "asset_id": selected["id"], "confirm": True})
         self.lib.vault = Path(self.temp.name) / "vault"
         self.lib.vault.mkdir(exist_ok=True)
         from unittest.mock import patch
@@ -322,13 +322,32 @@ class AssetReferenceConfirmationTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("未找到已确认输出", problems[0])
 
+    def test_mixed_historical_export_only_serves_the_users_byte_bound_outputs(self):
+        manifest = pmod.read(self.manifest_path)
+        human, delegated = manifest["assets"][:2]
+        for output in delegated["confirmed_outputs"]:
+            output["agent_review_ref"] = output.pop("user_confirmation_ref")
+        pmod.write(self.manifest_path, manifest)
+        registry = self.root / "00_项目管理/artifact_manifest.json"
+        entries = pmod.read(registry)
+        entry = next(e for e in entries["artifacts"] if e["artifact_id"] == self.export["artifact_id"])
+        receipt = asset_refs.project_path(self.root, entry["confirmation_ref"])
+        entry.update(user_approved=False, asset_review_sha256=pmod.digest(receipt),
+                     checksum=pmod.digest(self.manifest_path))
+        pmod.write(registry, entries)
+        historical = receipt.read_bytes()
+        images = asset_refs.confirmed_images(self.root)
+        self.assertIn(human["asset_id"], images)
+        self.assertNotIn(delegated["asset_id"], images)
+        self.assertEqual(receipt.read_bytes(), historical)
+
     def test_replacement_record_does_not_confirm_other_assets(self):
         folder = self.root / "04_资产/母版/R99_replacement"
         folder.mkdir(parents=True)
         frame = self.root / "frame.png"
         frame.write_bytes(b"frame")
         receipt = folder / "参考替换记录.json"
-        receipt.write_text(json.dumps({"at": "2099-09-20T00:00:00Z", "frame_path": str(frame)}), encoding="utf-8")
+        receipt.write_text(json.dumps({"at": "2099-09-20T00:00:00Z", "frame_path": str(frame), "image_sha256": pmod.digest(frame)}), encoding="utf-8")
         data = {"assets": [
             {"asset_id": "AST-ROOM", "status": "confirmed", "confirmed_asset": {"path": str(frame)},
              "confirmed_outputs": [{"output_id": "master", "path": str(frame), "user_confirmation_ref": str(receipt)}]},

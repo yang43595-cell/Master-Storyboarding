@@ -15,6 +15,7 @@ from urllib.parse import urlsplit, urlunsplit
 try:
     from .core.endpoint_control import verify_endpoint_control
     from .core.endpoint_states import validate_endpoint_strategy
+    from .core.io import canonical_json_bytes
     from .core.native_port_binding import verify_port_binding
     from .core.media_types import MEDIA_EXTENSIONS
     from .core.native_references import (reference_readback_status, valid_native_media, endpoint_readback_status,
@@ -23,6 +24,7 @@ try:
 except ImportError:
     from core.endpoint_control import verify_endpoint_control
     from core.endpoint_states import validate_endpoint_strategy
+    from core.io import canonical_json_bytes
     from core.native_port_binding import verify_port_binding
     from core.media_types import MEDIA_EXTENSIONS
     from core.native_references import (reference_readback_status, valid_native_media, endpoint_readback_status,
@@ -129,7 +131,7 @@ def validate_canvas_inputs(row: dict, *, redframe: bool = False, before_upload: 
             raise ValueError(f"{row['node_id']}: {exc}") from exc
     for field, expected in (('edges', expected_edges), ('source_nodes', list(expected_sources.values()))):
         actual = row.get(field)
-        if not isinstance(actual, list) or sorted(map(digest, actual)) != sorted(map(digest, expected)):
+        if not isinstance(actual, list) or sorted(map(canonical_json_bytes, actual)) != sorted(map(canonical_json_bytes, expected)):
             raise ValueError(f'canvas {field}: missing, extra or conflicting source/edge')
     try:
         from .core.quality_evidence import validate_shot_durations
@@ -154,7 +156,7 @@ def compare_baseline(baseline: dict, current: dict) -> dict:
                 or not isinstance(row.get('native_mentions'), list)):
             raise ValueError('baseline requires complete collected node fields')
     changed = sorted(node for node in expected.keys() | actual.keys()
-                     if digest(expected.get(node)) != digest(actual.get(node)))
+                     if canonical_json_bytes(expected.get(node)) != canonical_json_bytes(actual.get(node)))
     return dict(ok=not changed, changed_node_ids=changed, baseline_sha256=digest(baseline),
                 current_sha256=digest(current), scope='collected whole nodes before write')
 
@@ -411,7 +413,8 @@ def preview_scope(frozen: dict, project: Path, *, json_projections=None, context
                                     allowed_roots=[Path(p) for p in roots + input_roots], reference=ref, artifact=item)
         binding = ref.get('upload_binding', {})
         if row.get('native_identity_mode') == 'first_last_frame_download':
-            if digest(binding) != digest(_endpoint_upload_expected(frozen, row, ref, media, slot)):
+            expected_binding = _endpoint_upload_expected(frozen, row, ref, media, slot)
+            if canonical_json_bytes(binding) != canonical_json_bytes(expected_binding):
                 raise ValueError('preview endpoint upload mapping differs from exact source/control evidence')
             hashes = {r.get('sha256') for r in all_refs
                       if r.get('upload_binding', {}).get('identity_mode') == 'first_last_frame_download'
@@ -1015,8 +1018,11 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
                 # artifact registration, not a caller-provided parallel list of labels.
                 # Actual slot identity is collected after upload and required by formal readback.
                 if endpoint_mode:
-                    expected_binding = _endpoint_upload_expected(row_frozen, row, ref, media_item, slot)
-                    if sum(digest(b) == digest(expected_binding) for b in item.get('upload_bindings', [])) != 1:
+                    expected_binding = canonical_json_bytes(
+                        _endpoint_upload_expected(row_frozen, row, ref, media_item, slot))
+                    matches = sum(canonical_json_bytes(binding) == expected_binding
+                                  for binding in item.get('upload_bindings', []))
+                    if matches != 1:
                         raise ValueError('endpoint has no unique exact manifest upload mapping')
                     reverse_hashes = {b.get('sha256') for source in manifest['artifacts']
                         if source.get('status') == 'current' and artifact_is_adopted(source, state, project)
@@ -1293,18 +1299,28 @@ def compare(frozen: dict, observed: dict, project: Path | None = None, *, privat
                      valid_native_media(value, identity_mode))
             if field not in row or not valid:
                 raise ValueError(f'incomplete frozen {node_id}: {field}')
-            if field not in got or digest(got[field]) != digest(value):
+            expected_bytes = canonical_json_bytes(value)
+            observed_bytes = canonical_json_bytes(got[field]) if field in got else None
+            if field == 'ordered_media':
+                ordered_media_bytes = expected_bytes
+            if observed_bytes != expected_bytes:
                 differences.append({'node_id': node_id, 'field': field,
-                                    'expected_sha256': digest(value),
-                                    'observed_sha256': digest(got[field]) if field in got else None})
+                                    'expected_sha256': hashlib.sha256(expected_bytes).hexdigest(),
+                                    'observed_sha256': (hashlib.sha256(observed_bytes).hexdigest()
+                                                        if observed_bytes is not None else None)})
         for field in ('edges', 'source_nodes'):
             if field in row:
-                expected_graph = sorted(map(digest, row[field]))
-                observed_graph = sorted(map(digest, got[field])) if isinstance(got.get(field), list) else None
+                expected_graph = sorted(map(canonical_json_bytes, row[field]))
+                observed_graph = (sorted(map(canonical_json_bytes, got[field]))
+                                  if isinstance(got.get(field), list) else None)
                 if observed_graph != expected_graph:
+                    # Reports hash the sorted element digests, regardless of byte sort order.
+                    expected_hashes = sorted(hashlib.sha256(item).hexdigest() for item in expected_graph)
+                    observed_hashes = (sorted(hashlib.sha256(item).hexdigest() for item in observed_graph)
+                                       if observed_graph is not None else None)
                     differences.append({'node_id': node_id, 'field': field,
-                                        'expected_sha256': digest(expected_graph),
-                                        'observed_sha256': digest(observed_graph)})
+                                        'expected_sha256': digest(expected_hashes),
+                                        'observed_sha256': digest(observed_hashes)})
         if project is not None and 'edges' in row:
             canvas_input_checks[node_id] = 'passed'
         face_slots = face_slots_by_segment.get(row.get('source_segment_id'), [])
@@ -1343,7 +1359,7 @@ def compare(frozen: dict, observed: dict, project: Path | None = None, *, privat
             native_reference_checks[node_id] = status
             if status == 'failed':
                 differences.append({'node_id': node_id, 'field': 'native_mentions',
-                                    'expected_sha256': digest(row['ordered_media']),
+                                    'expected_sha256': hashlib.sha256(ordered_media_bytes).hexdigest(),
                                     'observed_sha256': digest(mentions) if mentions is not None else None})
     for difference in differences:
         node = difference.get('node_id')

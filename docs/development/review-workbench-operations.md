@@ -59,7 +59,7 @@ python scripts/review_text_cli.py status \
 
 ## 资产图送审
 
-选定实际制作项后，用 `python scripts/review_text_cli.py status --project <项目> --case-id <案例ID> --stage assets --token-file <本机凭据文件> --receipt <新状态回执>` 保存发布前状态。核对网站项目、案例、资产当前版本和同版编导通过后，运行 `python scripts/review_text_cli.py publish-asset --project <项目> --preflight <资产发布前状态回执> --script-publication <编导发布回执> --image <项目内候选图> --artifact-id <产物ID> --ast-id <AST-ID> --output-id <输出ID> --purpose <制作项准确用途> --operation-id <UUID> --token-file <本机凭据文件> --receipt <新发布回执>`。送审沿用当前有效资产需求及已登记的调整。原件上限 8 MiB，支持 PNG、JPEG 和 WebP。
+选定实际制作项后，用 `python scripts/review_text_cli.py status --project <项目> --case-id <案例ID> --stage assets --token-file <本机凭据文件> --receipt <新状态回执>` 保存发布前状态。核对网站项目、案例、资产当前版本和同版编导通过后，运行 `python scripts/review_text_cli.py publish-asset --project <项目> --preflight <资产发布前状态回执> --script-publication <编导发布回执> --candidate-id <制作库中的准确候选ID> --ast-id <AST-ID> --output-id <输出ID> --purpose <制作项准确用途> --operation-id <UUID> --token-file <本机凭据文件> --receipt <新发布回执>`。送审沿用当前有效资产需求及已登记的调整。原件上限 8 MiB，支持 PNG、JPEG 和 WebP。
 
 上传后核回执的图片 ID、版本和 `readback.status`。`unknown` 表示状态待核，`historical` 表示已非当前版，两者可用于同一编导版的 `--reference-publication`。读回发现项目或上游版本不符时，保留上传证据并阻止该回执成为审核包成员。
 

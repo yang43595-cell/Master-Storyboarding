@@ -50,7 +50,7 @@ def revision_plan(project, previous, request):
     available = dict(submit['sources'])
     if old.get('file') and old.get('image_result', {}).get('node_id') == node:
         previous_sha = old['file']['sha256']
-        rejected = any(row.get('visual_status') == 'failed' and row.get('sha256') == previous_sha
+        rejected = not asset and any(row.get('visual_status') == 'failed' and row.get('sha256') == previous_sha
                        for row in old.get('items', []))
         if not rejected:
             available[node] = previous_sha

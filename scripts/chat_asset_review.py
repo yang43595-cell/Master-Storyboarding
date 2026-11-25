@@ -6,7 +6,10 @@ from datetime import datetime
 import json
 from pathlib import Path
 import re
+import sqlite3
+from contextlib import closing
 from tempfile import TemporaryDirectory
+from uuid import uuid4
 
 from PIL import Image
 
@@ -15,7 +18,6 @@ if __package__:
     from .core import artifacts, asset_refs, character_boards as boards, production_handoff
     from .core.asset_batch_receipt import DIRECT_REQUESTS, summarize_asset_batch_receipt, validate_asset_review_targets
     from .core.io import project_lock, read_json, write_json, sha256_json, utc_now
-    from .core.derived_character_boards import register
     from .core.project_kickoff import REQUEST_PATH
     from .core.project_state import write_project_state
     from .core.schema_contracts import require_schema
@@ -24,7 +26,6 @@ else:
     from core import artifacts, asset_refs, character_boards as boards, production_handoff
     from core.asset_batch_receipt import DIRECT_REQUESTS, summarize_asset_batch_receipt, validate_asset_review_targets
     from core.io import project_lock, read_json, write_json, sha256_json, utc_now
-    from core.derived_character_boards import register
     from core.project_kickoff import REQUEST_PATH
     from core.project_state import write_project_state
     from core.schema_contracts import require_schema
@@ -154,7 +155,7 @@ def review_items(root, batch, requirements, kinds, original=None):
                 **row,
                 "requirement_sha256": sha256_json(req),
                 "final_output_id": source.get("final_output_id"),
-                "candidate_revision": source.get("candidate_revision") or source.get("source_revision"),
+                "candidate_revision": source.get("candidate_revision"),
                 "limitations": source.get("limitations"),
                 "path": inside(root, row["path"]).relative_to(root).as_posix(),
                 "purpose": source["purpose"],
@@ -196,7 +197,9 @@ def round_targets(root, targets_path=None):
 
 
 def approved_versions(images):
-    return {f"{ast}@{o['output_id']}": {"sha256": o["sha256"], "purpose": o["purpose"]}
+    return {f"{ast}@{o['output_id']}": {"sha256": o["sha256"], "purpose": o["purpose"],
+            "candidate_id": o.get("source_candidate_id"), "candidate_revision": o.get("source_candidate_revision"),
+            "source_path": o.get("source_candidate"), "confirmation_ref": o["confirmation_ref"]}
             for ast, asset in images.items() for o in asset.get("outputs", []) if o.get("sha256")}
 
 
@@ -243,8 +246,15 @@ def show_round(root, contexts, narrative, targets_path=None, receipts=()):
             pending[row["target"]] = row
     approved = approved_versions({ast: asset["image"] for ast, asset in assets.items()})
     reused = {}
+    confirmed = {ast + "@" + output["output_id"]: output for ast, asset in assets.items()
+                 for output in asset["image"].get("outputs", [])}
     same_version = {t for t, row in ready.items()
-                    if approved.get(t) == dict(sha256=row["sha256"], purpose=reviewed_purpose(row))}
+                    if t in confirmed and approved[t]["sha256"] == row["sha256"]
+                    and approved[t]["purpose"] == reviewed_purpose(row)
+                    and confirmed[t].get("source_candidate") == row["path"]
+                    and isinstance(row.get("candidate_revision"), str) and row["candidate_revision"].strip()
+                    and confirmed[t].get("source_candidate_revision") == row["candidate_revision"]
+                    and confirmed[t].get("source_candidate_id") == row["candidate_id"]}
     for target, previous in approved.items():
         if target in ready and target not in same_version:
             continue
@@ -310,6 +320,11 @@ def collect_output(root, rel, staging, target, item, requirements, out, message,
         "复用现有素材",
     ):
         raise ValueError("当前资产需求不支持确认 " + target)
+    if item.get("sources"):
+        confirmed = asset_refs.confirmed_images(root, requests=[ast])
+        current_sources = {(r["output_id"], r["sha256"], r["confirmation_ref"]) for r in confirmed.get(ast, {}).get("outputs", [])}
+        if any((src["output_id"], src["sha256"], src["confirmation_ref"]) not in current_sources for src in item["sources"]):
+            raise ValueError("展示后拼版源图已变化，请重新拼版")
     source = inside(root, item["path"])
     raw = source.read_bytes()
     if hashlib.sha256(raw).hexdigest() != item["sha256"]:
@@ -373,8 +388,9 @@ def collect_output(root, rel, staging, target, item, requirements, out, message,
             image_sha256=item["sha256"],
             source_candidate=item["path"],
             candidate_id=item["candidate_id"],
+            candidate_revision=item.get("candidate_revision"),
             purpose=item["purpose"],
-            visual_status_before_user_review=item["visual_status"],
+            **({"sources": item["sources"]} if item.get("sources") else {}),
             accepted_deviation=item.get("issue", ""),
             limitations=item.get("limitations"),
         ),
@@ -488,22 +504,192 @@ def discard(root, message, narrative, entries):
                if substitute else {})}
 
 
-def confirm(root, keys, message, narrative, entries):
+def same_message(left, right):
+    if left.get("message_id") and right.get("message_id"):
+        return left["message_id"] == right["message_id"]
+    return bool(left.get("review_ref")) and left["review_ref"] == right.get("review_ref")
+
+
+def previous_direct_decision(root, message, entries, *, approval_id=None, feedback=None):
+    for path in inside(root, SHOWN / "用户退回").glob("*.json"):
+        saved = read_json(inside(root, path))
+        if same_message(saved["feedback"], message):
+            # A pre-revision return can replay its exact original, content-addressed display.
+            if feedback and saved["shown"] == feedback["shown"] and saved["feedback"] == message and (
+                    len(saved["items"]) == len(feedback["items"]) and all(
+                        all(current.get(k) == v for k, v in old.items())
+                        for old, current in zip(saved["items"], feedback["items"]))):
+                return path
+            raise ValueError("同一条用户消息已用于退回，不能改作其他决定")
+    for entry in entries:
+        ident = entry["artifact_id"]
+        if not ident.startswith("visual-assets-chat-") or ident == approval_id:
+            continue
+        if entry["status"] == "candidate":
+            raise ValueError("另一次资产确认待恢复，请按原交审编号和消息重试")
+        other = read_json(inside(root, entry["confirmation_ref"]))
+        if any(same_message(row["confirmation"], message) for row in other["items"]):
+            raise ValueError("同一条用户消息已用于其他交审范围")
+
+
+def workbench_records(root, table, ident=None):
+    """Read the existing project's library without opening a writable Library session."""
+    pointer = inside(root, SHOWN / "工作台位置.json")
+    if pointer.is_file():
+        project_file = Path(read_json(pointer)["project"])
+        record = read_json(project_file)
+        if Path(record["path"]).resolve() != root:
+            raise ValueError("项目工作台位置不符")
+        library, projects = project_file.parent.parent, [record]
+    else:
+        library = Path(__file__).resolve().parents[1] / ".master-storyboarding/visual-library"
+        projects = [p for path in (library / "projects").glob("*.json")
+                    if Path((p := read_json(path))["path"]).resolve() == root]
+        if len(projects) > 1:
+            raise ValueError("无法唯一定位项目工作台")
+    if not projects:
+        state = artifacts.load_project_state(root)
+        if any("asset-image-assistant" in auth.get("skills", []) for auth in state.get("workflow_authorizations", [])):
+            raise ValueError("项目有 Web 审图授权，请通过原制作库的项目绑定入口定位历史记录")
+        return
+    project = projects[0]
+    with closing(sqlite3.connect((library / "library.sqlite3").resolve().as_uri() + "?mode=ro", uri=True)) as db:
+        if table == "assets":
+            rows = db.execute("SELECT data FROM assets WHERE id=?", (ident,))
+        else:
+            jobs = {row["job_id"] for row in project["rows"] if row.get("job_id")}
+            query = "SELECT data FROM jobs WHERE id IN (SELECT value FROM json_each(?))"
+            params = [json.dumps(sorted(jobs))]
+            if table == "jobs":
+                jobs.update(row["job_id"] for row in project.get("history", []) if row.get("job_id"))
+                jobs.update(job for row in project["rows"] for job in row.get("job_history", []))
+                query += " OR json_extract(data,'$.project_id')=?"
+                params = [json.dumps(sorted(jobs)), project["id"]]
+            rows = db.execute(query, params)
+        for (data,) in rows:
+            yield json.loads(data)
+
+
+def web_history(root, message):
+    for job in workbench_records(root, "jobs"):
+        for step in job["steps"]:
+            for version in (step, *step.get("history", [])):
+                feedback = version.get("feedback")
+                if isinstance(feedback, dict) and same_message(feedback, message):
+                    yield "returned", feedback
+                review = (version.get("project_confirmation") or {}).get("chat_confirmation") or {}
+                if review and same_message(review["confirmation"], message):
+                    yield "approved", review
+    for entry in artifacts.load_manifest(root)["artifacts"]:
+        if entry.get("logical_id") != LOGICAL or not entry.get("confirmation_ref"):
+            continue
+        path = inside(root, entry["confirmation_ref"])
+        if path.is_file():
+            for row in read_json(path).get("items", []):
+                review = row["confirmation"].get("chat_confirmation")
+                if review and same_message(review["confirmation"], message):
+                    yield "approved", review
+
+
+def candidate_identity(root, row):
+    target = row.get("target") or (row.get("ast_id", "") + "@" + row.get("output_id", ""))
+    source = row.get("source_path") or row.get("source_candidate") or row.get("path")
+    return (target, inside(root, source) if source else None, row.get("candidate_id") or row.get("asset_id"), row.get("candidate_revision"),
+            row.get("image_sha256") or row.get("sha256"), row.get("purpose"))
+
+
+def prior_channel_decision(root, message, outputs, outcome, *, from_web):
+    """An exact cross-channel replay is read-only. A partial or ambiguous match cannot adopt anything."""
+    wanted = {candidate_identity(root, row) for row in outputs}
+    def check(previous, kind, rows):
+        actual = {candidate_identity(root, row) for row in rows}
+        if (kind != outcome or actual != wanted or any(not all(key) for key in actual)
+                or any(previous.get(k) != message.get(k) for k in ("quote", "at"))):
+            raise ValueError("同一条用户消息已用于其他交审范围或决定")
+        return True
+
+    found = False
+    if from_web:
+        for path in inside(root, SHOWN / "用户退回").glob("*.json"):
+            saved = read_json(inside(root, path))
+            if same_message(saved["feedback"], message):
+                found = check(saved["feedback"], "returned", saved["items"])
+        for entry in artifacts.load_manifest(root)["artifacts"]:
+            if not entry["artifact_id"].startswith("visual-assets-chat-"):
+                continue
+            path = inside(root, entry["confirmation_ref"])
+            if not path.is_file():
+                if entry["status"] == "candidate":
+                    raise ValueError("另一次资产确认待恢复")
+                raise ValueError("历史资产消息依据缺失")
+            rows = [{**r["confirmation"], "ast_id": r["ast_id"], "output_id": r["output_id"]}
+                    for r in read_json(path)["items"] if same_message(r["confirmation"], message)]
+            if rows:
+                found = check(rows[0], "approved", rows)
+    else:
+        for _, saved in web_messages(root):
+            previous = saved.get("decision") or saved
+            if saved.get("message_id") == message.get("message_id") and saved.get("message_id") and not same_message(previous, message):
+                raise ValueError("这是展示消息，不能改作其他决定")
+            if same_message(previous, message):
+                if not saved.get("outcome"):
+                    raise ValueError("同一条用户消息已绑定 Web 候选")
+                found = check(previous, saved["outcome"], saved["outputs"])
+        history = list(web_history(root, message))
+        if history:
+            historical = []
+            for kind, review in history:
+                if kind != outcome or kind == "returned" and not review.get("outputs"):
+                    raise ValueError("同一条用户消息已用于其他历史决定")
+                historical.extend(review.get("approved_outputs") or review.get("outputs") or [review])
+            record = history[0][1]
+            found = check(record.get("confirmation", record), outcome, historical)
+    return found
+
+
+def web_messages(root):
+    for path in inside(root, SHOWN / "Web对话消息").glob("*.json"):
+        yield path, read_json(inside(root, path))
+
+
+def web_display(root, message_id):
+    if not isinstance(message_id, str) or not message_id.strip():
+        raise ValueError("缺少展示消息 ID 和候选绑定")
+    records = [(p, r) for p, r in web_messages(root) if r.get("message_id") == message_id]
+    if len(records) != 1 or not records[0][1].get("display_source"):
+        raise ValueError("缺少唯一的展示消息和候选绑定")
+    return records[0]
+
+
+def read_shown(root, key, narrative):
+    if not re.fullmatch("[0-9a-f]{64}", key):
+        raise ValueError("交审编号无效")
+    packet = read_json(inside(root, SHOWN / (key + ".json")))
+    if sha256_json(packet) != key or (packet["narrative"], packet["narrative_id"]) != (
+        narrative["checksum"],
+        narrative["artifact_id"],
+    ):
+        raise ValueError("交审内容或编导版本已变化")
+    return packet
+
+
+def shown_decision(root, keys, message, narrative):
     if not all(isinstance(message.get(k), str) and message[k].strip() for k in ("at", "quote", "review_ref")):
-        raise ValueError("缺用户确认原话、时间或消息引用")
+        raise ValueError("缺用户决定原话、时间或消息引用")
     if datetime.fromisoformat(message["at"]).utcoffset() is None or message.get("scope") not in ("all_shown", "selected"):
-        raise ValueError("确认须绑定已展示清单与含时区时间")
+        raise ValueError("用户决定须绑定已展示清单与含时区时间")
+    if "message_id" in message and not (isinstance(message["message_id"], str) and message["message_id"].strip()):
+        raise ValueError("用户消息 ID 不能为空")
+    if "shown" in message:
+        shown = message["shown"]
+        if (not isinstance(shown, list) or not all(isinstance(key, str) for key in shown)
+                or sorted(shown) != sorted(set(keys))):
+            raise ValueError("消息记录的候选展示编号与本次决定不符")
+        message = {**message, "shown": sorted(shown)}
     rows = {}
     round_scope = None
     for key in keys:
-        if not re.fullmatch("[0-9a-f]{64}", key):
-            raise ValueError("交审编号无效")
-        packet = read_json(inside(root, SHOWN / (key + ".json")))
-        if sha256_json(packet) != key or (packet["narrative"], packet["narrative_id"]) != (
-            narrative["checksum"],
-            narrative["artifact_id"],
-        ):
-            raise ValueError("交审内容或编导版本已变化")
+        packet = read_shown(root, key, narrative)
         if "review_round" in packet:
             if len(keys) != 1:
                 raise ValueError("整轮交审只使用本轮唯一展示编号")
@@ -514,12 +700,38 @@ def confirm(root, keys, message, narrative, entries):
             rows[item["target"]] = item
     if message["scope"] == "selected":
         selected = validate_asset_review_targets(message.get("targets"))
-        if round_scope is None or not set(selected) <= rows.keys():
-            raise ValueError("部分通过须明确列出本轮已展示且获通过的准确目标")
+        if not set(selected) <= rows.keys():
+            raise ValueError("请列出本次决定涉及的已展示目标")
         rows = {target: item for target, item in rows.items() if target in selected}
         message = {**message, "targets": sorted(selected)}
     elif "targets" in message:
         raise ValueError("指定部分通过项时须用 selected 范围")
+    return rows, round_scope, message
+
+
+def return_for_revision(root, keys, message, narrative):
+    rows, _, message = shown_decision(root, keys, message, narrative)
+    if prior_channel_decision(root, message, rows.values(), "returned", from_web=False):
+        return dict(status="returned", feedback=message["quote"], already_recorded=True)
+    items = [{key: row.get(key) for key in ("target", "candidate_id", "candidate_revision", "path", "sha256", "purpose")}
+             for row in rows.values()]
+    feedback = dict(shown=keys, items=items, feedback=message)
+    previous = previous_direct_decision(root, message, artifacts.load_manifest(root)["artifacts"], feedback=feedback)
+    location = previous.relative_to(root) if previous else SHOWN / "用户退回" / (sha256_json(feedback) + ".json")
+    path = inside(root, location)
+    if previous:
+        items = read_json(previous)["items"]
+    if not path.is_file():
+        if "shown" not in message:
+            raise ValueError("新决定必须在消息中记录所见候选的 shown 编号列表")
+        write_json(path, feedback)
+    return dict(status="returned", feedback=message["quote"], items=items, record=location.as_posix())
+
+
+def confirm(root, keys, message, narrative, entries):
+    rows, round_scope, message = shown_decision(root, keys, message, narrative)
+    if prior_channel_decision(root, message, rows.values(), "approved", from_web=False):
+        return dict(status="approved", already_recorded=True)
     rejected_targets(root, rows)
     key = sha256_json([sorted(set(keys)), message])
     ident = "visual-assets-chat-" + key
@@ -528,6 +740,9 @@ def confirm(root, keys, message, narrative, entries):
     dest = folder / "visual-asset-manifest.json"
     receipt = rel / "用户确认记录.json"
     old = next((e for e in entries if e["artifact_id"] == ident), None)
+    previous_direct_decision(root, message, entries, approval_id=ident)
+    if not old and "shown" not in message:
+        raise ValueError("新决定必须在消息中记录所见候选的 shown 编号列表")
     selection = current(entries, LOGICAL)
     if old and old["status"] not in ("candidate", "current", "superseded"):
         raise ValueError("此确认已失效，请重新交审")
@@ -539,6 +754,8 @@ def confirm(root, keys, message, narrative, entries):
             or confirmed[t]["image_sha256"] != item["sha256"]
             or confirmed[t]["accepted_deviation"] != item.get("issue", "")
             or confirmed[t]["source_candidate"] != item["path"]
+            or ("candidate_revision" in confirmed[t] and confirmed[t]["candidate_revision"] != item.get("candidate_revision"))
+            or ("candidate_id" in confirmed[t] and confirmed[t]["candidate_id"] != item["candidate_id"])
             for t, item in rows.items()
         ):
             raise ValueError("已登记的逐图确认与交审内容不符")
@@ -557,16 +774,6 @@ def confirm(root, keys, message, narrative, entries):
             reused = round_scope["reused"]
             if reused and approved_versions(asset_refs.confirmed_images(root, requests=reused)) != reused:
                 raise ValueError("交审后沿用的已确认图已变化，请重新展示")
-        for e in entries:
-            if e["artifact_id"].startswith("visual-boards-") and e["status"] == "candidate":
-                raise ValueError("已有拼版待恢复，请先按原实看编号续作")
-            if e["artifact_id"] == ident or not e["artifact_id"].startswith("visual-assets-chat-"):
-                continue
-            if e["status"] == "candidate":
-                raise ValueError("另一次资产确认待恢复，请按原交审编号和消息重试")
-            other = read_json(inside(root, e["confirmation_ref"]))
-            if any(r["confirmation"]["review_ref"] == message["review_ref"] for r in other["items"]):
-                raise ValueError("同一条用户消息已用于其他交审范围")
         story = read_json(inside(root, narrative["path_or_url"]))
         requirements = effective_requirements(root, narrative, story=story)
         revisions = [
@@ -690,7 +897,7 @@ def select_export(root, entries, ident, receipt, at, method):
     write_project_state(root, state)
 
 
-def compose_boards(root, specs, reviewed, narrative, entries):
+def compose_boards(root, specs, narrative, entries):
     selection = current(entries, LOGICAL)
     if not selection:
         raise ValueError("须先确认头照和服装源图")
@@ -701,79 +908,19 @@ def compose_boards(root, specs, reviewed, narrative, entries):
     asset_refs.without_rejected_outputs(root, out)
     if out["source_narrative"]["artifact_id"] != narrative["artifact_id"]:
         raise ValueError("人物板上游编导版本已变化")
-    expected = None
-    if reviewed:
-        if not re.fullmatch(r"[0-9a-f]{64}", reviewed):
-            raise ValueError("实看编号无效")
-        packet = read_json(inside(root, boards.PACKETS / (reviewed + ".json")))
-        if sha256_json(packet) != reviewed or packet["narrative"] != narrative["checksum"]:
-            raise ValueError("实看清单或编导版本已变化")
-        requested = [[i["ast_id"] + "@" + i["output_id"], *(o["output_id"] for o in i["sources"])]
-                     for i in packet["items"]]
-        if specs and sorted(specs) != sorted(requested):
-            raise ValueError("请按原实看范围登记")
-        expected = {i["ast_id"] + "@" + i["output_id"]: i for i in packet["items"]}
-        specs = requested
-        # A crash after promoting but before updating project_state is recoverable via this receipt.
-        if (selection["artifact_id"].startswith("visual-boards-")
-                and read_json(inside(root, selection["confirmation_ref"])).get("review_key") == reviewed):
-            select_export(root, entries, selection["artifact_id"], Path(selection["confirmation_ref"]),
-                          selection["created_at"], "沿用源图确认并实看拼版")
-
-    ready, reused, pending = boards.plans(root, out, specs, expected)
-    if reviewed and pending:
-        raise ValueError("实看范围内的来源已失效：" + "、".join(pending))
-    rendered = [boards.render(root, plan) for plan in ready]
-    result = dict(count=len(rendered), reused=reused, pending=pending,
-                  items=[{k: row[k] for k in ("ast_id", "output_id", "path", "image_sha256", "pixel_size")} for row in rendered])
-    if not rendered:
-        return dict(result, artifact_id=selection["artifact_id"])
-    if not reviewed:
-        packet = dict(narrative=narrative["checksum"], items=rendered)
-        key = sha256_json(packet)
-        write_json(inside(root, boards.PACKETS / (key + ".json")), packet)
-        return dict(result, review_key=key)
-    if any(row != expected[row["ast_id"] + "@" + row["output_id"]] for row in rendered):
-        raise ValueError("人物板或来源已变化，请重新实看")
-
-    ident = "visual-boards-" + sha256_json([reviewed, selection["artifact_id"]])
-    old = next((e for e in entries if e["artifact_id"] == ident), None)
-    if old and old["status"] != "candidate":
-        raise ValueError("历史拼版已被替代，请核对当前输出")
-    for entry in entries:
-        if (entry["logical_id"] == LOGICAL and entry["status"] == "candidate" and entry != old
-                and entry["artifact_id"].startswith(("visual-boards-", "visual-assets-chat-"))):
-            raise ValueError("另一次资产登记待恢复，请先按原编号续作")
-    rel = Path(asset_refs.MASTER_DIR) / ident
-    receipt = rel / "人物1×4拼版回执.json"
-    revisions = [int(e["revision"][1:]) for e in entries
-                 if e["logical_id"] == LOGICAL and re.fullmatch(r"R[0-9]+", e["revision"])]
-    out["revision"] = old["revision"] if old else f"R{max(revisions, default=0) + 1:02}"
-    records = {a["asset_id"]: a for a in out["assets"]}
-    confirmations = []
-    for row in rendered:
-        ast, final = row["ast_id"], row["output_id"]
-        record = records[ast]
-        candidate = append_candidate(record, row["path"], [s["path"] for s in row["sources"]],
-                                     *row["pixel_size"], "png")
-        output = dict(output_id=final, output_kind=boards.BOARD, state=row["state"], purpose=record["name"] + "人物造型",
-                      candidate_id=candidate, path=row["path"], user_confirmation_ref=receipt.as_posix() + "#" + final,
-                      view="、".join(boards.ORDER))
-        original = record["confirmed_outputs"]
-        record["confirmed_outputs"] = [output if o["output_id"] == final else o for o in original]
-        if not any(o["output_id"] == final for o in original):
-            record["confirmed_outputs"].append(output)
-        if record["confirmed_asset"]["candidate_id"] not in {o["candidate_id"] for o in record["confirmed_outputs"]}:
-            record["confirmed_asset"] = {k: output[k] for k in ("candidate_id", "path", "user_confirmation_ref")}
-        out["scope_gaps"] = [g for g in out["scope_gaps"] if g["gap_id"] != f"GAP-{ast}-{final}"]
-        confirmations.append(dict(ast_id=ast, output_id=final,
-                                  confirmation=dict(id=final, path=row["path"], image_sha256=row["image_sha256"],
-                                                    sources=row["sources"], pixel_size=row["pixel_size"], view_order=boards.ORDER)))
-    with TemporaryDirectory(dir=root) as tmp:
-        publish(root, rel, ident, out, Path(tmp), receipt,
-                dict(method="两份已确认源图等比拼版，执行者实看", review_key=reviewed, items=confirmations), old)
-    select_export(root, entries, ident, receipt, utc_now(), "沿用源图确认并实看拼版")
-    return dict(result, artifact_id=ident, manifest=str(root / rel / "visual-asset-manifest.json"))
+    ready, reused, pending = boards.plans(root, out, specs)
+    requirements = effective_requirements(root, narrative)
+    items = []
+    for plan in ready:
+        board = boards.render(root, plan)
+        ast, final = board['ast_id'], board['output_id']
+        items.append(dict(target=ast + '@' + final, candidate_id=board['image_sha256'],
+                          sha256=board['image_sha256'], path=board['path'], sources=board['sources'],
+                          state=board['state'], view='、'.join(boards.ORDER), output_kind=boards.BOARD,
+                          purpose=requirements[ast]['name'] + '人物造型',
+                          requirement_sha256=sha256_json(requirements[ast])))
+    result = store_shown(root, narrative, items) if items else {'items': []}
+    return dict(result, count=len(items), reused=reused, pending=pending)
 
 
 def main():
@@ -787,13 +934,15 @@ def main():
     together.add_argument("--targets-json", help="项目内本轮总请求，默认读取项目需求的 asset_review_targets")
     decide = commands.add_parser("confirm")
     decide.add_argument("--shown", action="append", required=True)
-    decide.add_argument("--confirmation-json", required=True, type=Path)
+    decide.add_argument("--confirmation-json", required=True, type=Path,
+                            help="记录原消息及所见候选的 shown 编号列表")
+    returned = commands.add_parser("return", help="保留所示候选并记录用户的返修意见")
+    returned.add_argument("--shown", action="append", required=True)
+    returned.add_argument("--feedback-json", required=True, type=Path, help="记录原退回消息及所见候选的 shown 编号列表")
     commands.add_parser("discard").add_argument("--decision-json", required=True, type=Path)
-    compose = commands.add_parser("compose-boards", help="从同一角色的已确认源图拼版；实看后按编号登记")
+    compose = commands.add_parser("compose-boards", help="从同一角色的已确认源图拼版，展示给用户确认")
     compose.add_argument("--board", action="append", nargs=3, default=[], metavar=("AST@FINAL", "HEAD", "WARDROBE"),
                          help="仅在指定范围或来源不唯一时提供，可重复")
-    compose.add_argument("--reviewed", help="执行者已实看并通过的准确拼版编号")
-    commands.add_parser("register-derived-boards").add_argument("--board-receipt", required=True, type=Path)
     args = parser.parse_args()
     root = args.project.resolve(strict=True)
     with project_lock(root):
@@ -813,13 +962,12 @@ def main():
             result = show_round(root, args.context_id, narrative, args.targets_json, args.receipt)
         elif args.command == "confirm":
             result = confirm(root, args.shown, read_json(args.confirmation_json), narrative, entries)
+        elif args.command == "return":
+            result = return_for_revision(root, args.shown, read_json(args.feedback_json), narrative)
         elif args.command == "discard":
             result = discard(root, read_json(args.decision_json), narrative, entries)
         elif args.command == "compose-boards":
-            result = compose_boards(root, args.board, args.reviewed, narrative, entries)
-        else:
-            plan = read_json(inside(root, args.board_receipt))
-            result = register(root, plan, narrative, entries, current(entries, LOGICAL))
+            result = compose_boards(root, args.board, narrative, entries)
     print(json.dumps(result, ensure_ascii=False))
 
 

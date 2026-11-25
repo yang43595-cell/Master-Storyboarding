@@ -105,8 +105,7 @@ def bind_final_output_ids(service, project, row, job, updates):
     if not updates:
         return
     if (project.get('batch', {}).get('status') == 'running' or project.get('planning', {}).get('status') == 'running'
-            or any(step['status'] in {'generating', 'submitting', 'submitted', 'querying'}
-                   or step.get('audit', {}).get('status') in {'drafting', 'reviewing'} for step, _ in updates)):
+            or any(step['status'] in {'generating', 'submitting', 'submitted', 'querying'} for step, _ in updates)):
         raise ValueError('任务正在处理，完成后再对应人物最终输出 ID')
     confirmed = [step for step, _ in updates if step.get('project_confirmation') or step['status'] == 'confirmed']
     if confirmed:
@@ -115,8 +114,6 @@ def bind_final_output_ids(service, project, row, job, updates):
         service.reset_steps(job, {step['key'] for step in confirmed})
     for step, expected in updates:
         step['output_id'] = expected
-        if step.get('audit'):
-            step['audit'] = {'status': 'stale'}
         step.pop('prompt_approval', None)
     service.invalidate_export(project, '人物最终输出 ID 已调整，受影响图片待按准确输出核对')
     project.pop('export_pending', None)
@@ -165,7 +162,7 @@ def prepare_character(service, payload):
                 service.lib.save(old, 'jobs')
                 service.save(p)
             return service.detail(p['id'])
-        if p.get('batch', {}).get('status') == 'running' or p.get('planning', {}).get('status') == 'running' or (old and any(s['status'] in {'generating','submitting','submitted','querying'} or s.get('audit', {}).get('status') in {'drafting','reviewing'} for s in old['steps'])):
+        if p.get('batch', {}).get('status') == 'running' or p.get('planning', {}).get('status') == 'running' or (old and any(s['status'] in {'generating','submitting','submitted','querying'} for s in old['steps'])):
             raise ValueError('任务正在处理，完成后再读取上游服装')
         matching = old and [v['name'] for v in old.get('character_workflow', {}).get('outfits', [])] == [v['name'] for v in expected]
         if matching:
@@ -213,7 +210,7 @@ def character_route(service, payload):
         job = service.lib.get(row['job_id'], 'jobs') if row.get('job_id') else None
         if job and not job.get('character_workflow'):
             raise ValueError('此人物已有旧制作项，请保留旧结果并先核对制作结构，不能自动替换')
-        if job and any(s['status'] in {'generating', 'submitting', 'submitted', 'querying'} or s.get('audit', {}).get('status') in {'drafting', 'reviewing'} for s in job['steps']):
+        if job and any(s['status'] in {'generating', 'submitting', 'submitted', 'querying'} for s in job['steps']):
             raise ValueError('人物图片仍在处理，请稍后调整')
         now = datetime.now(timezone.utc).isoformat()
         if not job:
@@ -258,7 +255,7 @@ def character_route(service, payload):
                 for s in job['steps']:
                     if s.get('outfit_id') == outfit_id:
                         s.setdefault('history', []).append({k: copy.deepcopy(s.get(k)) for k in ('selected', 'outputs', 'project_confirmation', 'prompt', 'audit')})
-                        s.update(status='waiting', outputs=[], project_confirmation=None, audit={'status': 'stale'}, state=name)
+                        s.update(status='waiting', outputs=[], project_confirmation=None, state=name)
                         s['name'] = name + (' · 服装三视图' if s['kind'] == '服装' else ' · 人物1×4')
                         s['view'] = s['name']
                         s['purpose'] = '此服装对应当前人物；依据上游：' + evidence
@@ -269,7 +266,7 @@ def character_route(service, payload):
         if old_route != route and not renamed:
             final = next(s for s in job['steps'] if s['key'] == final_key)
             final.setdefault('history', []).append({k: copy.deepcopy(final.get(k)) for k in ('selected', 'outputs', 'project_confirmation', 'prompt', 'audit')})
-            final.update(status='waiting', outputs=[], project_confirmation=None, audit={'status': 'stale'})
+            final.update(status='waiting', outputs=[], project_confirmation=None)
             for key in ('selected', 'prompt_approval', 'prompt', 'composition_error', 'message'):
                 final.pop(key, None)
         variant['route'] = route

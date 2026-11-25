@@ -38,6 +38,26 @@ def test_explicit_product_json_requires_real_reference(tmp_path, value):
     assert validate_documents(tmp_path, directory)
 
 
+@pytest.mark.parametrize(("candidate", "tier"), [
+    ('{"nested":{"empty":{"obj":{},"list":[],"str":"","null":null},"items":[true,0,0]}}', 'T0'),
+    ('{"nested":{"items":[1,0,0],"empty":{"null":null,"str":"","list":[],"obj":{}}}}', 'T2'),
+    ('{"nested":{"items":[0,true,0],"empty":{"null":null,"str":"","list":[],"obj":{}}}}', 'T2'),
+    ('{"nested":{"items":[true,0],"empty":{"null":null,"str":"","list":[],"obj":{}}}}', 'T2'),
+    ('{"nested":{"items":[true,0,0],"empty":{"null":"","str":"","list":[],"obj":{}}}}', 'T2'),
+    ('{"nested":{"items":[true,0,0],"empty":{"null":null,"str":"","list":{},"obj":{}}}}', 'T2'),
+])
+def test_inspect_change_compares_canonical_json(tmp_path, candidate, tier):
+    source = tmp_path / 'current.json'
+    write_json(source, {'nested': {'items': [True, 0, 0],
+                                  'empty': {'null': None, 'str': '', 'list': [], 'obj': {}}}})
+    (tmp_path / 'candidate.json').write_text(candidate, encoding='utf-8')
+    write_json(tmp_path / artifacts.MANIFEST_PATH, {'artifacts': [{
+        'artifact_id': 'SOURCE', 'logical_id': 'video.prompt', 'status': 'current',
+        'revision': 'R01', 'path_or_url': source.name, 'checksum': artifacts.digest(source),
+    }]})
+    assert rc.inspect_change(tmp_path, ['video.prompt'], 'candidate.json')['tier'] == tier
+
+
 def t0(root):
     frozen, _ = delivery(root)
     source = root / 'old-delivery.json'; write_json(source, frozen)
@@ -51,8 +71,11 @@ def t0(root):
     state['user_confirmations'].append({'artifact_ids': ['OLD-DELIVERY']})
     write_project_state(root, state)
     rc.open_change(root, change_id='COPY', tier='T0', logical_ids=['video.prompt'], reason='equivalent copy')
-    rc.materialize_t0(root, change_id='COPY', source_path=source.name,
-                      destination_path='equivalent.json', transform='canonical-json')
+    output = rc.materialize_t0(root, change_id='COPY', source_path=source.name,
+                               destination_path='equivalent.json', transform='canonical-json')
+    equivalent = root / output['path']
+    assert equivalent.read_bytes() == source.read_bytes()
+    assert output['sha256'] == artifacts.digest(equivalent)
     rc.record_candidate(root, change_id='COPY', artifact_id='EQUIVALENT', logical_id='video.prompt',
                         artifact_type='json', candidate_path='equivalent.json', revision=frozen['revision'])
 

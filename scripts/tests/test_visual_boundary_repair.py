@@ -175,7 +175,7 @@ class VisualBoundaryRepair(unittest.TestCase):
         self.service.select({'job_id':job['id'],'index':0,'asset_id':self.asset['id']})
         with self.assertRaisesRegex(ValueError,'确认前置'): self.service.request(self.lib.get(job['id'],'jobs'),1)
         # ISOLATED TEST FIXTURE: project confirmation of an existing source, no generation.
-        self.service.confirm({'job_id':job['id'],'index':0,'confirm':True})
+        self.service.confirm({'job_id':job['id'],'index':0,'asset_id':self.asset['id'],'confirm':True})
         job=self.lib.get(job['id'],'jobs')
         for i in (1,2):
             request=self.service.request(job,i)
@@ -198,7 +198,7 @@ class VisualBoundaryRepair(unittest.TestCase):
         for i in range(2):
             self.service.select({'job_id':job['id'],'index':i,'asset_id':assets[i]['id']})
             # ISOLATED TEST FIXTURE: never a production approval.
-            self.service.confirm({'job_id':job['id'],'index':i,'confirm':True})
+            self.service.confirm({'job_id':job['id'],'index':i,'asset_id':assets[i]['id'],'confirm':True})
         job=self.lib.get(job['id'],'jobs'); request=self.service.request(job,2)
         self.assertEqual([r['id'] for r in request['reference_records']],[assets[1]['id']])
         self.assertNotIn(assets[0]['id'],[r['id'] for r in request['reference_records']])

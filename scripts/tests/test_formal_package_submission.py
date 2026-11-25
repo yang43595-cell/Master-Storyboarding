@@ -661,6 +661,39 @@ def test_adopt_package_checks_video_shot_schedule_against_declared_total(tmp_pat
     assert entry["status"] == ("candidate" if declared_total == 2 else "current")
 
 
+def test_video_revision_rechecks_only_rows_with_changed_canonical_content(tmp_path, monkeypatch):
+    monkeypatch.setattr(artifacts, 'artifact_is_adopted', lambda *_: True)
+    source = tmp_path / 'prior.json'
+    rows = [
+        {'segment_id': ident, 'prompt': 'synthetic prompt', 'source_shot_ids': [shot],
+         'settings': {'enabled': True, 'ordered': [1, 2, 2]}}
+        for ident, shot in [('V01', 'S01-010'), ('V02', 'S01-020')]
+    ]
+    director = {'checksum': 'director-version'}
+    payload = {'revision': 'R01', 'generation_segments': rows,
+               'source_storyboard': {'sha256': director['checksum']}}
+    write_json(source, payload)
+    prior = {'artifact_id': 'PRIOR', 'path_or_url': source.name, 'checksum': artifacts.digest(source)}
+    revised = copy.deepcopy(payload)
+    revised.update(revision='R02', self_check={'observed': 'revised'})
+    first, second = revised['generation_segments']
+    first['settings'] = {'ordered': [1, 2, 2], 'enabled': True}
+    second['settings']['enabled'] = 1
+
+    def rows_to_review():
+        return artifacts._video_revision_visual_rows(
+            tmp_path, revised, revised['generation_segments'], prior, director,
+            {'S01-010', 'S01-020'}, {'current_artifacts': ['PRIOR']})
+
+    assert rows_to_review() == [second]
+    first['settings']['ordered'] = [2, 1, 2]
+    assert rows_to_review() == [first, second]
+    second['settings']['enabled'] = True
+    assert rows_to_review() == [first]
+    revised['shared_rule'] = 'changed'
+    assert rows_to_review() == [first, second]
+
+
 def test_formal_video_prompt_accepts_reasoned_generation_segment_change(tmp_path):
     baseline = video_project(tmp_path)
     payload = copy.deepcopy(baseline)

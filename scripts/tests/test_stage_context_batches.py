@@ -567,8 +567,7 @@ def test_asset_worker_receipt_is_bound_and_received_without_changing_project_sta
     assert received["context_id"] == args.context_id
     assert received["status"] == "ready_for_review"
     assert received["items"][0]["path"] == str(image)
-    assert set(received["items"][0]) == {"target", "status", "candidate_id", "path", "sha256", "observer", "visual_status", "observation_summary"}
-    assert received["items"][0]["observation_summary"] == "SYNTHETIC OBSERVATION"
+    assert set(received["items"][0]) == {"target", "status", "candidate_id", "path", "sha256"}
     assert state_path.read_bytes() == state_before
     assert manifest_path.read_bytes() == manifest_before
     assert "PRIVATE LOG" not in json.dumps(received)

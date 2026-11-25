@@ -8,6 +8,7 @@ import sys
 import pytest
 
 from scripts import redframe_draft
+from scripts.core import draft_delivery
 from scripts.core.draft_delivery import plan_bindings, read_draft_delivery
 from scripts.core.io import read_json, write_json
 from scripts.tests.test_workflow_repair_cli import bind_redframe_production_sources, redframe_fixture
@@ -238,6 +239,35 @@ def test_new_draft_batch_uses_one_refresh_and_one_ordered_download(tmp_path, mon
     monkeypatch.setattr(redframe_draft.RedframeVideoDraftUI, '__init__', lambda *args, **kwargs: None)
     monkeypatch.setattr(redframe_draft.RedframeVideoDraftUI, 'assert_target', lambda ui: calls.append('target'))
     kwargs = {'host_browser': object(), 'check_layout': layout, 'collect_linked': read_linked if linked else None}
+    if case == 'independent-batches':
+        sha256_json = draft_delivery.sha256_json
+        publish = draft_delivery.publish_draft_readback
+
+        def checked_publish(project, batch_plan, result):
+            plan_calls = []
+
+            def count_plan(value):
+                if value is batch_plan:
+                    plan_calls.append(value)
+                return sha256_json(value)
+
+            with monkeypatch.context() as patch:
+                patch.setattr(draft_delivery, 'sha256_json', count_plan)
+                published = publish(project, batch_plan, result)
+            assert len(plan_calls) == 1
+            directory = draft_delivery.DELIVERY_RECEIPT.parent / '草稿回读' / sha256_json(
+                [result[name] for name in ('frozen', 'observed', 'formal_readback')])
+            assert published == directory.as_posix()
+            receipt = read_json(project / draft_delivery.DELIVERY_RECEIPT)['draft_receipts']
+            for binding in plan_bindings(project, batch_plan).values():
+                row = receipt[sha256_json(binding)]
+                assert row['binding'] == binding
+                assert row['readback_path'] == published
+                assert row['plan_sha256'] == sha256_json(batch_plan)
+            return published
+
+        monkeypatch.setattr(redframe_draft, 'publish_draft_readback', checked_publish)
+
     def delivery_status():
         bindings = plan_bindings(tmp_path, plan)
         source = bindings['one']['source']
@@ -318,6 +348,12 @@ def test_new_draft_batch_uses_one_refresh_and_one_ordered_download(tmp_path, mon
         assert redframe_draft.run_new_draft_batch(tmp_path, alternate, write, **kwargs)['reused_readback']
         assert not calls
 
+        with monkeypatch.context() as patch:
+            patch.setattr(draft_delivery, 'load_draft_receipt', lambda _: {'draft_receipts': {}})
+            legacy = delivery_status()
+            assert {k: v['status'] for k, v in legacy.items()} == {'one': 'complete', 'two': 'complete'}
+            assert {k: v['node_id'] for k, v in legacy.items()} == result['segment_nodes']
+
         path = tmp_path / result['readback_path'] / 'observed.json'
         observed = read_json(path)
         observed['drafts'][0]['prompt'] += ' drift'
@@ -325,6 +361,61 @@ def test_new_draft_batch_uses_one_refresh_and_one_ordered_download(tmp_path, mon
         assert {k: v['status'] for k, v in delivery_status().items()} == {'one': 'resume', 'two': 'resume'}
         assert all(draft['node_id'] == f'created-{segment}' for segment, draft in delivery_status().items())
 
+
+
+@pytest.mark.parametrize('registered', [True, False])
+@pytest.mark.parametrize('damage', [
+    None, 'frozen_sha256', 'observed_sha256', 'stale-frozen', 'stale-observed', 'failed-compare',
+    'overflow-frozen',
+])
+def test_readback_recovery_binds_both_snapshots_and_keeps_original_nodes(tmp_path, registered, damage):
+    frozen, observed = redframe_fixture(tmp_path)
+    report = redframe_draft.compare(frozen, observed, tmp_path, formal_delivery=True)
+    assert report['ok']
+    bundle = dict(frozen=frozen, observed=observed, formal_readback=report)
+    directory = tmp_path / draft_delivery.publish_draft_readback(tmp_path, frozen, bundle)
+    receipt = tmp_path / draft_delivery.DELIVERY_RECEIPT
+    if not registered:
+        receipt.unlink()
+    if damage in ('frozen_sha256', 'observed_sha256'):
+        report[damage] = '0' * 64
+        write_json(directory / 'formal_readback.json', report)
+    elif damage == 'stale-frozen':
+        frozen['collector_note'] = 'updated'
+        write_json(directory / 'frozen.json', frozen)
+    elif damage == 'overflow-frozen':
+        frozen['drafts'][0]['duration_bounds'][1] = 10**310
+        write_json(directory / 'frozen.json', frozen)
+    elif damage == 'stale-observed':
+        observed['collector_note'] = 'updated'
+        write_json(directory / 'observed.json', observed)
+    elif damage == 'failed-compare':
+        observed['drafts'][0]['prompt'] += ' changed'
+        report['observed_sha256'] = draft_delivery.sha256_json(observed)
+        write_json(directory / 'observed.json', observed)
+        write_json(directory / 'formal_readback.json', report)
+    bindings = plan_bindings(tmp_path, frozen)
+    status = read_draft_delivery(tmp_path, frozen, bindings['one']['source'], bindings)
+    expected = 'resume' if damage else 'complete'
+    assert {k: (v['status'], v['node_id']) for k, v in status.items()} == {
+        'one': (expected, 'one'), 'two': (expected, 'two')}
+
+
+def test_legacy_readback_with_two_possible_nodes_stays_unknown(tmp_path):
+    frozen, observed = redframe_fixture(tmp_path)
+    report = redframe_draft.compare(frozen, observed, tmp_path, formal_delivery=True)
+    assert report['ok']
+    root = tmp_path / draft_delivery.DELIVERY_RECEIPT.parent
+    for name, value in [('frozen', frozen), ('observed', observed), ('formal_readback', report)]:
+        write_json(root / 'first' / f'{name}.json', value)
+    # A second partial collection found a different original node for segment one.
+    for name, value in [('frozen', frozen), ('observed', observed)]:
+        value['drafts'][0]['node_id'] = 'other-node'
+        write_json(root / 'second' / f'{name}.json', value)
+    bindings = plan_bindings(tmp_path, frozen)
+    status = read_draft_delivery(tmp_path, frozen, bindings['one']['source'], bindings)
+    assert status['one']['status'] == 'unknown' and 'node_id' not in status['one']
+    assert (status['two']['status'], status['two']['node_id']) == ('complete', 'two')
 
 
 def test_native_creation_records_id_before_first_draft_edit():

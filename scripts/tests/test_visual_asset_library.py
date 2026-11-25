@@ -1,4 +1,5 @@
 """Direct checks for preservation, reuse, generation gates and local HTTP access."""
+import copy
 import importlib.util
 import json
 import os
@@ -23,6 +24,14 @@ m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
 
 
+JACKET_PROMPT = '衣服蓝夹克，4:3 横图，正侧背三格，蓝色袖口，无头人台。'
+
+
+def save_job_prompt(lib, job, prompt):
+    lib.save_prompt({'id': job['id'], 'index': 0, 'prompt': prompt})
+    return lib.get(job['id'], 'jobs')
+
+
 class LibraryTests(unittest.TestCase):
     def test_legacy_upload_job_preserves_reference_and_generated_head(self):
         source = self.root / 'input-portrait.png'
@@ -42,8 +51,6 @@ class LibraryTests(unittest.TestCase):
             self.lib.confirm(record['id'])
         with self.assertRaises(ValueError):
             self.lib.export([record['id']])
-        with self.assertRaises(ValueError):
-            self.lib.submit_imagegen({'id': job['id'], 'index': 0, 'authorize': True})
         output = self.root / 'generated.png'
         Image.new('RGB', (300, 400), 'blue').save(output)
         generated_bytes = output.read_bytes()
@@ -117,6 +124,15 @@ class LibraryTests(unittest.TestCase):
         self.assertEqual(view['project_confirmation'], record['project_confirmation'])
         self.assertIn('request', record['authorization'])
 
+    def test_backup_same_file_compares_bytes_across_blocks(self):
+        first, second = self.root / 'first.bin', self.root / 'second.bin'
+        prefix = b'x' * (1024 * 1024)
+        first.write_bytes(prefix + b'a')
+        for contents, expected in ((prefix + b'a', True), (prefix + b'b', False), (prefix, False)):
+            with self.subTest(size=len(contents), expected=expected):
+                second.write_bytes(contents)
+                self.assertEqual(m.visual_asset_backup.same_file(first, second), expected)
+
     def test_missing_original_isolated_at_startup_and_healthy_import(self):
         self.lib.confirm(self.asset['id'])
         m.visual_asset_backup.run(self.lib, m.management)
@@ -188,8 +204,8 @@ class LibraryTests(unittest.TestCase):
                 kwargs['stderr'].write(fatal)
             return subprocess.CompletedProcess(command, 1, '', fatal)
         cases = [
-            ('review', bridge, '_run_prompt_cli', lambda folder: bridge.run('codex', folder, 'review',
-                {'reference_paths': []}, '保持白模布局', '{}')),
+            ('draft', bridge, '_run_prompt_cli', lambda folder: bridge.write_prompt('codex', folder,
+                {'reference_paths': [], 'prompt': '保持布局'}, '{}')),
             ('plan', bridge.subprocess, 'run', lambda folder: bridge.plan_assets('codex', folder,
                 {'reference_paths': [], 'rows': []}, '{}')),
             ('generation', bridge.subprocess, 'run', lambda folder: bridge.generate_image('codex', folder,
@@ -224,62 +240,6 @@ class LibraryTests(unittest.TestCase):
                     completion_path=output, input='只读测试', capture_output=True, text=True, encoding='utf-8', timeout=2,
                     creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
 
-    def test_empty_optional_observations_do_not_fail_a_valid_luna_result(self):
-        result = {'prompt': '香水瓶四视图。', 'passed': True, 'observations': [], 'uncertainties': [],
-                  'checks': ['ASSET-SCOPE：香水瓶', 'ASSET-QC：四视图排版符合'], 'issues': []}
-        with tempfile.TemporaryDirectory() as temp:
-            def fake_run(command, **kwargs):
-                self.assertIn('ASSET-SCOPE', kwargs['input'])
-                schema = json.loads(Path(command[command.index('--output-schema') + 1]).read_text(encoding='utf-8'))
-                self.assertEqual(schema['properties']['checks']['minItems'], 2)
-                Path(command[command.index('--output-last-message') + 1]).write_text(json.dumps(result), encoding='utf-8')
-                return subprocess.CompletedProcess(command, 0, '', '')
-            with patch.object(m.codex_bridge, '_run_prompt_cli', side_effect=fake_run):
-                checked = m.codex_bridge.run('codex', Path(temp), 'draft', {'kind': '物品', 'reference_paths': []}, '',
-                    json.dumps({'review_checks': m.asset_skill.checks('project', '物品')}))
-            self.assertTrue(checked['passed'])
-
-    def test_missing_review_evidence_gets_one_real_recheck_and_no_fabricated_pass(self):
-        job = self.lib.create_job({'source_id': self.asset['id'], 'subject': '衣服', 'kind': '服装'})
-        job['steps'][0]['audit'] = {'status': 'drafting', 'run_id': 'repair'}
-        self.lib.save(job, 'jobs')
-        bad = {'prompt': '无头人台上的蓝色衣服。', 'passed': True, 'observations': [], 'uncertainties': [],
-               'checks': ['中文标题：未带检查编号'], 'issues': []}
-        good = {**bad, 'checks': [c['id'] + '：按实际参考核对。' for c in m.asset_skill.checks()]}
-        with patch.object(m.codex_bridge, 'run', side_effect=[dict(bad), dict(good)]) as run:
-            self.lib._audit_worker('codex', job['id'], 0, 'repair', 'write', self.lib.step_request(job, 0))
-        self.assertEqual([c.args[2] for c in run.call_args_list], ['draft', 'review'])
-        step = self.lib.get(job['id'], 'jobs')['steps'][0]
-        self.assertEqual(step['audit']['status'], 'passed')
-        self.assertEqual(step['audit']['repair_attempts'], 1)
-        self.assertFalse(step.get('prompt_approval'))
-        job['steps'][0]['audit'] = {'status': 'drafting', 'run_id': 'still-missing'}
-        self.lib.save(job, 'jobs')
-        with patch.object(m.codex_bridge, 'run', side_effect=[dict(bad), dict(bad)]) as run:
-            self.lib._audit_worker('codex', job['id'], 0, 'still-missing', 'write', self.lib.step_request(job, 0))
-        self.assertEqual(run.call_count, 2)
-        self.assertEqual(self.lib.get(job['id'], 'jobs')['steps'][0]['audit']['status'], 'needs_changes')
-
-    def test_codex_blank_failed_draft_preserves_actionable_issues(self):
-        response = {'prompt': '', 'passed': False, 'observations': ['未提供参考图'],
-                    'uncertainties': [], 'checks': ['身份参考缺失'], 'issues': ['请提供真人身份参考']}
-        with tempfile.TemporaryDirectory() as temp:
-            folder = Path(temp)
-            def fake_run(command, **kwargs):
-                Path(command[command.index('--output-last-message') + 1]).write_text(
-                    json.dumps(response, ensure_ascii=False), encoding='utf8')
-                return subprocess.CompletedProcess(command, 0, '', '')
-            with patch.object(m.codex_bridge, '_run_prompt_cli', side_effect=fake_run):
-                review = m.codex_bridge.run('codex', folder, 'draft',
-                                           {'reference_paths': [], 'kind': '大头照'}, '', '任务')
-            self.assertFalse(review['passed'])
-            self.assertEqual(review['issues'], response['issues'])
-            response['passed'] = True
-            with patch.object(m.codex_bridge, '_run_prompt_cli', side_effect=fake_run):
-                with self.assertRaisesRegex(ValueError, '格式不完整'):
-                    m.codex_bridge.run('codex', folder, 'draft',
-                                       {'reference_paths': [], 'kind': '大头照'}, '', '任务')
-
     def test_recover_imagegen_imports_verified_existing_output_without_resubmitting(self):
         job = self.lib.create_job({'source_id': self.asset['id'], 'subject': '衣服', 'kind': '服装'})
         request = self.lib.step_request(job, 0)
@@ -299,8 +259,8 @@ class LibraryTests(unittest.TestCase):
             generate.assert_not_called()
         self.assertEqual(self.lib.get(job['id'], 'jobs')['steps'][0]['status'], 'awaiting_review')
         restored = self.lib.get(job['id'], 'jobs')['steps'][0]
-        self.assertEqual(restored['visual_self_check']['status'], 'unknown')
-        self.assertIn('未验证', restored['message'])
+        self.assertEqual(restored['status'], 'awaiting_review')
+        self.assertIn('等待用户验收', restored['message'])
         # A reference path cannot be passed off as a fresh generated result.
         request['reference_paths'] = [str(output)]
         with patch.dict(m.os.environ, {'CODEX_HOME': str(output_dir.parent)}):
@@ -534,25 +494,12 @@ class LibraryTests(unittest.TestCase):
 
     def test_delete_job_cannot_interrupt_generation_or_review(self):
         job = self.lib.create_job({'source_id': self.asset['id'], 'subject': '进行中', 'kind': '大头照'})
-        for status, audit in [('generating', 'passed'), ('submitted', 'passed'), ('waiting', 'reviewing')]:
+        for status, audit in [('generating', 'passed'), ('submitted', 'passed')]:
             job['steps'][0].update(status=status, audit={'status': audit})
             self.lib.save(job, 'jobs')
             with self.assertRaisesRegex(ValueError, '正在处理'):
                 self.lib.delete_job(job['id'])
             self.assertEqual(len(self.lib.items('jobs')), 1)
-
-    def test_skill_rejects_language_and_incomplete_review_even_if_model_passes(self):
-        data = {'prompt': '4K高细节，唯美大片', 'passed': True, 'checks': [], 'issues': []}
-        self.assertFalse(m.asset_skill.validate_review(data)['passed'])
-        self.assertTrue(any('PROMPT-LANG' in issue for issue in data['issues']))
-        clean = {'prompt': '正面柔光，皮肤毛孔可见。', 'passed': True, 'checks': [], 'issues': []}
-        self.assertFalse(m.asset_skill.validate_review(clean)['passed'])
-        job = self.lib.create_job({'source_id': self.asset['id'], 'subject': '测试', 'kind': '大头照'})
-        prompt = '正面柔光，皮肤毛孔可见。'
-        job['steps'][0].update(prompt=prompt, audit={'status': 'passed', 'prompt': prompt})
-        self.lib.save(job, 'jobs')
-        with self.assertRaisesRegex(ValueError, '审查'):
-            self.lib.save_prompt({'id': job['id'], 'index': 0, 'prompt': prompt, 'approve': True})
 
     def test_skill_categories_and_board_import_only(self):
         for kind in ['物品', '产品']:
@@ -630,7 +577,7 @@ class LibraryTests(unittest.TestCase):
         ident = job['steps'][0]['outputs'][0]
         old_prompt = job['steps'][0]['prompt']
         with patch.object(m.threading, 'Thread') as worker:
-            self.lib.reject_result({'id': job['id'], 'index': 0})
+            self.lib.reject_result({'id': job['id'], 'index': 0, 'redo': False})
             step = self.lib.get(job['id'], 'jobs')['steps'][0]
             self.assertEqual(step['status'], 'discarded')
             self.assertEqual(step['outputs'], [])
@@ -641,7 +588,7 @@ class LibraryTests(unittest.TestCase):
         step = self.lib.get(job['id'], 'jobs')['steps'][0]
         self.assertEqual(step['status'], 'waiting')
         self.assertEqual(step['prompt'], old_prompt)
-        self.assertFalse(self.lib.prompt_is_approved(self.lib.get(job['id'], 'jobs'), 0))
+        self.assertEqual(self.lib.prepare(job['id'], 0)['prompt'], old_prompt)
         m.management.manage(self.lib, [ident], 'restore')
         self.assertNotIn('trashed_at', self.lib.get(ident))
         self.assertTrue(output.exists())
@@ -654,22 +601,11 @@ class LibraryTests(unittest.TestCase):
         job = self.lib.attach(job['id'], 0, [str(output)])
         with patch.object(m.management, 'manage', side_effect=ValueError('locked')):
             with self.assertRaisesRegex(ValueError, 'locked'):
-                self.lib.reject_result({'id': job['id'], 'index': 0, 'redo': True})
+                self.lib.reject_result({'id': job['id'], 'index': 0, 'redo': False})
         self.assertEqual(self.lib.get(job['id'], 'jobs'), job)
         self.lib.confirm(job['steps'][0]['outputs'][0])
         with self.assertRaises(ValueError):
             self.lib.reject_result({'id': job['id'], 'index': 0, 'redo': True})
-
-    def test_large_reference_is_bounded_without_changing_original_or_dimensions(self):
-        source = self.root / 'large.png'
-        Image.effect_noise((1500, 1500), 80).convert('RGB').save(source, compress_level=0)
-        before = source.read_bytes()
-        paths = m.codex_bridge.stage_image_references(self.root / 'prepared', [source])
-        self.assertEqual(source.read_bytes(), before)
-        self.assertLessEqual(Path(paths[0]).stat().st_size, 3 * 1024 * 1024)
-        with Image.open(paths[0]) as image:
-            image.load()
-            self.assertEqual(image.size, (1500, 1500))
 
     def test_imagegen_reprepare_does_not_generate_and_retains_failure(self):
         job = self.lib.create_job({'source_id': self.asset['id'], 'subject': '测试', 'kind': '大头照'})
@@ -692,12 +628,7 @@ class LibraryTests(unittest.TestCase):
         with patch.object(m.threading, 'Thread') as worker:
             with self.assertRaisesRegex(ValueError, '确认'):
                 self.lib.submit_imagegen({'id': ident, 'index': 0})
-            with self.assertRaisesRegex(ValueError, '审查'):
-                self.lib.submit_imagegen({'id': ident, 'index': 0, 'authorize': True})
-            job['steps'][0]['prompt'] = '3:4白底正面人脸，头顶到锁骨。'
-            job['steps'][0].update(audit={'status': 'passed', 'skill_execution': {'version': m.asset_skill.profile()['version']}, 'prompt': job['steps'][0]['prompt']},
-                prompt_approval={'prompt': job['steps'][0]['prompt']})
-            self.lib.save(job, 'jobs')
+            save_job_prompt(self.lib, job, '测试，3:4 竖图，头部完整入画。')
             with patch.object(m.codex_bridge, 'executable', return_value='codex.exe'):
                 self.lib.submit_imagegen({'id': ident, 'index': 0, 'authorize': True})
             self.assertEqual(worker.call_count, 1)
@@ -716,77 +647,44 @@ class LibraryTests(unittest.TestCase):
         self.assertEqual(asset['status'], 'unreviewed')
         self.assertTrue(Path(asset['original']).exists())
 
+    def test_tiff_candidate_is_viewed_and_confirmed_as_the_same_delivery_png(self):
+        from urllib.request import urlopen
+        tiff = self.root / 'candidate.tiff'
+        Image.new('RGB', (300, 400), 'purple').save(tiff)
+        item, _ = self.lib.import_file(tiff)
+        original = Path(item['original'])
+        self.assertEqual(original.suffix, '.png')
+        with Image.open(original) as image:
+            self.assertEqual(image.getpixel((0, 0)), (128, 0, 128))
+        server = m.ThreadingHTTPServer(('127.0.0.1', 0), m.Handler)
+        server.library, server.token = self.lib, 'test-token'
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            with urlopen(f'http://127.0.0.1:{server.server_port}/media/{item["id"]}/original') as response:
+                self.assertEqual(response.read(), original.read_bytes())
+        finally:
+            server.shutdown()
+            server.server_close()
+        self.assertEqual(self.lib.confirm(item['id'])['confirmation']['image_sha256'], m.digest(original))
+        self.assertTrue(tiff.is_file())
+        other = self.root / 'other.png'
+        Image.new('RGB', (300, 400), 'red').save(other)
+        changed, _ = self.lib.import_file(other)
+        Image.new('RGB', (300, 400), 'blue').save(changed['original'])
+        with self.assertRaisesRegex(ValueError, '候选图片入库后已变化'):
+            self.lib.confirm(changed['id'])
+
     def test_imagegen_failure_is_unknown_and_never_retried(self):
         job = self.lib.create_job({'source_id': self.asset['id'], 'subject': '测试', 'kind': '服装'})
-        job['steps'][0].update(status='generating', generation_run_id='test')
-        self.lib.save(job, 'jobs')
+        save_job_prompt(self.lib, job, '测试，4:3 横图，三视图完整。')
+        with patch.object(m.threading, 'Thread') as worker, patch.object(m.codex_bridge, 'executable', return_value='stub'):
+            self.lib.submit_imagegen({'id': job['id'], 'index': 0, 'authorize': True})
         with patch.object(m.codex_bridge, 'generate_image', side_effect=ValueError('等待超时')) as run:
-            self.lib._imagegen_worker('codex', job['id'], 0, 'test', self.lib.step_request(job, 0))
+            self.lib._imagegen_worker(*worker.call_args.kwargs['args'])
             self.assertEqual(run.call_count, 1)
         result = self.lib.get(job['id'], 'jobs')['steps'][0]
         self.assertEqual(result['status'], 'unknown')
         self.assertEqual(result['outputs'], [])
-
-    def test_codex_review_approval_is_bound_to_current_prompt(self):
-        job = self.lib.create_job({'source_id': self.asset['id'], 'subject': '衣服', 'kind': '服装'})
-        ident = job['id']
-        with self.assertRaisesRegex(ValueError, '审查'):
-            self.lib.save_prompt({'id': ident, 'index': 0, 'prompt': '未审查提示词', 'approve': True})
-        job['steps'][0]['audit'] = {'status': 'drafting', 'run_id': 'test'}
-        self.lib.save(job, 'jobs')
-        result = {'prompt': '白底无头人台，正侧背三格，同一套蓝色衣服。', 'passed': True,
-                  'observations': ['蓝色衣服'], 'checks': [c['id'] + '：已按参考核对。' for c in m.asset_skill.checks()], 'uncertainties': [], 'issues': []}
-        with patch.object(m.codex_bridge, 'run', return_value=result) as run:
-            self.lib._audit_worker('codex', ident, 0, 'test', 'write', self.lib.step_request(job, 0))
-            self.assertEqual([c.args[2] for c in run.call_args_list], ['draft'])
-        self.assertEqual(self.lib.prepare(ident, 0)['handoff'], '')
-        p = {'id': ident, 'index': 0, 'prompt': result['prompt'], 'approve': True}
-        self.assertTrue(self.lib.save_prompt(p)['handoff'])
-        p.update(prompt='改成红色衣服', approve=False)
-        edited = self.lib.save_prompt(p)
-        self.assertEqual(edited['audit']['status'], 'stale')
-        self.assertEqual(edited['handoff'], '')
-        self.assertFalse(edited['approved'])
-        with self.assertRaisesRegex(ValueError, '审查'):
-            self.lib.save_prompt({**p, 'approve': True})
-
-        # An explicit recheck also invokes the model once, without auto approval.
-        job = self.lib.get(ident, 'jobs')
-        job['steps'][0]['audit'] = {'status': 'reviewing', 'run_id': 'recheck'}
-        self.lib.save(job, 'jobs')
-        with patch.object(m.codex_bridge, 'run', return_value=result) as run:
-            self.lib._audit_worker('codex', ident, 0, 'recheck', 'review', self.lib.step_request(job, 0))
-        self.assertEqual([c.args[2] for c in run.call_args_list], ['review'])
-        saved = self.lib.get(ident, 'jobs')['steps'][0]
-        self.assertEqual(saved['prompt'], '改成红色衣服')
-        self.assertEqual(saved['audit']['prompt'], '改成红色衣服')
-        self.assertIn('蓝色衣服', saved['audit']['suggested_prompt'])
-        self.assertEqual(saved['audit']['status'], 'needs_changes')
-        self.assertFalse(self.lib.prepare(ident, 0)['approved'])
-
-    def test_audit_entry_allows_three_distinct_items_and_rejects_duplicates(self):
-        jobs = [self.lib.create_job({'source_id': self.asset['id'], 'subject': str(i), 'kind': '服装'}) for i in range(4)]
-        with patch.object(m.codex_bridge, 'executable', return_value='codex'), patch.object(m.threading.Thread, 'start'):
-            for job in jobs[:3]:
-                self.lib.audit_prompt({'id': job['id'], 'index': 0, 'mode': 'review'})
-            with self.assertRaisesRegex(ValueError, '重复'):
-                self.lib.audit_prompt({'id': jobs[0]['id'], 'index': 0, 'mode': 'review'})
-            with self.assertRaisesRegex(ValueError, '3 项'):
-                self.lib.audit_prompt({'id': jobs[3]['id'], 'index': 0, 'mode': 'review'})
-
-    def test_codex_error_does_not_approve_or_replace_prompt(self):
-        job = self.lib.create_job({'source_id': self.asset['id'], 'subject': '脸', 'kind': '大头照'})
-        original = job['steps'][0]['prompt']
-        job['steps'][0]['audit'] = {'status': 'reviewing', 'run_id': 'test'}
-        self.lib.save(job, 'jobs')
-        with self.assertRaisesRegex(ValueError, '正在处理'):
-            self.lib.save_prompt({'id': job['id'], 'index': 0, 'prompt': '修改'})
-        with patch.object(m.codex_bridge, 'run', side_effect=ValueError('登录失败')):
-            self.lib._audit_worker('codex', job['id'], 0, 'test', 'review', self.lib.step_request(job, 0))
-        result = self.lib.prepare(job['id'], 0)
-        self.assertEqual(result['audit']['status'], 'error')
-        self.assertEqual(result['prompt'], original)
-        self.assertFalse(result['approved'])
 
     def test_template_outputs_and_edited_prompt_survive_reload(self):
         for kind, expected in [('大头照', '完整拍到头顶'), ('服装', '单行三格')]:
@@ -1118,14 +1016,18 @@ class LibraryTests(unittest.TestCase):
     def test_dreamina_worker_uses_one_image_and_collects_downloaded_candidate(self):
         job = self.lib.create_job({'source_id': self.asset['id'], 'subject': '衣服', 'kind': '服装',
                                    'provider': 'dreamina', 'model': '5.0Pro'})
-        request = self.lib.prepare(job['id'], 0)
+        save_job_prompt(self.lib, job, JACKET_PROMPT)
+        with patch.object(m.threading, 'Thread') as worker, patch.object(m.shutil, 'which', return_value='stub'):
+            self.lib.submit({'id': job['id'], 'index': 0, 'authorize': True})
         with patch.object(m.subprocess, 'run') as run:
             run.return_value = m.subprocess.CompletedProcess([], 0, '{"submit_id":"test-task-123"}', '')
-            self.lib._submit_worker('dreamina.exe', job['id'], 0, request)
+            self.lib._submit_worker(*worker.call_args.kwargs['args'])
+            run.assert_called_once()
             command = run.call_args.args[0]
             self.assertEqual(command[command.index('--generate_num')+1], '1')
             self.assertEqual(command[command.index('--model_version')+1], '5.0Pro')
-            self.assertIn(self.asset['original'], command)
+            attachment = Path(command[command.index('--images') + 1])
+            self.assertEqual(attachment.read_bytes(), self.original_bytes)
         self.assertEqual(self.lib.get(job['id'], 'jobs')['steps'][0]['submit_id'], 'test-task-123')
         def downloaded(command, **kwargs):
             output = Path(command[command.index('--download_dir')+1]) / 'result.png'
@@ -1168,11 +1070,9 @@ class LibraryTests(unittest.TestCase):
         old_id = job['steps'][0]['outputs'][0]
         self.lib.reject_result({'id': job['id'], 'index': 0, 'redo': True})
         job = self.lib.get(job['id'], 'jobs')
-        prompt = '浅灰背景，无头人台展示同一套衣服正面、侧面和背面。'
-        job['steps'][0].update(prompt=prompt,
-            audit={'status': 'passed', 'prompt': prompt, 'skill_execution': {'version': m.asset_skill.profile()['version']}},
-            prompt_approval={'prompt': prompt}, submit_id='old-task', query_blocked=True,
-            query_failures=3, query_retry_after=60)
+        prompt = JACKET_PROMPT
+        job = save_job_prompt(self.lib, job, prompt)
+        job['steps'][0].update(submit_id='old-task', query_blocked=True, query_failures=3, query_retry_after=60)
         self.lib.save(job, 'jobs')
         with patch.object(m.threading, 'Thread') as worker, patch.object(m.shutil, 'which', return_value='dreamina.exe'):
             self.lib.submit({'id': job['id'], 'index': 0, 'authorize': True})
@@ -1183,7 +1083,7 @@ class LibraryTests(unittest.TestCase):
         run_folder = self.lib.root / 'requests' / job['id'] / '0' / 'dreamina' / run_id
         with patch.object(m.subprocess, 'run', return_value=m.subprocess.CompletedProcess([], 0, '{"submit_id":"new-task"}', '')):
             self.lib._submit_worker(*worker.call_args.kwargs['args'])
-        self.assertTrue((run_folder / 'request.json').is_file())
+        self.assertTrue(all(Path(p).is_file() for p in pending['authorization']['request']['reference_paths']))
         self.assertTrue((run_folder / 'submit.log').is_file())
         with patch.object(m.subprocess, 'run', return_value=m.subprocess.CompletedProcess([], 0, '{"status":"running"}', '')) as query:
             self.lib._query_worker(job['id'], 0)
@@ -1194,7 +1094,7 @@ class LibraryTests(unittest.TestCase):
         self.assertEqual(waiting['outputs'], [])
         self.assertFalse(waiting['query_blocked'])
         self.assertTrue(old_path.is_file())
-        self.assertIn('trashed_at', self.lib.get(old_id))
+        self.assertNotIn('trashed_at', self.lib.get(old_id))
         def downloaded(command, **kwargs):
             destination = Path(command[command.index('--download_dir') + 1]) / 'new-task.png'
             Image.new('RGB', (320, 180), 'blue').save(destination)

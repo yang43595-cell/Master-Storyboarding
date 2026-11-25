@@ -518,6 +518,11 @@ def _check_segment_contract(seg: dict[str, Any], production_mode: Any, editing_m
         _issue(errors, "REQUIRED_STATE_UNCOVERED", f"段 {sid} end_state 未被 shot_contract.must_show 覆盖：{', '.join(missing_states)}")
 
 
+_SHARED_TRANSITION_FIELDS = ("type", "out_framing", "in_framing", "direction", "speed", "composition",
+                             "action_state", "prop_state")
+_REQUIRED_TRANSITION_FIELDS = (*_SHARED_TRANSITION_FIELDS, "cut_condition", "arrival_state")
+
+
 def _check_internal_shot_sequence(
     sid: str,
     seg: dict[str, Any],
@@ -598,27 +603,14 @@ def _check_internal_shot_sequence(
                 f"段 {sid} 的 {previous.get('shot_id')} → {contract.get('shot_id')} 必须成对登记段内切出与入画契约",
             )
             continue
-        required = (
-            "type",
-            "out_framing",
-            "in_framing",
-            "direction",
-            "speed",
-            "composition",
-            "action_state",
-            "prop_state",
-            "cut_condition",
-            "arrival_state",
-        )
-        if any(not transition.get(key) for transition in (exit_transition, entry_transition) for key in required):
+        if any(not transition.get(key) for transition in (exit_transition, entry_transition) for key in _REQUIRED_TRANSITION_FIELDS):
             _issue(
                 errors,
                 "INTERNAL_TRANSITION_INCOMPLETE",
                 f"段 {sid} 的 {previous.get('shot_id')} → {contract.get('shot_id')} 缺少构图、方向、速度、动作/道具状态、切出条件或入画状态",
             )
             continue
-        shared = ("type", "out_framing", "in_framing", "direction", "speed", "composition", "action_state", "prop_state")
-        mismatched = [key for key in shared if exit_transition.get(key) != entry_transition.get(key)]
+        mismatched = [key for key in _SHARED_TRANSITION_FIELDS if exit_transition.get(key) != entry_transition.get(key)]
         if mismatched:
             _issue(
                 errors,
@@ -720,22 +712,10 @@ def _check_same_scene_boundaries(
             continue  # _check_segment_contract 已报 SOURCE_CONTRACT_LOST
         exit_transition = left_contracts[-1].get("exit_transition")
         entry_transition = right_contracts[0].get("entry_transition")
-        required = (
-            "type",
-            "out_framing",
-            "in_framing",
-            "direction",
-            "speed",
-            "composition",
-            "action_state",
-            "prop_state",
-            "cut_condition",
-            "arrival_state",
-        )
         if not isinstance(exit_transition, dict) or not isinstance(entry_transition, dict) or any(
             not transition.get(key)
             for transition in (exit_transition, entry_transition)
-            for key in required
+            for key in _REQUIRED_TRANSITION_FIELDS
         ):
             _issue(
                 errors,
@@ -743,8 +723,7 @@ def _check_same_scene_boundaries(
                 f"同场景拆段 {left_id}/{right_id} 的 exit/entry 必须成对写方向、速度、构图、动作状态、道具状态与切入条件",
             )
             continue
-        shared = ("type", "out_framing", "in_framing", "direction", "speed", "composition", "action_state", "prop_state")
-        mismatches = [key for key in shared if exit_transition.get(key) != entry_transition.get(key)]
+        mismatches = [key for key in _SHARED_TRANSITION_FIELDS if exit_transition.get(key) != entry_transition.get(key)]
         if mismatches:
             _issue(
                 errors,

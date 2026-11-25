@@ -117,11 +117,16 @@ def _compare_readback(project, bundle):
         from canvas_readback import compare
 
     frozen, observed, report = (bundle[name] for name in _READBACK_FILES)
-    return (report.get('ok') is True and report.get('native_refresh_binding') == 'selected_fields_match'
-            and bool(frozen.get('revision')) and report.get('revision') == frozen['revision']
-            and report.get('frozen_sha256') == sha256_json(frozen)
-            and report.get('observed_sha256') == sha256_json(observed)
-            and compare(frozen, observed, project, formal_delivery=True)['ok'])
+    if (report.get('ok') is not True or report.get('native_refresh_binding') != 'selected_fields_match'
+            or not frozen.get('revision') or report.get('revision') != frozen['revision']
+            or report.get('frozen_sha256') != observed.get('frozen_sha256')):
+        return False
+    try:
+        current = compare(frozen, observed, project, formal_delivery=True)
+    except OverflowError:
+        return False
+    return (current['ok'] and report.get('frozen_sha256') == current['frozen_sha256']
+            and report.get('observed_sha256') == current['observed_sha256'])
 
 
 def _matches_bundle(frozen, binding):
@@ -158,9 +163,10 @@ def publish_draft_readback(project, plan, result):
         _check_node_binding(receipt, binding, by_segment[segment])
     for name in _READBACK_FILES:
         write_json(_project_path(project, directory / f'{name}.json'), result[name])
+    plan_sha256 = sha256_json(plan)
     for segment, binding in bindings.items():
         records[sha256_json(binding)] = {'binding': binding, 'node_id': by_segment[segment],
-                                         'phase': 'readback_complete', 'plan_sha256': sha256_json(plan),
+                                         'phase': 'readback_complete', 'plan_sha256': plan_sha256,
                                          'readback_path': directory.as_posix()}
     write_json(_project_path(project, DELIVERY_RECEIPT), receipt)
     return directory.as_posix()

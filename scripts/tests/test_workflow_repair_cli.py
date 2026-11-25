@@ -499,13 +499,76 @@ def test_write_baseline_rejects_missing_graph_readback(tmp_path, side, fields):
     assert 'collected edges and source_nodes' in result.stdout
 
 
-def test_write_baseline_accepts_explicit_empty_graph_readback():
+@pytest.mark.parametrize('mutation, changed', [
+    ('none', []), ('add', ['new-draft']), ('remove', ['anchor']),
+    ('field', ['empty-draft']), ('array-order', ['empty-draft']),
+    ('boolean', ['empty-draft']), ('duplicate', None),
+])
+def test_write_baseline_compares_whole_nodes_with_exact_types(mutation, changed):
     baseline = dict(target_url='https://fixture.invalid/canvas', phase='after_refresh', drafts=[dict(
-        node_id='empty-draft', prompt='Synthetic text.', parameters=dict(duration=4),
+        node_id='empty-draft', prompt='Synthetic text.', parameters=dict(duration=4, enabled=True),
         ordered_media=[], native_mentions=[], edges=[], source_nodes=[])])
+    anchor = copy.deepcopy(baseline['drafts'][0])
+    anchor['node_id'] = 'anchor'
+    baseline['drafts'].append(anchor)
+    if mutation == 'array-order':
+        baseline['drafts'][0]['edges'] = [{'slot': 1}, {'slot': 2}]
     current = copy.deepcopy(baseline)
     current['phase'] = 'before_write'
-    assert compare_baseline(baseline, current)['ok']
+    row = current['drafts'][0]
+    if mutation == 'add':
+        current['drafts'].append(dict(row, node_id='new-draft'))
+    elif mutation == 'remove':
+        current['drafts'].pop()
+    elif mutation == 'field':
+        row['prompt'] += ' Edited.'
+    elif mutation == 'array-order':
+        row['edges'].reverse()
+    elif mutation == 'boolean':
+        row['parameters']['enabled'] = 1
+    elif mutation == 'duplicate':
+        current['drafts'].append(copy.deepcopy(row))
+    if changed is None:
+        with pytest.raises(ValueError, match='duplicate exact draft node_id'):
+            compare_baseline(baseline, current)
+    else:
+        assert compare_baseline(baseline, current) == {
+            'ok': not changed, 'changed_node_ids': changed,
+            'baseline_sha256': digest(baseline), 'current_sha256': digest(current),
+            'scope': 'collected whole nodes before write',
+        }
+
+
+@pytest.mark.parametrize('mutation, error_field', [
+    ('reorder', None), ('duplicate-edge', 'edges'), ('source-port', 'source_nodes'),
+    ('extra-field', 'edges'), ('boolean-slot', 'edges'),
+])
+def test_canvas_input_graph_compares_complete_elements_as_multisets(mutation, error_field):
+    row = dict(node_id='draft', ordered_media=[], reference_checks=[], edges=[], source_nodes=[],
+               parameters={'duration': 4}, shot_durations=[4])
+    for slot in (1, 2):
+        node, checksum = f'source-{slot}', f'checksum-{slot}'
+        row['ordered_media'].append(dict(node_id=node, reference_port='image'))
+        row['reference_checks'].append(dict(sha256=checksum, canvas_binding=dict(
+            mode='edge', purpose='reference', prompt_reference=True, source_port='image', target_port='in')))
+        row['edges'].append(dict(source_node_id=node, source_port='image', target_node_id='draft',
+                                 target_port='in', slot=slot))
+        row['source_nodes'].append(dict(node_id=node, port='image', sha256=checksum))
+    row['edges'].reverse()
+    row['source_nodes'].reverse()
+    if mutation == 'duplicate-edge':
+        row['edges'].append(copy.deepcopy(row['edges'][0]))
+    elif mutation == 'source-port':
+        row['source_nodes'][0]['port'] = 'different'
+    elif mutation == 'extra-field':
+        row['edges'][0]['extra'] = 'different'
+    elif mutation == 'boolean-slot':
+        row['edges'][-1]['slot'] = True
+    if error_field:
+        with pytest.raises(ValueError, match=f'canvas {error_field}:'):
+            validate_canvas_inputs(row)
+    else:
+        validate_canvas_inputs(row)
 
 
 def usage_log(root, *, missing=False, partial=False):
