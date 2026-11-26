@@ -11,7 +11,7 @@ from .artifacts import (artifact_is_adopted, cache_file_digests, digest, exact_n
                         project_path, validate_current_dependencies)
 from .asset_batch_receipt import (DIRECT_RECEIPTS, DIRECT_REQUESTS, summarize_asset_batch_receipt,
                                   validate_asset_batch_targets, validate_asset_review_targets)
-from .asset_refs import _output_decisions, asset_index, load_asset_list
+from .asset_refs import _output_decisions, _returned_candidates, asset_index, candidate_was_returned, load_asset_list
 from .candidate_test import require_production_manifest
 from . import character_boards
 from .character_assets import final_output_problems, scoped_output_requirements
@@ -177,6 +177,7 @@ def require_handoff_visual_inputs(project, storyboard, director, shot_ids, *, ro
 def _pending_asset_batches(project, narrative, relevant_assets, confirmed, *, active_request=None):
     """Read image work bound to the current story, including direct work after a restart."""
     output = {}
+    returns = _returned_candidates(project)
 
     def collect(receipt, targets, binding, kinds):
         relevant = [target for target in validate_asset_batch_targets(targets)
@@ -194,11 +195,14 @@ def _pending_asset_batches(project, narrative, relevant_assets, confirmed, *, ac
         rows = document.get('items', []) if isinstance(document, dict) else []
         for item in result['items']:
             target = item['target']
-            record = output.setdefault(target, {'statuses': set(), 'receipts': set(), 'versions': set()})
             status = item['status']
             if status == 'ready_for_review':
                 source = next(r for r in rows if r.get('target') == target and r.get('candidate_id') == item['candidate_id']
                               and str(r.get('sha256')).lower() == item['sha256'])
+                if candidate_was_returned(project, source, returns):
+                    continue
+            record = output.setdefault(target, {'statuses': set(), 'receipts': set(), 'versions': set()})
+            if status == 'ready_for_review':
                 if not isinstance(source.get('purpose'), str) or not source['purpose'].strip():
                     status = 'pending'
                 else:
@@ -515,7 +519,6 @@ def _resolve(project, manifest, state, kickoff, *, actions=None, shot_scope=None
         return [*steps, video_problem] if video_problem else steps
     upstream_blockers = stage_blockers['upstream']
     review_blockers = stage_blockers['visual']
-    video_bindings = stage_blockers['video']
     visual_blocked_shots = [shot for shot in shots
                             if shot in review_blockers or shot in upstream_blockers or shot in asset_blockers]
     if include_visual and visual_blocked_shots:
@@ -563,13 +566,15 @@ def _resolve(project, manifest, state, kickoff, *, actions=None, shot_scope=None
             steps.append(_step('video', 'waiting', frozen or '等待所需资产确认、视觉复核或有效视频流程授权',
                                shot_ids=[shot for shot in remaining if shot in blocked or not authorization or frozen],
                                blockers=blocked))
-        if video_bindings:
-            steps.append(_step('video', 'waiting', '沿现有视频稿修订入口补齐本镜已确认的参考图及对应空间用途',
-                               artifact_ids=[video_entry['artifact_id']], shot_ids=list(video_bindings),
-                               blockers=video_bindings))
+        existing_blockers = {shot: asset_blockers.get(shot, []) + visual_blockers.get(shot, [])
+                             for shot in shots if shot in video_shots and (shot in asset_blockers or shot in visual_blockers)}
+        if existing_blockers:
+            steps.append(_step('video', 'waiting', '现有视频稿的素材或视觉依据需重新核对',
+                               artifact_ids=[video_entry['artifact_id']], shot_ids=list(existing_blockers),
+                               blockers=existing_blockers))
     if not video_entry or (actions is not None and 'canvas' not in actions):
         return steps
-    if not remaining and not video_bindings:
+    if not remaining and not (asset_blockers or visual_blockers):
         steps.append(_step('video', 'complete', '已采用视频提示词覆盖本轮导演镜号',
                            artifact_ids=[video_entry['artifact_id']]))
     canvas = (kickoff or {}).get('canvas')
@@ -596,7 +601,8 @@ def _resolve(project, manifest, state, kickoff, *, actions=None, shot_scope=None
         steps.append(_step('canvas', 'waiting', frozen or '缺已登记画布、本段视觉复核或有效资产确认',
                            segment_ids=blocked_segments))
     if delivered:
-        steps.append(_step('delivery', 'complete' if not remaining and not pending else 'waiting',
+        current = not (remaining or pending or asset_blockers or visual_blockers)
+        steps.append(_step('delivery', 'complete' if current else 'waiting',
                            '正式草稿字段回读完成，用户审查交接前核同批排版回执'
                            if not remaining and not pending else '部分正式草稿已完成字段回读',
                            segment_ids=sorted(delivered)))

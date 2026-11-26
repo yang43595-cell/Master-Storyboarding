@@ -1,15 +1,29 @@
 """Commit staged originals and catalog changes to the Vault asset folder."""
+from hashlib import sha256
+import errno
+import os
+import tempfile
 import json
 import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
+if __package__:
+    from .core.asset_batch_receipt import require_candidate_revision
+    from .core.artifacts import cache_file_digests
+else:
+    from core.asset_batch_receipt import require_candidate_revision
+    from core.artifacts import cache_file_digests
+
+
 PREFIX = {'人物单图': 'PERSON', '大头照': 'HEAD', '服装三视图': 'WARD', '人物1x4': 'CHAR', '角色外观': 'BODY', '宠物': 'PET', '场景': 'SCENE',
           '物品': 'PROP', '产品': 'PROD', '风格': 'STYLE', '视频参考': 'VREF', '其他': 'OTHER'}
 
 
 def same_file(first, second):
+    if first.samefile(second):
+        return True
     if first.stat().st_size != second.stat().st_size:
         return False
     with first.open('rb') as left, second.open('rb') as right:
@@ -17,6 +31,12 @@ def same_file(first, second):
             if block != right.read(1024 * 1024):
                 return False
         return not right.read(1)
+
+
+def catalog_revision(row, asset):
+    revision = row.get('library_version')
+    require_candidate_revision(asset.get('candidate_revision'), revision)
+    return revision
 
 
 def run(library, management, *, asset_ids=None):
@@ -70,14 +90,15 @@ def run(library, management, *, asset_ids=None):
                 target = management.inside(root, root / row['destination'])
                 if not source.is_file():
                     raise ValueError('图片原文件丢失：' + asset['name'])
-                if target.exists() and not same_file(target, source):
-                    raise ValueError('知识库已有不同图片，拒绝覆盖：' + str(target))
-                target.parent.mkdir(parents=True, exist_ok=True)
-                if not target.exists():
+                asset['candidate_revision'] = catalog_revision(row, asset)
+                if target.exists():
+                    if not same_file(target, source):
+                        raise ValueError('知识库已有不同图片，拒绝覆盖：' + str(target))
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(source, target)
-                if not same_file(target, source):
-                    raise ValueError('知识库复制校验失败')
-                asset['candidate_revision'] = row.get('library_version')
+                    if not same_file(target, source):
+                        raise ValueError('知识库复制校验失败')
                 row.update(name=asset['name'], category=asset['category'], role=asset['role'],
                            original_source=asset['source'],
                            state='已确认' if asset['status'] == 'confirmed' else '待核对',
@@ -131,3 +152,96 @@ def retry(library, management):
     if result['status'] == 'blocked':
         raise ValueError(result['message'])
     return result
+
+
+class _ExportImages:
+    """Reuse verified digests within the locked export, without retaining image bytes."""
+
+    def __init__(self):
+        self._digest = cache_file_digests(self._read_digest, check_for_changes=True)
+        self._copies = {}
+
+    @staticmethod
+    def _version(stat):
+        return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns
+
+    @classmethod
+    def _read_digest(cls, path):
+        checksum = sha256()
+        with path.open('rb') as stream:
+            version = cls._version(os.fstat(stream.fileno()))
+            while block := stream.read(1024 * 1024):
+                checksum.update(block)
+            if version != cls._version(path.stat()):
+                raise ValueError('导出期间图片文件已变化，请重新核对：' + str(path))
+        return checksum.hexdigest()
+
+    def digest(self, path):
+        return self._digest(Path(path).resolve())
+
+    @staticmethod
+    def _remove_own_copy(target, identity):
+        if identity is None:
+            return
+        try:
+            current = target.lstat()
+            if (current.st_dev, current.st_ino) == identity:
+                target.unlink()
+        except FileNotFoundError:
+            pass
+
+    @classmethod
+    def _install(cls, staged, target):
+        """Install only a complete staged image and preserve an existing target."""
+        try:
+            os.link(staged, target)
+        except OSError as exc:
+            if exc.errno not in {errno.EPERM, errno.EACCES, errno.ENOTSUP, errno.EOPNOTSUPP,
+                                 errno.EXDEV, errno.ENOSYS}:
+                raise
+            # Some network filesystems cannot link. Keep the destination exclusive
+            # and remove only our own incomplete file on a failed write.
+            identity = None
+            try:
+                with target.open('xb') as output:
+                    stat = os.fstat(output.fileno())
+                    identity = stat.st_dev, stat.st_ino
+                    with staged.open('rb') as stream:
+                        shutil.copyfileobj(stream, output)
+                shutil.copystat(staged, target)
+            except (OSError, KeyboardInterrupt):
+                cls._remove_own_copy(target, identity)
+                raise
+            return identity
+        stat = staged.stat()
+        return stat.st_dev, stat.st_ino
+
+    def copy(self, source, target, *, expected=None):
+        """Place the reviewed bytes, even when one original feeds multiple outputs."""
+        checksum = self.digest(source)
+        if expected is not None and checksum != expected:
+            raise ValueError('导出期间选图字节已变化，请重新核对：' + str(source))
+        if target.exists():
+            return False, self.digest(target) == checksum
+        copy_key = (source.resolve(), checksum)
+        origin = self._copies.get(copy_key, source)
+        identity = None
+        try:
+            with tempfile.TemporaryDirectory(prefix='.asset-copy-', dir=target.parent) as folder:
+                staged = Path(folder) / target.name
+                shutil.copy2(origin, staged)
+                if self.digest(staged) != checksum or self.digest(source) != checksum:
+                    raise ValueError('复制期间图片文件已变化，请重新核对：' + str(source))
+                identity = self._install(staged, target)
+        except FileExistsError:
+            return False, self.digest(target) == checksum
+        try:
+            matches = self.digest(target) == checksum
+        except (OSError, ValueError, KeyboardInterrupt):
+            self._remove_own_copy(target, identity)
+            raise
+        if matches:
+            self._copies[copy_key] = target
+        else:
+            self._remove_own_copy(target, identity)
+        return True, matches

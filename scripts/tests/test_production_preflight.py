@@ -231,65 +231,25 @@ class ProductionPreflightTests(unittest.TestCase):
         self.assertNotIn("REVISION_EVIDENCE_STALE", report.error_codes)
         self.assertNotIn("REVISION_EVIDENCE_ARTIFACT_MISSING", report.error_codes)
 
-    def test_revision_evidence_must_reference_registered_current_artifact(self) -> None:
-        evidence_path = PROJECT / "00_项目管理" / "missing_artifact_evidence.json"
-        evidence_path.write_text(
-            json.dumps(
-                {
-                    "schema_version": "1.0",
-                    "evidence_id": "REV-EVID-MISSING",
-                    "artifact_ref": "artifact://ART-NOT-REGISTERED",
-                    "base_revision": "R01",
-                    "status": "ready",
-                    "segment_id": "V01",
-                    "observed": "动作方向相反",
-                    "expected": "动作向右",
-                    "preserve": [],
-                    "allowed_changes": ["动作方向"],
-                    "forbidden_changes": [],
-                    "acceptance_criteria": ["动作方向正确"],
-                },
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
-        )
-        report = validate_production_plan(
-            make_plan(revision_evidence_refs=["00_项目管理/missing_artifact_evidence.json"]),
-            PROJECT,
-        )
-        self.assertIn("REVISION_EVIDENCE_ARTIFACT_MISSING", report.error_codes)
+    def assert_evidence_error(self, code, **overrides):
+        evidence = {
+            "schema_version": "1.0", "evidence_id": "REV-EVID-TEST", "artifact_ref": "artifact://ART-VIDEO-V01",
+            "base_revision": "R01", "status": "ready", "segment_id": "V01", "observed": "错误",
+            "expected": "动作向右", "preserve": [], "allowed_changes": ["动作方向"],
+            "forbidden_changes": [], "acceptance_criteria": ["通过"], **overrides,
+        }
+        ref = "00_项目管理/revision_case.json"
+        (PROJECT / ref).write_text(json.dumps(evidence), encoding="utf-8")
+        report = validate_production_plan(make_plan(revision_evidence_refs=[ref]), PROJECT)
+        self.assertIn(code, report.error_codes)
 
-    def test_malformed_manifest_fails_closed_for_revision_evidence(self) -> None:
-        management = PROJECT / "00_项目管理"
-        (management / "artifact_manifest.json").write_text(
-            json.dumps({"schema_version": "1.0", "job_id": "TEST", "artifacts": None}),
-            encoding="utf-8",
-        )
-        evidence_path = management / "bad_manifest_evidence.json"
-        evidence_path.write_text(
-            json.dumps(
-                {
-                    "schema_version": "1.0",
-                    "evidence_id": "REV-EVID-BAD-MANIFEST",
-                    "artifact_ref": "artifact://ART-VIDEO-V01",
-                    "base_revision": "R01",
-                    "status": "ready",
-                    "segment_id": "V01",
-                    "observed": "错误",
-                    "expected": "正确",
-                    "preserve": [],
-                    "allowed_changes": ["动作"],
-                    "forbidden_changes": [],
-                    "acceptance_criteria": ["通过"],
-                }
-            ),
-            encoding="utf-8",
-        )
-        report = validate_production_plan(
-            make_plan(revision_evidence_refs=["00_项目管理/bad_manifest_evidence.json"]),
-            PROJECT,
-        )
-        self.assertIn("REVISION_EVIDENCE_ARTIFACT_MISSING", report.error_codes)
+    def test_revision_evidence_must_reference_registered_current_artifact(self):
+        self.assert_evidence_error("REVISION_EVIDENCE_ARTIFACT_MISSING", artifact_ref="artifact://ART-NOT-REGISTERED")
+
+    def test_malformed_manifest_fails_closed_for_revision_evidence(self):
+        path = PROJECT / "00_项目管理/artifact_manifest.json"
+        path.write_text(json.dumps({"schema_version": "1.0", "job_id": "TEST", "artifacts": None}), encoding="utf-8")
+        self.assert_evidence_error("REVISION_EVIDENCE_ARTIFACT_MISSING")
 
     def test_intent_and_evidence_refs_cannot_escape_project_root(self) -> None:
         with tempfile.TemporaryDirectory(prefix="msb-external-contract-") as external:
@@ -316,55 +276,13 @@ class ProductionPreflightTests(unittest.TestCase):
             )
         self.assertIn("INTENT_CONTRACT_REF_MISSING", report.error_codes)
 
-    def test_stale_revision_evidence_is_rejected(self) -> None:
-        evidence_path = PROJECT / "00_项目管理" / "stale_revision_evidence.json"
-        evidence_path.write_text(
-            json.dumps(
-                {
-                    "schema_version": "1.0", "evidence_id": "REV-EVID-STALE",
-                    "artifact_ref": "artifact://video.v01", "base_revision": "R00",
-                    "status": "ready", "segment_id": "V01", "observed": "错误",
-                    "expected": "正确", "preserve": [], "allowed_changes": ["动作"],
-                    "forbidden_changes": [], "acceptance_criteria": ["通过"],
-                },
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
-        )
-        report = validate_production_plan(
-            make_plan(revision_evidence_refs=["00_项目管理/stale_revision_evidence.json"]),
-            PROJECT,
-        )
-        self.assertIn("REVISION_EVIDENCE_STALE", report.error_codes)
+    def test_stale_revision_evidence_is_rejected(self):
+        self.assert_evidence_error("REVISION_EVIDENCE_STALE", artifact_ref="artifact://video.v01", base_revision="R00")
 
-    def test_malformed_revision_evidence_is_rejected_by_runtime_schema(self) -> None:
-        evidence_path = PROJECT / "00_项目管理" / "malformed_revision_evidence.json"
-        evidence_path.write_text(
-            json.dumps(
-                {
-                    "schema_version": "1.0",
-                    "evidence_id": "bad",
-                    "artifact_ref": "",
-                    "base_revision": "R01",
-                    "status": "ready",
-                    "segment_id": 123,
-                    "observed": [],
-                    "expected": {},
-                    "preserve": "not-array",
-                    "allowed_changes": "not-array",
-                    "forbidden_changes": 42,
-                    "acceptance_criteria": "not-array",
-                    "unknown": True,
-                },
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
-        )
-        report = validate_production_plan(
-            make_plan(revision_evidence_refs=["00_项目管理/malformed_revision_evidence.json"]),
-            PROJECT,
-        )
-        self.assertIn("REVISION_EVIDENCE_INVALID", report.error_codes)
+    def test_malformed_revision_evidence_is_rejected_by_runtime_schema(self):
+        self.assert_evidence_error("REVISION_EVIDENCE_INVALID", evidence_id="bad", artifact_ref="", segment_id=123,
+                                   observed=[], expected={}, preserve="not-array", allowed_changes="not-array",
+                                   forbidden_changes=42, acceptance_criteria="not-array", unknown=True)
 
     def test_baseline_plan_is_clean(self) -> None:
         report = validate_production_plan(make_plan(), PROJECT)

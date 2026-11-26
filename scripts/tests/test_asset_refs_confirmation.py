@@ -602,3 +602,29 @@ class AssetReferenceConfirmationTests(unittest.TestCase):
         self.assertIn('冻结', problems[0])
         revision_control.cancel_change(self.root, change_id='IMAGE-REWORK', reason='fixture cancelled')
         self.assertTrue(asset_refs.require_images(self.root, ['AST-CUP'])[0])
+
+    def test_returned_workbench_selection_cannot_be_reexported(self):
+        from scripts import chat_asset_review as review
+        from scripts.core import artifacts
+
+        service = self.lib.projects
+        assets = asset_refs.confirmed_images(self.root)
+        withdrawn = assets['AST-CUP']['outputs'][0]
+        sibling = assets['AST-ROOM']['outputs'][0]
+        target = f"AST-CUP@{withdrawn['output_id']}"
+        valid = f"AST-ROOM@{sibling['output_id']}"
+        narrative = self.project['source'].copy()
+        narrative['checksum'] = artifacts.digest(Path(narrative['path']))
+        shown = review.store_shown(self.root, narrative, [{
+            'target': target, 'candidate_id': withdrawn['source_candidate_id'], 'sha256': withdrawn['sha256'],
+            'candidate_revision': withdrawn.get('source_candidate_revision'), 'path': withdrawn['source_candidate'],
+            'purpose': withdrawn['purpose'],
+        }])['shown']
+        message = dict(scope='all_shown', shown=[shown], at='2026-11-26T12:30:00Z', quote='退回第一张杯子图',
+                       review_ref='synthetic:return-cup')
+        review.return_for_revision(self.root, [shown], message, narrative)
+        second = service.export({'project_id': self.project['id'], 'confirm': True})
+        self.assertNotEqual(second['artifact_id'], self.export['artifact_id'])
+        with self.assertRaisesRegex(ValueError, 'AST-CUP'):
+            asset_refs.resolve_final_images(self.root, [target])
+        self.assertEqual(asset_refs.resolve_final_images(self.root, [valid])[valid]['sha256'], sibling['sha256'])

@@ -216,6 +216,7 @@ class Library:
         root = index_path.parent.resolve()
         redundant = []
         with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
             cached = {row[0]: json.loads(row[1]) for row in db.execute('SELECT id,data FROM assets')}
             for row in index.get('assets', []):
                 ident = row['library_asset_id']
@@ -234,11 +235,12 @@ class Library:
                 record['original'] = str(target)
                 record['backup'] = {'status': 'saved', 'path': str(target)} if target.is_file() else {
                     'status': 'pending', 'message': '原图缺失，请恢复原文件：' + str(target)}
+                visual_asset_backup.catalog_revision(row, record)
                 # Pending local edits may be newer than the Vault catalog metadata.
                 if cached.get(ident, {}).get('backup', {}).get('status') == 'pending':
                     record = cached[ident]
                     record['original'] = str(target)
-                record['candidate_revision'] = row.get('library_version')
+                record['candidate_revision'] = visual_asset_backup.catalog_revision(row, cached.get(ident) or record)
                 if ident in cached:
                     db.execute('UPDATE assets SET data=? WHERE id=?', (json.dumps(record, ensure_ascii=False), ident))
                 else:
@@ -293,7 +295,7 @@ class Library:
                         if item.get('folder_id') in folders and not item.get('trashed_at'):
                             item['folder_order'] = order.index(item['folder_id'])
                             item['backup'] = {'status': 'pending'}
-                            db.execute('UPDATE assets SET data=? WHERE id=?', (json.dumps(item, ensure_ascii=False), item['id']))
+                            self._update_asset(db, item)
                 self.backup_wakeup.set()
                 return {'count': len(order)}
         ids = payload.get('ids')
@@ -333,7 +335,7 @@ class Library:
                         else:
                             item['folder_order'] = 1 + max((a.get('folder_order', -1) for a in self.items() if a.get('folder_id')), default=-1)
                     item['backup'] = {'status': 'pending'}
-                    db.execute('UPDATE assets SET data=? WHERE id=?', (json.dumps(item, ensure_ascii=False), item['id']))
+                    self._update_asset(db, item)
             self.backup_wakeup.set()
             return {'folder_id': folder_id, 'count': len(changed)}
 
@@ -428,7 +430,7 @@ class Library:
                 for item in items:
                     item['product_category_id'] = category_id
                     item['backup'] = {'status': 'pending'}
-                    db.execute('UPDATE assets SET data=? WHERE id=?', (json.dumps(item, ensure_ascii=False), item['id']))
+                    self._update_asset(db, item)
             self.backup_wakeup.set()
             return {'count': len(items)}
 
@@ -443,6 +445,19 @@ class Library:
             self.save(job, 'jobs')
             return {'message': '已从生成列表删除记录，资产库中的图片未删除'}
 
+    @staticmethod
+    def _update_asset(db, item):
+        data = json.dumps(item, ensure_ascii=False)
+        revision = item.get('candidate_revision')
+        updated = db.execute("""UPDATE assets SET data=? WHERE id=? AND
+            (json_extract(data,'$.candidate_revision') IS NULL OR json_extract(data,'$.candidate_revision') IS ?)""",
+            (data, item['id'], revision))
+        if not updated.rowcount:
+            old = db.execute("SELECT data FROM assets WHERE id=?", (item['id'],)).fetchone()
+            if old:
+                visual_asset_backup.catalog_revision({'library_version': revision}, json.loads(old[0]))
+                db.execute('UPDATE assets SET data=? WHERE id=?', (data, item['id']))
+
     def save(self, item, table='assets'):
         assert table in {'assets', 'jobs'}
         if table == 'assets':
@@ -452,10 +467,8 @@ class Library:
                 db.execute('INSERT INTO jobs VALUES (?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',
                            (item['id'], json.dumps(item, ensure_ascii=False)))
             else:
-                db.execute('UPDATE assets SET data=? WHERE id=?', (json.dumps(item, ensure_ascii=False), item['id']))
-        if table == 'assets' and item.get('record_scope') == 'project_reference':
-            dump(Path(item['original']).parent / '参考记录.json', item)
-        elif table == 'assets' and item.get('record_scope') == 'upload_reference':
+                self._update_asset(db, item)
+        if table == 'assets' and item.get('record_scope') in {'project_reference', 'upload_reference'}:
             dump(Path(item['original']).parent / '参考记录.json', item)
 
     def store_project_reference(self, item, project):
@@ -592,6 +605,7 @@ class Library:
                         media_type='video' if video else 'image')
             if not video and not (reference_project or upload_reference):
                 item['image_sha256'] = digest(destination)
+                item['candidate_revision'] = 'v001'
             if video:
                 item['duration'] = duration
             item = current_category(item)
@@ -712,7 +726,7 @@ class Library:
                 for item, view in zip(items, views):
                     item.update(scene_id=scene_id, group=name, scene_view=view['view'])
                     item['backup'] = {'status': 'pending'}
-                    db.execute('UPDATE assets SET data=? WHERE id=?', (json.dumps(item, ensure_ascii=False), item['id']))
+                    self._update_asset(db, item)
             self.backup_wakeup.set()
             return {'scene_id': scene_id, 'count': len(items)}
 
@@ -998,13 +1012,13 @@ class Library:
         with self.lock:
             job = self.operation_job(p['id'], p.get('project_id', _UNSCOPED_PROJECT))
             index = int(p['index'])
+            grant = self._check_project_generation(job, index, p.get('batch_id'))
             step = job['steps'][index]
             request = self.step_request(job, index)
             if job['provider'] != provider or p.get('authorize') is not True:
                 raise ValueError('需要在界面确认此次生成工具、模型、参考图和额度消耗')
             if step['status'] != 'waiting':
                 raise ValueError('本视图已提交或已有产物；不会重复扣费。返工请新建一组。')
-            grant = self._check_project_generation(job, index, p.get('batch_id'))
             imagegen = provider == 'imagegen'
             exe = codex_bridge.executable() if imagegen else shutil.which('dreamina')
             if not exe:

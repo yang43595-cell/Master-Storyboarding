@@ -38,6 +38,7 @@ ASSET_LIST = "04_资产/当前资产清单.json"
 IMPACT_DIR = "04_资产/变更影响"
 ASSET_TABLE = "04_资产/当前资产需求表.md"
 MASTER_DIR = "04_资产/母版"
+CHAT_REVIEW = Path("00_项目管理/资产交审")
 OUTPUT_DECISIONS = "00_项目管理/资产输出适用决定.json"
 PROP_BUILD_VIEW = "正面、左侧、背面、俯视四视图"
 PROP_REUSE_VIEW = "原图视角"
@@ -59,15 +60,12 @@ def _read(path: Path):
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
-def _confirmation_file(root: Path, ref: str) -> tuple[Path | None, str]:
-    """Resolve a manifest confirmation reference without treating its text as a guess."""
-    path_text, marker, fragment = ref.partition("#")
-    path = project_path(root, path_text)
-    return (path if path.is_file() else None), (fragment if marker else "")
-
-
-def _image_path(root: Path, value: str) -> Path:
-    return project_path(root, value)
+def confirmation_reference(root: Path, ref: str) -> tuple[Path, str]:
+    """Resolve a receipt identity without altering the fragment."""
+    path, _, fragment = ref.partition("#")
+    if not path:
+        raise ValueError("确认回执缺少文件路径")
+    return project_path(root, path), fragment
 
 
 def _output_decisions(root: Path) -> tuple[dict[tuple[str, str], dict], list[dict]]:
@@ -127,20 +125,114 @@ def _output_decisions(root: Path) -> tuple[dict[tuple[str, str], dict], list[dic
     return decisions, issues
 
 
-def without_rejected_outputs(root, package):
+def matches_returned_candidate(root, returned, confirmed):
+    """The caller scopes the output. Old receipts still bind candidate ID and image bytes."""
+    candidate = returned.get("candidate_id") or returned.get("asset_id")
+    checksum = returned.get("image_sha256") or returned.get("sha256")
+    if not candidate or candidate != confirmed.get("source_candidate_id"):
+        return False
+    if not checksum or checksum != confirmed.get("sha256"):
+        return False
+    revision = confirmed.get("source_candidate_revision")
+    if revision and returned.get("candidate_revision") and revision != returned["candidate_revision"]:
+        return False
+    source = returned.get("source_path") or returned.get("path")
+    original = confirmed.get("source_candidate")
+    return not (source and original) or project_path(root, source) == project_path(root, original)
+
+
+def return_target(row):
+    if target := row.get("target"):
+        asset, _, output = target.partition("@")
+        return asset, output
+    return row.get("ast_id"), row.get("output_id")
+
+
+def confirmation_targets(asset_id, output):
+    targets = [(asset_id, output["output_id"])]
+    source = output.get("source_output_id")
+    if source and source != output["output_id"]:
+        targets.append((asset_id, source))
+    return targets
+
+
+def _returned_candidates(root):
+    returns = {}
+    for area in ("用户退回", "Web对话消息"):
+        for path in (root / CHAT_REVIEW / area).glob("*.json"):
+            record = _read(project_path(root, path))
+            if area == "Web对话消息" and record.get("outcome") != "returned":
+                continue
+            rows = record.get("items", record.get("outputs", []))
+            pointers = record.get("revoked_confirmations", [])
+            references = {confirmation_reference(root, ref) for ref in pointers}
+            scoped = record.get("revoked_outputs")
+            for row in rows:
+                target = return_target(row)
+                if scoped is not None:
+                    bindings = scoped.get("@".join(target), [])
+                    refs = {confirmation_reference(root, ref) for ref in bindings}
+                    allow_unbound = not refs
+                    allow_legacy = False
+                else:
+                    refs = references
+                    allow_unbound = not refs
+                    # Some old mixed batches wrote pointers only for structured outputs.
+                    allow_legacy = len(pointers) < len(rows)
+                returns.setdefault(target, []).append((row, refs, allow_unbound, allow_legacy))
+    return returns
+
+
+def candidate_was_returned(root, row, returns):
+    candidate = {"source_candidate_id": row.get("candidate_id") or row.get("asset_id"),
+                 "source_candidate_revision": row.get("candidate_revision"),
+                 "source_candidate": row.get("source_candidate") or row.get("source_path") or row.get("path"),
+                 "sha256": row.get("image_sha256") or row.get("sha256")}
+    return any(matches_returned_candidate(root, former, candidate)
+               for former, _, _, _ in returns.get(return_target(row), ()))
+
+
+def _was_returned(root, asset_id, output, returns):
+    if not returns:
+        return False
+    ref = confirmation_reference(root, output["confirmation_ref"])
+    legacy = output["output_id"] == "legacy-main" and output.get("source_output_id") is not None
+    return any((ref in refs or allow_unbound or (legacy and allow_legacy))
+               and (matches_returned_candidate(root, row, output) if output.get("source_candidate_id")
+                    else (row.get("image_sha256") or row.get("sha256")) == output["sha256"])
+               for target in confirmation_targets(asset_id, output)
+               for row, refs, allow_unbound, allow_legacy in returns.get(target, ()))
+
+
+def without_rejected_outputs(root, package, *, file_digest=None, returns=None):
     decisions, issues = _output_decisions(root)
     if issues:
         raise ValueError(issues[0]["message"])
+    returns = _returned_candidates(root) if returns is None else returns
+    cache = {}
     assets = []
     for asset in package["assets"]:
+        asset_id = asset["asset_id"]
         outputs = asset.get("confirmed_outputs", [])
-        kept = [item for item in outputs if not (item.get("agent_review_ref") or item.get("derived_confirmation_ref"))
-                and decisions.get((asset["asset_id"], item["output_id"]), {}).get("status") != "rejected"]
+        kept = []
+        for item, legacy in _asset_output_rows(root, asset):
+            if item.get("agent_review_ref") or item.get("derived_confirmation_ref"):
+                continue
+            confirmed = _confirmed_output(root, asset_id, item, confirmation_cache=cache, legacy=legacy,
+                                          returns=returns, file_digest=file_digest)
+            if confirmed is None:
+                continue
+            if decisions.get((asset_id, item["output_id"]), {}).get("status") != "rejected":
+                kept.append(item)
+        if "confirmed_outputs" not in asset:
+            if kept:
+                assets.append(asset)
+            continue
         if kept == outputs:
             assets.append(asset)
         elif kept:
             paths = {item["path"] for item in kept}
-            removed = {item["path"] for item in outputs} - paths
+            removed = {item["path"] for item in outputs if isinstance(item, dict) and "path" in item} - paths
             assets.append({**asset, "confirmed_outputs": kept,
                            "confirmed_asset": asset["confirmed_asset"] if (asset.get("confirmed_asset") or {}).get("path") in paths else
                             {key: value for key, value in kept[0].items()
@@ -217,12 +309,13 @@ def _confirmation_evidence(path: Path, cache: dict) -> tuple[dict | None, dict]:
         asset_id, output_id, fragment = item.get("ast_id"), item.get("output_id"), confirmation.get("id")
         if not isinstance(asset_id, str) or not isinstance(fragment, str):
             continue
-        keys = [(asset_id, fragment)]
+        # Legacy single-output manifests point at the whole receipt item. Preserve
+        # its original workbench output and library binding as well as the approval.
+        legacy_key = (asset_id, fragment)
+        indexed[legacy_key] = None if legacy_key in indexed else item
         if output_id is None or isinstance(output_id, str):
-            keys.append((asset_id, output_id, fragment))
-        for key in keys:
-            # Duplicate exact matches are ambiguous even if the records agree.
-            indexed[key] = None if key in indexed else confirmation
+            key = (asset_id, output_id, fragment)
+            indexed[key] = None if key in indexed else item
     cache[path] = receipt, indexed
     return receipt, indexed
 
@@ -244,8 +337,53 @@ def legacy_prop_reuse_label(output: dict, receipt: dict) -> bool:
     return ratio != "16:9" and re.fullmatch(r"[1-9]\d*:[1-9]\d*", ratio) is not None and check.get("expected_ratio") == ratio
 
 
+def _receipt_candidate(root, receipt, item):
+    """Read the reviewed candidate from its exact item, independently of the export serial."""
+    ids = [value for value in (receipt.get("candidate_id"), receipt.get("asset_id"),
+                               item.get("library_asset_id")) if value]
+    candidate = next(iter(ids), None)
+    if any(value != candidate for value in ids):
+        return {}
+    revisions = {value for value in (receipt.get("candidate_revision"), item.get("candidate_revision")) if value}
+    if len(revisions) > 1 or any(not isinstance(value, str) for value in revisions):
+        return {}
+    revision = next(iter(revisions), None)
+    paths = [value for value in (receipt.get("source_candidate"), receipt.get("source_path"),
+                                item.get("source_candidate"), item.get("source_path")) if value]
+    if any(not isinstance(value, str) for value in paths) or len({project_path(root, value) for value in paths}) > 1:
+        return {}
+    path = next(iter(paths), None)
+    for key in ("chat_confirmation", "website_review"):
+        review = receipt.get(key)
+        if not isinstance(review, dict):
+            continue
+        reviewed = review.get("candidate_id") or (review.get("asset_id") if key == "chat_confirmation" else None)
+        if reviewed and candidate and reviewed != candidate:
+            return {}
+        if review.get("image_sha256") and review["image_sha256"] != receipt.get("image_sha256"):
+            return {}
+        if reviewed and review.get("image_sha256"):
+            candidate = reviewed
+        if revision and review.get("candidate_revision") and review["candidate_revision"] != revision:
+            return {}
+        revision = revision or review.get("candidate_revision")
+        if reviewed == candidate and review.get("image_sha256") == receipt.get("image_sha256"):
+            source = review.get("source_path")
+            if path and source and project_path(root, path) != project_path(root, source):
+                return {}
+            path = path or source
+    if not isinstance(candidate, str) or not candidate.strip():
+        return {}
+    identity = {"source_candidate_id": candidate}
+    if revision:
+        identity["source_candidate_revision"] = revision
+    if path:
+        identity["source_candidate"] = path
+    return identity
+
+
 def _confirmed_output(root: Path, asset_id: str, output: dict, *, confirmation_cache=None,
-                      display_label=False, file_digest=None) -> dict | None:
+                      display_label=False, file_digest=None, legacy=False, returns=None) -> dict | None:
     """Return one explicitly confirmed output, or None when its evidence is incomplete.
 
     Candidates are deliberately absent here.  A confirmation record can be concise, but
@@ -258,30 +396,43 @@ def _confirmed_output(root: Path, asset_id: str, output: dict, *, confirmation_c
     reference = output.get("user_confirmation_ref")
     if not isinstance(path_text, str) or not isinstance(reference, str) or not reference:
         return None
-    image_path = _image_path(root, path_text)
+    image_path = project_path(root, path_text)
     if not image_path.is_file():
         return None
-    receipt_path, fragment = _confirmation_file(root, reference)
-    if receipt_path is None:
+    try:
+        receipt_path, fragment = confirmation_reference(root, reference)
+    except ValueError:
         return None
     receipt, indexed = _confirmation_evidence(receipt_path, {} if confirmation_cache is None else confirmation_cache)
     if receipt is None or receipt.get("method") == "两份已确认源图等比拼版，执行者实看":
         return None
     items = receipt.get("items")
+    identity = {}
     if isinstance(items, list) and items:
         output_id = output.get("output_id")
         if output_id is not None and not isinstance(output_id, str):
             return None
-        image_receipt = indexed.get((asset_id, output_id, fragment))
-        if image_receipt is None:
+        item = indexed.get((asset_id, fragment) if legacy else (asset_id, output_id, fragment))
+        if item is None:
             return None
+        image_receipt = item["confirmation"]
+        try:
+            identity = _receipt_candidate(root, image_receipt, item)
+        except (TypeError, ValueError):
+            return None
+        if not identity:
+            return None
+        if legacy and isinstance(item.get("output_id"), str):
+            identity["source_output_id"] = item["output_id"]
+    elif legacy:
+        return None
     elif isinstance(receipt.get("images"), list):
         # Legacy scene selection receipts identify every selected image directly.
         # The fragment is the image/output ID in that record, so require all
         # three facts rather than accepting any fragment in the same folder.
         matched = [item for item in receipt["images"] if isinstance(item, dict)
             and item.get("output_id") == output.get("output_id") == fragment
-            and _image_path(root, str(item.get("path", ""))) == image_path
+            and project_path(root, str(item.get("path", ""))) == image_path
         ]
         if len(matched) != 1:
             return None
@@ -290,7 +441,7 @@ def _confirmed_output(root: Path, asset_id: str, output: dict, *, confirmation_c
         # A replacement record has no per-output receipt ID.  It only proves the
         # one file it names, never every asset in the manifest.
         frame = receipt.get("frame_path") if isinstance(receipt, dict) else None
-        if not isinstance(frame, str) or _image_path(root, frame) != image_path:
+        if not isinstance(frame, str) or project_path(root, frame) != image_path:
             return None
         image_receipt = receipt
     else:
@@ -317,7 +468,7 @@ def _confirmed_output(root: Path, asset_id: str, output: dict, *, confirmation_c
                 return None
     except (ValueError, OSError, KeyError, TypeError):
         return None
-    return {
+    confirmed = {
         "output_id": output.get("output_id"),
         "purpose": output.get("purpose"),
         **({"output_kind": output["output_kind"]} if "output_kind" in output else {}),
@@ -327,13 +478,12 @@ def _confirmed_output(root: Path, asset_id: str, output: dict, *, confirmation_c
         "candidate_id": output.get("candidate_id"),
         "path": str(image_path),
         "confirmation_ref": reference,
-        **({"source_candidate": image_receipt["source_candidate"], "source_candidate_id": image_receipt.get("candidate_id"),
-            "source_candidate_revision": image_receipt.get("candidate_revision")}
-           if image_receipt.get("source_candidate") else {}),
+        **identity,
         **({"sha256": image_receipt["image_sha256"]} if "image_sha256" in image_receipt else {}),
         "confirmed_at": str(receipt.get("at") or ""),
         "path_exists": True,
     }
+    return None if returns and _was_returned(root, asset_id, confirmed, returns) else confirmed
 
 
 def registered_output_snapshot(root: Path, entry: dict, *, file_digest=None, include_discarded=False) -> dict[tuple[str, str], dict] | None:
@@ -351,18 +501,22 @@ def registered_output_snapshot(root: Path, entry: dict, *, file_digest=None, inc
         decisions, issues = _output_decisions(root)
         if issues:
             return None
+        assets = json.loads(raw.decode('utf-8-sig'))['assets']
+        returns = {} if include_discarded else _returned_candidates(root)
         confirmation_cache = {}
-        for asset in json.loads(raw.decode('utf-8-sig'))['assets']:
+        for asset in assets:
             if asset.get('status') != 'confirmed':
                 return None
-            for output in asset['confirmed_outputs']:
+            for output, legacy in _asset_output_rows(root, asset):
                 key = (asset['asset_id'], output['output_id'])
                 selected = _confirmed_output(root, key[0], output, confirmation_cache=confirmation_cache,
-                                             file_digest=file_digest)
+                                             file_digest=file_digest, legacy=legacy)
+                if selected and _was_returned(root, key[0], selected, returns):
+                    continue
                 decision = decisions.get(key, {})
                 if not selected and decision.get("status") == "rejected" and decision.get("discarded_path"):
-                    former = _image_path(root, output["path"])
-                    if former == _image_path(root, decision["discarded_path"]) and not former.exists():
+                    former = project_path(root, output["path"])
+                    if former == project_path(root, decision["discarded_path"]) and not former.exists():
                         if not include_discarded:
                             continue
                         # Impact calculations still need the exact former identity.
@@ -377,45 +531,24 @@ def registered_output_snapshot(root: Path, entry: dict, *, file_digest=None, inc
         return None
 
 
-def _legacy_confirmed_output(root: Path, asset: dict, confirmation_cache: dict, *, file_digest=None) -> dict | None:
-    """Project a trustworthy pre-2.0 confirmed_asset into one main output."""
-    asset_id = asset.get("asset_id")
+def _asset_output_rows(root, asset):
+    if "confirmed_outputs" in asset:
+        for output in asset["confirmed_outputs"]:
+            if isinstance(output, dict) and isinstance(output.get("output_id"), str) and output["output_id"]:
+                yield output, False
+        return
     selected = asset.get("confirmed_asset")
-    if not isinstance(asset_id, str) or not isinstance(selected, dict):
-        return None
-    path_text = selected.get("path")
-    candidate_id = selected.get("candidate_id")
-    reference = selected.get("user_confirmation_ref")
-    if not all(isinstance(value, str) and value for value in (path_text, candidate_id, reference)):
-        return None
-    image_path = _image_path(root, path_text)
-    if not image_path.is_file():
-        return None
-    candidate_matches = any(
-        isinstance(candidate, dict)
-        and candidate.get("candidate_id") == candidate_id
-        and isinstance(candidate.get("path"), str)
-        and _image_path(root, candidate["path"]) == image_path
-        for candidate in asset.get("candidates", [])
-    )
-    receipt_path, fragment = _confirmation_file(root, reference)
-    if not candidate_matches or receipt_path is None or not fragment:
-        return None
-    receipt, indexed = _confirmation_evidence(receipt_path, confirmation_cache)
-    image_receipt = indexed.get((asset_id, fragment))
-    if (not image_receipt or not image_receipt.get("image_sha256") or image_receipt.get("agent_review")
-            or image_receipt.get("derivation") or receipt.get("method") == "两份已确认源图等比拼版，执行者实看"):
-        return None
-    try:
-        verify_image_confirmation(image_path, image_receipt, file_digest=file_digest)
-    except (ValueError, OSError):
-        return None
-    return {
-        "output_id": "legacy-main", "purpose": "legacy-main", "view": "legacy-main", "state": "",
-        "candidate_id": candidate_id, "path": str(image_path), "confirmation_ref": reference,
-        **({"sha256": image_receipt["image_sha256"]} if "image_sha256" in image_receipt else {}),
-        "confirmed_at": str(receipt.get("at") or ""), "path_exists": True,
-    }
+    if not isinstance(selected, dict):
+        return
+    path, candidate_id = selected.get("path"), selected.get("candidate_id")
+    if not all(isinstance(value, str) and value for value in (path, candidate_id)):
+        return
+    image = project_path(root, path)
+    if any(isinstance(candidate, dict) and candidate.get("candidate_id") == candidate_id
+           and isinstance(candidate.get("path"), str) and project_path(root, candidate["path"]) == image
+           for candidate in asset.get("candidates", [])):
+        yield {**selected, "output_id": "legacy-main", "purpose": "legacy-main",
+               "view": "legacy-main", "state": ""}, True
 
 
 def confirmed_images(root: Path, *, requests: Iterable[str] | None = None, file_digest=None) -> dict[str, dict]:
@@ -483,7 +616,8 @@ def confirmed_images(root: Path, *, requests: Iterable[str] | None = None, file_
                     or not entry.get("confirmation_ref") or not entry.get("checksum")):
                 continue
             receipt = project_path(root, entry["confirmation_ref"])
-            mixed_history = receipt.is_relative_to(root.resolve()) and receipt.is_file() and digest(receipt) == historical_receipt
+            mixed_history = (receipt.is_relative_to(root.resolve()) and receipt.is_file()
+                             and digest(receipt) == historical_receipt and digest(manifest_path) == entry["checksum"])
             if mixed_history:
                 break
         for asset in manifest.get("assets", []):
@@ -495,39 +629,28 @@ def confirmed_images(root: Path, *, requests: Iterable[str] | None = None, file_
             # Resolve the current row before verifying its files. A missing or
             # invalid output in that row must not revive an older master.
             current_assets.pop(asset_id, None)
-            if (current_manifest or (mixed_history and "confirmed_outputs" in asset)) and asset.get("status") == "confirmed":
+            if (current_manifest or mixed_history) and asset.get("status") == "confirmed":
                 current_assets[asset_id] = (manifest_path, asset)
 
-    confirmation_cache = {}
+    returns, confirmation_cache = _returned_candidates(root), {}
     result: dict[str, dict] = {}
     for asset_id, (manifest_path, asset) in current_assets.items():
         requested_outputs = scope.get(asset_id)
         outputs = []
-        if "confirmed_outputs" not in asset:
-            if requested_outputs is None or "legacy-main" in requested_outputs:
-                legacy = _legacy_confirmed_output(root, asset, confirmation_cache, file_digest=file_digest)
-                if legacy is not None:
-                    outputs.append(legacy)
-        else:
-            for output in asset["confirmed_outputs"]:
-                if not isinstance(output, dict):
-                    continue
-                output_id = output.get("output_id")
-                if requested_outputs is not None and (
-                    not isinstance(output_id, str) or output_id not in requested_outputs
-                ):
-                    continue
-                confirmed = _confirmed_output(root, asset_id, output, confirmation_cache=confirmation_cache,
-                                              display_label=True, file_digest=file_digest)
-                if confirmed is not None:
-                    outputs.append(confirmed)
+        for output, legacy in _asset_output_rows(root, asset):
+            if requested_outputs is not None and output.get("output_id") not in requested_outputs:
+                continue
+            confirmed = _confirmed_output(root, asset_id, output, confirmation_cache=confirmation_cache,
+                                          display_label=True, file_digest=file_digest, legacy=legacy, returns=returns)
+            if confirmed is not None:
+                outputs.append(confirmed)
         if not outputs:
             continue
         confirmed_at = max((str(item.get("confirmed_at") or "") for item in outputs), default="")
         selected = asset.get("confirmed_asset")
         selected_path = selected.get("path") if isinstance(selected, dict) else None
         if isinstance(selected_path, str):
-            selected_path = str(_image_path(root, selected_path))
+            selected_path = str(project_path(root, selected_path))
         if selected_path and not any(item["path"] == selected_path for item in outputs):
             selected_path = None
         result[asset_id] = {
@@ -1000,6 +1123,17 @@ def resolve_final_images(root: Path, requests: list[str], *, file_digest=None) -
         if not output.get("sha256"):
             raise ValueError(f"{request}：确认记录没有绑定图片字节")
     return selected
+
+
+def require_bound_asset_materials(root, references, *, file_digest=None):
+    bindings = [(f"{row['asset_id']}@{row['output_id']}", row) for row in references
+                if isinstance(row, dict) and row.get('asset_id') and row.get('output_id')]
+    outputs = resolve_final_images(root, list(dict.fromkeys(key for key, _ in bindings)), file_digest=file_digest)
+    for key, row in bindings:
+        output = outputs[key]
+        if (not row.get('path') or project_path(root, row['path']) != Path(output['path'])
+                or row.get('sha256') != output['sha256']):
+            raise ValueError(f'{key}: 视频素材与已确认输出的路径或字节不一致')
 
 
 def require_images(root: Path, asset_ids: list[str]) -> tuple[bool, list[str]]:

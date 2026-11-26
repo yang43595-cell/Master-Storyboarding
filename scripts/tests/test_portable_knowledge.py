@@ -57,7 +57,7 @@ class PortableKnowledgeTests(unittest.TestCase):
             resolve_knowledge_root(self.repo / 'absent', repo_root=self.repo)
         with self.assertRaises(KnowledgeRuntimeError):
             resolve_knowledge_root('', repo_root=self.repo)
-        with patch.object(cli, 'ROOT', self.repo):
+        with patch.object(cli.context, 'ROOT', self.repo):
             self.assertEqual(cli._vault_root(None), self.root)
 
     def test_missing_and_drift_fail_closed(self):
@@ -212,8 +212,8 @@ class PortableKnowledgeTests(unittest.TestCase):
         request.write_text(json.dumps({'use_story_method': True}))
         args = cli.parser().parse_args(['prepare', '--project', str(project), '--skill', 'creative-director',
             '--objective', 'portable regression', '--vault', str(self.root), '--request-json', str(request)])
-        with (patch.object(cli, 'resolve_knowledge_root', lambda explicit=None, **_: resolve_knowledge_root(explicit, repo_root=self.repo)),
-              patch.object(cli, 'resolve_knowledge_bundle', lambda explicit=None, **_: resolve_knowledge_bundle(explicit, repo_root=self.repo))):
+        with (patch.object(cli.context, 'resolve_knowledge_root', lambda explicit=None, **_: resolve_knowledge_root(explicit, repo_root=self.repo)),
+              patch.object(cli.context, 'resolve_knowledge_bundle', lambda explicit=None, **_: resolve_knowledge_bundle(explicit, repo_root=self.repo))):
             cli.prepare(args)
             basis = json.loads(cli._task_basis_path(project).read_text())
             cli._validate_current_inputs(project, basis)
@@ -244,8 +244,8 @@ class PortableKnowledgeTests(unittest.TestCase):
         request.write_text(json.dumps({'creator_mask_face_effect': True}))
         args = cli.parser().parse_args(['prepare', '--project', str(project), '--skill', 'asset-image-assistant',
             '--objective', 'template regression', '--vault', str(self.root), '--request-json', str(request)])
-        with (patch.object(cli, 'resolve_knowledge_root', lambda explicit=None, **_: resolve_knowledge_root(explicit, repo_root=self.repo)),
-              patch.object(cli, 'resolve_knowledge_bundle', lambda explicit=None, **_: resolve_knowledge_bundle(explicit, repo_root=self.repo))):
+        with (patch.object(cli.context, 'resolve_knowledge_root', lambda explicit=None, **_: resolve_knowledge_root(explicit, repo_root=self.repo)),
+              patch.object(cli.context, 'resolve_knowledge_bundle', lambda explicit=None, **_: resolve_knowledge_bundle(explicit, repo_root=self.repo))):
             cli.prepare(args)
             basis = json.loads(cli._task_basis_path(project).read_text())
             frozen = next(item for item in basis['standards']['professional_methods'] if item.get('template_path'))

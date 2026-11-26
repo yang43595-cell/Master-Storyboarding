@@ -148,7 +148,7 @@ def test_prepare_stops_before_writing_on_exhausted_budget(tmp_path):
 
 
 def test_cli_gate_failure_is_nonzero(monkeypatch, tmp_path):
-    monkeypatch.setattr(context, "ensure_prepared", lambda args: {"ok": False, "method_reading_evidence": "required"})
+    monkeypatch.setattr(context.context, "ensure_prepared", lambda args: {"ok": False, "method_reading_evidence": "required"})
     assert context.main(["ensure-prepared", "--project", str(tmp_path), "--skill", "voiceover-to-video-script"]) == 2
 
 def test_usage_docs_keep_routine_waits_and_budget_routes_separate():

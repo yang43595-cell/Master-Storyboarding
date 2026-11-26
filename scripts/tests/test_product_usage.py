@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -57,10 +58,132 @@ class ProductUsageTests(unittest.TestCase):
         self.assertNotIn('asset_id', effect)
         self.assertNotIn('微缩', effect['reference_need'])
 
+    def test_web_cached_matches_restore_only_missing_copies_without_model(self):
+        from visual_asset_projects import Projects
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            vault = root / 'vault'
+            originals = vault / '资产库'
+            originals.mkdir(parents=True)
+            records = {}
+            for ident, suffix in [('stir', '.mp4'), ('spread', '.mp4'), ('box', '.png'), ('label', '.png')]:
+                source = originals / (ident + suffix)
+                source.write_bytes(ident.encode())
+                records[ident] = dict(id=ident, name=ident, original=str(source),
+                    media_type='image' if suffix == '.png' else 'video',
+                    product_reference={**self.inventory[0], 'action_key': ident})
+            lib = SimpleNamespace(root=root, vault=vault, lock=threading.RLock(),
+                                  items=lambda: list(records.values()), get=records.__getitem__)
+            service = Projects(lib, None, SimpleNamespace(executable=lambda: 'model-adapter'))
+            project = dict(id='f' * 16, path=str(root / 'project'), narrative=self.narrative, source={'revision': 'R02'})
+            inventory = usage.project_catalogue(lib, project)
+            sig = usage.signature(self.narrative, inventory)
+            matches = dict(self.matches, references=[{**self.matches['references'][0], 'action_key': key}
+                                                     for key in ('stir', 'spread')])
+            result = usage.persist_matches(service, project, inventory, matches, sig)
+            saved = Path(project['path']) / usage.FILE
+            write_json(saved, result)
+            raw = saved.read_bytes()
+            project['product_reference_check'] = dict(status='done', signature=sig, model=usage.MODEL)
+            service.save(project)
+            copies = [Path(row['project_path']) for row in result['references'] + result['material_references']]
+            self.assertEqual(len(copies), 4)
+            expected = [path.read_bytes() for path in copies]
+            request = dict(action='product-usage', mode='codex-cli', project_id=project['id'])
+
+            def run():
+                return service.action(request, background=False)['product_reference_check']
+
+            with (patch('visual_asset_projects.source_project', return_value=(None, project['source'], self.narrative)),
+                  patch.object(service, 'detail', side_effect=service.get),
+                  patch.object(service.bridge, 'executable') as adapter,
+                  patch.object(usage, 'match') as model,
+                  patch.object(shutil, 'copy2', wraps=shutil.copy2) as copy_file):
+                self.assertEqual(run()['status'], 'done')
+                copy_file.assert_not_called()
+                for missing in (1, 2):
+                    copies[missing].unlink()
+                    self.assertEqual(run()['status'], 'done')
+                    self.assertEqual([p.read_bytes() for p in copies], expected)
+                    self.assertEqual(copy_file.call_count, 1)
+                    copy_file.reset_mock()
+                # Lose the cached material list and just one of two project images.
+                incomplete = {key: value for key, value in result.items() if key != 'material_references'}
+                box = copies[2]
+                original = Path(records['box']['original'])
+                for cached in (incomplete, {**incomplete, 'material_references': []},
+                               {**incomplete, 'material_references': result['material_references'][1:]}):
+                    write_json(saved, cached)
+                    box.unlink()
+                    self.assertEqual(run()['status'], 'done')
+                    self.assertEqual([Path(call.args[0]) for call in copy_file.call_args_list], [original])
+                    self.assertEqual([p.read_bytes() for p in copies], expected)
+                    self.assertEqual(saved.read_bytes(), raw)
+                    copy_file.reset_mock()
+
+                write_json(saved, incomplete)
+                original.unlink()
+                box.unlink()
+                self.assertEqual(run()['status'], 'error')
+                self.assertEqual(service.get(project['id'])['product_reference_check']['status'], 'error')
+                failed = json.loads(saved.read_bytes())
+                self.assertEqual(failed['status'], 'error')
+                self.assertEqual({k: v for k, v in failed.items() if k not in {'status', 'message'}},
+                                 {k: v for k, v in incomplete.items() if k != 'status'})
+                self.assertEqual(usage.load_usage(project['path'], self.narrative)['references'], [])
+                self.assertFalse(box.exists())
+                copy_file.assert_not_called()
+                original.write_bytes(expected[2])
+                box.write_bytes(b'conflicting package')
+                self.assertEqual(run()['status'], 'error')
+                self.assertEqual(service.get(project['id'])['product_reference_check']['status'], 'error')
+                self.assertEqual(original.read_bytes(), expected[2])
+                self.assertEqual(box.read_bytes(), b'conflicting package')
+                self.assertEqual(json.loads(saved.read_bytes())['status'], 'error')
+                copy_file.assert_not_called()
+                box.unlink()
+                self.assertEqual(run()['status'], 'done')
+                self.assertEqual([Path(call.args[0]) for call in copy_file.call_args_list], [original])
+                self.assertEqual(saved.read_bytes(), raw)
+                copy_file.reset_mock()
+
+                copies[0].unlink()
+                source = Path(records['stir']['original'])
+                source.unlink()
+                self.assertEqual(run()['status'], 'error')
+                copy_file.assert_not_called()
+                source.write_bytes(expected[0])
+                self.assertEqual(run()['status'], 'done')
+                self.assertEqual(copies[0].read_bytes(), expected[0])
+                copies[0].write_bytes(b'changed existing copy')
+                self.assertEqual(run()['status'], 'error')
+                self.assertEqual(copies[0].read_bytes(), b'changed existing copy')
+                self.assertEqual(json.loads(saved.read_bytes())['status'], 'error')
+
+                # No use in the matched story and no pinned pack means no required material.
+                empty = usage.persist_matches(service, project, inventory, {'references': [], 'effects': []}, sig)
+                self.assertEqual(empty['material_references'], [])
+                write_json(saved, empty)
+                stored = service.get(project['id'])
+                stored['narrative']['_product_usage'] = empty
+                service.save(stored)
+                empty_raw = saved.read_bytes()
+                copy_file.reset_mock()
+                self.assertEqual(run()['status'], 'done')
+                self.assertEqual(saved.read_bytes(), empty_raw)
+                write_json(saved, {key: value for key, value in empty.items() if key != 'material_references'})
+                self.assertEqual(run()['status'], 'done')
+                self.assertEqual(saved.read_bytes(), empty_raw)
+                copy_file.assert_not_called()
+                adapter.assert_not_called()
+                model.assert_not_called()
+
     def test_story_revision_invalidates_reference_binding(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp);path = root / usage.FILE;path.parent.mkdir()
-            path.write_text(json.dumps({'story_hash': usage.story_hash(self.narrative), 'status': 'matched'}))
+            write_json(path, {'story_hash': usage.story_hash(self.narrative), 'status': 'matched',
+                              'references': [], 'effects': [], 'material_references': []})
             self.assertEqual(usage.load_usage(root, self.narrative)['status'], 'matched')
             changed = copy.deepcopy(self.narrative)
             changed['story_paragraphs'][0]['text'] = '只展示包装'
@@ -78,6 +201,8 @@ class ProductUsageTests(unittest.TestCase):
         self.assertEqual(usage.products(self.narrative, inventory), [])
 
     def test_pinned_pack_scopes_web_matches_and_previews_without_library(self):
+        from test_visual_asset_projects import fixture
+
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             product_id = 'creator-polishing-mask-2'
@@ -97,26 +222,57 @@ class ProductUsageTests(unittest.TestCase):
                                 'usages': ['real_use'] if key else ['display', 'real_use']})
             manifest = pack / 'manifest.json'
             write_json(manifest, {'product_id': product_id, 'product_name': '造物者面膜',
-                                  'revision': 'R01', 'references': entries})
+                                  'aliases': ['蓝色杯子'], 'revision': 'R01', 'references': entries})
             kickoff = {'decision_ref': 'fixture', 'product': {'mode': 'insert', 'product_id': product_id,
                        'reference_pack_revision': 'R01', 'reference_pack_sha256': sha256_file(manifest)},
                        'canvas': {'platform': 'redframe', 'model': 'Seedance 2.5', 'aspect_ratio': '9:16',
                                   'resolution': '720p', 'create_new': True}}
-            request = root / 'project' / '00_项目管理' / 'project_request.json'
-            project = {'path': str(request.parent.parent), 'narrative': self.narrative, 'source': {'revision': 'R02'}}
             with patch.object(product_reference_pack, 'PACK_ROOT', root / 'packs'):
                 self.assertEqual(product_reference_pack.product_catalog()[0]['product_id'], product_id)
                 for scope, ids in [('display', ['BOX']), ('real_use', ['BOX', 'STIR'])]:
+                    library, project, _ = fixture(root / scope, product=True)
+                    service = library.projects
                     kickoff['product']['product_usage'] = scope
-                    write_json(request, {'kickoff': kickoff})
-                    inventory = usage.project_catalogue(None, project)
-                    self.assertEqual([row['asset_id'] for row in inventory], ids)
-                    result = self.matches if scope == 'real_use' else {'references': [], 'effects': []}
-                    saved = usage.persist_matches(None, project, inventory, result, 'fixture')
-                    write_json(Path(project['path']) / usage.FILE, saved)
+                    folder = Path(project['path'])
+                    write_json(folder / '00_项目管理/project_request.json', {'kickoff': kickoff})
+                    project = service.sync(project['id'])
+                    action = dict(action='product-usage', project_id=project['id'])
+                    if scope == 'real_use':
+                        task = service.action({**action, 'mode': 'prepare'})
+                        event = task['inputs']['story'][0]
+                        result = {'references': [{'product_ast_id': 'AST-CUP', 'action_key': 'stir',
+                                                   'paragraph_ids': [event['event_id']], 'evidence': event['summary']}],
+                                  'effects': []}
+                        project = service.action({**action, 'mode': 'apply', 'signature': task['signature'], 'result': result})
+                    self.assertEqual(project['product_reference_check']['status'], 'done')
+                    self.assertEqual([row['asset_id'] for row in usage.project_catalogue(None, project)], ids)
+                    cache = folder / usage.FILE
+                    raw = cache.read_bytes()
+                    saved = json.loads(raw)
+                    write_json(cache, {k: v for k, v in saved.items() if k != 'material_references'})
+                    with (patch.object(service.bridge, 'executable') as adapter,
+                          patch.object(usage, 'match') as model, patch.object(shutil, 'copy2') as copy_file):
+                        def status():
+                            return service.action({**action, 'mode': 'codex-cli'}, background=False)['product_reference_check']['status']
+
+                        self.assertEqual(status(), 'done')
+                        self.assertEqual(cache.read_bytes(), raw)
+                        self.assertEqual([r['asset_id'] for r in saved['material_references']], ['BOX'])
+                        if scope == 'real_use':
+                            image = pack / 'box.png'
+                            content = image.read_bytes()
+                            image.unlink()
+                            self.assertEqual(status(), 'error')
+                            self.assertEqual(usage.load_usage(folder, project['narrative'])['references'], [])
+                            image.write_bytes(content)
+                            self.assertEqual(status(), 'done')
+                            self.assertEqual(cache.read_bytes(), raw)
+                        adapter.assert_not_called()
+                        model.assert_not_called()
+                        copy_file.assert_not_called()
                     self.assertEqual(usage.preview_path(project, ids[-1]),
                                      (pack / ('stir.mp4' if scope == 'real_use' else 'box.png')).resolve())
-                    self.assertFalse((Path(project['path']) / '04_资产' / '项目产品参考').exists())
+                    self.assertFalse((folder / '04_资产' / '项目产品参考').exists())
                     with self.assertRaises(ValueError):
                         usage.preview_path(project, 'MONTAGE')
 

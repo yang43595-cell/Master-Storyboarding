@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import importlib.metadata
 import json
 import math
@@ -11,6 +10,12 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+
+
+if __package__:
+    from .core.io import sha256_file as file_sha256
+else:
+    from core.io import sha256_file as file_sha256
 
 
 class TranscriptionError(ValueError):
@@ -72,14 +77,6 @@ def decode_audio(source: Path, cache: Path, *, ffmpeg: str = 'ffmpeg',
     if not np.isfinite(audio).all():
         raise TranscriptionError('Decoded audio contains non-finite samples')
     return audio
-
-
-def file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open('rb') as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def versions() -> dict:

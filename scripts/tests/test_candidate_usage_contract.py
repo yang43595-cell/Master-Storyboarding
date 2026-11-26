@@ -71,8 +71,9 @@ def test_cli_scope_and_budget_cannot_override_contract(tmp_path,extra):
 
 def test_prepare_and_ensure_refuse_before_method_or_output_work(tmp_path):
     project=setup(tmp_path)
-    for function in (cli.prepare,cli._ensure_prepared):
-        with pytest.raises(cli.StageContextError,match='准确 turn'):function(args(project,skill='creative-director'))
+    for function in (cli.prepare, cli.ensure_prepared):
+        with pytest.raises(cli.StageContextError, match='准确 turn'):
+            function(args(project, skill='creative-director', candidate_test=True))
     assert list(project.glob('**/method_reading_packet.md'))==[]
 
 

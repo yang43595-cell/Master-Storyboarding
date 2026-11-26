@@ -139,7 +139,7 @@ def test_new_local_preparation_ignores_unrelated_revision_in_input_and_handoff(t
         assert not (path.parent == project and path.name.startswith('OTHER'))
         return original_digest(path)
 
-    monkeypatch.setattr(cli, 'digest', only_related)
+    monkeypatch.setattr(cli.context, 'digest', only_related)
     assert cli.ensure_prepared(ensure)['ok']
     assert (startup.parent / 'task_basis.json').read_bytes() == original_basis
 
@@ -191,7 +191,7 @@ def test_old_external_knowledge_basis_requires_reprepare_before_reading_methods(
     def forbidden(*args):
         raise AssertionError("knowledge bytes must not be read from an old external root")
 
-    monkeypatch.setattr(cli, "verify_selected_files", forbidden)
+    monkeypatch.setattr(cli.context, "verify_selected_files", forbidden)
     args = argparse.Namespace(project=str(project), skill="creative-director")
     with pytest.raises(cli.StageContextError, match="仓库内置知识重新 prepare"):
         cli.ensure_prepared(args)
@@ -228,7 +228,7 @@ def test_saved_local_knowledge_paths_cannot_point_outside_repository(tmp_path, m
         assert path != external, "external knowledge file must not be hashed"
         return digest(path)
 
-    monkeypatch.setattr(cli, "_read_json", guarded_read)
-    monkeypatch.setattr(cli, "digest", guarded_digest)
+    monkeypatch.setattr(cli.context, "_read_json", guarded_read)
+    monkeypatch.setattr(cli.context, "digest", guarded_digest)
     with pytest.raises(cli.StageContextError, match="规范路径越出仓库"):
         cli._validate_current_inputs(project, basis)

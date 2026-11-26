@@ -23,6 +23,16 @@ def read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def read_stage_json(path: Path, *, default: Any) -> Any:
+    from .errors import StageContextError
+    if not path.is_file():
+        return default
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise StageContextError(f"无法读取 JSON：{path}: {exc}") from exc
+
+
 def _replace_with_windows_retry(source: Path, destination: Path) -> None:
     """Retry the short sharing violation Windows can raise during concurrent replaces."""
     for attempt in range(5):
@@ -41,17 +51,7 @@ def _atomic_temp_path(path: Path) -> Path:
 
 
 def write_json(path: Path, value: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp = _atomic_temp_path(path)
-    try:
-        temp.write_text(
-            json.dumps(value, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-            newline="\n",
-        )
-        _replace_with_windows_retry(temp, path)
-    finally:
-        temp.unlink(missing_ok=True)
+    write_text(path, json.dumps(value, ensure_ascii=False, indent=2) + "\n")
 
 
 def write_text(path: Path, value: str) -> None:

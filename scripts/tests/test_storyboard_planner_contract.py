@@ -199,7 +199,7 @@ class StoryboardPlannerContractTests(unittest.TestCase):
             shutil.copyfile(ROOT / "PROJECT_RULES.md", root / "PROJECT_RULES.md")
             target = root / "skills/storyboard-planner/references/foundations" / names[1]
             target.unlink()
-            with patch.object(cli, "ROOT", root):
+            with patch.object(cli.context, "ROOT", root):
                 with self.assertRaisesRegex(cli.StageContextError, "明确引用的本地规范缺失"):
                     cli._local_standard_documents(root / "skills/storyboard-planner")
 

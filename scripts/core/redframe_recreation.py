@@ -18,6 +18,7 @@ from .native_references import redframe_reference_labels
 from .product_reference_pack import resolve_product_pack
 from .project_kickoff import load_kickoff
 from .project_state import load_project_state
+from .recreation_assets import matches_product_rendition
 from .recreation_segments import PLAN, PROMPTS, prompt_narrative_issue, segment_reference_keys, segment_steps
 from .redframe_image_ui import _valid_face_certificate
 from .redframe_workspace import NativeTag, _image_output_path, video_generation_records
@@ -26,34 +27,6 @@ from .redframe_workspace import NativeTag, _image_output_path, video_generation_
 _SEEDANCE_MODEL = ['volcengineArkVideo', 'doubao-seedance-2-5-260628']
 _SEEDANCE_REFERENCE_MODE = ['imageReference:30', 'videoReference:10', 'audioReference:10']
 _SEEDANCE_REFERENCE_MODES = [list(mode) for mode in permutations(_SEEDANCE_REFERENCE_MODE)]
-
-
-def matches_product_rendition(root, ref, product_images):
-    """Verify a declared product derivative against the locked image pixels."""
-    from PIL import Image
-
-    resized = 'resized_product_source_sha256' in ref
-    source_key = 'resized_product_source_sha256' if resized else 'lossless_product_source_sha256'
-    original = product_images.get(ref.get(source_key))
-    if not original or (resized and original['role'] != 'state'):
-        return False
-    path = project_path(root, ref['path'])
-    if not path.is_relative_to(root) or not path.is_file():
-        return False
-    with Image.open(original['path']) as source, Image.open(path) as rendition:
-        if (source.info.get('icc_profile') != rendition.info.get('icc_profile')
-                or source.getexif().get(274, 1) != rendition.getexif().get(274, 1)):
-            return False
-        if resized:
-            if (rendition.format != 'PNG' or rendition.width >= source.width
-                    or rendition.width * source.height != rendition.height * source.width):
-                return False
-            expected = source.convert('RGBA').resize(rendition.size, Image.Resampling.LANCZOS)
-        else:
-            if rendition.format != 'WEBP' or rendition.size != source.size:
-                return False
-            expected = source.convert('RGBA')
-        return expected.tobytes() == rendition.convert('RGBA').tobytes()
 
 
 def _checked_path(project, relative, sha256):

@@ -424,23 +424,6 @@ class RedframeWorkspace:
         results = self._read('attachments', {'slots': slots}, slots=slots)
         return [{**record, **result} for record, result in zip(records, results)]
 
-    def digest_video_outputs(self, nodes):
-        """Hash a source video card's actual video output."""
-        records, seen = [], set()
-        for node in nodes:
-            node_id = node.get('id') if isinstance(node, dict) else None
-            if (not isinstance(node_id, str) or not _ID.fullmatch(node_id) or node_id in seen
-                    or node.get('type') != 'remote-videoNode'):
-                raise ValueError('expected unique native video source-card outputs')
-            path = node.get('data', {}).get('outputs', {}).get('video', {}).get('value', {}).get('url')
-            if not _slot_path(path, node_id):
-                raise ValueError(f'source video has no native output: {node_id}')
-            seen.add(node_id)
-            records.append({'node_id': node_id, 'path': path})
-        slots = [{'path': record['path'], 'family': 'video'} for record in records]
-        results = self._read('attachments', {'slots': slots}, slots=slots)
-        return [{**record, **result} for record, result in zip(records, results)]
-
     def digest_slots(self, nodes):
         """Hash persisted attachment files directly, in the canvas's slot order."""
         out = {}

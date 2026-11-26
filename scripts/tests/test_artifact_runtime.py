@@ -188,7 +188,6 @@ def test_explicit_project_relocation_reuses_paths_without_editing_receipts(tmp_p
     monkeypatch.setenv('MSB_PROJECT_PATH_MAP', json.dumps({source: str(tmp_path)}))
     assert artifacts.project_path(tmp_path, raw_photo) == photo
     assert artifacts.project_path(tmp_path, '/' + raw_photo.replace('\\', '/')) == photo
-    assert asset_refs._image_path(tmp_path, raw_photo) == photo
     assert asset_refs._confirmation_file(tmp_path, source + r'\00_项目管理\confirmation.json#existing') == (receipt, 'existing')
     assert receipt.read_bytes() == original
     # The same project name at an unconfigured location never acts as an alias.

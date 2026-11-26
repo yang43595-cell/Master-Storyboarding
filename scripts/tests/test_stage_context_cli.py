@@ -34,8 +34,8 @@ def isolated_stage_knowledge(tmp_path, monkeypatch):
             return path, {}
         return resolve_bundle(value, repo_root=repo_root)
 
-    monkeypatch.setattr(cli, "resolve_knowledge_root", resolve_fixture)
-    monkeypatch.setattr(cli, "resolve_knowledge_bundle", resolve_bundle_fixture)
+    monkeypatch.setattr(cli.context, "resolve_knowledge_root", resolve_fixture)
+    monkeypatch.setattr(cli.context, "resolve_knowledge_bundle", resolve_bundle_fixture)
 
 
 pytestmark = pytest.mark.usefixtures("isolated_stage_knowledge")
@@ -150,7 +150,7 @@ def _synthetic_method_profile(tmp_path, vault, monkeypatch):
     """Bind test-only method bytes to a test-only explicit promotion record."""
     repo = tmp_path / "synthetic-repo"
     copy_source_fixture(cli.ROOT, repo)
-    monkeypatch.setattr(cli, 'ROOT', repo)
+    monkeypatch.setattr(cli.context, 'ROOT', repo)
     _bind_synthetic_method_revision(vault)
 
 
@@ -561,7 +561,7 @@ def test_review_pack_accepts_only_real_project_artifacts(tmp_path: Path, monkeyp
     artifact.write_text("candidate", encoding="utf-8")
     from unittest.mock import Mock
     reading = Mock(wraps=cli._evidence_current)
-    monkeypatch.setattr(cli, "_evidence_current", reading)
+    monkeypatch.setattr(cli.context, "_evidence_current", reading)
     report = cli.review_pack(argparse.Namespace(
         project=str(project), skill="creative-director",
         artifact=[str(artifact)], check=[],
@@ -1092,8 +1092,8 @@ def test_ensure_prepared_can_record_reading_in_same_call(tmp_path: Path, monkeyp
             source.write_bytes(b'new source after reading evidence was saved')
         return written
 
-    monkeypatch.setattr(cli, 'digest', count_source_reads)
-    monkeypatch.setattr(cli, 'write_text_if_changed', write_then_change_source)
+    monkeypatch.setattr(cli.context, 'digest', count_source_reads)
+    monkeypatch.setattr(cli.context, 'write_text_if_changed', write_then_change_source)
     args.mark_read = True
     args.method = methods
     args.candidate_rule = []
@@ -1555,7 +1555,7 @@ def test_explicit_template_dependency_is_frozen_and_missing_is_reported(tmp_path
     template.write_text("first", encoding="utf-8")
     unrelated = skill / "templates/historical.md"
     unrelated.write_text("historical", encoding="utf-8")
-    monkeypatch.setattr(cli, "ROOT", root)
+    monkeypatch.setattr(cli.context, "ROOT", root)
     paths = cli._local_standard_documents(skill)
     assert template.resolve() in paths
     assert unrelated.resolve() not in paths
@@ -1627,7 +1627,7 @@ def test_missing_split_rule_fails_instead_of_silently_dropping(tmp_path, monkeyp
     skill.mkdir(parents=True)
     (root / 'PROJECT_RULES.md').write_text('# Rules')
     (skill / 'SKILL.md').write_text('[合同](../../docs/rules/missing.md)')
-    monkeypatch.setattr(cli, 'ROOT', root)
+    monkeypatch.setattr(cli.context, 'ROOT', root)
     with pytest.raises(cli.StageContextError, match='本地规范缺失'):
         cli._local_standard_documents(skill)
 
@@ -1646,7 +1646,7 @@ def test_long_history_does_not_override_split_rule_selection():
 @pytest.mark.parametrize('change', ['changed', 'missing'])
 def test_split_rule_frozen_and_revalidated_on_resume(tmp_path, monkeypatch, change):
     repo = copy_source_fixture(cli.ROOT, tmp_path / 'repo')
-    monkeypatch.setattr(cli, 'ROOT', repo)
+    monkeypatch.setattr(cli.context, 'ROOT', repo)
     project = _project(tmp_path)
     _prepared(project)
     startup = (project / cli.CONTEXT_DIR / 'stage_startup.md').read_text()
@@ -1769,7 +1769,7 @@ def test_prepare_rejects_invalid_recovery_authority(tmp_path, body, existing):
 @pytest.mark.parametrize('remove_section', [False, True], ids=['modified', 'deleted'])
 def test_resuming_prepared_task_detects_recovery_authority_drift(tmp_path, monkeypatch, remove_section):
     repo = copy_source_fixture(cli.ROOT, tmp_path / 'repo')
-    monkeypatch.setattr(cli, 'ROOT', repo)
+    monkeypatch.setattr(cli.context, 'ROOT', repo)
     project = _project(tmp_path)
     _prepared(project)
     args = cli.parser().parse_args([
@@ -1788,7 +1788,7 @@ def test_resuming_prepared_task_detects_recovery_authority_drift(tmp_path, monke
 @pytest.mark.parametrize('body', [None, '  ', '有效的新正文'], ids=['deleted', 'empty', 'modified'])
 def test_prepare_uses_recovery_snapshot_when_authority_changes_at_lock(tmp_path, monkeypatch, body):
     repo = copy_source_fixture(cli.ROOT, tmp_path / 'repo')
-    monkeypatch.setattr(cli, 'ROOT', repo)
+    monkeypatch.setattr(cli.context, 'ROOT', repo)
     authority = repo / 'skills/_shared/knowledge-access.md'
     original_digest = cli.digest(authority)
     project = _project(tmp_path)
@@ -1803,7 +1803,7 @@ def test_prepare_uses_recovery_snapshot_when_authority_changes_at_lock(tmp_path,
             authority.write_text(replacement, encoding='utf-8')
         return lock(path, **kwargs)
 
-    monkeypatch.setattr(cli, 'file_lock', change_before_lock)
+    monkeypatch.setattr(cli.context, 'file_lock', change_before_lock)
     opened = Path.open
     reads = []
 
@@ -1953,7 +1953,7 @@ def test_storyboard_basis_changed_before_publication(tmp_path, monkeypatch, file
             target.write_bytes(target.read_bytes() + b" " if change == "replace" else b"")
         return result
 
-    monkeypatch.setattr(cli, "validate_text", change_after_validation)
+    monkeypatch.setattr(cli.context, "validate_text", change_after_validation)
     with pytest.raises(cli.StageContextError, match="重新准备"):
         cli.review_pack(args)
     assert {path: path.read_bytes() for path in before} == before

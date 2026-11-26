@@ -66,7 +66,7 @@ def _run_prompt_cli(command, completion_path, **kwargs):
             command, stdin=source, stdout=log, stderr=subprocess.STDOUT, **kwargs) as process:
         while True:
             try:
-                process.wait(timeout=1)
+                process.wait(timeout=min(1 if previous is not None else 4, max(0, deadline - time.monotonic())))
                 return subprocess.CompletedProcess(command, process.returncode,
                     log_path.read_text(encoding='utf-8', errors='replace'), '')
             except subprocess.TimeoutExpired as exc:

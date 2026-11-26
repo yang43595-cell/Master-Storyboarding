@@ -578,13 +578,13 @@ def asset_review_site(tmp_path, kickoff_review_site, monkeypatch):
                 raise cli.AgentReviewError("Synthetic timeout after POST", code="TRANSPORT_ERROR")
             return copy.deepcopy(site.publications[operation])
         if route == "status" and query["stage"] == "assets":
-            if site.on_status:
+            if site.head and site.on_status:
                 site.on_status()
-            head = site.head
+            head = site.head or {"version": None, "headGeneration": 0}
             return {"case": {"id": query["caseId"], "projectId": "fixture", "name": "合成案例",
                              "status": "active", "revision": head["headGeneration"]},
                     "stage": "assets", "sourceScriptVersion": site.status_source or f"{1:064x}",
-                    "head": {"version": head["version"], "generation": head["headGeneration"]},
+                    "head": {"version": head["version"], "generation": head["headGeneration"]} if site.head else None,
                     "expectations": {"expectedHeadVersion": head["version"],
                                      "expectedHeadGeneration": head["headGeneration"], "expectedReviewRevision": 1},
                     "decision": {"validity": {"sourceStale": site.source_stale}}}
@@ -757,6 +757,18 @@ def test_asset_post_receipt_survives_status_failure_and_is_reusable(tmp_path, as
     assert asset_review_site.posts[-1]["references"] == ["asset-1", "asset-2"]
     assert len(asset_review_site.publications) == 3
     assert not json.loads((tmp_path / "final.json").read_text())["review_approval_inferred"]
+
+
+def test_unbound_old_site_operation_cannot_claim_another_same_byte_candidate(tmp_path, asset_review_site):
+    publish_asset_script(tmp_path)
+    cli.run(publish_asset_args(tmp_path, "first.json"))
+    original = json.loads((tmp_path / "first.json").read_text())
+    cli.submission_path(tmp_path, original).unlink()  # workspace predating local operation bindings
+    with pytest.raises(cli.AgentReviewError, match="操作结果"):
+        cli.run(publish_asset_args(tmp_path, "retry.json", output_id="other"))
+    assert json.loads((tmp_path / "retry.json").read_text())["response"] is None
+    result = cli.run(publish_asset_args(tmp_path, "fresh.json", output_id="other", operation=OPERATION[:-1] + "9"))
+    assert result["response"]["assetId"] != original["response"]["assetId"]
 
 
 def test_asset_exact_retry_after_unknown_post_recovers_historical_receipt(tmp_path, asset_review_site):

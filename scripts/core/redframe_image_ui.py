@@ -253,9 +253,6 @@ class RedframeImageUI:
             error.previous_node_ids = sorted(before)
             raise error from exc
 
-    def create_image_node(self, x, y):
-        return self._new_node(x, y)
-
     def resume_image_node(self, receipt, save_receipt, x, y):
         """Resume an unsubmitted candidate on its original canvas, or checkpoint its first creation."""
         self.assert_target()

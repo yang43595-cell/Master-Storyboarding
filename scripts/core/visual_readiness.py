@@ -5,7 +5,8 @@ import json
 from pathlib import Path
 
 from .artifacts import cache_file_digests, load_manifest, project_path
-from .asset_refs import director_location_readiness, require_references, resolve_final_images
+from .asset_refs import (director_location_readiness, require_bound_asset_materials, require_references,
+                         resolve_final_images)
 from .media_types import MEDIA_EXTENSIONS
 from .quality_evidence import reference_shot_ids, source_shot_ids
 from .schema_contracts import require_schema
@@ -206,6 +207,11 @@ def require_visual_readiness(root, storyboard, source, shot_ids, *, rows=None, m
         errors.insert(0, ('visual', unchecked, '缺本版视觉检查结论：' + '、'.join(sorted(unchecked))))
     errors.extend(('upstream', set(scope), message)
                   for scope, message in director_location_readiness(root, storyboard, shots, scoped=True, assets=assets))
+    for shot, references in _segment_references(rows or (), shots):
+        try:
+            require_bound_asset_materials(root, references, file_digest=file_digest)
+        except ValueError as exc:
+            errors.append(('video', {shot}, str(exc)))
     if errors and not collect_blockers:
         raise ValueError('视觉前序未就绪：' + '；'.join(message for _, _, message in errors))
     result = {'source_shot_ids': sorted(shots), 'request_ids': sorted(ids),

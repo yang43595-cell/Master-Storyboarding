@@ -161,7 +161,7 @@ def test_real_source_replica_preserves_bundle_and_collected_contracts(tmp_path, 
     documents = cli._local_standard_documents(original / "skills/storyboard-planner")
     expected = {path.relative_to(original): path.read_bytes() for path in documents}
     replica = source_fixture.copy_source_fixture(original, tmp_path / "repo")
-    monkeypatch.setattr(cli, "ROOT", replica)
+    monkeypatch.setattr(cli.context, "ROOT", replica)
     actual = cli._local_standard_documents(replica / "skills/storyboard-planner")
     assert {path.relative_to(replica): path.read_bytes() for path in actual} == expected
     assert verify_bundle(replica / "knowledge/runtime") == verify_bundle(original / "knowledge/runtime")

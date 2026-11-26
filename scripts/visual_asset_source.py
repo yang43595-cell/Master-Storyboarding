@@ -10,14 +10,12 @@ if __package__:
     from .core.schema_contracts import require_schema
     from .core.story_sources import validate_story_sources
     from .visual_asset_choices import apply_choices
-    from .visual_asset_product_usage import load_usage
 else:
     from core.artifacts import artifact_is_adopted, artifact_is_confirmed, project_path, digest, load_manifest
     from core.project_state import load_project_state
     from core.schema_contracts import require_schema
     from core.story_sources import validate_story_sources
     from visual_asset_choices import apply_choices
-    from visual_asset_product_usage import load_usage
 
 
 REPOSITORY = Path(__file__).resolve().parents[1]
@@ -159,9 +157,6 @@ def source_project(path):
     if table:
         narrative['_asset_table'] = table
     narrative = apply_choices(root, narrative)
-    usage = load_usage(root, narrative)
-    if usage:
-        narrative['_product_usage'] = usage
     effective_contract = {k: v for k, v in narrative.items() if not k.startswith('_')}
     require_schema(effective_contract, 'narrative-package.schema.json', label='项目资产数据')
     validate_asset_requirement_granularity(narrative)
@@ -186,3 +181,39 @@ def prompt_context(narrative, ast_ids):
     else:
         context['locked_facts'] = copy.deepcopy(narrative.get('locked_facts', []))
     return context
+
+
+def reference_evidence(project, requirements, assets=()):
+    """Resolve declared originals and briefs through the same project/repository route."""
+    documents, unavailable, paths, images = [], [], [], []
+    root = Path(project)
+    artifacts = load_manifest(root)['artifacts']
+    state = load_project_state(root)
+    for req in requirements:
+        for raw in req.get('reference_paths', []):
+            try:
+                path = Path(resolve_reference(root, raw, artifacts, state).partition('#')[0])
+            except ValueError as exc:
+                if Path(str(raw).partition('#')[0]).suffix.lower() not in TEXT_REFERENCE_SUFFIXES:
+                    raise
+                unavailable.append(str(exc))
+                continue
+            if path.suffix.lower() in TEXT_REFERENCE_SUFFIXES:
+                paths.append(path)
+            else:
+                images.append(str(path))
+    for asset in assets:
+        parent = Path(asset['source']).parent
+        if not local_reference_document(root, parent):
+            continue
+        for name in ('PRODUCT_BRIEF.md', 'REFERENCE_MANIFEST.md'):
+            path = parent / name
+            if local_reference_document(root, path) and path.is_file():
+                paths.append(path.resolve())
+    for path in dict.fromkeys(paths):
+        if path.stat().st_size > 150000:
+            unavailable.append(str(path) + '（正文过大，需要先在项目中整理直接参考）')
+        else:
+            documents.append({'path': str(path.resolve()), 'content': path.read_text(encoding='utf-8-sig')})
+    return {'reference_documents': documents, 'unavailable_references': unavailable,
+            'reference_images': images}

@@ -575,6 +575,14 @@ def run(args: argparse.Namespace) -> dict:
             saved = json.loads(operation.read_text()) if operation.is_file() else {"binding": binding}
             if saved["binding"] != binding:
                 raise ValueError("同一网站操作已绑定其他候选或修订")
+            if "remote" not in saved and "before_generation" not in saved:
+                before = (receipt.get("preflight") or {}).get("response") or client.status(case_id=case_id, stage="assets")
+                case = before.get("case") or {}
+                generation = (before.get("expectations") or {}).get("expectedHeadGeneration")
+                if ((case.get("projectId"), case.get("id"), before.get("stage")) != (script["response"]["projectId"], case_id, "assets")
+                        or type(generation) is not int or generation < 0):
+                    raise ValueError("网站项目或阶段与本地候选不符")
+                saved["before_generation"] = generation
             write_json(operation, saved)
         receipt_path.parent.mkdir(parents=True, exist_ok=True)
         # Reserve before networking: a successful remote write must have a local
@@ -582,6 +590,14 @@ def run(args: argparse.Namespace) -> dict:
         with receipt_path.open("x", encoding="utf-8", newline="\n") as output:
             try:
                 receipt["response"] = call()
+                if route == "publish-assets":
+                    remote = receipt["response"]
+                    if (remote.get("artifactId", args.artifact_id) != args.artifact_id
+                            or remote["projectId"] != script["response"]["projectId"]
+                            or remote["headGeneration"] <= saved.get("before_generation", 0)
+                            or saved.get("remote", remote) != remote):
+                        raise AgentReviewError("网站操作结果不能绑定本次候选", code="INVALID_LOCAL_BINDING")
+                    write_json(operation, {**saved, "remote": remote})
             except (ValueError, OSError, KeyError, TypeError) as exc:
                 if args.command != "decision" and not isinstance(exc, (AgentReviewError, OSError)):
                     raise
@@ -594,12 +610,6 @@ def run(args: argparse.Namespace) -> dict:
                 raise
             json.dump(receipt, output, ensure_ascii=False, indent=2)
             output.write("\n")
-            if route == "publish-assets":
-                remote = receipt["response"]
-                if (("artifactId" in remote and remote["artifactId"] != args.artifact_id)
-                        or saved.get("remote", remote) != remote):
-                    raise ValueError("网站返回了不同送审候选或操作结果")
-                write_json(operation, {"binding": binding, "remote": remote})
         if "preflight" in receipt and (
                 receipt["response"].get("projectId") != receipt["preflight"]["response"]["case"]["projectId"]):
             raise ValueError("发布回执的网站项目与预读不符，已保留回执供核查")

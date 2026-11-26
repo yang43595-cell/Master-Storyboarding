@@ -163,7 +163,7 @@ def asset_fixture(tmp_path, monkeypatch):
     (manage/'project_state.json').write_text(json.dumps({'current_stage':'asset-image-assistant','current_artifacts':[],
                                                         'user_confirmations':[],'accepted_issues':[]}))
     request=tmp_path/'request.json';request.write_text(json.dumps({'asset_method_scopes':{'object':True}}))
-    monkeypatch.setattr(cli,'ROOT',root)
+    monkeypatch.setattr(cli.context,'ROOT',root)
     common=['--project',str(project),'--skill','asset-image-assistant']
     actor=['--actor-id','fixture-actor','--task-id','fixture-task']
     prepare=cli.parser().parse_args(['prepare',*common,*actor,'--objective','isolated prop check','--request-json',str(request),'--vault',str(vault)])
@@ -238,7 +238,15 @@ def test_real_asset_prepare_ignores_unused_guide_but_detects_required_changes(tm
     assert cli.ensure_prepared(gate)['ok']
     candidate=project/'candidate.md';candidate.write_text('# 道具候选\n隔离夹具，无图像或确认。')
     review=cli.parser().parse_args(['review-pack','--project',str(project),'--skill','asset-image-assistant','--artifact',str(candidate)])
-    scope_path=Path(cli.review_pack(review)['review_scope_path']);identity=json.loads(scope_path.read_text())['task_basis_identity']
+    with pytest.raises(cli.StageContextError, match='请将资产候选交给用户验收'):
+        cli.review_pack(review)
+    contract = root / 'skills/asset-image-assistant/SKILL.md'
+    review = cli.parser().parse_args([
+        'review-pack', '--project', str(project), '--skill', 'asset-image-assistant',
+        '--review-kind', 'skill_contract', '--artifact', str(contract),
+    ])
+    scope_path = Path(cli.review_pack(review)['review_scope_path'])
+    identity = json.loads(scope_path.read_text())['task_basis_identity']
     unused=root/'skills/asset-image-assistant/references/02-character-master-guide.md'
     unused.write_text(unused.read_text()+'\n未用人物章节的隔离修改。\n')
     assert cli.ensure_prepared(gate)['ok']

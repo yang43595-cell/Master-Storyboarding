@@ -124,6 +124,28 @@ class LibraryTests(unittest.TestCase):
         self.assertEqual(view['project_confirmation'], record['project_confirmation'])
         self.assertIn('request', record['authorization'])
 
+    def test_stale_candidate_revision_cannot_overwrite_library(self):
+        from visual_asset_backup import catalog_revision
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            lib = m.Library(base / 'library', vault=base / 'vault')
+            path = base / 'image.png'
+            Image.new('RGB', (24, 24)).save(path)
+            item, _ = lib.import_file(path, category='其他')
+            lib.save({**item, 'candidate_revision': 'v002'})
+            for revision in ('v001', None):
+                with self.assertRaisesRegex(ValueError, '修订'):
+                    lib.save({**item, 'candidate_revision': revision})
+                with self.assertRaisesRegex(ValueError, '修订'):
+                    catalog_revision({'library_version': revision}, lib.get(item['id']))
+            index = lib.vault / '资产库' / '资产索引.json'
+            index.parent.mkdir(parents=True, exist_ok=True)
+            index.write_text(json.dumps({'assets': [{'library_asset_id': item['id'], 'record': item,
+                'library_version': 'v001', 'destination': 'old.png'}]}))
+            with self.assertRaisesRegex(ValueError, '修订'):
+                lib.reconcile_vault()
+            self.assertEqual(lib.get(item['id'])['candidate_revision'], 'v002')
+
     def test_backup_same_file_compares_bytes_across_blocks(self):
         first, second = self.root / 'first.bin', self.root / 'second.bin'
         prefix = b'x' * (1024 * 1024)

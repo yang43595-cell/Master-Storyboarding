@@ -3,15 +3,13 @@ import csv
 import hashlib
 import io
 import json
-import os
 import shutil
 import threading
-import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from core.io import write_bytes, write_json
+from core.io import file_lock, write_bytes, write_json
 
 
 def inside(root, path):
@@ -30,50 +28,19 @@ def guard(vault, action):
     if action == 'begin':
         if key in _write_locks:
             raise ValueError('当前操作已持有资产库写入锁')
-        path = key[1] / '资产库' / '.write.lock'
-        path.parent.mkdir(parents=True, exist_ok=True)
-        handle = path.open('a+b')
-        handle.seek(0)
-        if not handle.read(1):
-            handle.seek(0)
-            handle.write(b'0')
-            handle.flush()
-        deadline = time.monotonic() + 5
+        lock = file_lock(key[1] / '资产库' / '.write.lock', timeout_seconds=5)
         try:
-            while True:
-                try:
-                    handle.seek(0)
-                    if os.name == 'nt':
-                        import msvcrt
-                        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-                    else:
-                        import fcntl
-                        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    break
-                except OSError as exc:
-                    if time.monotonic() >= deadline:
-                        raise ValueError('资产库正在由另一项操作更新，请稍后重试') from exc
-                    time.sleep(0.1)
-            _write_locks[key] = handle
-        except Exception:
-            handle.close()
-            raise
+            lock.__enter__()
+        except TimeoutError as exc:
+            raise ValueError('资产库正在由另一项操作更新，请稍后重试') from exc
+        _write_locks[key] = lock
         return
     if action not in {'finish', 'abort'}:
         raise ValueError('未知资产库写入操作')
-    handle = _write_locks.pop(key, None)
-    if handle is None:
+    lock = _write_locks.pop(key, None)
+    if lock is None:
         raise ValueError('当前操作没有资产库写入锁')
-    try:
-        handle.seek(0)
-        if os.name == 'nt':
-            import msvcrt
-            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-        else:
-            import fcntl
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-    finally:
-        handle.close()
+    lock.__exit__(None, None, None)
 
 
 def write_index(root, index):

@@ -6,11 +6,13 @@ evidence, not the truth of a message, actual inspection, or creative quality.
 from __future__ import annotations
 
 import hashlib
+import re
 import json
 from datetime import datetime
 from pathlib import Path
 
-from .io import project_lock, utc_now
+from .errors import StageContextError
+from .io import project_lock, sha256_file, sha256_json, utc_now
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = "review-to-canvas"
@@ -30,25 +32,10 @@ def _text(value):
     return isinstance(value, str) and bool(value.strip())
 
 
-def _valid_skills(skills):
+def _valid_skills(skills, allowed=SKILLS):
     return (isinstance(skills, list) and bool(skills)
-            and all(isinstance(item, str) and item in SKILLS for item in skills)
+            and all(isinstance(item, str) and item in allowed for item in skills)
             and len(skills) == len(set(skills)))
-
-
-def _valid_asset_skills(skills):
-    return (isinstance(skills, list) and bool(skills)
-            and all(isinstance(item, str) and item in AUTHORIZATION_SKILLS for item in skills)
-            and len(skills) == len(set(skills)))
-
-
-def _digest(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-
-
-def _json_digest(value):
-    return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True,
-                                     separators=(",", ":")).encode()).hexdigest()
 
 
 def _file(project, raw):
@@ -75,14 +62,14 @@ def skill_for_artifact(entry):
     raise ValueError("该产物不允许 agent 自主采用；资产及声音仍需原人工依据")
 
 
-def require_workflow_authorization(project, authorization_id, skill, *, state=None):
+def _require_authorization(project, authorization_id, skill, allowed, state, invalid_scope):
     from .candidate_test import require_production
     from .project_state import load_project_state
     project = Path(project).resolve()
     require_production(project)
     state = load_project_state(project) if state is None else state
-    if not isinstance(skill, str) or skill not in SKILLS or not _text(authorization_id):
-        raise ValueError("自主验收缺有效授权 ID 或阶段")
+    if not isinstance(skill, str) or skill not in allowed or not _text(authorization_id):
+        raise ValueError("资产采用缺有效授权 ID" if skill == ASSET_ADOPTION_SKILL else "自主验收缺有效授权 ID 或阶段")
     matches = [item for item in state.get("workflow_authorizations", [])
                if isinstance(item, dict) and item.get("id") == authorization_id]
     if len(matches) != 1:
@@ -93,75 +80,30 @@ def require_workflow_authorization(project, authorization_id, skill, *, state=No
             or authorization.get("project_path") != str(project)
             or not _text(authorization.get("authorization_ref"))
             or not _text(authorization.get("created_at"))
-            or not _valid_skills(skills) or skill not in skills):
-        raise ValueError("流程授权已撤回、项目/阶段不符或依据不完整")
+            or not _valid_skills(skills, allowed) or skill not in skills):
+        raise ValueError(invalid_scope)
     return authorization
+
+
+def require_workflow_authorization(project, authorization_id, skill, *, state=None):
+    return _require_authorization(project, authorization_id, skill, SKILLS, state,
+                                  "流程授权已撤回、项目/阶段不符或依据不完整")
 
 
 def require_asset_workflow_authorization(project, authorization_id, *, state=None):
-    """Validate an active workflow authorization covering visual-asset adoption.
-
-    This scopes the chat-confirmation and delegated image review paths.
-    """
-    from .candidate_test import require_production
-    from .project_state import load_project_state
-    project = Path(project).resolve()
-    require_production(project)
-    state = load_project_state(project) if state is None else state
-    if not _text(authorization_id):
-        raise ValueError("资产采用缺有效授权 ID")
-    matches = [item for item in state.get("workflow_authorizations", [])
-               if isinstance(item, dict) and item.get("id") == authorization_id]
-    if len(matches) != 1:
-        raise ValueError("流程授权不存在或不唯一")
-    authorization = matches[0]
-    skills = authorization.get("skills")
-    if (authorization.get("workflow") != WORKFLOW or authorization.get("status") != "active"
-            or authorization.get("project_path") != str(project)
-            or not _text(authorization.get("authorization_ref"))
-            or not _text(authorization.get("created_at"))
-            or not _valid_asset_skills(skills) or ASSET_ADOPTION_SKILL not in skills):
-        raise ValueError("流程授权已撤回、项目不符或未覆盖资产采用范围")
-    return authorization
+    return _require_authorization(project, authorization_id, ASSET_ADOPTION_SKILL, AUTHORIZATION_SKILLS, state,
+                                  "流程授权已撤回、项目不符或未覆盖资产采用范围")
 
 
-def register_asset_workflow_authorization(project, *, authorization_id, authorization_ref):
-    """Record an already-given user authorization scoped to visual-asset adoption.
-
-    Separate from register_workflow_authorization on purpose: that entry only
-    scopes manuscript self-check acceptance and must never name the asset
-    stage. This record only feeds require_asset_workflow_authorization.
-    """
-    from .candidate_test import require_production
-    from .project_state import load_project_state, write_project_state
-    project = Path(project).resolve()
-    if not project.is_dir():
-        raise ValueError("项目目录不存在")
-    if not _text(authorization_id) or not _text(authorization_ref):
-        raise ValueError("资产流程授权需要准确 ID 与用户依据")
-    with project_lock(project):
-        require_production(project)
-        state = load_project_state(project)
-        if any(item.get("id") == authorization_id for item in state.get("workflow_authorizations", [])):
-            raise ValueError("流程授权 ID 已存在；不得覆盖旧授权")
-        record = {"id": authorization_id, "workflow": WORKFLOW,
-                  "project_path": str(project), "authorization_ref": authorization_ref,
-                  "skills": [ASSET_ADOPTION_SKILL], "status": "active", "created_at": utc_now()}
-        state.setdefault("workflow_authorizations", []).append(record)
-        write_project_state(project, state)
-        return record
-
-
-def register_workflow_authorization(project, *, authorization_id, authorization_ref, skills):
+def _register_authorization(project, authorization_id, authorization_ref, skills):
     """Record an already-given user authorization; this command grants none."""
     from .candidate_test import require_production
     from .project_state import load_project_state, write_project_state
     project = Path(project).resolve()
     if not project.is_dir():
         raise ValueError("项目目录不存在")
-    if (not _text(authorization_id) or not _text(authorization_ref)
-            or not _valid_skills(skills)):
-        raise ValueError("流程授权需要准确 ID、用户依据与允许的下游阶段")
+    if not _text(authorization_id) or not _text(authorization_ref):
+        raise ValueError("流程授权需要准确 ID 与用户依据")
     with project_lock(project):
         require_production(project)
         state = load_project_state(project)
@@ -175,12 +117,22 @@ def register_workflow_authorization(project, *, authorization_id, authorization_
         return record
 
 
+def register_asset_workflow_authorization(project, *, authorization_id, authorization_ref):
+    return _register_authorization(project, authorization_id, authorization_ref, [ASSET_ADOPTION_SKILL])
+
+
+def register_workflow_authorization(project, *, authorization_id, authorization_ref, skills):
+    if not _valid_skills(skills):
+        raise ValueError("流程授权需要准确 ID、用户依据与允许的下游阶段")
+    return _register_authorization(project, authorization_id, authorization_ref, skills)
+
+
 def _binding(project, entry, *, file_digest=None):
     path = _file(project, entry.get("path_or_url"))
     if (not all(_text(entry.get(key)) for key in ("artifact_id", "logical_id", "type", "revision"))
             or not path.stat().st_size):
         raise ValueError("agent 验收产物身份、修订或文件为空")
-    checksum = _digest(path) if file_digest is None else file_digest(path)
+    checksum = sha256_file(path) if file_digest is None else file_digest(path)
     # Registration may precede the first checksum; adoption pins it before
     # validating. Existing current/upstream records must already carry one.
     if (entry.get("checksum") and entry["checksum"] != checksum
@@ -218,8 +170,8 @@ def acceptance_binding(project, entry, *, file_digest=None):
     if entry.get("type") == "visual-supplement-image":
         # Actual observations and packaging references live on the existing
         # manifest entry; freeze their content without creating a second copy.
-        result.update(quality_evidence_sha256=_json_digest(entry.get("quality_evidence")),
-                      product_reference_sha256=_json_digest(entry.get("product_reference")))
+        result.update(quality_evidence_sha256=sha256_json(entry.get("quality_evidence")),
+                      product_reference_sha256=sha256_json(entry.get("product_reference")))
     return result
 
 
@@ -259,7 +211,7 @@ def _validate_report(project, entry, report, state, pointer=None, *, file_digest
         raise ValueError("自主验收必须有准确执行者、时间和整稿通过依据，不能用局部或未知结论")
     authorization = require_workflow_authorization(project, report.get("authorization_id"), skill, state=state)
     if pointer and (pointer.get("authorization_id") != authorization["id"]
-                    or pointer.get("authorization_sha256") != _json_digest(authorization)):
+                    or pointer.get("authorization_sha256") != sha256_json(authorization)):
         raise ValueError("自主验收所依据的流程授权已改变")
     binding = acceptance_binding(project, entry, file_digest=file_digest)
     if (pointer and entry.get("status") == "current" and skill == "storyboard-director"
@@ -277,7 +229,7 @@ def _validate_report(project, entry, report, state, pointer=None, *, file_digest
             raise ValueError("自主验收源稿仍有阻塞、未决问题或已失效状态；不能以自报通过掩盖")
     profile_path = ROOT / "skills" / skill / "review-profile.json"
     profile = json.loads(profile_path.read_text(encoding="utf-8"))
-    if report.get("review_profile_sha256") != _digest(profile_path):
+    if report.get("review_profile_sha256") != sha256_file(profile_path):
         raise ValueError("自查未绑定现行检查清单字节")
     expected = {item["id"] for item in profile["production_artifact_checks"]}
     checks = report.get("checks")
@@ -336,7 +288,7 @@ def read_agent_acceptance(project, entry, report_path, *, state=None):
     report = json.loads(raw.decode("utf-8-sig"))
     authorization = _validate_report(project, entry, report, state)
     return {"report_path": path.relative_to(project).as_posix(), "report_sha256": hashlib.sha256(raw).hexdigest(),
-            "authorization_id": authorization["id"], "authorization_sha256": _json_digest(authorization)}, report
+            "authorization_id": authorization["id"], "authorization_sha256": sha256_json(authorization)}, report
 
 
 def validate_agent_acceptance(project, entry, *, state=None, file_digest=None):
@@ -354,3 +306,106 @@ def validate_agent_acceptance(project, entry, *, state=None, file_digest=None):
     report = json.loads(raw.decode("utf-8-sig"))
     _validate_report(project, entry, report, state, pointer, file_digest=file_digest)
     return report
+
+
+def accept_artifact(args):
+    """Adopt/select one exact artifact and optionally preflight its saved segment."""
+    from . import artifacts as artifact_api, revision_control as revision_api
+    from .artifacts import artifact_is_adopted, adopt_initial_agent_artifact, load_manifest, project_path
+    from .candidate_test import require_production
+    from .project_state import load_project_state
+    from .io import read_stage_json
+    project = Path(args.project).expanduser().resolve()
+    report_path = project_path(project, args.self_check_json)
+    change_id = getattr(args, 'change_id', None)
+    frozen_path = getattr(args, 'preflight_json', None)
+    with project_lock(project):
+        require_production(project)
+        manifest = load_manifest(project)
+        matches = [item for item in manifest['artifacts'] if item['artifact_id'] == args.artifact_id]
+        if len(matches) != 1:
+            raise StageContextError('采用须指定唯一已登记产物 ID')
+        entry = matches[0]
+        frozen = None
+        expected_checksum = None
+        if frozen_path:
+            frozen = read_stage_json(project_path(project, frozen_path), default=None)
+            drafts = frozen.get('drafts') if isinstance(frozen, dict) else None
+            sources = frozen.get('source_artifacts') if isinstance(frozen, dict) else None
+            if not isinstance(drafts, list) or len(drafts) != 1 or not isinstance(sources, list):
+                raise StageContextError('单段预检须有一个草稿及本次采用产物的准确来源')
+            bound_sources = [ref for ref in sources if isinstance(ref, dict)
+                             and ref.get('artifact_id') == entry['artifact_id']
+                             and ref.get('revision') == entry.get('revision')]
+            expected_checksum = entry.get('checksum')
+            if (not expected_checksum and entry.get('status') == 'candidate'
+                    and not change_id and len(bound_sources) == 1):
+                # First adoption checks this against the actual bytes before pinning the hash.
+                expected_checksum = bound_sources[0].get('sha256')
+            if (not isinstance(expected_checksum, str) or not re.fullmatch(r'[0-9a-f]{64}', expected_checksum)
+                    or not any(ref.get('sha256') == expected_checksum for ref in bound_sources)):
+                raise StageContextError('单段预检须有本次采用产物的准确 ID、revision、sha256 来源')
+        if entry.get('status') == 'current':
+            # Resuming is an explicit selection of this ID, never a blanket sync
+            # of all manifest-current entries or a new approval.
+            pointer = entry.get('agent_acceptance') or {}
+            if entry.get('user_approved') is not False or project_path(project, pointer.get('report_path', '')) != report_path:
+                raise StageContextError('已采用产物的自查报告与本次输入不同')
+            if change_id:
+                history = revision_api.show_change(project)['history']
+                if not any(change.get('change_id') == change_id and change.get('status') == 'completed'
+                           and (change.get('candidate_receipt') or {}).get('artifact_id') == entry['artifact_id']
+                           for change in history):
+                    raise StageContextError('续作变更案与该已采用产物不匹配')
+            state = load_project_state(project)
+            checked = validate_agent_acceptance(project, entry, state=state)
+            artifact_api.validate_agent_submission(project, entry, manifest, checked)
+            transaction = None
+            if entry['artifact_id'] not in state['current_artifacts']:
+                state['current_artifacts'].append(entry['artifact_id'])
+                transaction = revision_api._commit_json_transaction_unlocked(project, {
+                    project / '00_项目管理/project_state.json': state,
+                }, reason='select exact previously agent-adopted artifact')
+            adoption = {'resumed': True, 'transaction': transaction}
+        elif change_id:
+            change = revision_api.show_change(project)['active_change']
+            if not change or change['change_id'] != change_id or (change.get('candidate_receipt') or {}).get('artifact_id') != entry['artifact_id']:
+                raise StageContextError('修订采用须匹配原活动变更案及准确候选 ID')
+            if change['status'] != 'commit_ready':
+                revision_api.confirm_agent_candidate(project, change_id=change_id, report_path=str(report_path))
+            else:
+                acceptance = change.get('candidate_acceptance')
+                stored_report = acceptance.get('report_path') if isinstance(acceptance, dict) else None
+                if not isinstance(stored_report, str) or not stored_report.strip():
+                    raise StageContextError('待提交修订缺少自主验收报告；人工确认请沿原入口提交')
+                if project_path(project, stored_report) != report_path:
+                    raise StageContextError('待提交修订的自查报告与本次输入不同')
+            adoption = {'transaction': revision_api.commit_change(project, change_id=change_id)}
+        else:
+            adoption = adopt_initial_agent_artifact(
+                project, args.artifact_id, report_path, expected_checksum=expected_checksum,
+            )
+        if 'artifact' not in adoption:
+            selected = load_project_state(project)
+            adopted = next(item for item in load_manifest(project)['artifacts'] if item['artifact_id'] == args.artifact_id)
+            if adopted['artifact_id'] not in selected['current_artifacts'] or not artifact_is_adopted(adopted, selected, project):
+                raise StageContextError('采用后 manifest/state 准确回读未通过，不得进入下游')
+            adoption['artifact'] = adopted
+        if frozen is not None:
+            try:
+                from ..canvas_readback import validate_submission
+            except ImportError:
+                from canvas_readback import validate_submission
+            try:
+                preflight = validate_submission(frozen, project, formal_delivery=True, preflight=True)
+            except (ValueError, OSError, KeyError, TypeError, RuntimeError) as exc:
+                return {'ok': False, 'adoption_completed': True, 'artifact_id': args.artifact_id,
+                        'transaction': adoption.get('transaction'), 'preflight': {'ok': False, 'error': str(exc)},
+                        'notice': '采用及状态登记已完成；修正原单段计划后续用同一命令，不重新采用或生成'}
+            adoption['preflight'] = {key: preflight[key] for key in (
+                'ok', 'mode', 'revision', 'frozen_sha256', 'source_segment_ids',
+                'target_url', 'target_project_id', 'upload_mapping_pending_nodes', 'face_source_card_slots',
+                'native_refresh_binding', 'generation_authorization', 'production_ready',
+            ) if key in preflight}
+    return {"ok": True, **adoption,
+            "notice": "已按流程授权及准确自查采用；未新增逐稿人审，未上传、生成、发布或自动流转"}

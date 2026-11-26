@@ -198,3 +198,49 @@ def grant_covers_asset(grant, ast_id, output_id):
     return grant is not None and (
         grant.get("scope") in IMAGE_SCOPES or output_id in grant.get("outputs", {}).get(ast_id, [])
     )
+
+
+def kickoff_project(project, answers=None):
+    from .candidate_test import require_production
+    from .errors import StageContextError
+    from .io import project_lock, read_stage_json, write_json
+    project = project.resolve(strict=True)
+    if not project.is_dir():
+        raise StageContextError("开工决定必须从业务项目目录读取")
+    if answers is not None:
+        answers = validate_kickoff(answers, for_registration=True)
+        with project_lock(project):
+            require_production(project)
+            path = project / REQUEST_PATH
+            request = read_stage_json(path, default={})
+            if not isinstance(request, dict):
+                raise StageContextError("项目需求必须是 JSON 对象")
+            previous = request.get("kickoff")
+            existing = previous.get("product") if isinstance(previous, dict) else None
+            selected = answers["product"]
+            if "reference_pack_revision" in selected:
+                choice = next((item for item in product_catalog()
+                               if item["product_id"] == selected["product_id"]), None)
+                current = {item["revision"] for item in (choice or {}).get("versions", [])}
+                lock_fields = ("product_id", "reference_pack_revision", "reference_pack_sha256")
+                if (choice and selected["reference_pack_revision"] not in current
+                        and any((existing or {}).get(key) != selected[key] for key in lock_fields)):
+                    raise StageContextError("历史产品包仅供已有同版本锁定的项目续用；请从当前版本选择")
+            if (isinstance(existing, dict) and existing.get("reference_pack_sha256")
+                    and selected.get("reference_pack_sha256")
+                    and (existing.get("product_id"), existing.get("reference_pack_revision"))
+                    == (selected["product_id"], selected["reference_pack_revision"])
+                    and existing["reference_pack_sha256"] != selected["reference_pack_sha256"]):
+                raise StageContextError("已有项目锁定的同一参考包版本字节已变化，请还原文件或选择新版本")
+            write_json(path, {**request, "kickoff": answers})
+    kickoff = load_kickoff(project)
+    result = {"ok": kickoff is not None, "path": str(project / REQUEST_PATH), "kickoff": kickoff,
+              "workflow": production_workflow(kickoff)}
+    if kickoff is None:
+        result["product_choices"] = product_catalog()
+        result["product_choice_prompt"] = "请用户选择本项目使用哪款产品、提供其他准确商品，或明确无产品"
+    if (timing := product_demo_timing_advisory(kickoff)) is not None:
+        result["product_demo_timing"] = timing
+    if kickoff and (pack := resolve_product_pack(kickoff["product"])):
+        result["product_reference_pack"] = pack
+    return result

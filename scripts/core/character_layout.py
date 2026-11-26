@@ -47,12 +47,6 @@ def character_template_kinds(output_kinds):
             if (kind := _ALIASES.get(value, value)) in _FILES}
 
 
-def unfilled_character_prompt_fields(kind, prompt):
-    if kind not in _DESIGN_TEMPLATES or '[' not in prompt:
-        return []
-    template = character_prompt_templates({kind})[_DESIGN_TEMPLATES[kind]]
-    return [field for field in re.findall(r"\[[^\[\]\n]+\]", template) if field in prompt]
-
 
 def render_character_prompt(kind, references):
     """Adapt slot numbers and permit planned designs without identity/wardrobe photos."""

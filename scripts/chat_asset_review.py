@@ -16,7 +16,7 @@ from PIL import Image
 if __package__:
     from . import stage_context_cli as stage
     from .core import artifacts, asset_refs, character_boards as boards, production_handoff
-    from .core.asset_batch_receipt import DIRECT_REQUESTS, summarize_asset_batch_receipt, validate_asset_review_targets
+    from .core.asset_batch_receipt import DIRECT_REQUESTS, summarize_asset_batch_receipt, validate_asset_review_targets, require_candidate_revision
     from .core.io import project_lock, read_json, write_json, sha256_json, utc_now
     from .core.project_kickoff import REQUEST_PATH
     from .core.project_state import write_project_state
@@ -24,14 +24,14 @@ if __package__:
 else:
     import stage_context_cli as stage
     from core import artifacts, asset_refs, character_boards as boards, production_handoff
-    from core.asset_batch_receipt import DIRECT_REQUESTS, summarize_asset_batch_receipt, validate_asset_review_targets
+    from core.asset_batch_receipt import DIRECT_REQUESTS, summarize_asset_batch_receipt, validate_asset_review_targets, require_candidate_revision
     from core.io import project_lock, read_json, write_json, sha256_json, utc_now
     from core.project_kickoff import REQUEST_PATH
     from core.project_state import write_project_state
     from core.schema_contracts import require_schema
 
 LOGICAL = "visual.asset.manifest"
-SHOWN = Path("00_项目管理/资产交审")
+SHOWN = asset_refs.CHAT_REVIEW
 
 
 def inside(root, name):
@@ -246,15 +246,13 @@ def show_round(root, contexts, narrative, targets_path=None, receipts=()):
             pending[row["target"]] = row
     approved = approved_versions({ast: asset["image"] for ast, asset in assets.items()})
     reused = {}
-    confirmed = {ast + "@" + output["output_id"]: output for ast, asset in assets.items()
-                 for output in asset["image"].get("outputs", [])}
     same_version = {t for t, row in ready.items()
-                    if t in confirmed and approved[t]["sha256"] == row["sha256"]
+                    if t in approved and approved[t]["sha256"] == row["sha256"]
                     and approved[t]["purpose"] == reviewed_purpose(row)
-                    and confirmed[t].get("source_candidate") == row["path"]
+                    and approved[t]["source_path"] == row["path"]
                     and isinstance(row.get("candidate_revision"), str) and row["candidate_revision"].strip()
-                    and confirmed[t].get("source_candidate_revision") == row["candidate_revision"]
-                    and confirmed[t].get("source_candidate_id") == row["candidate_id"]}
+                    and approved[t]["candidate_revision"] == row["candidate_revision"]
+                    and approved[t]["candidate_id"] == row["candidate_id"]}
     for target, previous in approved.items():
         if target in ready and target not in same_version:
             continue
@@ -570,15 +568,28 @@ def workbench_records(root, table, ident=None):
             yield json.loads(data)
 
 
-def web_history(root, message):
+def cross_message(previous, message):
+    if previous.get("message_id") and message.get("message_id"):
+        return previous["message_id"] == message["message_id"]
+    # Distinct timestamp AND words distinguish independent historical decisions.
+    # Changing the review reference alone can never transfer an earlier message.
+    if (previous.get("at") and message.get("at") and previous.get("quote") and message.get("quote")
+            and datetime.fromisoformat(previous["at"]) != datetime.fromisoformat(message["at"])
+            and previous["quote"] != message["quote"] and not same_message(previous, message)):
+        return False
+    raise ValueError("跨入口历史消息缺少稳定消息 ID，无法核对其他交审范围，请沿原入口处理")
+
+
+def web_history(root, message, *, cross_channel=False):
+    matches = cross_message if cross_channel else same_message
     for job in workbench_records(root, "jobs"):
         for step in job["steps"]:
             for version in (step, *step.get("history", [])):
                 feedback = version.get("feedback")
-                if isinstance(feedback, dict) and same_message(feedback, message):
+                if isinstance(feedback, dict) and matches(feedback, message):
                     yield "returned", feedback
                 review = (version.get("project_confirmation") or {}).get("chat_confirmation") or {}
-                if review and same_message(review["confirmation"], message):
+                if review and matches(review["confirmation"], message):
                     yield "approved", review
     for entry in artifacts.load_manifest(root)["artifacts"]:
         if entry.get("logical_id") != LOGICAL or not entry.get("confirmation_ref"):
@@ -587,7 +598,7 @@ def web_history(root, message):
         if path.is_file():
             for row in read_json(path).get("items", []):
                 review = row["confirmation"].get("chat_confirmation")
-                if review and same_message(review["confirmation"], message):
+                if review and matches(review["confirmation"], message):
                     yield "approved", review
 
 
@@ -603,7 +614,8 @@ def prior_channel_decision(root, message, outputs, outcome, *, from_web):
     wanted = {candidate_identity(root, row) for row in outputs}
     def check(previous, kind, rows):
         actual = {candidate_identity(root, row) for row in rows}
-        if (kind != outcome or actual != wanted or any(not all(key) for key in actual)
+        if (not message.get("message_id") or previous.get("message_id") != message["message_id"]
+                or kind != outcome or actual != wanted or any(not all(key) for key in actual)
                 or any(previous.get(k) != message.get(k) for k in ("quote", "at"))):
             raise ValueError("同一条用户消息已用于其他交审范围或决定")
         return True
@@ -612,7 +624,7 @@ def prior_channel_decision(root, message, outputs, outcome, *, from_web):
     if from_web:
         for path in inside(root, SHOWN / "用户退回").glob("*.json"):
             saved = read_json(inside(root, path))
-            if same_message(saved["feedback"], message):
+            if cross_message(saved["feedback"], message):
                 found = check(saved["feedback"], "returned", saved["items"])
         for entry in artifacts.load_manifest(root)["artifacts"]:
             if not entry["artifact_id"].startswith("visual-assets-chat-"):
@@ -623,7 +635,7 @@ def prior_channel_decision(root, message, outputs, outcome, *, from_web):
                     raise ValueError("另一次资产确认待恢复")
                 raise ValueError("历史资产消息依据缺失")
             rows = [{**r["confirmation"], "ast_id": r["ast_id"], "output_id": r["output_id"]}
-                    for r in read_json(path)["items"] if same_message(r["confirmation"], message)]
+                    for r in read_json(path)["items"] if cross_message(r["confirmation"], message)]
             if rows:
                 found = check(rows[0], "approved", rows)
     else:
@@ -631,11 +643,13 @@ def prior_channel_decision(root, message, outputs, outcome, *, from_web):
             previous = saved.get("decision") or saved
             if saved.get("message_id") == message.get("message_id") and saved.get("message_id") and not same_message(previous, message):
                 raise ValueError("这是展示消息，不能改作其他决定")
-            if same_message(previous, message):
+            if saved.get("original_approval") and cross_message(saved["original_approval"], message):
+                raise ValueError("原展示候选已退回")
+            if (cross_message(previous, message) if saved.get("outcome") else same_message(saved, message)):
                 if not saved.get("outcome"):
                     raise ValueError("同一条用户消息已绑定 Web 候选")
                 found = check(previous, saved["outcome"], saved["outputs"])
-        history = list(web_history(root, message))
+        history = list(web_history(root, message, cross_channel=True))
         if history:
             historical = []
             for kind, review in history:
@@ -709,6 +723,21 @@ def shown_decision(root, keys, message, narrative):
     return rows, round_scope, message
 
 
+def revoked_confirmation_evidence(root, rows):
+    by_target = {asset_refs.return_target(row): row for row in rows}
+    requests = {f"{ast}@{slot}" for ast, output in by_target for slot in (output, "legacy-main")}
+    images = asset_refs.confirmed_images(root, requests=requests)
+    revoked = {}
+    for ast, image in images.items():
+        for output in image["outputs"]:
+            for target in asset_refs.confirmation_targets(ast, output):
+                row = by_target.get(target)
+                if row and asset_refs.matches_returned_candidate(root, row, output):
+                    revoked.setdefault("@".join(target), []).append(output["confirmation_ref"])
+    return {"revoked_outputs": revoked,
+            "revoked_confirmations": [ref for refs in revoked.values() for ref in refs]}
+
+
 def return_for_revision(root, keys, message, narrative):
     rows, _, message = shown_decision(root, keys, message, narrative)
     if prior_channel_decision(root, message, rows.values(), "returned", from_web=False):
@@ -724,7 +753,7 @@ def return_for_revision(root, keys, message, narrative):
     if not path.is_file():
         if "shown" not in message:
             raise ValueError("新决定必须在消息中记录所见候选的 shown 编号列表")
-        write_json(path, feedback)
+        write_json(path, {**feedback, **revoked_confirmation_evidence(root, items)})
     return dict(status="returned", feedback=message["quote"], items=items, record=location.as_posix())
 
 
@@ -732,7 +761,22 @@ def confirm(root, keys, message, narrative, entries):
     rows, round_scope, message = shown_decision(root, keys, message, narrative)
     if prior_channel_decision(root, message, rows.values(), "approved", from_web=False):
         return dict(status="approved", already_recorded=True)
+    # Shown snapshots also protect unconfirmed and withdrawn revisions against rollback.
+    for path in inside(root, SHOWN).glob("[0-9a-f]" * 64 + ".json"):
+        packet = read_json(inside(root, path))
+        if (packet["narrative_id"], packet["narrative"]) != (narrative["artifact_id"], narrative["checksum"]):
+            continue
+        for prior in packet["items"]:
+            item = rows.get(prior["target"])
+            if item and item["candidate_id"] == prior["candidate_id"]:
+                require_candidate_revision(prior.get("candidate_revision"), item.get("candidate_revision"))
     rejected_targets(root, rows)
+    if any(set(keys).intersection(prior["shown"]) and rows.keys() & {item["target"] for item in prior["items"]}
+           for path in inside(root, SHOWN / "用户退回").glob("*.json") for prior in [read_json(inside(root, path))]):
+        raise ValueError("原展示候选已被退回，请重新展示本轮候选")
+    returns = asset_refs._returned_candidates(root)
+    if any(asset_refs.candidate_was_returned(root, item, returns) for item in rows.values()):
+        raise ValueError("该版本候选已被退回，请重新展示实际返修后的候选")
     key = sha256_json([sorted(set(keys)), message])
     ident = "visual-assets-chat-" + key
     rel = Path(asset_refs.MASTER_DIR) / ident
@@ -770,7 +814,6 @@ def confirm(root, keys, message, narrative, entries):
         if round_scope:
             if set(round_targets(root, round_scope["targets_path"])) != set(round_scope["targets"]):
                 raise ValueError("整轮交审目标已变化，请按当前清单重新展示")
-            rejected_targets(root, rows)
             reused = round_scope["reused"]
             if reused and approved_versions(asset_refs.confirmed_images(root, requests=reused)) != reused:
                 raise ValueError("交审后沿用的已确认图已变化，请重新展示")

@@ -349,7 +349,7 @@ def test_director_actual_method_snapshot_changes_in_isolation(tmp_path,monkeypat
     from scripts import stage_context_cli as cli
     root=Path(__file__).resolve().parents[2]
     replica=copy_source_fixture(root,tmp_path/'repo')
-    monkeypatch.setattr(cli,'ROOT',replica)
+    monkeypatch.setattr(cli.context,'ROOT',replica)
     method=replica/'skills/storyboard-planner/modules/shot-planning.md'
     documents=cli._local_standard_documents(replica/'skills/storyboard-planner')
     frozen={str(p):cli.digest(p) for p in documents}

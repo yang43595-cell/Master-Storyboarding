@@ -150,7 +150,7 @@ def test_stage_card_allows_second_output_after_first_went_to_its_own_batch(tmp_p
     first, second = 'AST-HERO@HEAD', 'AST-HERO@CLOTHES'
     card = dict(action='assets', artifact_ids=['R03'], asset_ids=['AST-HERO'], output_ids=[first, second])
     live = {**card, 'output_ids': [second]}
-    monkeypatch.setattr(stage, 'require_production_handoff', lambda *args, **kwargs: live)
+    monkeypatch.setattr(stage.context, 'require_production_handoff', lambda *args, **kwargs: live)
     stage._check_preparation_route(tmp_path, 'asset-image-assistant', {'image_targets': [second]}, card)
     with pytest.raises(stage.StageContextError, match='图片目标超出'):
         stage._check_preparation_route(tmp_path, 'asset-image-assistant', {'image_targets': [first]}, card)

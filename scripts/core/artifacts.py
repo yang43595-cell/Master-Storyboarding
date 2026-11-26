@@ -20,7 +20,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from . import confirmation_scope
-from .io import canonical_json_bytes, project_lock, project_locked, read_json, sha256_json, utc_now, write_json
+from .io import canonical_json_bytes, project_lock, project_locked, read_json, utc_now, write_json
 from .project_state import load_project_state
 
 MANIFEST_PATH = Path("00_项目管理") / "artifact_manifest.json"
@@ -64,7 +64,7 @@ class _Manifest(dict):
     """In-memory read version; it adds no fields to the persisted JSON contract."""
     def __init__(self, value):
         super().__init__(value)
-        self._source_digest = sha256_json(value)
+        self._source_bytes = canonical_json_bytes(value)
 
 
 def load_manifest(project_root: Path) -> dict[str, Any]:
@@ -133,8 +133,8 @@ def save_manifest(project_root: Path, manifest: dict[str, Any]) -> None:
         existing = prior_current.get(item.get("artifact_id"))
         if existing is None:
             raise ValueError("save_manifest 不能晋升或恢复正式稿件；请使用 adopt-package 或 revision_control.commit_change")
-    source_digest = getattr(manifest, "_source_digest", None)
-    if source_digest is not None and source_digest != sha256_json(previous):
+    source_bytes = getattr(manifest, "_source_bytes", None)
+    if source_bytes is not None and source_bytes != previous._source_bytes:
         raise ValueError("产物清单已被其他任务更新；重新读取后重试，不能覆盖新记录")
     manifest["updated_at"] = utc_now()
     write_json(project_root / MANIFEST_PATH, manifest)
@@ -142,8 +142,8 @@ def save_manifest(project_root: Path, manifest: dict[str, Any]) -> None:
     # the current task uses. Never select additional artifacts while syncing.
     from .project_state import sync_current_artifacts
     sync_current_artifacts(project_root, manifest)
-    if source_digest is not None:
-        manifest._source_digest = sha256_json(manifest)
+    if source_bytes is not None:
+        manifest._source_bytes = canonical_json_bytes(manifest)
 
 
 _FORMAL_PACKAGE_LOGICAL_IDS = {"narrative.package", "storyboard.package", "video.prompt"}
@@ -352,7 +352,7 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
             raise ValueError("视频提示词旧版不唯一；生成段续跑基线未知")
         content_segment_ids = None
         if not reading_existing:
-            from .asset_refs import resolve_final_images
+            from .asset_refs import require_bound_asset_materials
             from .delivery_files import declared_input_roots, discover_dependencies
             from .production_handoff import require_handoff_visual_inputs
             scope = payload.get("scope")
@@ -378,15 +378,8 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
                     raise ValueError(f"{row['segment_id']}: 视频段未就绪")
                 refs = row.get("materials", row.get("candidate_upload_order", []))
                 if isinstance(refs, list):
-                    asset_references.extend(
-                        (f"{ref['asset_id']}@{ref['output_id']}", ref)
-                        for ref in refs if isinstance(ref, dict) and ref.get("asset_id") and ref.get("output_id"))
-            accepted = resolve_final_images(root, list(dict.fromkeys(key for key, _ in asset_references)))
-            for key, ref in asset_references:
-                output = accepted[key]
-                if (not ref.get("path") or project_path(root, ref["path"]) != Path(output["path"]).resolve()
-                        or ref.get("sha256") != output["sha256"]):
-                    raise ValueError(f"{key}: 视频素材与已确认输出的路径或字节不一致")
+                    asset_references.extend(refs)
+            require_bound_asset_materials(root, asset_references, file_digest=file_digest)
             dependencies = discover_dependencies(
                 root, input_roots=declared_input_roots(payload),
                 payload=payload, verify_hashes=True)

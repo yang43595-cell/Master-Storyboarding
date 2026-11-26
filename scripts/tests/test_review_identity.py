@@ -189,7 +189,7 @@ def test_review_round_key_is_computed_only_for_the_formal_archive(tmp_path, monk
         hashed.append(data)
         return hashlib.sha256(data)
 
-    monkeypatch.setattr(cli, "hashlib", SimpleNamespace(sha256=track_sha256))
+    monkeypatch.setattr(sys.modules[cli.review_pack.__module__], "hashlib", SimpleNamespace(sha256=track_sha256))
     report = cli.review_pack(review_args(project, candidate, formal_archive=formal))
     scope_path = Path(report["review_scope_path"])
     scope = json.loads(scope_path.read_text(encoding="utf-8"))
@@ -297,7 +297,7 @@ def test_light_closures_cannot_escape_current_pending_scope(tmp_path, bad_closur
 def test_declared_shared_contracts_remain_live_dependencies(tmp_path, monkeypatch, shared_name, change):
     copied = tmp_path / "repo"
     copy_source_fixture(cli.ROOT, copied)
-    monkeypatch.setattr(cli, "ROOT", copied)
+    monkeypatch.setattr(cli.context, "ROOT", copied)
     project, vault, source, candidate, request, args, reading = fixture(tmp_path)
     before = basis(project)
     shared = copied / "skills/_shared" / shared_name

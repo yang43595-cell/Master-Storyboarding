@@ -216,7 +216,7 @@ class SourceTests(unittest.TestCase):
         self.assertTrue(Path(result['manifest']).is_relative_to(self.root / '04_资产/母版'))
         receipt = pmod.read(Path(result['manifest']).parent / '用户确认记录.json')
         self.assertEqual(receipt['source_asset_table']['sha256'], digest(self.table))
-        pmod.validate(pmod.read(result['manifest']), 'visual-asset-manifest.schema.json')
+        pmod.require_schema(pmod.read(result['manifest']), 'visual-asset-manifest.schema.json', label='项目资产数据')
 
 
     def test_registered_relocation_and_anchor(self):

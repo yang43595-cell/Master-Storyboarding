@@ -11,6 +11,17 @@ from .media_types import MEDIA_EXTENSIONS
 DIRECT_REQUESTS = Path('00_项目管理/执行上下文/直做图片请求')
 DIRECT_RECEIPTS = Path('00_项目管理/执行上下文/直做图片回执')
 
+
+def require_candidate_revision(previous, current):
+    """An established candidate can keep its revision or advance within its numbered series."""
+    if not previous or previous == current:
+        return
+    old = re.fullmatch(r"([vR])([0-9]+)", previous) if isinstance(previous, str) else None
+    new = re.fullmatch(r"([vR])([0-9]+)", current) if isinstance(current, str) else None
+    if not old or not new or old[1] != new[1] or int(new[2]) <= int(old[2]):
+        raise ValueError("候选修订落后或无法与已登记版本比较")
+
+
 def _identity(value):
     return (isinstance(value, str) and 0 < len(value) <= 160 and value == value.strip()
             and value.isprintable())

@@ -23,40 +23,66 @@ FILE = '04_资产/产品使用对接.json'
 MODEL = 'gpt-6-luna'
 
 
+def source_narrative(narrative):
+    return {key: value for key, value in narrative.items() if key != '_product_usage'}
+
+
 def story_hash(narrative):
     fields = {k: narrative.get(k) for k in ('revision', 'story_paragraphs', 'events')}
     return hashlib.sha256(json.dumps(fields, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
 
-def load_usage(root, narrative):
+def _usage_problem(status, message):
+    return {'status': status, 'message': message, 'references': [], 'effects': []}
+
+
+def load_usage(root, narrative, *, for_recovery=False):
     path = Path(root) / FILE
     if not path.is_file():
         return {}
-    data = json.loads(path.read_text(encoding='utf-8'))
-    if data.get('story_hash') != story_hash(narrative):
-        return {'status': 'stale', 'message': '剧情已变化，产品动作参考待重新核对', 'references': [], 'effects': []}
-    kickoff = load_kickoff(root)
-    product = kickoff['product'] if kickoff else {}
-    selection = (product.get('reference_pack_sha256'), product.get('product_usage')
-                 if product.get('reference_pack_sha256') else None)
-    if selection != (data.get('reference_pack_sha256'), data.get('reference_pack_usage')):
-        return {'status': 'stale', 'message': '开工产品参考已变化，待重新核对', 'references': [], 'effects': []}
-    return data
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+        if not isinstance(data, dict):
+            raise ValueError('产品动作匹配结果须为对象')
+        if data.get('story_hash') != story_hash(narrative):
+            return _usage_problem('stale', '剧情已变化，产品动作参考待重新核对')
+        kickoff = load_kickoff(root)
+        product = kickoff['product'] if kickoff else {}
+        selection = (product.get('reference_pack_sha256'), product.get('product_usage')
+                     if product.get('reference_pack_sha256') else None)
+        if selection != (data.get('reference_pack_sha256'), data.get('reference_pack_usage')):
+            return _usage_problem('stale', '开工产品参考已变化，待重新核对')
+        if for_recovery:
+            return data
+        if data.get('status') == 'error':
+            return _usage_problem('error', data.get('message', '产品动作参考待恢复'))
+        if data.get('status') == 'matched':
+            references = _matched_references(data)
+            if 'material_references' not in data:
+                raise ValueError('产品配套参考清单待恢复')
+            materials = _material_rows(data['material_references'])
+            if 'material_asset_ids' in data and materials.keys() != set(data['material_asset_ids']):
+                raise ValueError('产品配套参考清单不完整')
+            for row in [*references, *materials.values()]:
+                _verify_cached_file(row)
+        return data
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        return _usage_problem('error', str(exc))
 
 
-def catalogue(library):
+def catalogue(library, *, retain_missing=()):
     return [{**a['product_reference'], 'asset_id': a['id'], 'name': a['name'],
              'media_type': a.get('media_type', 'image'), 'original': a['original']}
             for a in library.items() if a.get('product_reference') and not a.get('trashed_at')
-            and Path(a['original']).is_file()]
+            and (retain_missing is None or a['id'] in retain_missing or Path(a['original']).is_file())]
 
 
-def project_catalogue(library, project):
+def project_catalogue(library, project, *, retain_missing=()):
     kickoff = load_kickoff(Path(project['path']))
     selection = kickoff['product'] if kickoff else {}
     pack = resolve_product_pack(selection)
     if pack is None:
-        return catalogue(library)
+        return catalogue(library, retain_missing=retain_missing)
     entries = []
     for item in pack['references']:
         path = Path(item['path'])
@@ -79,6 +105,7 @@ def project_catalogue(library, project):
 
 def import_references(library, payload):
     """Explicit named local references; no upload crop or source deletion."""
+    import visual_asset_backup
     folder = Path(payload['folder']).resolve()
     if not folder.is_dir():
         raise ValueError('动作参考文件夹不存在')
@@ -89,11 +116,10 @@ def import_references(library, payload):
         source = (folder / entry['file']).resolve()
         if not source.is_relative_to(folder) or not source.is_file():
             raise ValueError('参考文件不存在或超出指定文件夹')
-        sha = hashlib.sha256(source.read_bytes()).hexdigest()
         asset = next((a for a in library.items() if not a.get('trashed_at')
                       and Path(a['original']).is_file()
                       and a.get('bytes') == source.stat().st_size
-                      and hashlib.sha256(Path(a['original']).read_bytes()).hexdigest() == sha), None)
+                      and visual_asset_backup.same_file(source, Path(a['original']))), None)
         if asset is None:
             asset, _ = library.import_file(source, project=payload['product_name'], role='参考',
                 category='视频参考' if source.suffix.lower() in {'.mp4', '.mov', '.webm'} else '产品')
@@ -108,7 +134,6 @@ def import_references(library, payload):
         groups.setdefault(group, []).append(asset['id'])
     for group, ids in groups.items():
         library.folder({'ids': ids, 'name': payload['product_name'] + '｜' + group, 'action': 'put'})
-    import visual_asset_backup
     from visual_asset_library import management
     backup = visual_asset_backup.run(library, management)
     if backup['status'] != 'saved':
@@ -244,24 +269,191 @@ def validate_matches(narrative, inventory, result):
         seen.add(key)
 
 
+def material_assets(inventory, product_ids, matches, *, additional_products=()):
+    used = {product_ids[row['product_ast_id']] for row in matches['effects'] + matches['references']}
+    used.update(additional_products)
+    return [asset for asset in inventory if asset['media_type'] == 'image'
+            and (asset['product_id'] in used
+                 or (asset.get('reference_pack_sha256') and asset['product_id'] in product_ids.values()))]
+
+
+def material_record(asset, reference):
+    return {'asset_id': asset['asset_id'], 'name': asset['name'], 'product_id': asset['product_id'],
+            'canonical_path': asset['original'], **reference}
+
+
+def _matched_references(usage):
+    if not isinstance(usage['references'], list) or not isinstance(usage['effects'], list):
+        raise ValueError('产品动作匹配缺少完整动作或效果清单')
+    if any(row['status'] not in {'matched', 'missing'} for row in usage['references']):
+        raise ValueError('产品动作匹配状态无效')
+    return [row for row in usage['references'] if row['status'] == 'matched']
+
+
+def _material_rows(rows):
+    if not isinstance(rows, list):
+        raise ValueError('产品配套参考清单须为数组')
+    indexed = {row['asset_id']: row for row in rows}
+    if len(indexed) != len(rows):
+        raise ValueError('产品配套参考清单含重复登记')
+    return indexed
+
+
+def _read_reference(path):
+    if not path.is_file():
+        raise ValueError('产品参考文件缺失：' + str(path))
+    with path.open('rb') as stream:
+        if not stream.read(1):
+            raise ValueError('产品参考文件为空：' + str(path))
+
+
+def _verify_cached_file(row):
+    if __package__ == 'scripts':
+        from .visual_asset_backup import same_file
+    else:
+        from visual_asset_backup import same_file
+    original, copy_path = Path(row['canonical_path']), Path(row['project_path'])
+    for path in {original, copy_path}:
+        _read_reference(path)
+    if not same_file(original, copy_path):
+        raise ValueError('项目参考副本与登记原件不同：' + str(copy_path))
+    if row.get('sha256') and sha256_file(original) != row['sha256']:
+        raise ValueError('产品参考字节与匹配记录不同：' + str(original))
+
+
+def restore_cached_reference(service, project, asset, row=None):
+    source = Path(asset['original']).resolve()
+    _read_reference(source)
+    if row and 'canonical_path' in row and Path(row['canonical_path']).resolve() != source:
+        raise ValueError('动作参考原件与匹配记录不一致')
+    expected = row.get('sha256') if row else None
+    restored = project_reference(service, project, asset, expected=expected)
+    path = Path(restored['project_path'])
+    if row and 'project_path' in row and path.resolve() != Path(row['project_path']).resolve():
+        raise ValueError('项目参考路径与匹配记录不一致：' + str(path))
+    _read_reference(path)
+    return restored
+
+
+def _cached_material_assets(inventory, product_ids, usage, declared, represented):
+    assets = {asset['asset_id']: asset for asset in inventory}
+    # New results retain the exact required IDs set from the original match,
+    # including product use omitted from the playback action list.
+    used_products = {assets[ident]['product_id'] for ident in represented}
+    if not used_products <= set(product_ids.values()):
+        raise ValueError('产品配套参考不属于当前项目登记的产品')
+    required = material_assets(inventory, product_ids, usage, additional_products=used_products)
+    required_ids = {asset['asset_id'] for asset in required}
+    if represented - required_ids or (declared is not None and set(declared) != required_ids):
+        raise ValueError('产品配套参考登记与当前签名不完整或不一致')
+    if declared is None:
+        # Old exports can omit an action when its only catalogue hits are still
+        # images. Without the original applied list there is no proof that an
+        # otherwise unrepresented product was unused.
+        keys = {(asset['product_id'], asset['action_key']) for asset in inventory
+                if asset['reference_role'] == 'action'}
+        required_products = {asset['product_id'] for asset in required}
+        ambiguous = {asset['product_id'] for asset in inventory if asset['action_key']
+                     and (asset['product_id'], asset['action_key']) not in keys
+                     and asset['media_type'] == 'image'}
+        if (ambiguous & set(product_ids.values())) - required_products:
+            raise ValueError('旧动作缓存缺少可证明配套参考完整性的记录')
+    return required
+
+
+def restore_cached_references(service, project, inventory, cached):
+    narrative = project['narrative']
+    snapshot = narrative.get('_product_usage') or {}
+    if snapshot.get('signature') != cached['signature']:
+        snapshot = {}
+    elif any(snapshot.get(key) != cached.get(key) for key in ('references', 'effects')):
+        raise ValueError('缓存动作或效果与原匹配结果不一致')
+    references = _matched_references(cached)
+    materials = _material_rows(cached['material_references']) if 'material_references' in cached else {}
+    historical = _material_rows(snapshot.get('material_references', []))
+    declared = cached.get('material_asset_ids', snapshot.get('material_asset_ids'))
+    if declared is not None and (not isinstance(declared, list) or len(set(declared)) != len(declared)):
+        raise ValueError('产品配套参考登记无效')
+    represented = materials.keys() | historical.keys() | set(declared or ())
+    known = {row['asset_id'] for row in references} | represented
+    if signature(narrative, inventory) != cached['signature']:
+        # Earlier checks signed only the live inventory, excluding originals
+        # already missing at the time. Never drop a previously bound reference.
+        inventory = [asset for asset in inventory if asset['asset_id'] in known or Path(asset['original']).is_file()]
+        if signature(narrative, inventory) != cached['signature']:
+            raise ValueError('产品参考登记与原匹配签名不一致，无法恢复缓存')
+    assets = {asset['asset_id']: asset for asset in inventory}
+    product_ids = {p['ast_id']: p['product_id'] for p in products(narrative, inventory)}
+    required = _cached_material_assets(inventory, product_ids, cached, declared, represented)
+    for row in references:
+        asset = assets[row['asset_id']]
+        if (asset['product_id'] != product_ids[row['product_ast_id']] or asset['action_key'] != row['action_key']):
+            raise ValueError('已匹配动作与登记参考不一致')
+        if not row['canonical_path'] or not row['project_path']:
+            raise ValueError('已匹配动作缺少原件或项目副本登记')
+        restore_cached_reference(service, project, asset, row)
+    for asset in required:
+        ident = asset['asset_id']
+        row = {**historical.get(ident, {}), **materials.get(ident, {})}
+        if row.get('product_id', asset['product_id']) != asset['product_id']:
+            raise ValueError('配套参考产品身份与登记不一致')
+        restored = restore_cached_reference(service, project, asset, row)
+        materials[ident] = {**material_record(asset, restored), **row}
+    repaired = {}
+    for key, value in cached.items():
+        if key not in {'material_references', 'message'}:
+            repaired[key] = 'matched' if key == 'status' else value
+        if key == 'references':
+            repaired['material_references'] = [materials[asset['asset_id']] for asset in required]
+        if key == 'effects' and 'material_asset_ids' not in cached and declared is not None:
+            repaired['material_asset_ids'] = declared
+    return repaired
+
+
 def schedule(service, project, *, use_cli=False, background=True):
     check = project.get('product_reference_check', {})
     if check.get('status') == 'running':
         return
+    path = Path(project['path']) / FILE
+    cached = {}
     try:
+        if check.get('status') in {'done', 'error'}:
+            cached = load_usage(project['path'], project['narrative'], for_recovery=True)
+        if cached.get('status') in {'matched', 'error'}:
+            if not check.get('signature') or cached.get('signature') != check['signature']:
+                raise ValueError(cached.get('message') or '产品动作结果与原匹配签名不一致')
+            inventory = project_catalogue(service.lib, project, retain_missing=None)
+            repaired = restore_cached_references(service, project, inventory, cached)
+            if repaired != cached:
+                write_json(path, repaired)
+            if check.get('status') != 'done' or project['narrative'].get('_product_usage') != repaired:
+                project['narrative']['_product_usage'] = repaired
+                project['product_reference_check'] = {k: v for k, v in check.items() if k not in {'message', 'cache_error'}}
+                project['product_reference_check']['status'] = 'done'
+                service.save(project)
+            return
+        if cached.get('status') != 'stale' and (check.get('status') == 'done' or check.get('cache_error')):
+            raise ValueError('缺少已匹配的产品动作结果')
         inventory = project_catalogue(service.lib, project)
-    except (OSError, ValueError) as exc:
-        project['product_reference_check'] = {'status': 'error', 'message': str(exc)[:600]}
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        message = str(exc)[:600]
+        project['product_reference_check'] = {**check, 'status': 'error', 'message': message, 'cache_error': True}
         service.save(project)
+        if cached.get('status') in {'matched', 'error'} and 'story_hash' in cached:
+            failed = {**cached, 'status': 'error', 'message': message}
+            if failed != cached:
+                write_json(path, failed)
         return
     if not products(project['narrative'], inventory):
+        if check.get('status') == 'done':
+            project['product_reference_check'] = {'status': 'not_required'}
+            service.save(project)
         return
     sig = signature(project['narrative'], inventory)
     display = inventory[0].get('reference_pack_usage') == 'display'
-    if (not use_cli and check.get('signature') == sig
-            and (check.get('status') in {'awaiting_match', 'done'}
-                 or display and check.get('status') == 'error')):
-        return
+    if check.get('signature') == sig:
+        if not use_cli and (check.get('status') == 'awaiting_match' or display and check.get('status') == 'error'):
+            return
     if not display and not use_cli:
         project['product_reference_check'] = {'status': 'awaiting_match', 'signature': sig}
         service.save(project)
@@ -327,6 +519,7 @@ def apply(service, project_id, sig, result, *, run_id=None, model=None):
                 usage['model'] = model
             write_json(root / FILE, usage)
             save_choices(root, original, choices)
+            current['narrative']['_product_usage'] = usage
             current['product_reference_check'] = {'status': 'done', 'signature': sig}
             if model:
                 current['product_reference_check']['model'] = model
@@ -334,12 +527,14 @@ def apply(service, project_id, sig, result, *, run_id=None, model=None):
             return service.sync(project_id)
 
 
-def project_reference(service, project, asset):
+def project_reference(service, project, asset, *, expected=None):
     if not asset.get('reference_pack_sha256'):
-        return {'project_path': str(service.copy_to_project(project, service.lib.get(asset['asset_id'])))}
+        options = {'expected': expected} if expected else {}
+        path = service.copy_to_project(project, service.lib.get(asset['asset_id']), **options)
+        return {'project_path': str(path)}
     source = Path(asset['original'])
     checksum = asset['sha256']
-    if sha256_file(source) != checksum:
+    if (expected and expected != checksum) or sha256_file(source) != checksum:
         raise ValueError(f'产品包原件校验失败：{source}')
     return {'project_path': str(source), 'pack_reference': True, 'sha256': checksum}
 
@@ -380,18 +575,14 @@ def persist_matches(service, project, inventory, result, sig):
                 'status': 'no_independent_reference' if e.get('needs_reference') is False else 'awaiting_reference_review',
                 'generation_route': None, 'image_path': None}
                for e in result['effects']]
-    used_products = {pids[e['product_ast_id']] for e in result['effects']} | {pids[r['product_ast_id']] for r in result['references']}
-    materials = []
-    for a in inventory:
-        if a['media_type'] == 'image' and (a['product_id'] in used_products
-                or (a.get('reference_pack_sha256') and a['product_id'] in pids.values())):
-            materials.append({'asset_id': a['asset_id'], 'name': a['name'], 'product_id': a['product_id'],
-                'canonical_path': a['original'], **project_reference(service, project, a)})
+    materials = [material_record(asset, project_reference(service, project, asset))
+                 for asset in material_assets(inventory, pids, result)]
     pack = next((a for a in inventory if a.get('reference_pack_sha256')), {})
     return {'status': 'matched', 'story_hash': story_hash(project['narrative']), 'signature': sig,
             **{key: pack[key] for key in ('reference_pack_sha256', 'reference_pack_usage') if key in pack},
             'source_revision': project['source']['revision'], 'references': refs,
-            'material_references': materials, 'effects': effects}
+            'material_references': materials, 'effects': effects,
+            'material_asset_ids': [row['asset_id'] for row in materials]}
 
 
 def append_table(root, usage):

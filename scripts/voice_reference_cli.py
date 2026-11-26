@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import re
 import shutil
@@ -16,12 +15,12 @@ from pathlib import Path
 from typing import Any, Iterator
 
 if __package__:
-    from .core.io import project_lock as shared_project_lock
+    from .core.io import project_lock as shared_project_lock, sha256_file as file_sha256
     from .core.artifacts import dependency_closure, _confirmed_package_source, project_path, stamp_user_approval
     from .core.project_state import (normalize_project_state, reconcile_current_artifacts,
                                      render_project_state_markdown)
 else:
-    from core.io import project_lock as shared_project_lock
+    from core.io import project_lock as shared_project_lock, sha256_file as file_sha256
     from core.artifacts import dependency_closure, _confirmed_package_source, project_path, stamp_user_approval
     from core.project_state import (normalize_project_state, reconcile_current_artifacts,
                                    render_project_state_markdown)
@@ -55,14 +54,6 @@ def write_json(path: Path, value: dict[str, Any]) -> None:
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
     temporary.replace(path)
-
-
-def file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def audio_duration(path: Path) -> float:

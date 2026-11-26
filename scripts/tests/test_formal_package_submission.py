@@ -185,6 +185,17 @@ def test_formal_storyboard_checks_required_visuals_at_adoption(tmp_path, duplica
     assert "target_url" not in board and "platform" not in board
 
 
+def historic_current(tmp_path):
+    package = narrative(tmp_path)
+    path = tmp_path / "N.json"
+    write_json(path, package)
+    current = {"artifact_id": "N", "logical_id": "narrative.package", "type": "narrative.package",
+               "revision": package["revision"], "status": "current", "user_approved": True,
+               "path_or_url": path.name, "checksum": artifacts.digest(path), "depends_on": []}
+    write_json(tmp_path / artifacts.MANIFEST_PATH, {"artifacts": [current]})
+    return current
+
+
 def test_manifest_save_cannot_bypass_formal_adoption_entry(tmp_path):
     story = narrative(tmp_path)
     path = tmp_path / "N.json"
@@ -198,48 +209,20 @@ def test_manifest_save_cannot_bypass_formal_adoption_entry(tmp_path):
     assert not artifacts.load_manifest(tmp_path)["artifacts"]
 
 
-@pytest.mark.parametrize("field,value", [
-    ("revision", "R99"), ("path_or_url", "forged.json"), ("checksum", "0" * 64),
-    ("depends_on", ["unconfirmed.upstream"]), ("user_approved", False),
+@pytest.mark.parametrize("mutation", [
+    {"revision": "R99"}, {"path_or_url": "forged.json"}, {"checksum": "0" * 64},
+    {"depends_on": ["unconfirmed.upstream"]}, {"user_approved": False},
+    {"logical_id": "unrelated.file", "type": "fixture", "path_or_url": "shadow.json", "checksum": "f" * 64},
 ])
-def test_manifest_save_cannot_rebind_existing_formal_current_id(tmp_path, field, value):
-    package = narrative(tmp_path)
-    path = tmp_path / "N.json"
-    write_json(path, package)
-    current = {"artifact_id": "N", "logical_id": "narrative.package", "type": "narrative.package",
-               "revision": package["revision"], "status": "current", "user_approved": True,
-               "path_or_url": path.name, "checksum": artifacts.digest(path), "depends_on": []}
-    # Seed a synthetic historic record; test the supported manifest writer's attempt to rewrite it.
-    write_json(tmp_path / artifacts.MANIFEST_PATH, {"artifacts": [current]})
-    changed = copy.deepcopy(current)
-    changed[field] = value
+def test_manifest_save_cannot_rebind_existing_formal_current_id(tmp_path, mutation):
+    current = historic_current(tmp_path)
     with pytest.raises(ValueError, match="不能改写 current 正式稿件"):
-        artifacts.save_manifest(tmp_path, {"artifacts": [changed]})
+        artifacts.save_manifest(tmp_path, {"artifacts": [{**current, **mutation}]})
     assert artifacts.load_manifest(tmp_path)["artifacts"] == [current]
 
 
-def test_manifest_save_cannot_rebind_formal_current_id_to_unrelated_logical_item(tmp_path):
-    package = narrative(tmp_path)
-    path = tmp_path / "N.json"
-    write_json(path, package)
-    current = {"artifact_id": "N", "logical_id": "narrative.package", "type": "narrative.package",
-               "revision": package["revision"], "status": "current", "user_approved": True,
-               "path_or_url": path.name, "checksum": artifacts.digest(path), "depends_on": []}
-    write_json(tmp_path / artifacts.MANIFEST_PATH, {"artifacts": [current]})
-    shadow = {**current, "logical_id": "unrelated.file", "type": "fixture", "path_or_url": "shadow.json",
-              "checksum": "f" * 64}
-    with pytest.raises(ValueError, match="不能改写 current 正式稿件"):
-        artifacts.save_manifest(tmp_path, {"artifacts": [shadow]})
-
-
 def test_manifest_save_cannot_reactivate_formal_current_after_staling(tmp_path):
-    package = narrative(tmp_path)
-    path = tmp_path / "N.json"
-    write_json(path, package)
-    current = {"artifact_id": "N", "logical_id": "narrative.package", "type": "narrative.package",
-               "revision": package["revision"], "status": "current", "user_approved": True,
-               "path_or_url": path.name, "checksum": artifacts.digest(path), "depends_on": []}
-    write_json(tmp_path / artifacts.MANIFEST_PATH, {"artifacts": [current]})
+    current = historic_current(tmp_path)
     stale = {**current, "status": "stale"}
     artifacts.save_manifest(tmp_path, {"artifacts": [stale]})
     with pytest.raises(ValueError, match="不能晋升或恢复正式稿件"):
@@ -247,13 +230,7 @@ def test_manifest_save_cannot_reactivate_formal_current_after_staling(tmp_path):
 
 
 def test_manifest_save_cannot_remove_then_readd_formal_current(tmp_path):
-    package = narrative(tmp_path)
-    path = tmp_path / "N.json"
-    write_json(path, package)
-    current = {"artifact_id": "N", "logical_id": "narrative.package", "type": "narrative.package",
-               "revision": package["revision"], "status": "current", "user_approved": True,
-               "path_or_url": path.name, "checksum": artifacts.digest(path), "depends_on": []}
-    write_json(tmp_path / artifacts.MANIFEST_PATH, {"artifacts": [current]})
+    current = historic_current(tmp_path)
     with pytest.raises(ValueError, match="不能删除 current 正式稿件历史记录"):
         artifacts.save_manifest(tmp_path, {"artifacts": []})
     # If an external/manual edit removes it, a later supported API still cannot

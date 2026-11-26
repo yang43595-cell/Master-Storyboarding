@@ -128,7 +128,7 @@ def test_running_creative_preparation_reads_inputs_only_once(tmp_path, monkeypat
         assert release.wait(timeout=10)
         return snapshot(*args, **kwargs)
 
-    monkeypatch.setattr(cli, "_input_snapshot", read_inputs)
+    monkeypatch.setattr(cli.context, "_input_snapshot", read_inputs)
     with ThreadPoolExecutor(max_workers=1) as workers:
         running = workers.submit(cli.prepare, args)
         try:
@@ -662,7 +662,7 @@ def test_nested_prepare_restores_outer_context_and_failed_call_resets_scope(tmp_
             cli.prepare(inner)
         return original(skill)
 
-    monkeypatch.setattr(cli, "_load_review_profile", read_profile)
+    monkeypatch.setattr(cli.context, "_load_review_profile", read_profile)
     result = cli.prepare(outer)
     assert Path(result["path"]).parent == batch_folder(outer)
     for args in (outer, inner):

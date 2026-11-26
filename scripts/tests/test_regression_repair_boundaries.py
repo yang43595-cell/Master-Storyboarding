@@ -113,7 +113,7 @@ def test_submission_rejects_unreviewed_before_payload_processing(tmp_path, monke
     before = {p: p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}
     def forbidden(*args, **kwargs):
         raise AssertionError('unreviewed project must fail before payload processing')
-    monkeypatch.setattr(canvas_readback, 'target_url', forbidden)
+    monkeypatch.setattr(canvas_readback.readback, 'target_url', forbidden)
     with pytest.raises(ValueError, match='候选|unreviewed'):
         canvas_readback.validate_submission({}, tmp_path)
     assert before == {p: p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}

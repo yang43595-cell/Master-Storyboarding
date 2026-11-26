@@ -623,7 +623,7 @@ class ProjectTests(unittest.TestCase):
         self.backup()
         result = self.lib.projects.export({'project_id': self.p['id'], 'confirm': True})
         out = pmod.read(result['manifest'])
-        pmod.validate(out, 'visual-asset-manifest.schema.json')
+        pmod.require_schema(out, 'visual-asset-manifest.schema.json', label='项目资产数据')
         self.assertEqual(len(out['assets'][0]['confirmed_outputs']), 4)
         self.assertTrue(all(Path(o['path']).is_file() for a in out['assets'] for o in a['confirmed_outputs']))
         state = load_project_state(Path(self.p['path']))
@@ -676,7 +676,7 @@ class ProjectTests(unittest.TestCase):
         receipt = pmod.read(Path(result['manifest']).parent / '用户确认记录.json')
         self.assertTrue(all(item['confirmation']['image_sha256'] for item in receipt['items']))
         self.assertIn('未记录 Agent 产品事实核对结果', Path(result['handoff']).read_text())
-        pmod.validate(out, 'visual-asset-manifest.schema.json')
+        pmod.require_schema(out, 'visual-asset-manifest.schema.json', label='项目资产数据')
         self.assertEqual(service.export({'project_id': p['id'], 'confirm': True}), result)
 
     def test_scene_mode_change_invalidates_existing_export(self):
@@ -965,25 +965,10 @@ class ProjectTests(unittest.TestCase):
 
     def test_current_website_review_adopts_exact_asset_without_another_confirmation(self):
         from types import SimpleNamespace
-        from scripts.tests.test_review_text_cli import narrative
-        from core.artifacts import adopt_initial_package, register_workspace_artifact
-        from core.project_kickoff import REQUEST_PATH
-
-        root = (self.base / 'website-review').resolve()
-        root.mkdir()
-        script_path, package = narrative(root)
-        requirement = package['asset_requirements'][0]
-        requirement.update(image_decision='复用现有素材', image_reason='合成测试图片')
-        pmod.write(script_path, package)
-        register_workspace_artifact(root, {'artifact_id': 'N-1', 'logical_id': 'narrative.package',
-            'type': 'narrative.package', 'revision': 'R01', 'path_or_url': script_path.name, 'depends_on': []})
-        adopt_initial_package(root, 'N-1', 'synthetic upstream approval')
-        pmod.write(root / REQUEST_PATH, {'kickoff': {'decision_ref': 'synthetic kickoff',
-            'product': {'mode': 'none'}, 'canvas': {'platform': 'redframe', 'model': 'fixture',
-                'aspect_ratio': '9:16', 'resolution': '720p', 'create_new': True}}})
-        service = self.lib.projects
-        p = service.bind(str(root))
-        ast_id = requirement['asset_id']
+        root, service, p = self.kickoff_project('website-review')
+        script_path = Path(p['source']['path'])
+        package = pmod.read(script_path)
+        ast_id = package['asset_requirements'][0]['asset_id']
         planned = service.prepare_reuse({'project_id': p['id'], 'ast_id': ast_id})
         job = planned['rows'][0]['job']
         service.select({'project_id': p['id'], 'job_id': job['id'], 'index': 0, 'asset_id': self.asset['id']})
@@ -1020,9 +1005,11 @@ class ProjectTests(unittest.TestCase):
                                             'version': target['version']}, 'actorId': 'test-reviewer'})
         import review_text_cli as publishing
         remote_asset = receipt('assets', 'publish-asset', image, 'b' * 64)['response']
+        remote_asset['headGeneration'] = 1
         client = SimpleNamespace(base_url='https://fixture.invalid', decision=decision,
                                  publish_asset=MagicMock(return_value=remote_asset),
-                                 status=MagicMock(side_effect=OSError('synthetic offline readback')))
+                                 status=MagicMock(side_effect=[{'case': {'projectId': 'fixture-site', 'id': '12'}, 'stage': 'assets', 'expectations': {'expectedHeadGeneration': 0}},
+                                                               OSError('synthetic offline readback')]))
         with patch.object(publishing, 'AgentReviewClient', return_value=client):
             publishing.run(publishing._parser().parse_args([
                 'publish-asset', '--project', str(root), '--script-publication', 'script.json',
@@ -1079,7 +1066,8 @@ class ProjectTests(unittest.TestCase):
             service.apply_website_review(p['id'], 'asset.json', client)
         self.assertIsNone(self.lib.get(job['id'], 'jobs')['steps'][0]['project_confirmation'])
         saved_operation.write_bytes(operation_bytes)
-        echoed = {**remote_asset, 'operationId': 'echo', 'artifactId': self.asset['id']}
+        client.status.side_effect = [{'case': {'projectId': 'fixture-site', 'id': '12'}, 'stage': 'assets', 'expectations': {'expectedHeadGeneration': 1}}, OSError('synthetic offline readback')]
+        echoed = {**remote_asset, 'headGeneration': 2, 'operationId': 'echo', 'artifactId': self.asset['id']}
         with patch.object(publishing, 'AgentReviewClient', return_value=client), patch.object(
                 client, 'publish_asset', return_value=echoed):
             publishing.run(publishing._parser().parse_args([
@@ -1663,6 +1651,9 @@ class ProjectTests(unittest.TestCase):
         shown = json.loads(subprocess.check_output([
             sys.executable, m.__file__, '--library', str(self.lib.root), '--asset-vault', str(self.lib.vault),
             'show-chat-candidates', '--project-id', p['id'], '--message-id', 'show-A', '--target', target]))
+        service.show_chat_candidates(p['id'], 'another-display', [target])
+        with self.assertRaisesRegex(ValueError, '展示消息'):
+            apply({**confirmation, 'outputs': shown['outputs'], 'message_id': 'another-display', 'reply_to_message_id': 'show-A'})
         from scripts import chat_asset_review as direct
         display_path, snapshot = direct.web_display(root, 'show-A')
         incomplete = copy.deepcopy(snapshot)
@@ -1723,6 +1714,15 @@ class ProjectTests(unittest.TestCase):
                                                 confirmation=confirmation)
         self.assertEqual(again['export'], result['export'])
         self.assertEqual(self.lib.get(job['id'], 'jobs')['steps'][0]['project_confirmation'], step['project_confirmation'])
+        displayed = shown['outputs'][0]
+        output = direct.asset_refs.resolve_final_images(root, [target])[target]
+        self.assertEqual((output['source_candidate_id'], output['source_candidate_revision'], output['source_candidate']),
+                         (displayed['candidate_id'], displayed['candidate_revision'], displayed['source_path']))
+        returned = {**confirmation, 'message_id': 'withdraw-A', 'reply_to_message_id': 'show-A',
+                    'quote': '退回这张图', 'decision': 'returned'}
+        apply(returned)
+        with self.assertRaises(ValueError):
+            direct.asset_refs.resolve_final_images(root, [target])
         service.reopen(selection)
         service.select({**selection, 'asset_id': unrelated['id']})
         with self.assertRaises(ValueError):
@@ -1733,6 +1733,8 @@ class ProjectTests(unittest.TestCase):
         receipt = self.lib.get(job['id'], 'jobs')['steps'][0]['project_confirmation']
         self.assertEqual(receipt['asset_id'], unrelated['id'])
         self.assertNotEqual(receipt['id'], step['project_confirmation']['id'])
+        apply(returned)
+        self.assertEqual(self.lib.get(job['id'], 'jobs')['steps'][0]['project_confirmation']['id'], receipt['id'])
 
     def test_web_return_and_approval_in_job_history_block_direct_cli(self):
         from core.agent_acceptance import register_asset_workflow_authorization

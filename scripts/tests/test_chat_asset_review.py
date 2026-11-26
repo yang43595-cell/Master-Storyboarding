@@ -376,3 +376,172 @@ def test_show_round_covers_each_declared_character_outfit(tmp_path):
     existing = {ast: {"required_board_ids": ["DAY", "NIGHT"], "image": {"outputs": [
         {"output_id": outfit, "output_kind": review.boards.BOARD} for outfit in ("DAY", "NIGHT")]}}}
     assert not review.boards.round_board_source_gaps(root, existing, [dict(target=head, output_kind=review.boards.HEAD)])
+
+
+def test_new_return_of_legacy_confirmation_in_mixed_project(tmp_path):
+    root = tmp_path.resolve()
+    upstream, targets = round_project(root, ["A", "KEEP"])
+    batch = image_batch(root, upstream, targets, "batch")
+    shown = review.show_round(root, ["batch"], upstream)["shown"]
+    items = read_json(batch)["items"]
+    ast = targets[0].split("@")[0]
+    confirmations, outputs = [], []
+    for row in items:
+        output = row["target"].split("@")[1]
+        evidence = dict(id=output, asset_id=row["candidate_id"], image_sha256=row["sha256"])
+        if output == "KEEP":
+            evidence.update(source_candidate=row["path"], candidate_revision=row["candidate_revision"])
+        confirmations.append(dict(ast_id=ast, output_id=output, confirmation=evidence))
+        outputs.append(dict(output_id=output, path=row["path"], purpose=row["purpose"],
+                            candidate_id="export-" + output, user_confirmation_ref="approval.json#" + output))
+    approval = root / "approval.json"
+    other = "AST-PROP-OTHER"
+    confirmations.append({**confirmations[0], "ast_id": other})
+    write_json(approval, {"items": confirmations})
+    manifest = root / review.asset_refs.MASTER_DIR / "old" / "visual-asset-manifest.json"
+    package = {"assets": [dict(asset_id=ast, status="confirmed", confirmed_outputs=outputs),
+                          dict(asset_id=other, status="confirmed", confirmed_outputs=[dict(outputs[0])])]}
+    write_json(manifest, package)
+    before = {p: p.read_bytes() for p in [approval, manifest, *(root / r["path"] for r in items)]}
+
+    def available():
+        images = review.asset_refs.confirmed_images(root)
+        assert images[other]["outputs"][0]["confirmation_ref"] == "approval.json#A"
+        return [o["output_id"] for o in images[ast]["outputs"]]
+
+    assert available() == ["A", "KEEP"]
+    feedback = dict(scope="selected", targets=targets[:1], at="2026-11-23T08:00:00Z",
+                    quote="退回 A", review_ref="return-a", shown=[shown])
+    result = review.return_for_revision(root, [shown], feedback, upstream)
+    record = root / result["record"]
+    saved = read_json(record)
+    assert saved["revoked_confirmations"] == ["approval.json#A"]
+    assert saved["feedback"] == feedback and available() == ["KEEP"]
+    write_json(record, {**saved, "revoked_confirmations": []})
+    assert available() == ["KEEP"]
+    assert all(p.read_bytes() == raw for p, raw in before.items())
+
+    # A later confirmation of B can even reuse A's bytes on the same output.
+    replacement = {"items": [dict(ast_id=ast, output_id="A", confirmation=dict(
+        id="B", asset_id="B", image_sha256=items[0]["sha256"]))]}
+    write_json(root / "replacement.json", replacement)
+    outputs[0]["user_confirmation_ref"] = "replacement.json#B"
+    write_json(manifest, package)
+    assert review.return_for_revision(root, [shown], feedback, upstream)["record"] == result["record"]
+    assert available() == ["A", "KEEP"]
+    assert read_json(record)["feedback"] == feedback and approval.read_bytes() == before[approval]
+
+
+@pytest.mark.parametrize(("second_confirmed", "first_slot", "revision"), [
+    ("B", "legacy-main", "R01"), ("C", "legacy-main", "R01"),
+    ("C", "main", "R01"), ("B", "legacy-main", "R02"),
+])
+def test_batch_return_preserves_original_candidate_identity_in_legacy_main(tmp_path, second_confirmed, first_slot, revision):
+    root = tmp_path.resolve()
+    upstream, targets = round_project(root, [first_slot])
+    paper = "AST-PROP-PAPER"
+    box = "AST-PROP-BOX"
+    unknown = "AST-PROP-UNKNOWN"
+    targets.append(box + "@legacy-main")
+    story_path = root / upstream["path_or_url"]
+    story = read_json(story_path)
+    for asset_id in (box, unknown):
+        story["asset_requirements"].append({**story["asset_requirements"][0], "asset_id": asset_id, "name": asset_id})
+    write_json(story_path, story)
+    upstream["checksum"] = artifacts.digest(story_path)
+    review.stage.main(["adopt-package", "--project", str(root), "--artifact-id", upstream["artifact_id"],
+                       "--logical-id", "narrative.package", "--path", upstream["path_or_url"],
+                       "--revision", "R01", "--approval-ref", "synthetic:approved-story"])
+    write_json(root / review.stage.REQUEST_PATH, {"asset_review_targets": targets})
+    batch = image_batch(root, upstream, targets, "batch")
+    packet = read_json(batch)
+    for candidate, color in [("A", "red"), ("B", "blue"), ("C", "green")]:
+        Image.new("RGB", (5, 5), color).save(root / (candidate + ".png"))
+    for row, candidate in zip(packet["items"], ("A", "B")):
+        row.update(candidate_id=candidate, path=candidate + ".png", sha256=artifacts.digest(root / (candidate + ".png")))
+    write_json(batch, packet)
+    shown = review.show(root, "batch", upstream)["shown"]
+    ref = "approval.json#approved"
+    approvals = []
+    assets = []
+    for ast, candidate in [(paper, "A"), (box, second_confirmed), (unknown, "C")]:
+        path = candidate + ".png"
+        evidence = dict(id="approved", image_sha256=artifacts.digest(root / path))
+        if ast == box:
+            evidence.update(candidate_id=candidate, source_candidate=path, candidate_revision=revision)
+        item = dict(ast_id=ast, output_id=first_slot if ast == paper else "legacy-main", confirmation=evidence)
+        if ast == paper:
+            if first_slot == "legacy-main":
+                evidence["asset_id"] = candidate  # Per-step receipt from the old workbench.
+            else:
+                item["library_asset_id"] = candidate  # Library selection on the exact export item.
+        approvals.append(item)
+        selected = dict(candidate_id=ast + "-C01", path=path, user_confirmation_ref=ref)
+        asset = dict(asset_id=ast, status="confirmed", confirmed_asset=selected, candidates=[dict(selected)])
+        if ast == box:
+            asset["confirmed_outputs"] = [{**selected, "output_id": "legacy-main"}]
+        assets.append(asset)
+    manifest = root / review.asset_refs.MASTER_DIR / "old" / "visual-asset-manifest.json"
+    write_json(manifest, {"assets": assets})
+    approval = root / "approval.json"
+    write_json(approval, {"items": approvals})
+    preserved = {p: p.read_bytes() for p in [manifest, approval, *(root / (c + ".png") for c in "ABC")]}
+
+    refs = review.asset_refs
+    images = refs.confirmed_images(root)
+    assert set(images) == {paper, box}
+    assert images[paper]["outputs"][0]["source_candidate_id"] == "A"
+    assert images[paper]["outputs"][0]["candidate_id"] == paper + "-C01"
+    formal = [paper + "@legacy-main", targets[1]]
+    assert refs.resolve_final_images(root, formal)[formal[1]]["source_candidate_id"] == second_confirmed
+    assert not refs.require_final_images(root, [unknown + "@legacy-main"])[0]
+
+    feedback = dict(scope="all_shown", at="2026-11-26T12:00:00Z", quote="退回 A 和 B",
+                    review_ref="return-ab", shown=[shown])
+    result = review.return_for_revision(root, [shown], feedback, upstream)
+    record = root / result["record"]
+    original = record.read_bytes()
+    assert review.return_for_revision(root, [shown], feedback, upstream) == result
+    assert record.read_bytes() == original and read_json(record)["feedback"] == feedback
+    returned_second = second_confirmed == "B" and revision == "R01"
+    assert read_json(record)["revoked_confirmations"] == ([ref, ref] if returned_second else [ref])
+    for pointers in (read_json(record)["revoked_confirmations"], []):
+        write_json(record, {**read_json(record), "revoked_confirmations": pointers})
+        assert set(refs.confirmed_images(root)) == (set() if returned_second else {box})
+        assert not refs.require_final_images(root, formal[:1])[0]
+        if not returned_second:
+            selected = refs.resolve_final_images(root, targets[1:])[targets[1]]
+            assert (selected["path"], selected["source_candidate_revision"]) == (str(root / (second_confirmed + ".png")), revision)
+    assert all(p.read_bytes() == raw for p, raw in preserved.items())
+
+
+def test_withdrawn_revision_and_earlier_display_cannot_resume_delivery(tmp_path):
+    root = tmp_path.resolve()
+    upstream, targets = round_project(root, ["PAPER"])
+    review.stage.main(["adopt-package", "--project", str(root), "--artifact-id", upstream["artifact_id"],
+                       "--logical-id", "narrative.package", "--path", upstream["path_or_url"],
+                       "--revision", "R01", "--approval-ref", "synthetic script approval"])
+    receipt = image_batch(root, upstream, targets, "batch")
+    shown = review.show_round(root, ["batch"], upstream)["shown"]
+    decision(root, shown, upstream, "approve-a", message_id="a")
+    feedback = dict(scope="all_shown", at="2026-11-23T08:00:00Z", quote="退回", review_ref="feedback", shown=[shown])
+    result = review.return_for_revision(root, [shown], feedback, upstream)
+    record = root / result["record"]
+    saved = read_json(record)
+    assert saved.pop("revoked_confirmations")
+    with pytest.raises(ValueError):
+        review.asset_refs.resolve_final_images(root, targets)
+    write_json(record, saved)  # historical return predating explicit withdrawal pointers
+    with pytest.raises(ValueError):
+        review.asset_refs.resolve_final_images(root, targets)
+    batch = read_json(receipt)
+    batch["items"][0]["candidate_revision"] = "R02"
+    write_json(receipt, batch)
+    newer = review.show_round(root, ["batch"], upstream)["shown"]
+    decision(root, newer, upstream, "approve-b", message_id="b")
+    with pytest.raises(ValueError):
+        decision(root, shown, upstream, "approve-old", message_id="old")
+    review.return_for_revision(root, [shown], feedback, upstream)
+    assert review.asset_refs.resolve_final_images(root, targets)[targets[0]]["source_candidate_revision"] == "R02"
+    with pytest.raises(ValueError, match="消息 ID"):
+        review.prior_channel_decision(root, {**feedback, "review_ref": "changed"}, [], "approved", from_web=True)
