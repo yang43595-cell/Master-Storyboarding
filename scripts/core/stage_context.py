@@ -558,14 +558,24 @@ def _check_preparation_route(project, skill, request, routed, *, repair=False, a
         assets = {target.partition("@")[0] for target in image_targets}
         for scope in (routed, route) if routed else (route,):
             if "output_ids" not in scope:
-                raise StageContextError("资产交接范围为盘点和复用；出图目标须先登记当前制作授权")
-            if (not assets.issubset(scope.get("asset_ids", []))
-                    or scope["output_ids"] and not image_targets.issubset(scope["output_ids"])
-                    or assets.intersection(scope.get("compose_asset_ids", []))
-                    or image_targets.intersection(scope.get("confirmed_output_ids", []))
-                    or image_targets.intersection(scope.get("batched_output_ids", []))
-                    or image_targets.intersection(scope.get("rejected_output_ids", []))):
-                raise StageContextError("图片目标超出程序交接范围")
+                raise StageContextError(
+                    "资产交接范围只有盘点和复用，不能出图：开工单缺 image_generation 生图授权。"
+                    "用户已同意缺图生成时，用 stage_context_cli.py kickoff --answers-json 补登记 image_generation"
+                    "（provider、model、scope、authorization_ref、reference_upload_authorized、fee_scope），再重新运行 handoff")
+            reasons = []
+            if missing := sorted(assets - set(scope.get("asset_ids", []))):
+                reasons.append("不在本轮交接资产内：" + "、".join(missing))
+            if scope["output_ids"] and (outside := sorted(image_targets - set(scope["output_ids"]))):
+                reasons.append("不在本轮交接输出内：" + "、".join(outside))
+            if composing := sorted(assets.intersection(scope.get("compose_asset_ids", []))):
+                reasons.append("属于待拼版人物，应走 compose-boards：" + "、".join(composing))
+            for field, label in (("confirmed_output_ids", "已确认，无需再出"),
+                                 ("batched_output_ids", "已在其他批次中；同轮换图直接改原批次回执，不另开批次"),
+                                 ("rejected_output_ids", "已被拒用")):
+                if hit := sorted(image_targets.intersection(scope.get(field, []))):
+                    reasons.append(label + "：" + "、".join(hit))
+            if reasons:
+                raise StageContextError("图片目标超出程序交接范围；" + "；".join(reasons))
 
 
 def _coordinator_objective(skill: str, context_id, scope, testing=False) -> str | None:

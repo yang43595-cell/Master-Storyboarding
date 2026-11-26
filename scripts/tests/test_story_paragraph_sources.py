@@ -10,7 +10,6 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from core.schema_contracts import schema_errors
 from core.story_sources import read_story_paragraphs, validate_shot_plan, validate_story_sources
-from core.production_plan import validate_production_plan
 from visual_asset_source import prompt_context
 from test_storyboard_planner_contract import sample_package
 
@@ -163,34 +162,6 @@ def test_new_asset_receiver_reads_paragraph_sources(tmp_path):
     received=pmod.source_project(str(root))[2]
     assert received['story_paragraphs']==n['story_paragraphs']
 
-
-def test_new_plan_checks_paragraph_union(tmp_path, monkeypatch):
-    import core.production_plan as mod
-    n=narrative(tmp_path);board=sample_package()
-    monkeypatch.setattr(mod,'_read_v32_source',lambda root,ref,label,errors,**kw: n if label=='source_narrative' else board)
-    (tmp_path/'prompt.md').write_text('无对白',encoding='utf-8')
-    ref=lambda logical:{'artifact_id':'ART-X','logical_id':logical,'revision':'R01','path':'source.json','status':'confirmed'}
-    plan={'schema_version':'3.3','project_id':'MSB-TEST','revision':'R01','status':'candidate',
-          'source_narrative':ref('narrative.package'),'source_storyboard':ref('storyboard.package'),
-          'source_assets':None,'source_voice_manifest':None,'source_visual_supplements':[],
-          'dialogue_register':[], 'authorization':{'model_selection_status':'awaiting_user','model_id':None,'model_selection_approval_ref':None,
-          'paid_generation_authorized':False,'paid_generation_approval_ref':None,'submission_authorized':False,'submission_approval_ref':None},'open_gaps':[],
-          'segments':[{'segment_id':'SEG-01','order':1,'segment_assignment':{'source_shot_ids':['S01-010'],'grouping_basis':'single_shot'},
-          'source_paragraph_ids':['STP-01'],'source_dialogue_ids':['DLG-01'],'planned_generation_duration_seconds':5,'target_edit_duration_seconds':5,
-          'start_state':'开始','end_state':'结束','reference_inputs':[],'prompt_path':'prompt.md','semantic_timing_relations':[],'status':'draft'}]}
-    # Register fields come from schema below; no paid calls, only validation.
-    schema=json.loads((Path(__file__).resolve().parents[2]/'schemas/production-plan.schema.json').read_text(encoding='utf-8'))
-    dialogue=schema['$defs']['dialogue']
-    item={'dialogue_id':'DLG-01','speaker_id':'CHR-A','text':'不。'}
-    for key in dialogue['required']:
-        if key not in item:
-            spec=dialogue['properties'][key]
-            item[key]=spec.get('const',spec.get('enum',[None])[0]) if 'enum' in spec or 'const' in spec else (1 if spec.get('type') in ('number','integer') else 'none')
-    plan['dialogue_register']=[item]
-    report=validate_production_plan(plan,tmp_path)
-    assert not report.errors,report.to_dict()
-    plan['segments'][0]['source_paragraph_ids']=['STP-UNKNOWN']
-    assert 'SEGMENT_PARAGRAPH_TRACE_MISMATCH' in validate_production_plan(plan,tmp_path).error_codes
 
 def test_new_export_and_source_revision_invalidate_jobs():
     from test_visual_asset_projects import ProjectTests, pmod, plan_result, m, update_narrative_checksum

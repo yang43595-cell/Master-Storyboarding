@@ -126,7 +126,7 @@
 set -e
 set -o pipefail
 original_batches() {
-  .venv/bin/python -m pytest -q "$@" scripts/tests/test_visual_asset_reading.py scripts/tests/test_visual_asset_projects.py scripts/tests/test_visual_asset_library.py scripts/tests/test_stage_context_cli.py scripts/tests/test_production_preflight.py \
+  .venv/bin/python -m pytest -q "$@" scripts/tests/test_visual_asset_reading.py scripts/tests/test_visual_asset_projects.py scripts/tests/test_visual_asset_library.py scripts/tests/test_stage_context_cli.py \
     -k 'WebReadingTests or batch_starts or prepare_handles or batch_sends or batch_scheduler or preflight_failure_does_not or check_current_prompt or single_call_self_check or object_plan_and_review or empty_optional or missing_review_evidence or complete_cli_message or all_native_cli_consumers or codex_review_approval or codex_blank_failed or review_pack or review_kind_contract or same_scene_split or internal_shot or merged_internal'
   .venv/bin/python -m pytest -q "$@" scripts/tests/test_visual_asset_reading.py scripts/tests/test_visual_asset_projects.py scripts/tests/test_visual_asset_library.py scripts/tests/test_session_usage.py \
     -k 'WebReadingTests or check_current_prompt or single_call_self_check or object_plan_and_review or empty_optional or missing_review_evidence or review_binds_current_text or all_native_cli_consumers or codex_review_approval or codex_blank_failed or usage_docs_keep_routine'

@@ -241,6 +241,17 @@ def kickoff_project(project, answers=None):
         result["product_choice_prompt"] = "请用户选择本项目使用哪款产品、提供其他准确商品，或明确无产品"
     if (timing := product_demo_timing_advisory(kickoff)) is not None:
         result["product_demo_timing"] = timing
+    if kickoff and not kickoff.get("image_generation"):
+        result["image_generation_missing"] = (
+            "开工单还没登记生图授权（image_generation）：编导采用后资产阶段只能盘点和复用，不能出图。"
+            "用户已同意缺图用现有额度生成时，现在就在开工 JSON 补 image_generation："
+            "provider（redframe/imagegen/dreamina/chatgpt）、model、scope（required_asset_outputs 或 "
+            "required_assets_and_supplements）、authorization_ref（用户原话位置）、"
+            "reference_upload_authorized: true、fee_scope: existing_quota")
     if kickoff and (pack := resolve_product_pack(kickoff["product"])):
-        result["product_reference_pack"] = pack
+        compact_refs = [
+            {key: item[key] for key in ("id", "path", "role", "usages", "coverage", "action_key") if key in item}
+            for item in pack.get("references", [])
+        ]
+        result["product_reference_pack"] = {**pack, "references": compact_refs}
     return result

@@ -14,6 +14,7 @@ LABELS = {
     'text':'原文', 'speaker_id':'说话者', 'dialogue_id':'对白编号',
     'presentation':'呈现方式', 'delivery':'语气', 'sfx':'音效', 'cut':'切出',
     'purpose':'观看目的', 'rhythm':'节奏', 'overrides':'本镜覆盖', 'shot_id':'镜号',
+    'action':'镜内行动', 'exit':'切走', 'handoff':'交代信息',
 }
 
 
@@ -53,7 +54,31 @@ def scalar(value):
     return str(value)
 
 
+def shot_reading_line(shot):
+    """One readable line per shot, generated from the shot's own fields (v5 reading body)."""
+    camera = shot.get('camera', {})
+    parts = [f"【{shot['shot_id']}】{camera.get('framing', '')}", f"运镜：{camera.get('movement', '')}"]
+    if camera.get('focus'):
+        parts.append(f"焦点：{camera['focus']}")
+    parts.append(f"行动：{shot.get('action', '')}")
+    for d in shot.get('audio', {}).get('dialogue', []):
+        parts.append(f"{d.get('speaker_id', '')}（{d.get('dialogue_id', '')}）：“{d.get('text', '')}”")
+    cut = shot.get('cut', {})
+    parts.append(f"切走：{cut.get('exit', '')}｜{shot.get('rhythm', '')}")
+    return '\n'.join(parts)
+
+
 def director_scene_reading(scene):
+    if 'action' in (scene.get('shots') or [{}])[0]:
+        # v5: the scene flow states direction; the readable body is generated from every shot.
+        lines = []
+        for key in ('space_rules', 'defaults'):
+            if key in scene:
+                lines += [LABELS[key] + '：', *readable_fields(scene[key]), '']
+        lines += ['整场走向：', scene.get('audiovisual_flow', ''), '']
+        lines += [shot_reading_line(shot) + '\n' for shot in scene['shots']]
+        technical = '\n\n'.join('\n'.join(readable_fields(shot)) for shot in scene['shots'])
+        return {'body': '\n'.join(lines).strip(), 'technical': technical, 'technical_open': False}
     flow = scene.get('audiovisual_flow', '')
     shots = scene.get('shots', [])
     # Conservative visibility guard, not a creative/completeness certification.

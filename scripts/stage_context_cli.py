@@ -75,6 +75,9 @@ def parser() -> argparse.ArgumentParser:
     kickoff = commands.add_parser("kickoff", help="核对或登记现有项目需求中的开工决定")
     kickoff.add_argument("--project", required=True, type=Path)
     kickoff.add_argument("--answers-json", type=Path, help="已确认的开工决定 JSON 文件；- 从标准输入读取；省略则只读")
+    kickoff.add_argument("--authorization-id", help="可选：在同一调用中登记流程授权 ID，须与 --authorize-skill 同用")
+    kickoff.add_argument("--authorize-skill", action="append", default=[], help="可选：授权自行验收的阶段，可重复")
+    kickoff.add_argument("--authorization-ref", help="可选：流程授权依据；省略时复用已登记的 kickoff.decision_ref")
     start = commands.add_parser("prepare")
     start.add_argument("--project", required=True)
     start.add_argument("--skill", required=True)
@@ -191,6 +194,19 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "kickoff":
         answers = context._json_input(args.answers_json) if args.answers_json else None
         result = context.kickoff_project(args.project, answers)
+        if args.authorization_id or args.authorize_skill or args.authorization_ref:
+            if not args.authorization_id or not args.authorize_skill:
+                raise context.StageContextError("同一步登记流程授权须同时提供 --authorization-id 和 --authorize-skill")
+            kickoff_data = result.get("kickoff") or {}
+            auth_ref = args.authorization_ref or kickoff_data.get("decision_ref")
+            if not auth_ref:
+                raise context.StageContextError("登记流程授权须提供 --authorization-ref 或已登记的 kickoff.decision_ref")
+            result["authorization"] = context.register_workflow_authorization(
+                args.project.expanduser().resolve(),
+                authorization_id=args.authorization_id,
+                authorization_ref=auth_ref,
+                skills=list(args.authorize_skill),
+            )
     elif args.command == "usage-check":
         usage = context._check_run_budget(args)
         if usage is None:
@@ -204,6 +220,8 @@ def main(argv: list[str] | None = None) -> int:
     else:
         result = context.validate_text(args.kind, Path(args.path).expanduser().resolve())
     print(json.dumps(result, ensure_ascii=False, indent=2))
+    if args.command == "status" and result.get("waiting_for_user"):
+        return 0
     return 2 if result.get("ok") is False else 0
 
 

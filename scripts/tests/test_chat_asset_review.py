@@ -545,3 +545,32 @@ def test_withdrawn_revision_and_earlier_display_cannot_resume_delivery(tmp_path)
     assert review.asset_refs.resolve_final_images(root, targets)[targets[0]]["source_candidate_revision"] == "R02"
     with pytest.raises(ValueError, match="消息 ID"):
         review.prior_channel_decision(root, {**feedback, "review_ref": "changed"}, [], "approved", from_web=True)
+
+
+def test_scope_gap_id_is_schema_legal_for_chinese_output_ids():
+    import re as _re
+    from scripts.core import character_boards
+    legal = character_boards.scope_gap_id("AST-CH-03", "CH-03-1X4")
+    assert legal == "GAP-AST-CH-03-CH-03-1X4"  # historical form kept
+    odd = character_boards.scope_gap_id("AST-CH-03", "CH-03_贴身女仆_服装1x3R05")
+    assert _re.fullmatch(r"GAP-AST-[A-Z0-9-]+", odd)
+    assert odd == character_boards.scope_gap_id("AST-CH-03", "CH-03_贴身女仆_服装1x3R05")
+    assert odd != character_boards.scope_gap_id("AST-CH-03", "CH-03_皇家美容师_服装1x3R05")
+
+
+def test_decision_file_fills_shown_from_cli_and_reads_stdin(tmp_path, monkeypatch):
+    import io
+    import sys
+    path = tmp_path / "msg.json"
+    write_json(path, {"scope": "all_shown", "quote": "全部通过"})
+    assert review.read_decision(path, ["b" * 64, "a" * 64])["shown"] == ["a" * 64, "b" * 64]
+    write_json(path, {"scope": "all_shown", "shown": ["c" * 64]})
+    assert review.read_decision(path, ["a" * 64])["shown"] == ["c" * 64]
+    monkeypatch.setattr(sys, "stdin", io.StringIO('{"scope": "all_shown"}'))
+    assert review.read_decision(Path("-"), ["a" * 64])["shown"] == ["a" * 64]
+
+
+def test_active_targets_skip_cancelled_assets():
+    requirements = {"AST-A": {"image_decision": "需要制作"}, "AST-B": {"image_decision": "不需要"}}
+    kept, cancelled = review.active_targets(["AST-A@X", "AST-B@Y", "AST-C@Z"], requirements)
+    assert kept == ["AST-A@X"] and cancelled == ["AST-B@Y", "AST-C@Z"]

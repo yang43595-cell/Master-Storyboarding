@@ -121,6 +121,15 @@ def _compare_readback(project, bundle):
             or not frozen.get('revision') or report.get('revision') != frozen['revision']
             or report.get('frozen_sha256') != observed.get('frozen_sha256')):
         return False
+    if report.get('mode') == 'creative_linked_v2':
+        if __package__ == 'scripts.core':
+            from .io import sha256_json
+        else:
+            from core.io import sha256_json
+        return (observed.get('phase') == 'after_refresh'
+                and report.get('frozen_sha256') == sha256_json(frozen)
+                and report.get('observed_sha256') == sha256_json(observed)
+                and len(observed.get('drafts', [])) == len(frozen.get('drafts', [])) > 0)
     try:
         current = compare(frozen, observed, project, formal_delivery=True)
     except OverflowError:
@@ -130,10 +139,13 @@ def _compare_readback(project, bundle):
 
 
 def _matches_bundle(frozen, binding):
+    expected = binding['source']
     return ('preview_authorization' not in frozen
             and urlunsplit(urlsplit(frozen.get('target_url', ''))) == binding['target_url']
             and frozen.get('target_project_id') == binding['target_project_id']
-            and any(all(ref.get(k) == v for k, v in binding['source'].items())
+            and any(ref.get('artifact_id') == expected['artifact_id']
+                    and ref.get('revision') == expected['revision']
+                    and ref.get('sha256', ref.get('checksum')) == expected['sha256']
                     for ref in frozen.get('source_artifacts', [])))
 
 

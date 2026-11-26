@@ -76,12 +76,19 @@ def _require_authorization(project, authorization_id, skill, allowed, state, inv
         raise ValueError("流程授权不存在或不唯一")
     authorization = matches[0]
     skills = authorization.get("skills")
-    if (authorization.get("workflow") != WORKFLOW or authorization.get("status") != "active"
-            or authorization.get("project_path") != str(project)
-            or not _text(authorization.get("authorization_ref"))
-            or not _text(authorization.get("created_at"))
-            or not _valid_skills(skills, allowed) or skill not in skills):
-        raise ValueError(invalid_scope)
+    reasons = []
+    if authorization.get("workflow") != WORKFLOW:
+        reasons.append(f"流程类型是 {authorization.get('workflow')}，应为 {WORKFLOW}")
+    if authorization.get("status") != "active":
+        reasons.append(f"状态是 {authorization.get('status')}（已撤回或未生效）")
+    if authorization.get("project_path") != str(project):
+        reasons.append(f"登记的项目路径 {authorization.get('project_path')} 与当前项目 {project} 不同")
+    if not _text(authorization.get("authorization_ref")) or not _text(authorization.get("created_at")):
+        reasons.append("缺授权依据或登记时间")
+    if not _valid_skills(skills, allowed) or skill not in skills:
+        reasons.append(f"授权阶段 {skills} 不含 {skill}")
+    if reasons:
+        raise ValueError(invalid_scope + "：" + "；".join(reasons))
     return authorization
 
 

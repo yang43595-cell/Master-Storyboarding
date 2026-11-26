@@ -1958,3 +1958,39 @@ def test_storyboard_basis_changed_before_publication(tmp_path, monkeypatch, file
         cli.review_pack(args)
     assert {path: path.read_bytes() for path in before} == before
     assert list(scope.parent.parent.iterdir()) == [scope.parent]
+
+
+def test_kickoff_can_register_workflow_authorization_and_status_waiting_exits_zero(tmp_path, capsys):
+    project = _project(tmp_path)
+    answers = tmp_path / "kickoff.json"
+    write_json(answers, {
+        "decision_ref": "2026-11-26 用户确认开工与全流程授权",
+        "creation": {"workflow": "creative"},
+        "product": {"mode": "none"},
+    })
+    code = cli.main([
+        "kickoff", "--project", str(project), "--answers-json", str(answers),
+        "--authorization-id", "FLOW-R01",
+        "--authorize-skill", "storyboard-planner",
+        "--authorize-skill", "voiceover-to-video-script",
+    ])
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["authorization"]["id"] == "FLOW-R01"
+    assert payload["authorization"]["authorization_ref"] == "2026-11-26 用户确认开工与全流程授权"
+    assert payload["authorization"]["skills"] == ["storyboard-planner", "voiceover-to-video-script"]
+
+    # Waiting on human creative review is a normal stop-point, not a CLI error.
+    from scripts.core import artifacts
+    nar = project / "02_编导/叙事包/R01.json"
+    nar.parent.mkdir(parents=True, exist_ok=True)
+    nar.write_text("{}", encoding="utf-8")
+    artifacts.register_workspace_artifact(project, {
+        "artifact_id": "NAR-R01", "logical_id": "narrative.package", "type": "narrative.package",
+        "path_or_url": "02_编导/叙事包/R01.json", "revision": "R01", "depends_on": [],
+        "checksum": artifacts.digest(nar), "user_approved": False,
+    })
+    assert cli.main(["status", "--project", str(project)]) == 0
+    st = json.loads(capsys.readouterr().out)
+    assert st["waiting_for_user"] is True
+    assert st["production_allowed"] is False

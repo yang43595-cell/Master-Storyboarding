@@ -26,6 +26,14 @@ description: 在叙事包正式采用后直接按已登记 AST 需求核对和�
 
 ## 本轮执行 SOP
 
+### 普通对话快速路径（实看原图 + 一键挂图交审与 1×4 拼版，严禁翻读底层源码手拼哈希回执）
+
+> **阅读边界硬纪律**：必须用 `read_file` **亲眼实看**本轮拟复用或新生成的候选图片（核对人物五官服饰、有无水印/穿帮、场景是否干净、真实产品包装是否一致），严禁盲信文件名！但**严禁去通读 JSON Schema 或底层核心 Python 源码手写 `直做图片请求` / `直做图片回执` 哈希文件**，登记与拼版统一使用 `scripts/asset_stage_cli.py`：
+> 1. **一键登记候选图并生成整轮交审单**：准备好候选清单 JSON 数组 `[...]`（每项 `{"target": "AST-CH-01@CH-01_单图", "src": "<图路径>", "kind": "人物单图|大头照|服装三视图|场景母图|道具母图", "purpose": "...", "final_output_id": "<服装三视图对应的1x4输出ID>"}`，`REAL_PRODUCT` 商品图 `kind` 同填 `"道具母图"`），运行：
+>    `PYTHONPATH=scripts .venv/bin/python scripts/asset_stage_cli.py stage-and-show --project "<项目>" --input /tmp/asset_candidates.json`
+> 2. **用户确认后一键落账 + 本地拼出 1×4 人物板**：
+>    `PYTHONPATH=scripts .venv/bin/python scripts/asset_stage_cli.py confirm-round --project "<项目>" --shown <上步返回的shown编号> --quote "<用户原话>" --compose-boards`（若用户确认范围已包含拼版验收可加 `--auto-confirm-boards`；否则展示拼版图等用户确认后再调一次 `confirm`）。
+
 项目资产图沿[项目已定审核通道](../../PROJECT_RULES.md#网站审核到画布的统一入口)人审。普通对话先列全本轮需求，标明可复用、需制作、无需独立图及确有缺口的项目。本轮需人审的源图按 `AST@输出` 登记在现有 `00_项目管理/project_request.json` 的 `asset_review_targets`，随有效需求调整同步更新。列完即开工，无须用户另批清单。执行批次完成后收回执，齐备时按[整轮交审](references/05-asset-manifest-handoff-guide.md#普通对话整轮交审)一次展示准确图片和用途。用户明确要求提前看某批时可单独送审，其余目标继续。返修仅重新送受影响的成图，已有效确认且用途不变的参考沿用原依据。独立库及兼容项目沿原确认路径。
 
 按顺序完成适用步骤；核对对象和结论写回本模式现有制作项、候选/审核备注与清单，不另建执行表。只有本轮实际执行并有对应结果的步骤才可报完成。

@@ -46,11 +46,11 @@ def _validator(schema_name: str):
 
 def schema_errors(value: Any, schema_name: str) -> list[str]:
     legacy = {
+        ("storyboard-package.schema.json", "4.0"): "storyboard-package-v4.schema.json",
         ("storyboard-package.schema.json", "3.0"): "storyboard-package-v3.schema.json",
         ("narrative-package.schema.json", "1.0"): "narrative-package-v1.schema.json",
         ("storyboard-package.schema.json", "2.0"): "storyboard-package-v2.schema.json",
         ("storyboard-package.schema.json", "1.0"): "storyboard-package-v1.schema.json",
-        ("production-plan.schema.json", "3.2"): "production-plan-v3.2.schema.json",
         ("visual-asset-manifest.schema.json", "1.0"): "visual-asset-manifest-v1.schema.json",
         ("visual-asset-manifest.schema.json", "1.1"): "visual-asset-manifest-v1.schema.json",
     }

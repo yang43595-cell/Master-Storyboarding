@@ -486,9 +486,11 @@ class RedframeImageUI:
     def set_ratio(self, node_id, ratio):
         if ratio not in {'1:1', '3:4', '4:3', '9:16', '16:9', '2:3', '3:2'}:
             raise ValueError('expected an explicit image ratio')
+        self.page.keyboard.press('Escape')
         node = self.focus(node_id)
         self._click(node.get_by_role('button', name='选择图片比例和分辨率', exact=True), 'open image settings')
-        self._click(self.page.get_by_role('button', name=ratio, exact=True), 'set image ratio', mutation=True, node_id=node_id)
+        visible_ratio = self.page.get_by_role('button', name=ratio, exact=True).and_(self.page.locator('button:visible'))
+        self._click(visible_ratio, 'set image ratio', mutation=True, node_id=node_id)
         self.page.keyboard.press('Escape')
         self._wait_canvas(lambda g: True if _one(g['nodes'], node_id)['data'].get('ratio') == ratio else None, 'save image ratio')
 
@@ -576,6 +578,22 @@ class RedframeImageUI:
         output = self.workspace.wait_for_image_result(node_id, record.get('previous_output'), timeout=timeout)
         return {'node_id': node_id, 'status': 'output_observed', 'output': output,
                 'task_id': None, 'visual_quality_verified': False}
+
+    def read_output_bytes(self, output_path, *, timeout_ms=45_000):
+        """Download a node's persisted original through the workspace file API (no UI clicks)."""
+        if not isinstance(output_path, str) or not output_path or '..' in output_path.split('/'):
+            raise ValueError('expected the exact persisted output path from the canvas node')
+        self.assert_target()
+        data = self.page.evaluate("""async ({directory, path, timeout}) => {
+          const res = await fetch('/api/workspaces/files/read?' + new URLSearchParams({directory, path}),
+            {credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(timeout)});
+          if (!res.ok) throw Error('image read ' + res.status);
+          const blob = await res.blob();
+          return await new Promise((ok, fail) => {const r = new FileReader();
+            r.onload = () => ok(r.result.split(',')[1]); r.onerror = fail; r.readAsDataURL(blob);});
+        }""", {'directory': self.workspace.directory, 'path': output_path, 'timeout': timeout_ms})
+        import base64
+        return base64.b64decode(data, validate=True)
 
 
 @contextmanager

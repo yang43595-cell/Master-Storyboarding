@@ -126,7 +126,12 @@ def resolve_method_documents(
                 template_checksum = hashlib.sha256(template_raw).hexdigest()
             except (KnowledgeRuntimeError, OSError, UnicodeDecodeError) as exc:
                 raise MethodDocumentError(f"专业方法适用模板不可用：{identifier}: {exc}") from exc
-        content, reading_scope = _creative_mask_excerpt(method.content, usage) if usage else (method.content, "")
+        if usage:
+            content, reading_scope = _creative_mask_excerpt(method.content, usage)
+        elif identifier == "VGEN-CREATOR-POLISHING-MASK-USE" and task_context.get("skill") == "storyboard-planner":
+            content, reading_scope = _director_mask_excerpt(method.content, task_context.get("request"))
+        else:
+            content, reading_scope = method.content, ""
         required.append(MethodDocument(
             method.id, method.vault_path, method.title, method.version,
             method.checksum, method.applies_when, content, basis,
@@ -189,6 +194,28 @@ def _creative_mask_excerpt(content: str, usage: str) -> tuple[str, str]:
             lines.append(matches[0].split(stop_before, 1)[0].rstrip() if stop_before else matches[0])
         selected.append(f"## {heading}\n\n" + "\n\n".join(lines))
     return "\n\n".join(selected), "编导 · 实际使用" if usage == "real_use" else "编导 · 只展示"
+
+
+def _director_mask_excerpt(content: str, request: Any) -> tuple[str, str]:
+    """Keep only director-owned timing, physical steps, and wipe-path rules (omit video clip/asset steps)."""
+    parts = re.split(r"(?m)^## ([^\n]+)\n", content)
+    sections = dict(zip(parts[1::2], parts[2::2]))
+    usage = request.get("product_usage") if isinstance(request, dict) else None
+    keep = ["展示与时间分配"] if usage == "display" else [
+        "展示与时间分配", "产品步骤与硬边界", "连续擦除与分区状态（按已确认拍法使用）",
+    ]
+    out = []
+    for heading in keep:
+        body = sections.get(heading, "").strip()
+        if not body:
+            raise MethodDocumentError(f"导演面膜专项原文缺少章节：{heading}")
+        if heading.startswith("连续擦除"):
+            # Keep numbered director staging rules 1-5; omit asset/prompt provenance tail.
+            kept_lines = [ln for ln in body.splitlines() if re.match(r"^[1-5]\.\s", ln)]
+            body = "\n".join(kept_lines)
+        out.append(f"## {heading}\n\n{body}")
+    scope = "导演 · 仅展示" if usage == "display" else "导演 · 职责摘录"
+    return "\n\n".join(out), scope
 
 
 def _validate_promotion_record(

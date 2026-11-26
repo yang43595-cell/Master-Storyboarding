@@ -1335,3 +1335,13 @@ def test_returned_script_delta_lists_changed_content_and_reordering():
     legacy = {'story_paragraphs': [{'text': 'old'}]}
     assert cli._revision_changes(legacy, before) == {
         'other_fields': ['asset_requirements', 'dialogues', 'open_questions', 'story_paragraphs']}
+
+
+def test_prepare_cli_reports_specific_local_validation_error(tmp_path, capsys):
+    missing = tmp_path / "missing.json"
+    with pytest.raises(SystemExit) as stopped:
+        cli.main(["prepare", "--project", str(tmp_path), "--narrative", str(missing), "--output", str(tmp_path / "out.md")])
+    assert stopped.value.code == 2
+    err = capsys.readouterr().err
+    assert "Review prepare failed local validation:" in err
+    assert "missing.json" in err or "No such file" in err

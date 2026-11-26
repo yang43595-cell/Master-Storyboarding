@@ -18,6 +18,32 @@
 
 用户明确淘汰成图后，按[用户明确淘汰资产图](../../docs/rules/visual-production.md#用户明确淘汰资产图)处理已确认依赖，在登记画布中删除对应的专属节点并刷新核对。
 
+### 后台优先的快速路线（新建画布 → 出图 → 取原图）
+
+红帧是外部平台，项目改不了它的界面。原则是**能走后台接口的一律走后台，只把平台必须点的几下交给现成封装**，不现场写点击脚本、不猜按钮。
+
+**运行环境（先定死，别换）。** 一律用仓库 `.venv/bin/python`（3.12，已装 Playwright），在脚本开头 `sys.path.insert(0, '<仓库根>')` 和 `sys.path.insert(0, '~/.local/share/codex-headless-browser')`（展开为绝对路径），再 `from headless_edge import task_browser`。不要用系统 `python3`（3.9），项目里的写文件函数会因版本报错。浏览器是每任务独立的后台 Edge，`task_browser(redframe=True)` 自动带上本机保存的登录态；进到登录页时按上文[连接与登录](#连接与登录)让用户本人登录。
+
+**哪些走后台、哪些必须点。** 登录后的页面里可以直接调用红帧自己的文件接口 `/api/workspaces/files/read|write`（目录 `/app/data/workspaces/<project_id>`，画布文件 `画布1.json`），项目已封装在 `scripts/core/redframe_workspace.py` 的 `RedframeWorkspace`：
+
+| 动作 | 走法 | 现成入口 |
+| --- | --- | --- |
+| 读整张画布、找节点、核连线和参数 | 后台 | `ui.workspace.read_canvas()` |
+| 提交前核正文、原生引用顺序、模型/比例/尺寸/张数和参考原件字节 | 后台 | `ui.preflight(...)`（`submit_once` 内自动调用） |
+| 等出图 | 后台轮询同一节点 | `ui.query(receipt, timeout=180)` 或 `ui.workspace.wait_for_image_result(node_id, previous_output)` |
+| 下载成图原件 | 后台 | `raw = ui.read_output_bytes(output_path)`，再自行算 SHA-256 落盘 |
+| 视频草稿字段批量写入 | 后台 | `save_draft_changes`（见下文[成批写入](#成批写入和整节点回读)） |
+| 新建画布 | 必须点 | 我的画布页悬停「创作」→ 点「画布创作」→ 弹窗点「确认」，等地址出现 `canvasId=`；`project_id` 形如 `newProject<32位hex>`：在画布页读 `page.get_by_label('项目名称', exact=True).get_attribute('title')`，取路径最后一段。取到后立刻用 kickoff 登记 `canvas.target_url` 与 `target_project_id` |
+| 上传参考图、建生成节点、拉线、写带原生引用的提示词 | 必须点 | `ui.upload_source` / `ui.resume_image_node` / `ui.connect` / `ui.write_prompt` |
+| 选模型、比例、尺寸 | 必须点，点完后台回读 | `scripts/redframe_image_revision.py` 的 `configure(ui, node, settings)`（先读画布，已相同就不点；同名按钮多时比 `ui.set_ratio` 稳） |
+| 点「生成图片」 | 必须点，只点一次 | `ui.submit_once(...)`（点前先把回执写盘，超时也不重点） |
+
+**新图一次跑完的顺序。** 打开会话 `image_browser_session(task_browser, project_id=..., canvas_url=...)` → `read_canvas()` 看有没有可复用的同图源卡（有就复用，没有才 `upload_source`）→ `resume_image_node` 建生成卡并 `rename` → `connect` 每张参考 → `write_prompt` → `configure` → `submit_once` → `query` → `read_output_bytes` 下载原件、核 SHA-256、写回本图回执 → 交执行者实看。整段放在同一个脚本、同一个后台会话里跑完，不拆成多次开浏览器。已有上一版回执的**返修**直接用上文 `python -m scripts.redframe_image_revision ... --apply` 一条命令。
+
+**常见坑。** 不要传 `canvas_url` 给 `RedframeWorkspace`（它只收 `page` 和 `project_id`）；不要用 `/api/files/read` 或截取节点里 `<img>` 的地址下载（可能是缩略图），用 `read_output_bytes`；结果未知先 `query` 原节点，不重新点生成。
+
+> 待验证：建节点、拉线、写提示词理论上也能改成直接写 `画布1.json`，但红帧的原生引用和端口格式尚未在线验证，目前仍走上表的界面封装；下次正常出图时如能用后台写入并刷新核对通过，再把这几步改为后台。
+
 ### 图片页面共用入口
 
 图片页面动作使用 `scripts/core/redframe_image_ui.py` 的 `image_browser_session` 与 `RedframeImageUI`，由本轮实际获准的界面执行者调用。入口接收本机既有 `task_browser` 工厂，创建并关闭本任务的独立后台上下文，不连接现有浏览器，不运行任意 stdin/exec 常驻循环。控件动作默认 7 秒、导航 30 秒；页面驱动本身失联时退出本任务会话，保留原节点和回执，不依赖循环捕获异常继续操作。不要按进程名批量关闭其他任务或用户浏览器。

@@ -632,6 +632,14 @@ def run(args: argparse.Namespace) -> dict:
         return result
 
 
+def _local_validation_summary(exc: Exception) -> str:
+    """Format a concise single-line local validation error without raw file dumps."""
+    detail = " ".join(str(exc).split())
+    if not detail:
+        return exc.__class__.__name__
+    return detail[:297] + "..." if len(detail) > 300 else detail
+
+
 def main(argv=None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
@@ -641,8 +649,10 @@ def main(argv=None) -> int:
         parser.exit(2, json.dumps(exc.report, ensure_ascii=False) + "\n")
     except AgentReviewError as exc:
         parser.exit(2, "Agent Review failed (" + exc.code + "); check the receipt and remote status before retrying.\n")
-    except (OSError, ValueError, TypeError, KeyError):
+    except (OSError, ValueError, TypeError, KeyError) as exc:
         # Never echo arbitrary source text, response bodies, or credentials.
+        if args.command == "prepare":
+            parser.exit(2, f"Review prepare failed local validation: {_local_validation_summary(exc)}\n")
         parser.exit(2, "Review command failed local validation or file access; no approval was recorded.\n")
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0

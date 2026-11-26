@@ -518,3 +518,33 @@ def test_remote_media_query_and_fragment_are_uncheckable(tmp_path, raw):
 
 def test_source_artifact_ids_are_followed(tmp_path):
     assert not discover_dependencies(tmp_path, payload={'source_artifact_ids': ['MISSING']})['ok']
+
+
+def test_upstream_asset_planning_reference_paths_do_not_override_confirmed_outputs(tmp_path):
+    confirmed = tmp_path / 'confirmed.png'
+    confirmed.write_bytes(b'confirmed image')
+    nar = tmp_path / 'narrative.json'
+    write_json(nar, {
+        'asset_requirements': [{
+            'asset_id': 'AST-STY-01',
+            'category': 'STYLE',
+            'narrative_purpose': 'eliminated style hint',
+            'reference_paths': ['04_资产/母版/00_风格母版/eliminated.png'],
+        }],
+    })
+    vam = tmp_path / 'visual-asset-manifest.json'
+    write_json(vam, {
+        'assets': [{
+            'asset_id': 'AST-CH-01',
+            'category': 'CHARACTER',
+            'confirmed_asset': True,
+            'reference_paths': ['04_资产/母版/01_人物母版/old_hint.png'],
+            'confirmed_outputs': [{'path': confirmed.name, 'sha256': artifacts.digest(confirmed)}],
+        }],
+    })
+    res = discover_dependencies(tmp_path, files=[nar, vam], verify_hashes=True)
+    assert res['ok'], res
+    assert str(confirmed) in res['checked_files']
+    confirmed.unlink()
+    assert not discover_dependencies(tmp_path, files=[vam], verify_hashes=True)['ok']
+

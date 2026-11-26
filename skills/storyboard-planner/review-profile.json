@@ -12,7 +12,7 @@
     },
     {
       "id": "CONTRACT-REFERENCES",
-      "text": "本地引用、v4 schema、v1/v2/v3 只读 schema 与模板真实存在，知识 topics 与实际职责一致"
+      "text": "本地引用、5.0 schema、v1/v2/v3/v4 只读 schema 与模板真实存在，知识 topics 与实际职责一致"
     },
     {
       "id": "CONTRACT-TRACE",
@@ -20,7 +20,7 @@
     },
     {
       "id": "CONTRACT-VERSION",
-      "text": "storyboard-package v4 为唯一新生产合同，v1/v2/v3 仅只读兼容"
+      "text": "storyboard-package 5.0 为唯一新生产合同，4.0 旧包照常读取沿用，v1/v2/v3 仅只读兼容"
     }
   ],
   "production_artifact_checks": [
@@ -34,7 +34,7 @@
     },
     {
       "id": "PLAN-SHOT-UNIT",
-      "text": "往返核对带镜头边界的视听段落与逐镜表，画面、动作、声音、信息揭示顺序和切点均有对应且无暗增；逐条对照起幅、镜内过程、落幅，确认一个 Shot 条目是一段连续摄影，并能直接对应一个 shots[] 对象；不同机位的剪辑发生在条目之间。检查目标镜头条目确实存在，不能用内部 A/B、正反打组合或字段完整替代独立镜头；连续运镜、转焦和跨镜切点文字本身不构成违规"
+      "text": "往返核对带镜头边界的视听段落与逐镜表，画面、动作、声音、信息揭示顺序和切点均有对应且无暗增；逐条对照运镜与镜内行动，确认一个 Shot 条目是一段连续摄影，并能直接对应一个 shots[] 对象；不同机位的剪辑发生在条目之间。检查目标镜头条目确实存在，不能用内部 A/B、正反打组合或字段完整替代独立镜头；连续运镜、转焦和跨镜切点文字本身不构成违规"
     },
     {
       "id": "PLAN-TRACE",
@@ -54,7 +54,7 @@
     },
     {
       "id": "PLAN-PACKAGE",
-      "text": "按 references/专业影视分镜审查门槛.md 核完整v4 JSON、已确认上游artifact/revision与最终字节。统一入口绑定真实流程授权和段落及全片自查；正式自主采用须整稿pass且无真实未决、失败或生产阻塞，有条件通过不得直接改写pass，也不把open_questions藏入限制说明。接线缺失保持候选，不补造人审；既有人工路径才核网页及准确版本范围确认。JSON为业务权威，新包省略human_readable_path，Markdown按需同版导出；历史双文件只读兼容，不删字段绕差异或改写确认"
+      "text": "按 references/专业影视分镜审查门槛.md 核完整导演包 JSON、已确认上游artifact/revision与最终字节。统一入口绑定真实流程授权和段落及全片自查；正式自主采用须整稿pass且无真实未决、失败或生产阻塞，有条件通过不得直接改写pass，也不把open_questions藏入限制说明。接线缺失保持候选，不补造人审；既有人工路径才核网页及准确版本范围确认。JSON为业务权威，新包省略human_readable_path，Markdown按需同版导出；历史双文件只读兼容，不删字段绕差异或改写确认"
     },
     {
       "id": "PLAN-BOUNDARY",

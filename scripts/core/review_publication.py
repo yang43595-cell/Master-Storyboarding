@@ -268,8 +268,8 @@ def adopt_package(args, *, website_approval=None, chat_approval=None):
     if logical_id == "narrative.package" and (
             package.get("schema_version") != "2.0" or "story_paragraphs" not in package):
         raise StageContextError("首次正式采用只接收当前 narrative.package 2.0；旧事件稿沿历史路径处理")
-    if logical_id == "storyboard.package" and package.get("schema_version") != "4.0":
-        raise StageContextError("首次正式采用只接收当前 storyboard.package 4.0；旧版本保持兼容读取")
+    if logical_id == "storyboard.package" and package.get("schema_version") not in ("4.0", "5.0"):
+        raise StageContextError("首次正式采用只接收当前 storyboard.package 5.0（4.0 兼容）；旧版本保持兼容读取")
     if logical_id == "video.prompt" and not isinstance(package.get("source_storyboard"), dict):
         raise StageContextError("首次正式采用视频提示词必须绑定已确认 source_storyboard")
     relative = source.relative_to(project).as_posix()

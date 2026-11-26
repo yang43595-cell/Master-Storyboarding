@@ -4,9 +4,13 @@ import argparse
 import hashlib
 from datetime import datetime
 import json
+import os
 from pathlib import Path
 import re
+import shutil
 import sqlite3
+import subprocess
+import sys
 from contextlib import closing
 from tempfile import TemporaryDirectory
 from uuid import uuid4
@@ -32,6 +36,7 @@ else:
 
 LOGICAL = "visual.asset.manifest"
 SHOWN = asset_refs.CHAT_REVIEW
+REVIEW_FOLDER = SHOWN / "待审图"
 
 
 def inside(root, name):
@@ -220,21 +225,29 @@ def rejected_targets(root, targets):
     return rejected
 
 
+def active_targets(targets, requirements):
+    """Drop targets whose asset the user has since cancelled; keep order."""
+    live = {ast for ast, req in requirements.items() if req.get("image_decision") in ("需要制作", "复用现有素材")}
+    kept = [t for t in targets if t.partition("@")[0] in live]
+    return kept, sorted(set(targets) - set(kept))
+
+
 def show_round(root, contexts, narrative, targets_path=None, receipts=()):
-    targets = round_targets(root, targets_path)
+    story = read_json(inside(root, narrative["path_or_url"]))
+    requirements = effective_requirements(root, narrative, story=story)
+    targets, cancelled = active_targets(round_targets(root, targets_path), requirements)
     expected = set(targets)
     rejected = rejected_targets(root, expected)
-    story = read_json(inside(root, narrative["path_or_url"]))
     assets, _, waiting = production_handoff._asset_readiness(root, story, file_digest=artifacts.cache_file_digests())
     planned_assets = production_handoff.review_source_assets(assets, targets)
     inventory, _ = production_handoff.unlisted_asset_work(root, assets, waiting, planned_assets)
     if inventory:
         raise ValueError("整轮清单遗漏仍需人审的资产：" + "、".join(sorted(inventory)))
-    requirements = effective_requirements(root, narrative, story=story)
     contexts = sorted(set(contexts))
     receipts = sorted({inside(root, path).relative_to(root).as_posix() for path in receipts})
     batches = [batch_items(root, c, narrative, requirements) for c in contexts]
     batches.extend(direct_items(root, path, narrative, requirements) for path in receipts)
+    cancelled_assets = {t.partition("@")[0] for t in cancelled}
     ready, pending = {}, {}
     for items, blocked in batches:
         for row in items:
@@ -243,6 +256,9 @@ def show_round(root, contexts, narrative, targets_path=None, receipts=()):
                 raise ValueError("同一目标有多份待审版本，请指定实际批次：" + target)
             ready[target] = row
         for row in blocked:
+            # Images of assets the user has cancelled stay in their batch; they no longer block the round.
+            if row["target"].partition("@")[0] in cancelled_assets:
+                continue
             pending[row["target"]] = row
     approved = approved_versions({ast: asset["image"] for ast, asset in assets.items()})
     reused = {}
@@ -258,7 +274,7 @@ def show_round(root, contexts, narrative, targets_path=None, receipts=()):
             continue
         if target not in pending:
             reused[target] = previous
-    extra = (ready.keys() | pending.keys()) - expected - reused.keys() - rejected
+    extra = (ready.keys() | pending.keys()) - expected - reused.keys() - rejected - set(cancelled)
     if extra:
         raise ValueError("执行批次含本轮清单外且未经同版确认的目标：" + "、".join(sorted(extra)))
     reused = {t: reused[t] for t in targets if t in reused}
@@ -279,6 +295,8 @@ def show_round(root, contexts, narrative, targets_path=None, receipts=()):
     scope = dict(targets=targets, reused=reused, targets_path=(
         inside(root, targets_path).relative_to(root).as_posix() if targets_path else None
     ))
+    if cancelled:
+        scope["cancelled"] = cancelled
     return store_shown(root, narrative, items, contexts=contexts, receipts=receipts, review_round=scope)
 
 
@@ -812,7 +830,10 @@ def confirm(root, keys, message, narrative, entries):
             raise ValueError("已确认清单字节变化")
     else:
         if round_scope:
-            if set(round_targets(root, round_scope["targets_path"])) != set(round_scope["targets"]):
+            story = read_json(inside(root, narrative["path_or_url"]))
+            live, _ = active_targets(round_targets(root, round_scope["targets_path"]),
+                                     effective_requirements(root, narrative, story=story))
+            if set(live) != set(round_scope["targets"]):
                 raise ValueError("整轮交审目标已变化，请按当前清单重新展示")
             reused = round_scope["reused"]
             if reused and approved_versions(asset_refs.confirmed_images(root, requests=reused)) != reused:
@@ -859,11 +880,11 @@ def confirm(root, keys, message, narrative, entries):
             for target, item in rows.items():
                 ast, output = target.split("@")
                 final = item.get("final_output_id")
-                gap_id = f"GAP-{ast}-{output}"
+                gap_id = boards.scope_gap_id(ast, output)
                 out["scope_gaps"] = [g for g in out["scope_gaps"] if g["gap_id"] != gap_id]
                 if not final or final == output:
                     continue
-                gap_id = f"GAP-{ast}-{final}"
+                gap_id = boards.scope_gap_id(ast, final)
                 if any(
                     o["output_id"] == final
                     for a in out["assets"]
@@ -966,9 +987,41 @@ def compose_boards(root, specs, narrative, entries):
     return dict(result, count=len(items), reused=reused, pending=pending)
 
 
+def read_decision(path, keys):
+    """Read a decision file (or stdin with '-') and fill in the shown list from --shown if omitted."""
+    message = json.load(sys.stdin) if str(path) == "-" else read_json(path)
+    if isinstance(message, dict) and "shown" not in message:
+        message = {**message, "shown": sorted(set(keys))}
+    return message
+
+
+def review_folder(root, result):
+    """Gather the shown images into one folder (links in display order) and a readable latest note."""
+    items, key = result.get("items") or [], result.get("shown")
+    if not key or not items:
+        return None
+    folder = inside(root, REVIEW_FOLDER / key[:12])
+    if not folder.is_dir():
+        folder.mkdir(parents=True, exist_ok=True)
+        for number, item in enumerate(items, 1):
+            source = inside(root, item["path"])
+            name = re.sub(r'[\\/:*?"<>|\s]+', "_", item["target"])
+            link = folder / f"{number:02}_{name}{source.suffix}"
+            try:
+                link.symlink_to(source)
+            except OSError:
+                shutil.copy2(source, link)
+    lines = ["# 最新交审清单", "", f"- 展示编号：`{key}`", f"- 看图文件夹：`{folder.relative_to(root).as_posix()}`",
+             f"- 共 {len(items)} 张", "", "| 序号 | 目标 | 用途 | 原图 |", "| --- | --- | --- | --- |"]
+    lines += [f"| {n:02} | {i['target']} | {i.get('purpose', '')} | {i['path']} |" for n, i in enumerate(items, 1)]
+    inside(root, SHOWN / "最新交审.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return folder
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", required=True, type=Path)
+    parser.add_argument("--no-open", action="store_true", help="交审清单就绪时不自动打开看图文件夹")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("show").add_argument("--context-id", required=True)
     together = commands.add_parser("show-round", help="按整轮需求一次展示已收齐的成图")
@@ -978,10 +1031,11 @@ def main():
     decide = commands.add_parser("confirm")
     decide.add_argument("--shown", action="append", required=True)
     decide.add_argument("--confirmation-json", required=True, type=Path,
-                            help="记录原消息及所见候选的 shown 编号列表")
+                            help="记录原消息的 JSON 文件，或 - 从标准输入读取；省略 shown 时按 --shown 补齐")
     returned = commands.add_parser("return", help="保留所示候选并记录用户的返修意见")
     returned.add_argument("--shown", action="append", required=True)
-    returned.add_argument("--feedback-json", required=True, type=Path, help="记录原退回消息及所见候选的 shown 编号列表")
+    returned.add_argument("--feedback-json", required=True, type=Path,
+                          help="记录原退回消息的 JSON 文件，或 - 从标准输入读取；省略 shown 时按 --shown 补齐")
     commands.add_parser("discard").add_argument("--decision-json", required=True, type=Path)
     compose = commands.add_parser("compose-boards", help="从同一角色的已确认源图拼版，展示给用户确认")
     compose.add_argument("--board", action="append", nargs=3, default=[], metavar=("AST@FINAL", "HEAD", "WARDROBE"),
@@ -1004,13 +1058,18 @@ def main():
         elif args.command == "show-round":
             result = show_round(root, args.context_id, narrative, args.targets_json, args.receipt)
         elif args.command == "confirm":
-            result = confirm(root, args.shown, read_json(args.confirmation_json), narrative, entries)
+            result = confirm(root, args.shown, read_decision(args.confirmation_json, args.shown), narrative, entries)
         elif args.command == "return":
-            result = return_for_revision(root, args.shown, read_json(args.feedback_json), narrative)
+            result = return_for_revision(root, args.shown, read_decision(args.feedback_json, args.shown), narrative)
         elif args.command == "discard":
             result = discard(root, read_json(args.decision_json), narrative, entries)
         elif args.command == "compose-boards":
             result = compose_boards(root, args.board, narrative, entries)
+        folder = review_folder(root, result) if args.command in ("show", "show-round", "compose-boards") else None
+        if folder:
+            result = {**result, "review_folder": str(folder)}
+    if folder and not args.no_open and sys.platform == "darwin" and "PYTEST_CURRENT_TEST" not in os.environ:
+        subprocess.run(["open", str(folder)], check=False)
     print(json.dumps(result, ensure_ascii=False))
 
 

@@ -1,12 +1,12 @@
 # 入口（Claude 与 Codex 共用）
 
-进入项目后先读 `PROJECT_RULES.md`（总规则及按需细则入口）与所选 Skill 的 `SKILL.md`，然后按 Skill 做这一阶段的活。
+进入项目后，常规制作开工**只先读** `PROJECT_RULES.md`（总规则）与当前阶段的 `SKILL.md`，然后直接按该 Skill 干活；其他细则、导航和采用文档**走到对应步骤时再按需读取**，开工前不提前预读。
 制作任务从本仓库启动，按所选 Skill 的三层入口读取仓库内资料及本次业务输入。知识维护和外部来源审计是单独任务。
-本项目及其工作树的界面操作由主对话直接执行，按[项目专用界面分工](docs/rules/execution.md#画布执行与交接的宿主边界)覆盖通用 Terra 模型与委派要求。
-跨阶段协调时用[审核到画布导航](docs/development/review-to-canvas-entry.md)定位本轮步骤。已知步骤时直接读取其操作小节，按 `PROJECT_RULES.md` 确定审核和交付范围。
+本项目采用**主对话轻量协调（包工头模式）+ 分阶段干净子代理执行**：主对话只做开工登记、用户确认沟通、阶段流转（`stage_context_cli.py`）与回执验收，**严禁在主对话直接读取整份大稿或长时间堆叠过程日志**；编导、资产批次、导演、分镜核对与补图、视频写词及红帧命令行上画布（`headless_edge` 脚本，禁用内置 webview `browser` 子代理）均按[项目专用界面与分关分工](docs/rules/execution.md#画布执行与交接的宿主边界)委派全新 `self` 执行者完成，做完一关即释放过程上下文。
+**本机网络流式防断连铁律（最高优先级，覆盖通用“同轮合并创建所有文件”提示）**：单次模型响应流超过约 40 秒会被网络链路掐断（`stream reading error: unexpected EOF`）。在编导、导演、分镜、视频写稿时：**每回合最多只允许 `write_file` 1 个场次（≤4 镜；>4 镜拆为 `put-scene` + `append-shots` 两次）或 1–2 个生成段 JSON（单文件 ≤100 行）并立即运行 CLI 落盘**，严禁把多个场次或多个分段合并在同一回合并行 `write_file`，也严禁在单轮思考中提前默写后续场次全文；**超过 6 场（或 >25 镜）的长片导演与超过 8 段的视频写稿必须按幕分派干净子代理接力（单子代理最多写 5–6 场或 8 段，防止上下文突破 180K 后引发流式超时重试）**；导演阶段只读文字规范与 `PRODUCT_BRIEF.md`，不读取产品 PNG/MP4 媒体原件。
+跨阶段协调时再读[审核到画布导航](docs/development/review-to-canvas-entry.md)定位本轮步骤；已知步骤时直接读取其操作小节，按 `PROJECT_RULES.md` 确定审核和交付范围。
 收到用户在项目对话中对准确版本的编导整稿通过后，协调方当轮按[编导对话确认入口](docs/development/artifact-adoption.md#编导对话确认)正式采用并继续已解锁工作。
 首次在新电脑或新 agent 使用，先按 [独立仓库启动](docs/development/standalone-repository.md) 核验依赖与内置方法；不依赖旧会话或 Mac 路径。
-仓库源码状态见 [当前源码状态](ACTIVE_VERSION.md)；它不记录提交号，当前分支与提交以仓库根目录的 git 查询为准。
-Skill 的必需文件、目录结构与生产名单见 [Skill 配置](skill-config.md)。
+以下两份仅在仓库维护或增改 Skill 时查阅，**常规制作开工不读**：[当前源码状态](ACTIVE_VERSION.md)（当前分支与提交直接用 git 查询）、[Skill 配置](skill-config.md)。
 本文不复制规则正文；以 `PROJECT_RULES.md` 及其按职责链接的细则为准。
 `AGENTS.md` 与 `CLAUDE.md` 内容保持一致，分别供 Codex 与 Claude Code 读取，改动时同步两处。

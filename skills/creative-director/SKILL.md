@@ -27,6 +27,19 @@ description: 从需求、素材、口播或既有脚本形成可确认的短视�
 
 以下按顺序执行，详细要求仍以所链接合同为准；局部维护、候选试跑只在各自已成立的分支内使用，不把普通生产门禁跳成不适用。
 
+### 开工到交审最小命令（标准快速路径，严禁通读底层源码，严禁单次吐整份大 JSON）
+
+> **阅读边界硬纪律**：只读 `PROJECT_RULES.md`、本页、`modules/story-method.md` 及涉及商品的 `PRODUCT_BRIEF.md`（与使用边界说明）；**严禁去 grep 或翻读底层核心 Python 实现或整份 JSON Schema**！结构补齐与校验全部交给下方渐进式 CLI：
+
+1. **新建桌面项目**（已有项目跳过）：`.venv/bin/python scripts/init_desktop_project.py --path "<项目路径>"`
+2. **登记开工决定（同一步登记流程授权与生图授权）**：`.venv/bin/python scripts/stage_context_cli.py kickoff --project "<项目路径>" --answers-json <决定.json> --authorization-id FLOW-R01 --authorize-skill storyboard-planner --authorize-skill storyboard-director --authorize-skill voiceover-to-video-script`（`决定.json` 顶层直接写 `decision_ref`、`creation`、`product`、`canvas`、`image_generation`）。
+3. **用渐进式 `narrative_package.py` 分段写叙事包**（避免单轮超长断连）：
+   - 初始化：`PYTHONPATH=scripts .venv/bin/python scripts/narrative_package.py init --project "<项目路径>" --revision R01 --objective "<本版目标>"`
+   - 逐场或每 2 场写入段落与对白（输入格式：`[{"paragraph_id":"STP-01","text":"动作叙述\n角色名（DLG-01）：“台词”","dialogues":[{"dialogue_id":"DLG-01","speaker_id":"CHR-01","text":"台词"}]}]`；注意正文发言须单独占行；若 `kickoff.product` 设了 `promotion_copy`，对白中须有一句独立台词去标点后与之全等）：`PYTHONPATH=scripts .venv/bin/python scripts/narrative_package.py put-paragraph --project "<项目路径>" --package 02_编导/叙事包/R01_叙事包.json --input /tmp/stp01.json`
+   - 批量写入资产需求（`REAL_PRODUCT` 自动补齐参考路径，人类角色传 `character_output_kind: "人物单图"|"人物1x4"` 与 `board_output_id` 即可自动补齐 `entity_id` 与 `wardrobe_states`）：`PYTHONPATH=scripts .venv/bin/python scripts/narrative_package.py put-assets --project "<项目路径>" --package 02_编导/叙事包/R01_叙事包.json --input /tmp/assets.json`
+4. **一键绑定对白审核表、校验并导出待审阅读稿**：
+   `PYTHONPATH=scripts .venv/bin/python scripts/narrative_package.py submit-chat-review --project "<项目路径>" --package 02_编导/叙事包/R01_叙事包.json`（用户对话确认后直接按该命令输出的 `confirm_command` 传入 `{"scope":"artifact","quote":"全部通过","at":"2026-11-27T00:00:00+08:00","review_ref":"chat-confirm-r01"}` 执行 `confirm-script-in-chat` 采用）。
+
 1. **确认范围与来源。** 确定创作类型、保留与可改的范围，以及本轮原片、基准稿、用户约束和实际用到的资产调整。把需要核验的本地来源写入本轮请求，按[准备当前输入](modules/story-method.md#准备当前输入)执行 `prepare`。必需事实或确认范围有疑点时，先继续不依赖该疑点的内容。
 2. **实读、核验，再判断场次。** 读本轮启动包、原始输入和适用合同，有必读方法时实读本轮快照并登记。用同一执行者和任务身份运行 `ensure-prepared --show-task-basis`，核对项目、版本和范围。改编或复现已有故事时，随后[逐场确定保留项](modules/story-method.md#开写前逐场确定保留项)，再写正文。读取登记提供版本证据，事实依据仍来自原始资料与用户决定。
 3. **完成同一候选 JSON。** 按[本地最低方法](modules/story-method.md#完整故事正文从整场变化写到连续现场)写完整故事、对白来源、稳定 STP/DLG/AST 和资产图判断。在现有 `asset_requirements` 写清人物身份与造型、地点与道具的可见要求，登记各自在故事中的用途、必要状态和对应段落。把待答的事实放在相关段落，集中提出。

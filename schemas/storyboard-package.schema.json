@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://master-storyboarding.local/schemas/storyboard-package.schema.json",
-  "title": "storyboard-package 4.0",
+  "title": "storyboard-package 5.0",
   "description": "通用紧凑导演合同：场景公共设定加逐镜决定，保留连续摄影状态与准确对白片段。",
   "type": "object",
   "additionalProperties": false,
@@ -25,21 +25,57 @@
       "description": "恢复后候选的可追溯记录，不构成用户确认、生成授权或下游就绪事实。",
       "type": "object",
       "additionalProperties": false,
-      "required": ["baseline_path", "baseline_sha256", "reason"],
+      "required": [
+        "baseline_path",
+        "baseline_sha256",
+        "reason"
+      ],
       "properties": {
-        "baseline_path": {"$ref": "#/$defs/pathString"},
-        "baseline_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-        "reason": {"$ref": "#/$defs/nonEmptyString"},
-        "completed_scene_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^S[0-9]{2,}[A-Z]?$"}},
-        "unreviewed_scene_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^S[0-9]{2,}[A-Z]?$"}},
-        "video_generation_authorized": {"const": false},
-        "downstream_ready": {"const": false},
-        "pending_checks": {"type": "array", "items": {"$ref": "#/$defs/nonEmptyString"}},
-        "text_review": {"$ref": "#/$defs/nonEmptyString"}
+        "baseline_path": {
+          "$ref": "#/$defs/pathString"
+        },
+        "baseline_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "reason": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "completed_scene_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^S[0-9]{2,}[A-Z]?$"
+          }
+        },
+        "unreviewed_scene_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^S[0-9]{2,}[A-Z]?$"
+          }
+        },
+        "video_generation_authorized": {
+          "const": false
+        },
+        "downstream_ready": {
+          "const": false
+        },
+        "pending_checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "text_review": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
       }
     },
     "schema_version": {
-      "const": "4.0"
+      "const": "5.0"
     },
     "project_id": {
       "$ref": "#/$defs/nonEmptyString"
@@ -420,7 +456,14 @@
                 "$ref": "#/$defs/nonEmptyString"
               },
               "previous_state_id": {
-                "anyOf": [{"type": "null"}, {"$ref": "#/$defs/nonEmptyString"}]
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/$defs/nonEmptyString"
+                  }
+                ]
               },
               "change_event": {
                 "$ref": "#/$defs/nonEmptyString"
@@ -466,7 +509,8 @@
           }
         },
         "audiovisual_flow": {
-          "$ref": "#/$defs/nonEmptyString"
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "整场走向、情绪与关键转折（几句话）；不逐镜复述、不必写全对白，阅读版由工具从逐镜内容生成。"
         },
         "defaults": {
           "$ref": "#/$defs/sceneDefaults"
@@ -525,7 +569,7 @@
         "audio",
         "cut",
         "camera",
-        "take",
+        "action",
         "rhythm"
       ],
       "properties": {
@@ -537,18 +581,32 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["prompt_clause"],
+            "required": [
+              "prompt_clause"
+            ],
             "properties": {
-              "prompt_clause": {"$ref": "#/$defs/nonEmptyString"},
-              "min_seconds": {"type": "number", "exclusiveMinimum": 0},
+              "prompt_clause": {
+                "$ref": "#/$defs/nonEmptyString"
+              },
+              "min_seconds": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
               "action_reference": {
                 "description": "本镜必须使用的产品动作参考。仅在已明确需要实拍动作参考时填写。",
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["product_ast_id", "action_key"],
+                "required": [
+                  "product_ast_id",
+                  "action_key"
+                ],
                 "properties": {
-                  "product_ast_id": {"$ref": "#/$defs/assetId"},
-                  "action_key": {"$ref": "#/$defs/nonEmptyString"}
+                  "product_ast_id": {
+                    "$ref": "#/$defs/assetId"
+                  },
+                  "action_key": {
+                    "$ref": "#/$defs/nonEmptyString"
+                  }
                 }
               }
             }
@@ -788,14 +846,15 @@
         "camera": {
           "$ref": "#/$defs/camera"
         },
-        "take": {
-          "$ref": "#/$defs/take"
-        },
         "rhythm": {
           "$ref": "#/$defs/nonEmptyString"
         },
         "overrides": {
           "$ref": "#/$defs/overrides"
+        },
+        "action": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "镜内行动：起态 → 过程 → 止态，写人和物发生了什么（不写摄影机怎么动）；复杂动作写出关键中间状态。"
         }
       }
     },
@@ -827,10 +886,22 @@
       "allOf": [
         {
           "if": {
-            "properties": {"presentation": {"const": "ON_SCREEN_TEXT"}},
-            "required": ["presentation"]
+            "properties": {
+              "presentation": {
+                "const": "ON_SCREEN_TEXT"
+              }
+            },
+            "required": [
+              "presentation"
+            ]
           },
-          "then": {"not": {"required": ["delivery"]}}
+          "then": {
+            "not": {
+              "required": [
+                "delivery"
+              ]
+            }
+          }
         }
       ],
       "required": [
@@ -848,7 +919,7 @@
           "$ref": "#/$defs/dialogueId"
         },
         "presentation": {
-          "description": "ON_SCREEN_TEXT 只显示原文，不发声、不配旁白、不做口型；speaker_id 仅保留上游归属，显示时机与阅读停留写在 take/rhythm，仍参与全部 DLG 原文与顺序覆盖。",
+          "description": "ON_SCREEN_TEXT 只显示原文，不发声、不配旁白、不做口型；speaker_id 仅保留上游归属，显示时机与阅读停留写在 action/rhythm，仍参与全部 DLG 原文与顺序覆盖。",
           "enum": [
             "SYNC",
             "OFFSCREEN",
@@ -913,23 +984,17 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "entry",
         "exit",
-        "trigger",
-        "information_handoff"
+        "handoff"
       ],
       "properties": {
-        "entry": {
-          "$ref": "#/$defs/nonEmptyString"
-        },
         "exit": {
-          "$ref": "#/$defs/nonEmptyString"
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "怎么切走：切点（词句或动作）与切到什么。进入方式即上一镜的切走，不另写。"
         },
-        "trigger": {
-          "$ref": "#/$defs/nonEmptyString"
-        },
-        "information_handoff": {
-          "$ref": "#/$defs/nonEmptyString"
+        "handoff": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "这一镜交代给观众的信息或情绪。"
         }
       }
     },
@@ -1037,38 +1102,20 @@
       "additionalProperties": false,
       "required": [
         "framing",
-        "movement",
-        "focus"
+        "movement"
       ],
       "properties": {
         "framing": {
-          "$ref": "#/$defs/nonEmptyString"
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "景别、机位、构图与主体在画面中的位置；全片统一的画幅规则写在 director_rules.aspect_and_exhibition，不在每镜重复。"
         },
         "movement": {
-          "$ref": "#/$defs/nonEmptyString"
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "一句写清：从哪起、什么时候动、怎么动、停在哪；固定机位直接写固定。"
         },
         "focus": {
-          "$ref": "#/$defs/nonEmptyString"
-        }
-      }
-    },
-    "take": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "start",
-        "process",
-        "end"
-      ],
-      "properties": {
-        "start": {
-          "$ref": "#/$defs/nonEmptyString"
-        },
-        "process": {
-          "$ref": "#/$defs/nonEmptyString"
-        },
-        "end": {
-          "$ref": "#/$defs/nonEmptyString"
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "可选：只有焦点转移或特殊虚实要求时写。"
         }
       }
     }

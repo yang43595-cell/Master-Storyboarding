@@ -17,6 +17,12 @@ description: 视频提示词前必须核对本轮全部拟写镜号的视觉依�
 
 ## 本轮执行 SOP
 
+> **标准快捷命令（必须亲眼 `read_file` 实看本轮关键确认图与补图，严禁手写临时脚本猜 `asset_refs`/`artifacts` 内部函数名）**：
+> - 一键查看各场镜头与已确认资产精确绑定路径：`PYTHONPATH=scripts .venv/bin/python scripts/visual_stage_cli.py outline --project "<项目>"`
+> - 自动补齐导演包哈希/资产路径/`gap` 并校验保存 `05_分镜/VS-*.json`（注意：若需运行带 `--context-id` 的生图批次 `prepare`，须**先运行 `save-check` 落盘 `ready` 补图请求**，再在批次请求 JSON 中传入 `image_targets` 与 `supplement_request_paths`）：`PYTHONPATH=scripts .venv/bin/python scripts/visual_stage_cli.py save-check --project "<项目>" --input /tmp/vs_s01.json`
+> - 补图落盘并实看无误后，一键登记 `visual-supplement-image` 并生成含 `usage.source_shot_ids` 的自查表与采用命令：`PYTHONPATH=scripts .venv/bin/python scripts/visual_stage_cli.py register-supplement --project "<项目>" --input /tmp/reg_sup.json`
+> - 顺手一键抓取红帧视频模型能力证据（供下一阶段直接复用）：`PYTHONPATH=scripts .venv/bin/python scripts/visual_stage_cli.py capture-redframe-capability --project "<项目>"`
+
 本轮采用[网站审核到画布统一入口](../../PROJECT_RULES.md#网站审核到画布的统一入口)时，补图不送网站、不逐图或逐项选图停等；执行者在已授权范围内判断复用／补图、实看、修正并自查验收准确文件及镜号用途，执行判断不冒写为用户决定。下文具体用户选图／逐图确认步骤只适用于兼容人工路径。补图前从项目开工记录读取生图工具、模型、额度和适用输出范围，沿用已覆盖的授权。
 
 正式消费仍须合法采用的准确上游和图片依据。整图实看与用途核验通过后，按[下游自查证据](../../docs/development/artifact-adoption.md#下游自查证据)登记准确候选、自查及 `usage.source_shot_ids`；保留真实 `quality_evidence` 和适用的产品参考，使用完整 `acceptance_binding()` 结果绑定观察与参考内容，按本轮读取[首次采用](../../docs/development/artifact-adoption.md#首次自主采用)或[自主修订](../../docs/development/artifact-adoption.md#自主修订)。补图请求引用自主采用导演时，`source_storyboard.status` 为 `agent_accepted`，校验必须提供项目并核当前采用依据。当前入口不能保存或消费 agent 验收来源时，保留候选与自查结果并报告受影响缺口，不调用会制造逐图人审事实的旧确认入口，不改 confirmed／user_approved 或借 candidate_test 绕过。候选自查不等于正式可引用。

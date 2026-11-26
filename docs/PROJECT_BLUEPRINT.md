@@ -65,8 +65,8 @@ flowchart TD
 
 ## 五、明确删掉的（别加回来）
 
-- 冗余 schema：`production-plan-v3.1`、`artifact-manifest`、`project-state`、`knowledge-rule`。当前 `review-profile` 是按需审核的最小清单，不在删除范围。
-- `production_plan` 整条路径已退役（现行视频阶段不生成）：`core/production_plan.py`、`scripts/validate-production-plan.py` 与两个 schema 仍在，**只用于读旧项目**，别再往新项目接线。
+- 冗余 schema：`production-plan`（含 v3.1/v3.2/3.3）、`artifact-manifest`、`project-state`、`knowledge-rule`。当前 `review-profile` 是按需审核的最小清单，不在删除范围。
+- `production_plan` 整条退役路径（`core/production_plan.py`、`scripts/validate-production-plan.py`、`schemas/production-plan*.json` 及对应预检测试）已物理删除，现行视频阶段统一使用 `video.prompt`（v2.0）。
 - 死脚本 + `scene_topology` 引擎 + `core/archive`、2 个一次性脚本。
 - 历史上删除了 29 个冗余测试、保留 8 个核心；该数量是历史记录，不是后续上限。
 - `sync-log`、死模板、`visual-benchmarks`、13 个空 `references` 脚手架。

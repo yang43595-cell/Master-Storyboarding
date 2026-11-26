@@ -76,7 +76,7 @@ def test_confirmed_method_requires_explicit_matching_task_conditions(tmp_path: P
     assert result.pending[0]["reason"] == "applies_when_not_met"
 
 
-def test_creative_mask_scope_does_not_trim_storyboard_planner_method() -> None:
+def test_director_mask_scope_trims_to_director_sections() -> None:
     root = Path(__file__).resolve().parents[2]
     profile = json.loads((root / "skills/storyboard-planner/knowledge-profile.json").read_text(encoding="utf-8"))
     vault = root / "knowledge/runtime"
@@ -84,8 +84,10 @@ def test_creative_mask_scope_does_not_trim_storyboard_planner_method() -> None:
         vault, profile, {"skill": "storyboard-planner", "request": {"product_id": "creator-polishing-mask-2"}},
     )
     method = next(item for item in result.required if item.id == "VGEN-CREATOR-POLISHING-MASK-USE")
-    assert method.content == (vault / method.vault_path).read_text(encoding="utf-8-sig")
-    assert not method.reading_scope
+    assert method.reading_scope == "导演 · 职责摘录"
+    assert "## 产品步骤与硬边界" in method.content
+    assert "敷膜面部特写参考" not in method.content
+    assert "选择与引用动作视频" not in method.content
 
 
 def test_video_profile_keeps_only_direct_read_conditions() -> None:

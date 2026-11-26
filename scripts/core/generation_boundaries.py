@@ -21,10 +21,10 @@ from .project_kickoff import load_kickoff
 
 _CREATOR_BOWL_BRUSH_OFFER = re.compile(r"送(?:给?你|给大家)?\s*高定\s*调膜\s*碗\s*(?:[、和与及]\s*)?刷")
 _DIRECTOR_BODY_FIELDS = {
-    "action": ("take", "continuity"),
-    "reaction": ("take", "continuity", "camera"),
+    "action": ("action", "take", "continuity"),
+    "reaction": ("action", "take", "continuity", "camera"),
     "movement": ("camera.movement",),
-    "cut": ("cut", "rhythm", "take", "audio"),
+    "cut": ("cut", "rhythm", "action", "take", "audio"),
 }
 _UNDECIDED_DIRECTOR_TEXT = re.compile(
     r"(?:动作|反应|运镜|切点|拍法)?\s*(?:[:：]\s*)?(?:待定|待补|待确认|待导演确认|现场决定)[。.]?"
@@ -149,7 +149,7 @@ def _source_boundary(record, boundary_shots, shots, *, allow_dialogue=False):
     _need(shot_id in boundary_shots and _text(field) and _text(quote),
           "拆段依据须定位两侧准确镜号、字段及原文")
     # Only existing action/rhythm/cut fields can substantiate a boundary.
-    _need(field.split(".")[0] in {"take", "cut", "rhythm", "continuity", "audio"},
+    _need(field.split(".")[0] in {"action", "take", "cut", "rhythm", "continuity", "audio"},
           "导演边界须引用动作、节奏、完整对白或剪辑字段")
     if field.startswith("audio."):
         _need(allow_dialogue
@@ -557,7 +557,9 @@ def _validate(payload, storyboard, root, *, require_physical, delivery_platform,
         _need(ids and all(key in shots for key in ids), "每个生成段必须映射准确导演镜号，不能省略映射绕过分段检查")
         if row['segment_id'] in content_ids:
             director_anchors_checked += validate_director_body(
-                row, ids, shots, require_coverage=storyboard.get("schema_version") == "4.0")
+                row, ids, shots,
+                require_coverage=(storyboard.get("schema_version") in ("4.0", "5.0")
+                                  and payload.get("schema_version") != "2.0"))
         row_reviewed = not local_review or row['segment_id'] in review_segment_ids
         if check_scope and row_reviewed:
             _need(all(order[after] == order[before] + 1 for before, after in zip(ids, ids[1:])),

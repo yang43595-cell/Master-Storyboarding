@@ -669,8 +669,8 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
     require_schema(storyboard, 'storyboard-package.schema.json', label='导演包')
     from .quality_evidence import scene_state_requirements
     scene_state_requirements(storyboard)
-    if storyboard.get('schema_version') not in {'3.0', '4.0'}:
-        raise ValueError('段落引用要求导演包 4.0（3.0 仅历史兼容）')
+    if storyboard.get('schema_version') not in {'3.0', '4.0', '5.0'}:
+        raise ValueError('段落引用要求导演包 5.0（4.0、3.0 仅历史兼容）')
     if storyboard['project_id'] != narrative['project_id'] or storyboard['source_narrative']['revision'] != narrative['revision']:
         raise ValueError('导演包与编导包项目或修订不匹配')
     all_ids = set(by_id)
@@ -754,17 +754,19 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
                 if not set(assets[ast]['source_paragraph_ids']) & set(shot['source_paragraph_ids']):
                     raise ValueError('镜头资产与已核对出现段落不对应：' + ast)
             if not set(shot['source_dialogue_ids']).issubset(dialogue_ids):
-                raise ValueError('镜头引用未知对白')
+                raise ValueError(f"镜头引用未知对白：{shot['shot_id']} → " + '、'.join(sorted(set(shot['source_dialogue_ids']) - set(dialogue_ids))))
             for dialogue in narrative['dialogues']:
                 if dialogue['dialogue_id'] in shot['source_dialogue_ids'] and dialogue['source_paragraph_id'] not in shot['source_paragraph_ids']:
-                    raise ValueError('镜头对白与所引段落不对应')
+                    raise ValueError(f"镜头对白与所引段落不对应：{shot['shot_id']} 的 {dialogue['dialogue_id']} 属于 {dialogue['source_paragraph_id']}，镜头未引用该段")
     if len(shot_ids) != len(set(shot_ids)):
-        raise ValueError('镜头编号重复')
+        raise ValueError('镜头编号重复：' + '、'.join(sorted({i for i in shot_ids if shot_ids.count(i) > 1})))
     if covered_dialogues != checked_dialogues:
-        raise ValueError('最终对白未完整落实到镜头')
+        raise ValueError('最终对白未完整落实到镜头：缺 ' + ('、'.join(sorted(set(checked_dialogues) - set(covered_dialogues))) or '无')
+                         + '；多出 ' + ('、'.join(sorted(set(covered_dialogues) - set(checked_dialogues))) or '无'))
     if covered != checked_ids:
-        raise ValueError('有故事段落未落实到镜头；包含无对白动作')
-    if storyboard['schema_version'] == '4.0':
+        raise ValueError('有故事段落未落实到镜头（含无对白动作）：缺 ' + ('、'.join(sorted(set(checked_ids) - set(covered))) or '无')
+                         + '；多出 ' + ('、'.join(sorted(set(covered) - set(checked_ids))) or '无'))
+    if storyboard['schema_version'] in ('4.0', '5.0'):
         # Fragments may span shots, but must preserve exact text, speaker and order.
         expected = {d['dialogue_id']: d for d in narrative['dialogues']
                     if d['dialogue_id'] in checked_dialogues}
@@ -774,18 +776,22 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
             for shot in scene['shots']:
                 placements = shot['audio']['dialogue']
                 if set(shot['source_dialogue_ids']) != {p['dialogue_id'] for p in placements}:
-                    raise ValueError('镜头对白引用与实际承载不一致')
+                    raise ValueError(f"镜头对白引用与实际承载不一致：{shot['shot_id']} 引用 {sorted(shot['source_dialogue_ids'])}，承载 {sorted(p['dialogue_id'] for p in placements)}")
                 for placement in placements:
                     key = placement['dialogue_id']
                     if key not in expected or placement['speaker_id'] != expected[key]['speaker_id']:
-                        raise ValueError('对白说话者与上游不一致')
+                        raise ValueError(f"对白说话者与上游不一致：{shot['shot_id']} 的 {key} 写成 {placement['speaker_id']}，上游是 {expected.get(key, {}).get('speaker_id', '（本范围外）')}")
                     fragments[key].append(placement['text'])
                     if not order or order[-1] != key:
                         order.append(key)
         if order != list(expected):
-            raise ValueError('对白顺序与上游不一致')
-        if any(''.join(fragments[key]) != d['text'] for key, d in expected.items()):
-            raise ValueError('跨镜对白片段遗漏、重复或改写')
+            first = next((i for i, (a, b) in enumerate(zip(order, expected)) if a != b), min(len(order), len(expected)))
+            raise ValueError(f"对白顺序与上游不一致：第 {first + 1} 处镜头里是 {order[first] if first < len(order) else '（缺）'}，"
+                             f"上游应为 {list(expected)[first] if first < len(expected) else '（无）'}")
+        wrong = [key for key, d in expected.items() if ''.join(fragments[key]) != d['text']]
+        if wrong:
+            key = wrong[0]
+            raise ValueError(f"跨镜对白片段遗漏、重复或改写：{'、'.join(wrong)}；如 {key} 拼起来是「{''.join(fragments[key])}」，上游原句是「{expected[key]['text']}」")
     for gap in storyboard['asset_gaps']:
         boundary_ids.update(set(gap['source_paragraph_ids']) - checked_ids)
         if not set(gap['source_paragraph_ids']).issubset(all_ids):
@@ -1094,4 +1100,9 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except (ValueError, KeyError, OSError) as exc:
+        # Show the specific failed check on one line instead of a traceback.
+        print(f"ERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1)

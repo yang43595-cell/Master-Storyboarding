@@ -87,3 +87,48 @@ def test_approved_outfit_replacement_only_recomposes_its_board(tmp_path, monkeyp
     assert not read_json(Path(last["manifest"]))["scope_gaps"]
     confirm([("FACE", "大头照", None, "black")], "new identity photo")
     assert {r["target"].split("@")[1] for r in boards()["items"]} == {"DAY", "NIGHT"}
+
+
+def test_matted_headshot_and_wide_outfit_keep_headshot_full_bleed_left(tmp_path):
+    root = tmp_path.resolve()
+    path, story = narrative(root)
+    req = story["asset_requirements"][0]
+    ast = "AST-CHAR"
+    req.update(asset_id=ast, category="CHARACTER", character_type="HUMAN", character_output_kind="人物1x4",
+               image_decision="需要制作", wardrobe_states=[dict(name="UNIFORM", evidence="synthetic", output_id="UNIFORM")])
+    write_json(path, story)
+    story_entry = dict(artifact_id="story", logical_id="narrative.package", type="narrative.package",
+                       checksum=artifacts.digest(path), revision="R01", path_or_url=path.name,
+                       user_approved=True, status="current")
+    write_json(root / artifacts.MANIFEST_PATH, {"schema_version": "1.0", "artifacts": [story_entry]})
+    state = artifacts.load_project_state(root)
+    state.update(current_artifacts=["story"], user_confirmations=[dict(artifact_ids=["story"], at="synthetic")])
+    write_json(root / "00_项目管理/project_state.json", state)
+
+    head = Image.new("RGB", (1200, 1600), (250, 250, 250))
+    head.paste(Image.new("RGB", (864, 1152), (180, 140, 130)), (168, 224))
+    head_path = root / "head.png"
+    head.save(head_path)
+    outfit_path = root / "outfit.png"
+    Image.new("RGB", (1672, 941), (255, 255, 255)).save(outfit_path)
+
+    rows = [
+        dict(target=f"{ast}@HEAD", path=head_path.name, sha256=artifacts.digest(head_path),
+             purpose="head", output_kind="大头照", candidate_id="H1", visual_status="passed",
+             requirement_sha256=sha256_json(req)),
+        dict(target=f"{ast}@CLOTHES", path=outfit_path.name, sha256=artifacts.digest(outfit_path),
+             purpose="clothes", output_kind="服装三视图", candidate_id="C1", visual_status="passed",
+             final_output_id="UNIFORM", requirement_sha256=sha256_json(req)),
+    ]
+    packet = dict(narrative=story_entry["checksum"], narrative_id="story", items=rows)
+    key = sha256_json(packet)
+    write_json(root / review.SHOWN / (key + ".json"), packet)
+    entries = lambda: artifacts.load_manifest(root)["artifacts"]
+    review.confirm(root, [key], dict(at="2026-11-26T22:25:00+08:00", quote="synthetic", scope="all_shown",
+                                     review_ref="matted", shown=[key]), story_entry, entries())
+
+    preview = review.compose_boards(root, (), story_entry, entries())
+    with Image.open(root / preview["items"][0]["path"]) as board:
+        assert board.width / board.height < 2.5
+        assert board.getpixel((0, 0)) == (180, 140, 130)
+        assert board.getpixel((0, board.height - 1)) == (180, 140, 130)

@@ -168,6 +168,8 @@ def status(args: argparse.Namespace) -> dict[str, Any]:
         if not flow["steps"]:
             blockers.extend(revision_blockers)
         next_actions = [step for step in flow["steps"] if step["status"] == "ready"] if not blockers else []
+        waiting_for_user = (not blockers and not next_actions
+                            and any(step["status"] == "waiting" for step in flow["steps"]))
         if not next_actions:
             blockers.extend(step["reason"] for step in flow["steps"] if step["status"] == "waiting")
         next_skills = {step["skill"] for step in next_actions if "skill" in step}
@@ -176,6 +178,7 @@ def status(args: argparse.Namespace) -> dict[str, Any]:
                 "next_allowed_stage": next(iter(next_skills)) if len(next_skills) == 1 else None,
                 "next_stage_note": "当前可执行范围见 next_actions；等待项见 steps。",
                 "production_allowed": production_ok, "production_ok": production_ok,
+                "waiting_for_user": waiting_for_user,
                 "blockers": blockers, "ok": production_ok}
 
     blockers.extend(artifact_blockers)
@@ -439,6 +442,10 @@ def _write_handoff_card(args, project, target_skill, current_stage, inputs, *, t
     lines = [
         "# 下一阶段交接卡", "",
         *[f"- 导演已绑定输入：`{path}`" for path in director_paths],
+        *(["- 导演写稿：用 `scripts/director_package.py` 渐进式读取并逐场落盘（outline → init → scene-source → put-scene → status → register → self-check-template），"
+           "禁止一次吞入全片来源或一次输出整份导演包，见 `skills/storyboard-planner/SKILL.md#渐进式读取与逐场落盘必须用禁止一次读全片原文或输出整包`。"]
+          if target_skill == "storyboard-planner" and routed and routed.get("action") == "director"
+          and not routed.get("segment_ids") else []),
         f"- 来源阶段：`{current_stage}`",
         f"- 目标 Skill：`{target_skill}`",
         *([f"- 制作路线：复刻线。实读 `{context.ROOT / routed['workflow_entry']}`，沿本阶段现有交接和采用入口。",

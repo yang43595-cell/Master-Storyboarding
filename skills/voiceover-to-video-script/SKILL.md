@@ -11,6 +11,23 @@ description: 根据导演包或采用的复刻分段、原文对白和真实素�
 
 ## 执行顺序与停止点
 
+### 原创导演线渐进式写稿与一键上红帧（标准快速路径，严禁手拼整份大 JSON 或通读画布底层脚本）
+
+原创线统一采用 `video.prompt`（`schema_version: "2.0"`，免除手抄 `director_coverage` 切片锚点）与 `scripts/video_prompt_package.py` 分批写入，每轮只写 2–3 个生成段，避免单轮超长流式输出断连：
+
+1. **查看全局大纲与可用素材清单**（不灌入全片原文）：
+   `PYTHONPATH=scripts .venv/bin/python scripts/video_prompt_package.py outline --project "<项目>"`
+2. **初始化 v2.0 提示词包**（绑定当前导演包与红帧模型能力取证 JSON）：
+   `PYTHONPATH=scripts .venv/bin/python scripts/video_prompt_package.py init --project "<项目>" --revision R07 --output 06_视频/R07_视频提示词.json --capability-evidence 06_视频/红帧Seedance25原生模型能力取证.json`
+3. **按段取源并逐段落盘**（写哪段调 `segment-source --shots S01-001,S01-002`，单段 JSON 只需填 `segment_id`、`title`、`source_shots`、`duration_seconds`、`materials`（传 `{"ref": "AST-CH-01", "role": "character"}` / `{"ref": "SUP-S10-MASK-R07"}` / `{"ref": "PROD:ACTION-01"}` 即可自动解析 `@图片k`/`@视频k`、路径、哈希、动作键、对白与连续性字段）和 `prompt`；注意导演包中 `required_visuals[].prompt_clause` 原句须单独占一行）：
+   `PYTHONPATH=scripts .venv/bin/python scripts/video_prompt_package.py put-segment --project "<项目>" --package 06_视频/R07_视频提示词.json --input /tmp/seg01.json`
+4. **全包校验、登记候选并采用**：
+   - `PYTHONPATH=scripts .venv/bin/python scripts/video_prompt_package.py status --project "<项目>" --package 06_视频/R07_视频提示词.json`
+   - `PYTHONPATH=scripts .venv/bin/python scripts/video_prompt_package.py register --project "<项目>" --package 06_视频/R07_视频提示词.json --artifact-id VID-R07`
+   - `PYTHONPATH=scripts .venv/bin/python scripts/video_prompt_package.py self-check-template --project "<项目>" --artifact-id VID-R07 --output 00_项目管理/视频R07自查.json`（填妥真实观察与 `verdict: "pass"` 后运行 `.venv/bin/python scripts/stage_context_cli.py accept-artifact --project "<项目>" --artifact-id VID-R07 --self-check-json 00_项目管理/视频R07自查.json`）
+5. **一键写入红帧画布草稿并正式回读收口**（自动上传源卡、人脸认证、连线、直传视频参考、序列化原生 `{{ref}}`、刷新回读与防重叠排版校验，**绝不点击生成**）：
+   `.venv/bin/python scripts/redframe_draft.py write-creative --project "<项目>"`（可先加 `--preflight` 干跑预检）
+
 压缩或会话恢复后，先按 [主动恢复核对](../_shared/knowledge-access.md#压缩后的主动恢复核对)逐项核本轮状态、可选分支与 9:16、平台参数及采用路径；未核范围明确保留，不等用户追问。本 Skill 继续直接读取，不建 prepare 或阅读凭据。
 
 先按[网站审核到画布的统一入口](../../PROJECT_RULES.md#网站审核到画布的统一入口)确定采用分支：统一入口逐段自查后继续并完成全片检查，不送网站、不停等逐段人审，保存并核对指定画布草稿后停止。只有未采用统一入口的兼容路径才逐段等用户确认，取得准确整稿确认后沿人审采用入口交接。正式采用或下游消费前核当前有效的采用依据，缺项保持候选。
@@ -44,7 +61,7 @@ description: 根据导演包或采用的复刻分段、原文对白和真实素�
 ### 三层入口
 
 1. 第一层从项目规则、本页的任务入口和本轮输入确定职责、版本、范围与停点。沿实际任务直接读原件。查询和下载从原任务与提交记录开始，历史稿沿原入口追溯。视频的旧 prepare、任务索引、阅读凭据、逐块任务及编码格式已经退役。
-2. 第二层写改稿按任务表读取视频方法的相应小节，再读[正文模板](templates/video-script-template.md)、[共用语言红线](../_shared/prompt-language.md)与[视频语言规范](references/prompt-language-hard-rules.md)的适用部分。专业方法按 [knowledge-profile.json](knowledge-profile.json) 的 `direct_read_when` 读取。先用 `python -m scripts.core.knowledge_runtime` 核验仓库固定知识包，再实读基础方法与素材职责方法。选定 Seedance 2.5 时加读控制方法，已确认准确商品且本轮涉及其展示或真实使用时加读商品方法。草稿、生成、质检和排障沿各自入口读取本轮所需合同。
+2. 第二层写改稿按任务表读取视频方法的相应小节，再读[正文模板](templates/video-script-template.md)、[共用语言红线](../_shared/prompt-language.md)与[视频语言规范](references/prompt-language-hard-rules.md)的适用部分。专业方法按 [knowledge-profile.json](knowledge-profile.json) 的 `direct_read_when` 读取。先用 `.venv/bin/python -m scripts.core.knowledge_runtime`（无参数）核验仓库固定知识包，再实读基础方法与素材职责方法。选定 Seedance 2.5 时加读控制方法，已确认准确商品且本轮涉及其展示或真实使用时加读商品方法。草稿、生成、质检和排障沿各自入口读取本轮所需合同。
 3. 第三层按具体问题选用本轮登记的案例原件和仓库内明确引用的参考资料。核对来源覆盖和适用范围，区分已核事实、推断及待验证处理。原片、商品实物和动作参考按本轮实际来源核验。同任务同版本已读资料复用，缺失或状态冲突记准确缺口。
 
 ### 核本轮写稿输入

@@ -4,6 +4,7 @@ import hashlib
 from io import BytesIO
 import math
 from pathlib import Path
+import re
 from tempfile import TemporaryDirectory
 
 from PIL import Image, ImageOps
@@ -24,6 +25,21 @@ def project_file(root, path):
     if result == root or not result.is_relative_to(root):
         raise ValueError("拼版文件须位于项目内")
     return result
+
+
+_GAP_SAFE = re.compile(r"[A-Z0-9-]+")
+
+
+def scope_gap_id(ast, output):
+    """Build a schema-legal gap ID even when the output ID contains Chinese or underscores.
+
+    Already-legal output IDs keep their historical form, so existing manifests still match.
+    """
+    if _GAP_SAFE.fullmatch(output or ""):
+        return f"GAP-{ast}-{output}"
+    slug = re.sub(r"[^A-Z0-9]+", "-", (output or "").upper()).strip("-")
+    digest = hashlib.sha256((output or "").encode("utf-8")).hexdigest()[:8].upper()
+    return f"GAP-{ast}-{slug + '-' if slug else ''}{digest}"
 
 
 def _receipt(root, reference, cache):
@@ -56,7 +72,7 @@ def invalidate_changed_source(root, record, output_id, checksum, gaps, receipt, 
             keep.append(board)
             continue
         final = board["output_id"]
-        gap = f"GAP-{record['asset_id']}-{final}"
+        gap = scope_gap_id(record['asset_id'], final)
         if not any(item["gap_id"] == gap for item in gaps):
             gaps.append(dict(gap_id=gap, requested_item=final, reason="已确认的拼版源图换版，须重新拼版",
                              source_ref=receipt, production_stopped=True))
@@ -174,10 +190,49 @@ def plans(root, selection, specs):
     return ready, reused, pending
 
 
+BOARD_LAYOUT = "full_left_head_v2"
+
+
+def _trim_headshot_border(image: Image.Image) -> Image.Image:
+    """Strip uniform outer near-white mat borders so the headshot fills the left slot."""
+    w, h = image.size
+    if w < 16 or h < 16:
+        return image
+    rgb = image.convert("RGB")
+    corner = rgb.getpixel((0, 0))
+    if min(corner) < 240 or max(corner) - min(corner) > 10:
+        return image
+    px = rgb.load()
+
+    def _is_border(x, y):
+        p = px[x, y]
+        return abs(p[0] - corner[0]) <= 3 and abs(p[1] - corner[1]) <= 3 and abs(p[2] - corner[2]) <= 3
+
+    top = 0
+    while top < h and all(_is_border(x, top) for x in range(w)):
+        top += 1
+    if top >= h:
+        return image
+    bottom = h - 1
+    while bottom > top and all(_is_border(x, bottom) for x in range(w)):
+        bottom -= 1
+    left = 0
+    while left < w and all(_is_border(left, y) for y in range(top, bottom + 1)):
+        left += 1
+    right = w - 1
+    while right > left and all(_is_border(right, y) for y in range(top, bottom + 1)):
+        right -= 1
+    has_outer_mat = bottom < h - 1 or (left > 0 and right < w - 1)
+    cw, ch = right + 1 - left, bottom + 1 - top
+    if not has_outer_mat or cw < w * 0.4 or ch < h * 0.4:
+        return image
+    return image.crop((left, top, right + 1, bottom + 1))
+
+
 def render(root, spec):
     # Keep the reviewed pixels in place across adoption and retries. The master manifest
     # only links them once the producer has actually checked this specific preview.
-    folder = project_file(root, PREVIEWS / sha256_json(spec["sources"]))
+    folder = project_file(root, PREVIEWS / sha256_json({"layout": BOARD_LAYOUT, "sources": spec["sources"]}))
     filename = "人物1×4.png"
     if not folder.exists():
         folder.parent.mkdir(parents=True, exist_ok=True)
@@ -193,21 +248,32 @@ def render(root, spec):
                     upright = ImageOps.exif_transpose(raw)
                     mode = "RGBA" if "A" in upright.getbands() or "transparency" in upright.info else "RGB"
                     images.append(upright.convert(mode))
-            ratio = sum(im.width / im.height for im in images)
-            height = min(max(301, min(im.height for im in images)), 5999, int(5997 / ratio))
-            if height < 1:
+            head = _trim_headshot_border(images[0])
+            outfit = images[1]
+            r_head = head.width / head.height
+            r_outfit = outfit.width / outfit.height
+            ratio = r_head + r_outfit
+            outfit_h = min(max(301, min(head.height, outfit.height)), 5999, int(5997 / ratio))
+            if outfit_h < 1 or r_head >= 2.46:
                 raise ValueError("源图尺寸无法完整等比拼版")
-            widths = [max(1, round(im.width / im.height * height)) for im in images]
-            width = sum(widths)
-            canvas_height = max(height, math.ceil(width / 2.46)) if width / height >= 2.5 else height
+            outfit_w = max(1, round(r_outfit * outfit_h))
+            canvas_height = outfit_h
+            if (max(1, round(r_head * canvas_height)) + outfit_w) / canvas_height >= 2.5:
+                canvas_height = max(outfit_h, math.ceil(outfit_w / (2.46 - r_head)))
+                if canvas_height >= 6000 or max(1, round(r_head * canvas_height)) + outfit_w >= 6000:
+                    scale = 5997 / max(canvas_height, max(1, round(r_head * canvas_height)) + outfit_w)
+                    outfit_h = max(1, int(outfit_h * scale))
+                    outfit_w = max(1, round(r_outfit * outfit_h))
+                    canvas_height = max(outfit_h, math.ceil(outfit_w / (2.46 - r_head)))
+            head_w = max(1, round(r_head * canvas_height))
+            width = head_w + outfit_w
             if not (300 < min(width, canvas_height) <= max(width, canvas_height) < 6000 and width > canvas_height):
                 raise ValueError("源图比例不适合人物横向拼版")
-            mode = "RGBA" if any(image.mode == "RGBA" for image in images) else "RGB"
-            board = Image.new(mode, (width, canvas_height), images[0].getpixel((0, 0)))
-            x = 0
-            for image, w in zip(images, widths):
-                board.paste(image.resize((w, height), Image.Resampling.LANCZOS), (x, (canvas_height-height)//2))
-                x += w
+            mode = "RGBA" if any(image.mode == "RGBA" for image in (head, outfit)) else "RGB"
+            board = Image.new(mode, (width, canvas_height), outfit.getpixel((0, 0)))
+            board.paste(head.resize((head_w, canvas_height), Image.Resampling.LANCZOS), (0, 0))
+            board.paste(outfit.resize((outfit_w, outfit_h), Image.Resampling.LANCZOS),
+                        (head_w, (canvas_height - outfit_h) // 2))
             board.save(staged / filename)
             write_json(staged / "尺寸与散列.json", dict(sha256=artifacts.digest(staged / filename), pixel_size=list(board.size)))
             staged.rename(folder)

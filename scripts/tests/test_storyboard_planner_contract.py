@@ -116,7 +116,6 @@ class StoryboardPlannerContractTests(unittest.TestCase):
         required = [
             SKILL_DIR / "SKILL.md",
             SKILL_DIR / "modules" / "shot-planning.md",
-            SKILL_DIR / "references" / "专业影视分镜执行规范.md",
             SKILL_DIR / "references" / "专业影视分镜审查门槛.md",
             SKILL_DIR / "templates" / "专业影视分镜输出模板.md",
             SKILL_DIR / "tests" / "pressure-tests.md",
@@ -124,14 +123,14 @@ class StoryboardPlannerContractTests(unittest.TestCase):
             SCHEMA_V1,
         ]
         self.assertEqual([str(path) for path in required if not path.is_file()], [])
-        self.assertEqual(json.loads(SCHEMA_V2.read_text(encoding="utf-8"))["properties"]["schema_version"]["const"], "4.0")
+        self.assertEqual(json.loads(SCHEMA_V2.read_text(encoding="utf-8"))["properties"]["schema_version"]["const"], "5.0")
         legacy = json.loads(SCHEMA_V1.read_text(encoding="utf-8"))
         self.assertEqual(legacy["properties"]["schema_version"]["const"], "1.0")
         self.assertIn("不得用于新建、修改或回存", legacy["description"])
 
     def test_skill_closes_v3_and_asset_scope_loopholes(self) -> None:
         skill = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
-        contract = (SKILL_DIR / "references" / "专业影视分镜执行规范.md").read_text(encoding="utf-8")
+        contract = (SKILL_DIR / "modules" / "shot-planning.md").read_text(encoding="utf-8")
         for marker in (
             "已确认 `narrative.package` revision",
             "对白文本和说话者必须逐字沿用",
@@ -190,7 +189,6 @@ class StoryboardPlannerContractTests(unittest.TestCase):
             self.assertGreater(len(reference.read_bytes()), 0)
             module = (SKILL_DIR / "modules" / "shot-planning.md").read_text(encoding="utf-8")
             self.assertIn("../references/foundations/" + name, module)
-            self.assertIn("--required-reference skills/storyboard-planner/references/foundations/" + name, module)
         # Mutate only a temporary repository, never the active references.
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

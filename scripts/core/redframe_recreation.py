@@ -493,18 +493,19 @@ def _configure(ui, group, ident, image_ids, project, canvas):
                            or None, '保存原生引用', timeout=35)
 
 
-def _rename_new_node(ui, ident, name):
+def _rename_new_node(ui, ident, name, *, reload_page=True):
     graph = ui.workspace.read_canvas()
     updated = deepcopy(graph)
     _nodes(updated)[ident]['data']['label'] = name
     if updated != graph:
         ui.workspace.write_canvas(graph, updated)
-        _reload(ui)
+        if reload_page:
+            _reload(ui)
     if _label(_nodes(ui.workspace.read_canvas())[ident]) != name:
         raise ValueError(f'原生节点改名未保存：{ident}')
 
 
-def _reuse_or_create(ui, state, field, key, name, create, save, *, expected_hash=None):
+def _reuse_or_create(ui, state, field, key, name, create, save, *, expected_hash=None, reload_after_rename=True):
     graph = ui.workspace.read_canvas()
     nodes = _nodes(graph)
     registered = state[field]
@@ -524,7 +525,7 @@ def _reuse_or_create(ui, state, field, key, name, create, save, *, expected_hash
         if not found and expected_hash and len(new_ids) == 1:
             ident, = new_ids
             if nodes[ident]['type'] == 'remote-imageNode' and _read_images(ui, [nodes[ident]]).get(ident) == expected_hash:
-                _rename_new_node(ui, ident, name)
+                _rename_new_node(ui, ident, name, reload_page=reload_after_rename)
                 found = [ident]
         if len(found) != 1:
             raise ValueError(f'有未归属的原节点，停止重复创建：{name}')
@@ -544,7 +545,7 @@ def _reuse_or_create(ui, state, field, key, name, create, save, *, expected_hash
             raise ValueError(f'上传图片的原件字节不符：{ident}')
     else:
         _video_data(node)
-    _rename_new_node(ui, ident, name)
+    _rename_new_node(ui, ident, name, reload_page=reload_after_rename)
     registered[key] = ident
     state.pop('creating')
     save()
@@ -659,26 +660,29 @@ def write_recreation(project, group_path, *, host_browser, append_revision=False
             key = state['creating']['key']
             order.remove(key)
             order.insert(0, key)
+        created_any_asset = False
         for key in order:
             if key in existing_pack or key in reused_assets:
                 continue
+            was_known = key in state['assets']
             path = project / images[key]['path']
             name = '1:1参考｜' + key
             if changed_only and key in prior_hashes and prior_hashes[key] != images[key]['sha256']:
                 name += '｜' + images[key]['sha256'][:12]
             ident = _reuse_or_create(ui, state, 'assets', key, name,
                                      lambda x, y: ui.upload_source(path, x, y), save,
-                                     expected_hash=images[key]['sha256'])
+                                     expected_hash=images[key]['sha256'], reload_after_rename=False)
+            if not was_known:
+                created_any_asset = True
             print('素材卡', key, ident, flush=True)
+        if created_any_asset:
+            _reload(ui)
         graph = workspace.read_canvas()
         nodes = _nodes(graph)
         used_images = [nodes[state['assets'][key]] for key in images]
         image_checks = _read_images(ui, used_images)
         if any(image_checks[state['assets'][key]] != material['sha256'] for key, material in images.items()):
             raise ValueError('源素材卡的实际字节与分组稿不符')
-        attempts = receipt.setdefault("face_certification_attempts", {})
-        for key in sorted(required_faces.intersection(images)):
-            ui.ensure_face_certification(state["assets"][key], images[key]["sha256"], attempts, save)
         new_asset_ids = [state['assets'][k] for k in images if k not in existing_pack and k not in reused_assets]
         asset_y = 270
         if changed_only and new_asset_ids:
@@ -688,14 +692,24 @@ def write_recreation(project, group_path, *, host_browser, append_revision=False
         asset_positions = {ident: (720 + 300 * (i % 5), asset_y + 290 * (i // 5))
                            for i, ident in enumerate(new_asset_ids)}
         _position(ui, asset_positions)
+        attempts = receipt.setdefault("face_certification_attempts", {})
+        for key in sorted(required_faces.intersection(images)):
+            ui.ensure_face_certification(state["assets"][key], images[key]["sha256"], attempts, save)
+        created_any_node = False
         for group in groups:
+            was_known = group['id'] in state['nodes']
             name, key = group['node_name'], group['id']
             if name in prior_names:
                 name += '｜' + source['group_sha256'][:12]
             ident = _reuse_or_create(ui, state, 'nodes', key, name,
                                      lambda x, y: ui._new_node(x, y, menu_name='视频',
-                                                              generation_kind='remote-videoGenerationNode'), save)
+                                                              generation_kind='remote-videoGenerationNode'),
+                                     save, reload_after_rename=False)
+            if not was_known:
+                created_any_node = True
             print('草稿节点', key, ident, flush=True)
+        if created_any_node:
+            _reload(ui)
         base_y = 340 + 290 * math.ceil(len(asset_positions) / 5)
         if reuse_previous_layout:
             new_ids = set(state['nodes'].values())

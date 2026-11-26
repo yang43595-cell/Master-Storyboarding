@@ -225,44 +225,6 @@ if (Test-Path -LiteralPath $executionDir -PathType Container) {
   }
 }
 
-# production_plan.json 存在时，把语义预检纳入项目门禁。
-# 只读 shadow 模式，不在此处写文件；ERROR 即阻塞提交。
-$preflightPlanPath = Join-Path $projectRoot "00_$dirManage\production_plan.json"
-if (Test-Path -LiteralPath $preflightPlanPath -PathType Leaf) {
-  $pyScript = Join-Path $PSScriptRoot "validate-production-plan.py"
-  if (-not (Test-Path -LiteralPath $pyScript -PathType Leaf)) {
-    $issues.Add((Add-Issue "ERROR" "validate-production-plan.py not found: $pyScript"))
-  } else {
-    # Python 子进程写 UTF-8；Windows PowerShell 5.1 默认按 GBK 解码会乱码，临时切 UTF-8 再还原。
-    $previousOutputEncoding = [Console]::OutputEncoding
-    $previousOutputEncoder = $OutputEncoding
-    try {
-      [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-      $OutputEncoding = [System.Text.Encoding]::UTF8
-      $pyOutput = @(& python $pyScript --project-path $projectRoot --mode shadow 2>&1)
-    } finally {
-      [Console]::OutputEncoding = $previousOutputEncoding
-      $OutputEncoding = $previousOutputEncoder
-    }
-    $pyExit = $LASTEXITCODE
-    if ($pyExit -ne 0) {
-      foreach ($line in $pyOutput) {
-        if ($line -match '^\[WARN\]') {
-          $issues.Add((Add-Issue "WARN" "production plan preflight: $line"))
-        } else {
-          $issues.Add((Add-Issue "ERROR" "production plan preflight: $line"))
-        }
-      }
-    } else {
-      foreach ($line in $pyOutput) {
-        if ($line -match 'WARN') {
-          $issues.Add((Add-Issue "WARN" "production plan preflight: $line"))
-        }
-      }
-    }
-  }
-}
-
 if ($issues.Count -eq 0) {
   Write-Output "PASS: project structure validation passed."
   exit 0

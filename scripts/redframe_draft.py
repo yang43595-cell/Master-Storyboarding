@@ -848,6 +848,30 @@ def write_recreation_cli(argv):
         return 2
 
 
+def write_creative_cli(argv):
+    parser = argparse.ArgumentParser(description='按本项目已采用原创视频提示词写入并回读红帧草稿（不点击生成）')
+    parser.add_argument('--project', type=Path, required=True)
+    parser.add_argument('--preflight', action='store_true')
+    args = parser.parse_args(argv)
+    try:
+        from scripts.core.redframe_creative import creative_packet, write_creative
+
+        project = args.project.resolve()
+        if args.preflight:
+            packet, canvas, _ = creative_packet(project)
+            result = {'ok': True, 'draft_count': len(packet['groups']), 'target_url': canvas['target_url']}
+        else:
+            sys.path.insert(0, str(Path.home() / '.local/share/codex-headless-browser'))
+            from headless_edge import task_browser
+
+            result = write_creative(project, host_browser=task_browser)
+        print(json.dumps(result, ensure_ascii=False))
+        return 0
+    except (ValueError, KeyError, OSError, TypeError, RuntimeError, ImportError) as exc:
+        print(json.dumps({'ok': False, 'error': str(exc)}, ensure_ascii=False))
+        return 2
+
+
 if __name__ == '__main__':
     if sys.argv[1:2] == ['finalize-new']:
         raise SystemExit(finalize_new_cli(sys.argv[2:]))
@@ -855,4 +879,6 @@ if __name__ == '__main__':
         raise SystemExit(resolve_creation_cli(sys.argv[2:]))
     if sys.argv[1:2] == ['write-recreation']:
         raise SystemExit(write_recreation_cli(sys.argv[2:]))
+    if sys.argv[1:2] == ['write-creative']:
+        raise SystemExit(write_creative_cli(sys.argv[2:]))
     raise SystemExit(main())

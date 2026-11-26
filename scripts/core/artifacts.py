@@ -310,8 +310,8 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
                                    if exact and approval_receipt.get('channel') == 'chat_confirmation' else ()),
                                delegated_creative_approval=delegated)
     elif logical_id == "storyboard.package":
-        if payload.get("schema_version") != "4.0":
-            raise ValueError("旧导演事件包仅保留历史读取；正式 storyboard.package 须使用 4.0 JSON 契约")
+        if payload.get("schema_version") not in ("4.0", "5.0"):
+            raise ValueError("旧导演事件包仅保留历史读取；正式 storyboard.package 须使用 5.0（或 4.0）JSON 契约")
         if not reading_existing:
             from .quality_evidence import required_visuals
             required_visuals(payload)
@@ -607,7 +607,7 @@ def unchanged_director_usage(project, baseline, replacement, shot_ids) -> bool:
                     or not entry.get('checksum') or digest(path) != entry['checksum']):
                 return False
             package = read_json(path)
-            if package.get('schema_version') != '4.0' or package.get('revision') != entry.get('revision'):
+            if package.get('schema_version') not in ('4.0', '5.0') or package.get('revision') != entry.get('revision'):
                 return False
             scope = {}
             scene_ids = set()

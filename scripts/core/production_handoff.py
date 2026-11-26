@@ -153,7 +153,7 @@ def require_handoff_visual_inputs(project, storyboard, director, shot_ids, *, ro
     scope = list(shot_ids)
     file_digest = cache_file_digests(check_for_changes=True) if file_digest is None else file_digest
     assets = None
-    modern = (storyboard.get('schema_version') == '4.0' and bool(storyboard.get('project_id'))
+    modern = (storyboard.get('schema_version') in ('4.0', '5.0') and bool(storyboard.get('project_id'))
               and load_kickoff(project) is not None
               and LEGACY_RULE not in load_project_request(project).get('local_references', []))
     if modern:

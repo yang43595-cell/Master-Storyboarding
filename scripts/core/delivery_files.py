@@ -378,6 +378,16 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
                     # The canonical quality_evidence and all selected files
                     # still take the ordinary current checks below.
                     continue
+                elif (key == 'reference_paths' and isinstance(child, list)
+                      and ((re.search(r'/asset_requirements/[0-9]+/reference_paths$', here) is not None
+                            and {'asset_id', 'category', 'narrative_purpose'}.issubset(value))
+                           or (re.search(r'/assets/[0-9]+/reference_paths$', here) is not None
+                               and {'asset_id', 'category', 'confirmed_asset'}.issubset(value)))):
+                    # Upstream narrative asset-planning hints (and their verbatim
+                    # copy on visual-asset-manifest entries) may name pre-reuse
+                    # hints or eliminated style refs; actual selected outputs are
+                    # verified via confirmed_outputs, materials, and product_pack.
+                    continue
                 elif key == 'agent_acceptance' and registered and isinstance(child, dict):
                     evidence_file(child.get('report_path'), child.get('report_sha256'), here)
                 elif (key in {'previous_candidate', 'rechecked_unchanged_base'}

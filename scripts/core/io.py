@@ -59,7 +59,7 @@ def write_text(path: Path, value: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = _atomic_temp_path(path)
     try:
-        temp.write_text(value, encoding="utf-8", newline="\n")
+        temp.write_bytes(value.replace("\r\n", "\n").encode("utf-8"))
         _replace_with_windows_retry(temp, path)
     finally:
         temp.unlink(missing_ok=True)
