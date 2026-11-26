@@ -192,3 +192,5 @@ original_batches() {
 ### 最终独立审查结论
 
 **整批 FAIL。** 分镜依据换版、宿主续等和 61 项复现通过。资产审核原三种反例在两种格式下独立复核 6/6 通过，但审查者又实测出纯状态「合规」仍能获批。构造一个正常原稿，让模型返回 `passed=true`、空 issues，七个正确 ID 各对应「合规」；对象格式和等价旧数组的最终 `validate_review` 均返回 `passed=True`、七条 checks、空 issues。问题位于 `scripts/visual_asset_codex.py::_has_observation`：去除定位符、已知状态和缺证说明后，只要残留文字就可能算作观察。这个条件不能证明存在具体事实。资产 P0 尚未修完；上述 78 个测试节点和 76 个子测试通过不覆盖该反例。本轮在此独立审查结论处停止。
+
+> 现行状态注（2026-11-26）：后续提交 `54f6233` 已移除 `scripts/visual_asset_codex.py` 中的自动复审路径与 `_has_observation`，上述 P0 对应代码已不再存在。
