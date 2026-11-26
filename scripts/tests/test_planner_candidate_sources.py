@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 
 from scripts.core.story_sources import validate_story_sources
-from scripts.core import web_content
 from scripts import stage_context_cli as cli
 from scripts.core import artifacts
 from scripts.core.io import write_json
@@ -101,8 +100,6 @@ def test_scene_identity_and_same_scene_segments(tmp_path):
     scene['shots'][0]['audio']['dialogue'] = []
     p['scenes'].append(scene)
     reject(lambda: validate_story_sources(n, p, candidate_paragraph_ids=['STP-01']), '场景编号重复：S01')
-    reject(lambda: web_content.compile_content(json.dumps(p).encode(), stage='director', case_id='01',
-           source_script_version='a' * 64, expected_version=None, scope='qa'), '场景编号重复：S01')
     p['scenes'].pop()
     p['scenes'][0]['shots'].append(scene['shots'][0])
     validate_story_sources(n, p, candidate_paragraph_ids=['STP-01'])
@@ -152,21 +149,6 @@ def test_local_cli_and_formal_adoption_chain(tmp_path):
     assert not any('B' in c.get('artifact_ids', []) for c in load_project_state(tmp_path)['user_confirmations'])
 
 
-def test_local_web_real_contract(tmp_path):
-    n, p = packages(tmp_path)
-    result = web_content.compile_content(json.dumps(p).encode(), stage='director', case_id='01',
-        source_script_version='a' * 64, expected_version=None, scope='qa', project_root=tmp_path,
-        director_narrative=n, candidate_paragraph_ids=['STP-01'])
-    assert result['request']['content']['reviewable'] is False
-    assert result['directorSourceCheck']['unchecked_paragraph_ids'] == ['STP-02']
-    ids = [block['id'] for block in result['request']['content']['blocks']]
-    assert len(ids) == len(set(ids)) and 'director-validation-scope' in ids
-    assert result['published'] is False
-    reject(lambda: web_content.compile_content(json.dumps(p).encode(), stage='director', case_id='01',
-        source_script_version='a' * 64, expected_version=None, scope='qa', reviewable=True,
-        director_narrative=n, candidate_paragraph_ids=['STP-01']), 'reviewable')
-
-
 def test_silent_scope_and_legacy_default(tmp_path):
     n, p = packages(tmp_path)
     p['scenes'][0]['source_paragraph_ids'] = ['STP-02']
@@ -184,15 +166,3 @@ def test_silent_scope_and_legacy_default(tmp_path):
     # Legacy v3 remains accepted by the same strict default path.
     from test_storyboard_planner_contract import sample_package
     validate_story_sources(original, sample_package(), project_root=tmp_path)
-
-
-def test_web_scope_requires_source_and_cannot_approve(tmp_path):
-    n, p = packages(tmp_path)
-    kwargs = dict(stage='director', case_id='01', source_script_version='a' * 64,
-                  expected_version=None, scope='qa', candidate_paragraph_ids=['STP-01'])
-    reject(lambda: web_content.compile_content(json.dumps(p).encode(), **kwargs), '完整原叙事')
-    reject(lambda: web_content.compile_content(json.dumps(p).encode(), director_narrative=n,
-                  reviewable=True, **kwargs), 'reviewable')
-    n['revision'] = 'R99'
-    reject(lambda: web_content.compile_content(json.dumps(p).encode(), director_narrative=n,
-                  **kwargs), '修订不匹配')

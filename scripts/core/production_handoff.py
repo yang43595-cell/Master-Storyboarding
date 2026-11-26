@@ -25,7 +25,7 @@ from .product_reference_pack import product_catalog
 from .review_publication import is_recorded_website_script_approval
 from .revision_control import guard_action, inspect_revision_status
 from .visual_readiness import require_visual_readiness
-from .web_content import source_review_segments
+from .prompt_body import source_review_segments
 
 NARRATIVE = 'narrative.package'
 DIRECTOR = 'storyboard.package'

@@ -21,8 +21,6 @@ python -m venv .venv
 # Windows PowerShell 改用: .venv\Scripts\Activate.ps1
 python -m pip install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: -r config/requirements-dev.txt
 python -m pip check
-# Node.js 24，用于已有网页契约的离线校验：
-npm ci --ignore-scripts --no-audit --no-fund
 python scripts/check_first_run.py
 ```
 
@@ -30,7 +28,7 @@ python scripts/check_first_run.py
 
 需要本地转写时，先按[本地 ASR](local-asr.md)准备独立环境和模型，再运行 `python scripts/check_first_run.py --require asr --asr-python "<ASR 环境的 Python>" --asr-model "<本地模型目录>"`。该能力还需要 FFmpeg。工具检查通过后用一小段音频实测转写。脚本只报告检查结果。
 
-仅运行核心 CLI 时可以把安装命令的文件换成 `config/requirements.txt`；包含图片资产功能及测试时使用上述 dev 清单。三份 `config/requirements*.txt` 均固定直接和间接依赖版本及发行包 SHA256；对应 `.in` 文件只表达维护时的兼容范围，不作为日常安装入口。依赖只从既定官方包源安装，不把 `.venv/` 或缓存提交到 Git。JavaScript 网页适配/测试使用 Node.js 24 与锁定的 Zod 3.25.76（`package-lock.json`）；ASR 和浏览器生成工具是按需能力，依各自 Skill 安装或连接，不要求普通文字阶段预装所有工具。
+仅运行核心 CLI 时可以把安装命令的文件换成 `config/requirements.txt`；包含图片资产功能及测试时使用上述 dev 清单。三份 `config/requirements*.txt` 均固定直接和间接依赖版本及发行包 SHA256；对应 `.in` 文件只表达维护时的兼容范围，不作为日常安装入口。依赖只从既定官方包源安装，不把 `.venv/` 或缓存提交到 Git。红帧 JS 离线测试使用 Node.js 24 内置测试模块，无需额外 npm 依赖；ASR 和浏览器生成工具是按需能力，依各自 Skill 安装或连接，不要求普通文字阶段预装所有工具。
 
 锁文件以 CPython 3.12 为验证基线，保留 Windows 等平台条件依赖，不能把一次 Linux 通过当成其他系统已实测。`--only-binary=:all:` 在缺少适用 wheel 时明确失败，不临时编译未知构建依赖；不要为安装成功而去掉哈希检查。Python、Node、FFmpeg 和系统库本身不包含在 Python 锁文件中。更新依赖与自动检查说明见 [依赖与自动检查](dependency-checks.md)。
 

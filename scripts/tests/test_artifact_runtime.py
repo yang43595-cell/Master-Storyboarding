@@ -188,7 +188,7 @@ def test_explicit_project_relocation_reuses_paths_without_editing_receipts(tmp_p
     monkeypatch.setenv('MSB_PROJECT_PATH_MAP', json.dumps({source: str(tmp_path)}))
     assert artifacts.project_path(tmp_path, raw_photo) == photo
     assert artifacts.project_path(tmp_path, '/' + raw_photo.replace('\\', '/')) == photo
-    assert asset_refs._confirmation_file(tmp_path, source + r'\00_项目管理\confirmation.json#existing') == (receipt, 'existing')
+    assert asset_refs.confirmation_reference(tmp_path, source + r'\00_项目管理\confirmation.json#existing') == (receipt, 'existing')
     assert receipt.read_bytes() == original
     # The same project name at an unconfigured location never acts as an alias.
     assert artifacts.project_path(tmp_path, r'D:\Other\film\04_资产\master.png') != photo
@@ -257,10 +257,10 @@ def test_exact_supplement_reference_checks_receipt_and_freeze(tmp_path):
     digest = artifacts.digest(image)
     item = entry('FRAME-R01', 'visual-supplement.image.bridge')
     item.update(type='visual-supplement-image', path_or_url=image.name, checksum=digest,
-                revision='R01', user_approved=True, confirmation_ref='receipt.json')
-    receipt = {'scope': 'artifact', 'artifact_ids': ['FRAME-R01'],
-               'images': [{'artifact_id': 'FRAME-R01', 'path': image.name, 'sha256': digest}]}
-    receipt['images'][0]['usage'] = {'source_shot_ids': ['S04-010']}
+                revision='R01', user_approved=True)
+    receipt = {'scope': 'artifact', 'kind': 'revision-candidate', 'artifact_id': 'FRAME-R01',
+               'revision': 'R01', 'sha256': digest, 'approval_ref': 'synthetic:approval',
+               'usage': {'source_shot_ids': ['S04-010']}}
     from scripts.tests.test_quality_evidence_consumers import observations
     from scripts.core import quality_evidence as q
     evidence = observations(q.IMAGE_ASPECTS)
@@ -268,7 +268,6 @@ def test_exact_supplement_reference_checks_receipt_and_freeze(tmp_path):
         source_files=[{'path': image.name, 'sha256': digest}],
         view={'resolution': 'original', 'locator': 'synthetic blue image'})
     item['quality_evidence'] = evidence
-    write_json(tmp_path / 'receipt.json', receipt)
     write_json(tmp_path / '00_项目管理/artifact_manifest.json', {'artifacts': [item]})
     state = new_project_state()
     state.update(current_artifacts=['FRAME-R01'], user_confirmations=[receipt])
@@ -276,21 +275,17 @@ def test_exact_supplement_reference_checks_receipt_and_freeze(tmp_path):
     assert not require_references(tmp_path, ['FRAME-R01'])[0]  # Exact usage is mandatory.
     assert require_references(tmp_path, ['FRAME-R01'], ['S04-010'])[0]
     assert not require_references(tmp_path, [])[0]
-    receipt['images'][0]['usage'] = {'source_shot_ids': ['S04-010']}
-    write_json(tmp_path / 'receipt.json', receipt)
-    assert require_references(tmp_path, ['FRAME-R01'], ['S04-010'])[0]
     assert not require_references(tmp_path, ['FRAME-R01'], ['S06-010'])[0]
-    receipt['images'][0]['sha256'] = '0' * 64
-    write_json(tmp_path / 'receipt.json', receipt)
+    receipt['sha256'] = '0' * 64
+    write_project_state(tmp_path, state)
     assert not require_references(tmp_path, ['FRAME-R01'], ['S04-010'])[0]
-    receipt['images'][0]['sha256'] = digest
-    write_json(tmp_path / 'receipt.json', receipt)
+    receipt['sha256'] = digest
+    write_project_state(tmp_path, state)
     revision_control.open_change(tmp_path, change_id='REWORK', tier='T1',
                                 logical_ids=[item['logical_id']], reason='fixture rework')
     assert not require_references(tmp_path, ['FRAME-R01'], ['S04-010'])[0]
     revision_control.cancel_change(tmp_path, change_id='REWORK', reason='fixture cancelled')
     assert require_references(tmp_path, ['FRAME-R01'], ['S04-010'])[0]
-
 
 @pytest.mark.parametrize("preinvalidated", [False, True])
 def test_generic_promotion_invalidates_only_adopted_descendants_and_retries(tmp_path, preinvalidated):

@@ -136,4 +136,4 @@ python scripts/stage_context_cli.py ensure-prepared \
 
 工作区重置或更换入口后，旧路径、阅读记录与回归报告不证明当前运行环境。按[工作区重置后的核验](../../docs/development/README.md#工作区重置后的核验)先核定当前源码与真实加载路径，再重跑本轮准确输入的检查；原文已不在当前可用上下文时须补读。历史来源与当前依赖分开报告，当前真实缺料继续阻塞对应步骤，不靠改业务状态或删除引用过检查。目录检查返回 `UNCHECKED` 表示没有实际文档覆盖，须恢复准确目录后重跑，不当作内容通过或画面失败。
 
-恢复的具体命令见[可重复恢复入口](../../docs/development/README.md#可重复的恢复入口只读验收)。源码/依赖通过、业务文件存在、历史准确版本与平台实际绑定分别说明；未带 hash 或无法真实采集的部分保持未建立，不用整包 PASS 覆盖这些限制。
+恢复后在仓库根目录以 `git rev-parse HEAD`、`python scripts/check_first_run.py` 与 `python -m scripts.core.knowledge_runtime` 核对源码版本、工具依赖和内置知识包。源码/依赖通过、业务文件存在、历史准确版本与平台实际绑定分别说明；未带 hash 或无法真实采集的部分保持未建立，不用整包 PASS 覆盖这些限制。

@@ -173,18 +173,6 @@ def test_external_inputs_require_declared_root_and_resolved_boundary(tmp_path):
     assert validate_required_files(project, [str(vault/'escape.md')], [vault])
 
 
-def test_existing_review_links_are_absolute_and_need_reading_copy_after_move(tmp_path):
-    import runpy
-    builder = runpy.run_path(str(Path(__file__).parents[1]/'build-image-review-delivery.py'))
-    folder = tmp_path/'original'; folder.mkdir()
-    (folder/'synthetic.png').write_bytes(b'synthetic path-only fixture')
-    output = builder['build_delivery'](folder, ['synthetic.png'])
-    assert folder.as_posix() in output
-    shutil.move(folder, tmp_path/'moved')
-    assert not folder.exists()
-    assert folder.as_posix() in output  # Documented limitation, not a portable-link pass.
-
-
 @pytest.mark.parametrize('target', ['file', 'root', 'project'])
 def test_symlink_loops_are_reported_as_readiness_errors(tmp_path, target):
     from scripts.core.product_refs import validate_required_files

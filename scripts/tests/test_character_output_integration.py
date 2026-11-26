@@ -344,7 +344,7 @@ def test_final_delivery_checks_adopted_exact_output_and_real_canvas(adopted_char
     for size in [(90, 120), (160, 90)]:
         Image.new('RGB', size).save(image)
         receipt.write_text(json.dumps({'items': [{'ast_id': 'AST-001', 'output_id': 'HOME-FINAL',
-            'confirmation': {'id': 'test-only', 'image_sha256': digest(image)}}]}))
+            'confirmation': {'id': 'test-only', 'candidate_id': 'synthetic-home-final', 'image_sha256': digest(image)}}]}))
         ok, problems = asset_refs.require_final_images(root, ['AST-001@HOME-FINAL'])
         assert ok == (size == (160, 90))
         if not ok:

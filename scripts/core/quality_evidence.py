@@ -74,35 +74,14 @@ def _observations(evidence, aspects):
 def _image_confirmation_usages(root, artifact, state):
     """Read image permissions from human receipts, never a draft/self-check claim."""
     from .confirmation_scope import is_whole_artifact
-    from .artifacts import project_path
 
     ident, checksum = artifact.get('artifact_id'), artifact.get('checksum')
-    receipts = list(state.get('user_confirmations', []))
-    reference = artifact.get('confirmation_ref')
-    if isinstance(reference, str):
-        path = project_path(root, reference.partition('#')[0])
-        if path.is_relative_to(root) and path.is_file():
-            receipts.append(json.loads(path.read_text(encoding='utf-8-sig')))
-    for receipt in receipts:
-        if (not is_whole_artifact(receipt) or not _text(receipt.get('approval_ref'))):
+    for receipt in state.get('user_confirmations', []):
+        if not is_whole_artifact(receipt) or not _text(receipt.get('approval_ref')):
             continue
         if (receipt.get('artifact_id') == ident and receipt.get('sha256') == checksum
                 and receipt.get('revision') == artifact.get('revision')):
             yield receipt.get('usage')
-        if ident not in receipt.get('artifact_ids', []):
-            continue
-        images = receipt.get('images')
-        if images is None:
-            images = [{'artifact_id': ident, 'path': receipt.get('image_path'),
-                       'sha256': receipt.get('image_sha256'), 'usage': receipt.get('usage')}]
-        if not isinstance(images, list):
-            continue
-        for image in images:
-            if (not isinstance(image, dict) or image.get('artifact_id') != ident
-                    or image.get('sha256') != checksum or not _text(image.get('path'))
-                    or project_path(root, image['path']) != project_path(root, artifact['path_or_url'])):
-                continue
-            yield image.get('usage', receipt.get('usage'))
 
 
 def _accepted_image_checks(root, image_path, evidence, shot_ids, reference, artifact, state):
@@ -880,7 +859,7 @@ def validate_scene_source_mapping(rows, sources, project, *, check_submitted_bod
     director links must be present in source_artifacts: omission cannot downgrade
     the state check to a legacy/no-change path.
     """
-    from .web_content import SOURCE_SEGMENT_FIELDS, source_review_segments
+    from .prompt_body import SOURCE_SEGMENT_FIELDS, source_review_segments
 
     videos = []
     video_origins = {}

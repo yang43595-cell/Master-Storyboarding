@@ -58,7 +58,6 @@ jobs:
           python -m pip install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: -r config/requirements-dev.txt
           python -m pip check
           python -m pip install --dry-run --no-index -r config/requirements-dev.in
-          npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Install synthetic media test prerequisite
         run: |

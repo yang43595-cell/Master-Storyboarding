@@ -733,11 +733,11 @@ def _modern_character_segments(project: Path, manifest: dict[str, Any], characte
     if __package__:
         from .core.revision_control import _generation_segments
         from .core.quality_evidence import source_shot_ids, replay_source_audio
-        from .core.web_content import SOURCE_SEGMENT_FIELDS, source_review_segments
+        from .core.prompt_body import SOURCE_SEGMENT_FIELDS, source_review_segments
     else:
         from core.revision_control import _generation_segments
         from core.quality_evidence import source_shot_ids, replay_source_audio
-        from core.web_content import SOURCE_SEGMENT_FIELDS, source_review_segments
+        from core.prompt_body import SOURCE_SEGMENT_FIELDS, source_review_segments
     affected: list[str] = []
     state_path = project / "00_项目管理" / "project_state.json"
     state = read_json(state_path) if state_path.is_file() else {}

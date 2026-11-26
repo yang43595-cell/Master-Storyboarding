@@ -1183,42 +1183,16 @@ def require_references(root: Path, artifact_ids: list[str], shot_ids: list[str] 
                 validate_current_dependencies(entry, manifest, state, root, file_digest=file_digest)
                 permitted_shots = set(image_usage_shots(report.get('usage'), required=True))
             else:
-                confirmation = entry.get('confirmation_ref')
-                if not confirmation:
-                    exact = [r for r in state['user_confirmations']
-                             if r.get('kind') == 'revision-candidate'
-                             and r.get('artifact_id') == ident and is_whole_artifact(r)
-                             and r.get('sha256') == entry['checksum'] and r.get('approval_ref')]
-                    if not exact and not formal_adoption(entry, root):
-                        raise ValueError('分镜图缺少绑定该版本的具体确认依据')
-                    permissions = [image_usage_shots(r.get('usage')) for r in exact]
-                    if permissions and any(p != permissions[0] for p in permissions[1:]):
-                        raise ValueError('同一分镜图存在冲突用途确认，须核对准确批准依据')
-                    permitted_shots = set(permissions[0] if permissions else [])
-                else:
-                    receipt_path, _ = _confirmation_file(root, confirmation)
-                    receipt = _read(receipt_path) if receipt_path else {}
-                    if not isinstance(receipt, dict) or not is_whole_artifact(receipt) or ident not in receipt.get('artifact_ids', []):
-                        raise ValueError('确认记录未覆盖这张分镜图')
-                    if 'images' in receipt:
-                        if not isinstance(receipt['images'], list):
-                            raise ValueError('批量确认图片明细无效')
-                        selected = [r for r in receipt['images'] if isinstance(r, dict) and r.get('artifact_id') == ident]
-                        if len(selected) != 1:
-                            raise ValueError('批量确认中缺少这张图的唯一明细')
-                        image = selected[0]
-                    else:
-                        image = {'path': receipt.get('image_path'), 'sha256': receipt.get('image_sha256')}
-                    if (not image.get('path') or project_path(root, image['path']) != path
-                            or image.get('sha256') != entry['checksum']):
-                        raise ValueError('确认记录的图片路径/指纹与当前版本不一致')
-                    usage = image['usage'] if 'usage' in image else receipt.get('usage')
-                    permitted_shots = set(image_usage_shots(usage))
-                    white = image.get('white_reference')
-                    if white:
-                        white_path = project_path(root, white['path'])
-                        if not white_path.is_file() or file_digest(white_path) != white.get('sha256'):
-                            raise ValueError('本图历史确认引用的来源图已变化或缺失')
+                exact = [r for r in state['user_confirmations']
+                         if r.get('kind') == 'revision-candidate'
+                         and r.get('artifact_id') == ident and is_whole_artifact(r)
+                         and r.get('sha256') == entry['checksum'] and r.get('approval_ref')]
+                if not exact and not formal_adoption(entry, root):
+                    raise ValueError('分镜图缺少绑定该版本的具体确认依据')
+                permissions = [image_usage_shots(r.get('usage')) for r in exact]
+                if permissions and any(p != permissions[0] for p in permissions[1:]):
+                    raise ValueError('同一分镜图存在冲突用途确认，须核对准确批准依据')
+                permitted_shots = set(permissions[0] if permissions else [])
             from .quality_evidence import validate_image_evidence
             validate_image_evidence(root, path, entry.get('quality_evidence'), shot_ids,
                                     product_reference=entry.get('product_reference'), artifact=entry, state=state,

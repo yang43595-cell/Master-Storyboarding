@@ -141,21 +141,7 @@ def main() -> int:
 
     node_ok, node_detail = command_version("node", "--version")
     report("web", "Node.js 24", node_ok and node_detail.startswith("v24."), node_detail,
-           "为网页契约校验安装 Node.js 24。")
-    npm = shutil.which("npm")
-    report("web", "npm", npm is not None, npm or "当前 PATH 找不到", "检查 Node.js 安装。")
-    if node_ok:
-        zod_probe = (
-            "try {"
-            "const expected = require('./package.json').dependencies.zod;"
-            "const actual = require('zod/package.json').version;"
-            "require('zod');"
-            "if (actual !== expected) throw Error('预期 ' + expected + '，实际 ' + actual);"
-            "console.log(actual);"
-            "} catch (error) { console.error(error.message.split('\\n')[0]); process.exitCode = 1; }"
-        )
-        report("web", "Zod", *run_probe("node", "-e", zod_probe),
-               "在仓库根目录执行 npm ci --ignore-scripts --no-audit --no-fund。")
+           "为红帧 JS 离线回归测试安装 Node.js 24。")
     print("[待实测] 用到送审时确认工作台凭据和项目权限，用到深度复刻时在红帧画布确认「深度动作捕捉」入口。")
 
     if failed:

@@ -651,8 +651,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
     product_pack = None
     product_requirements = []
     if formal_redframe:
-        from .web_content import source_review_segments
-        from .prompt_body import submitted_prompt_body
+        from .prompt_body import source_review_segments, submitted_prompt_body
         from .product_reference_pack import resolve_product_pack, resolve_pack_media
         videos = [payload for ref, _, payload in scene_sources
                   if entries[ref['artifact_id']].get('logical_id') == 'video.prompt']

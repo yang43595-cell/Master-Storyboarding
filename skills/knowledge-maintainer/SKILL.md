@@ -13,7 +13,7 @@ description: 用于 Master-Storyboarding 项目知识治理、知识入口审计
 
 维护 Master-Storyboarding 的知识入口、状态和仓库合同边界。专业方法的上游原文可由 Obsidian Vault 维护；本仓库的已选运行版本位于 `knowledge/runtime/`，由当前 Git commit 与 manifest 固定。本 Skill 按明确授权维护仓库 profiles、选定运行副本、来源声明、稳定合同及审计入口，不镜像整个 Vault、不自动同步或写回 Mac。云端执行者只能使用实际提供的输入：显式物化的固定快照是只读的时间点副本，不是实时挂载，也不支持写回 Mac。缺少真实 Vault 时可以审查仓库合同与快照证据，但不得声称完成了需要完整 Vault 的确定性审计。
 
-开始前完整读取 [references/audit-contract.md](references/audit-contract.md) 与 [modules/maintenance-method.md](modules/maintenance-method.md)。
+开始前完整读取 [modules/maintenance-method.md](modules/maintenance-method.md)。
 
 - **只读审计**：按本次问题检查规则与入口，不要求生产结束、人工复盘或新对话，不修改文件。
 - **授权维护**：按用户批准范围维护仓库合同、profiles、候选来源入口和知识治理记录。Vault 正文只由拥有主库的环境按其写入门禁维护；云端快照不构成写入权限或可写副本。
@@ -41,7 +41,7 @@ description: 用于 Master-Storyboarding 项目知识治理、知识入口审计
 ## 输出
 
 - 审计证据、问题与范围说明；需要完整 Vault 的审计在 Vault 不可读时明确标为未完成。
-- 经授权的仓库规则、`knowledge-profile.json` 或 `knowledge-entrypoints.json` 合同变更。
+- 经授权的仓库规则、`knowledge-profile.json` 或 `knowledge/manifest.json` 合同变更。
 - 候选来源、晋升依据、冲突和回退的可追溯记录；不代表代码已证明真实性或质量。
 
 ## 执行顺序
@@ -49,7 +49,7 @@ description: 用于 Master-Storyboarding 项目知识治理、知识入口审计
 1. 定范围：区分只读审计、授权仓库维护与收尾提炼，再选本次适用的按需任务。记录目标文件、当前版本、允许动作与交付停点；只读审计不改文件，长期沉淀需明确要求，普通合同维护不等待生产结束。
 2. 查依据：读取目标合同、实际消费者及必要来源，按维护方法核来源、状态、重复和冲突，定位每项发现。区分 Vault 原文、固定来源快照与仓库运行版本，缺主库只限制依赖主库的结论，不把快照称作完整主库。
 3. 做本职工作：只读任务给证据与建议；授权维护只修改选定的唯一载体与必要消费者。更新运行副本按[独立仓库说明](../../docs/development/standalone-repository.md)核精确选择、原字节及差异并经过分支审查；不顺带晋升候选。晋升/回退另按维护方法核真实授权和独立证据审查，缺项停在待审。
-4. 验实际改动：仓库合同检查路径可达、入口/方法/清单一致及受影响现成测试；运行副本更新另运行 `python -m scripts.core.knowledge_runtime`。本轮包含完整知识入口审计且真实 Vault 可读时，运行 `python scripts/audit-knowledge-entrypoints.py --vault <Vault路径>`；纯仓库 SOP 修改不强加全 Vault 审计。范围含全库但主库不可读时，该部分明确未完成。
+4. 验实际改动：仓库合同检查路径可达、入口/方法/清单一致及受影响现成测试；运行副本更新另运行 `python -m scripts.core.knowledge_runtime`。范围含外部主库但主库不可读时，该部分明确未完成。
 5. 修正并复核：逐项解释失败与非零结果，授权范围内修正后重跑受影响检查；核实际差异，确认无误改已确认内容、来源状态或其他消费者。工具通过只证明对应检查范围，不证明方法效果或自动激活。
 6. 交付：沿现有审计记录/本轮说明逐 Skill 列明缺少、多余、已修及未覆盖范围，给出修改路径和实际验证结果；只读建议不称已落地，仓库变更不称已同步 Vault、已发布或已用于真实生产。此处停止，不进入生产链。
 

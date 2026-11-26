@@ -12,13 +12,11 @@ import sys
 from pathlib import Path
 
 if __package__:
-    from .core.prompt_body import submitted_prompt_body, submitted_body_issues
+    from .core.prompt_body import SOURCE_SEGMENT_FIELDS, source_review_segments, submitted_body_issues, submitted_prompt_body
     from .core.quality_evidence import source_shot_ids
-    from .core.web_content import SOURCE_SEGMENT_FIELDS, source_review_segments
 else:
-    from core.prompt_body import submitted_prompt_body, submitted_body_issues
+    from core.prompt_body import SOURCE_SEGMENT_FIELDS, source_review_segments, submitted_body_issues, submitted_prompt_body
     from core.quality_evidence import source_shot_ids
-    from core.web_content import SOURCE_SEGMENT_FIELDS, source_review_segments
 
 
 HEADING_RE = re.compile(r"^##[ \t]+[^\n]+", re.MULTILINE)

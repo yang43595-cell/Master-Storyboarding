@@ -29,13 +29,13 @@ def fixture(root):
     url='https://example.com/canvas/test'
     entry=dict(artifact_id='IMG',logical_id='image.test',type='visual-supplement-image',revision='R1',
                path_or_url='image.png',checksum=sha,status='current',user_approved=True,depends_on=[],
-               confirmation_ref='confirmation.json',quality_evidence=evidence,
+               quality_evidence=evidence,
                upload_bindings=[dict(target_url=url,node_id='M1',media_id='MEDIA',revision='R1',sha256=sha)])
-    write_json(root/'confirmation.json',dict(scope='artifact',artifact_ids=['IMG'],image_path='image.png',
-                                          image_sha256=sha,usage={'source_shot_ids':['S1']}))
     manifest={'artifacts':[entry]}
     write_json(root/artifacts.MANIFEST_PATH,manifest)
-    state=new_project_state();state.update(current_artifacts=['IMG'],user_confirmations=[{'scope':'artifact','artifact_ids':['IMG'],'approval_ref':'SYNTHETIC ONLY'}])
+    state=new_project_state();state.update(current_artifacts=['IMG'],user_confirmations=[{
+        'scope':'artifact','kind':'revision-candidate','artifact_id':'IMG','revision':'R1',
+        'sha256':sha,'approval_ref':'SYNTHETIC ONLY','usage':{'source_shot_ids':['S1']}}])
     write_json(root/'00_项目管理/project_state.json',state)
     draft=dict(node_id='D1',prompt='Synthetic action.',parameters={'duration':5},native_entity_type='media',
                duration_bounds=[1,10],shot_durations=[5],source_shot_ids=['S1'],ordered_media=[{'node_id':'M1','media_id':'MEDIA'}],
@@ -119,9 +119,9 @@ def required_shot_submission(tmp_path, *, source_seconds=5, declared_total=None)
         logical_id = 'storyboard.package' if ident == 'BOARD' else 'synthetic.video'
         manifest['artifacts'].append(dict(reference, logical_id=logical_id, type='document',
             path_or_url=path.name, checksum=reference['sha256'], status='current', user_approved=True,
-            confirmation_ref='confirmation.json', depends_on=[]))
+            depends_on=[]))
         state['current_artifacts'].append(ident)
-        state['user_confirmations'][0]['artifact_ids'].append(ident)
+        state['user_confirmations'].append({'scope': 'artifact', 'artifact_ids': [ident], 'approval_ref': 'SYNTHETIC ONLY'})
     write_json(state_path, state)
     write_json(tmp_path / artifacts.MANIFEST_PATH, manifest)
     row.update(source_segment_id='SEG', prompt=clause)
@@ -165,7 +165,7 @@ def preview_fixture(root, *, image=True, historical_failure=False):
     frozen,manifest=fixture(root)
     write_json(root/'00_项目管理/project_state.json',new_project_state())
     entry=manifest['artifacts'][0];entry.update(status='candidate',user_approved=False)
-    entry.pop('confirmation_ref');write_json(root/artifacts.MANIFEST_PATH,manifest)
+    write_json(root/artifacts.MANIFEST_PATH,manifest)
     candidate_test.configure(root,'synthetic-run','SYNTHETIC TEST ONLY',['IMG'])
     manifest=artifacts.load_manifest(root);entry=manifest['artifacts'][0]
     row=frozen['drafts'][0];row.pop('quality_evidence')
@@ -458,7 +458,6 @@ def agent_fixture(root, *, image_setup=None):
     board = agent_board_fixture(root)
     entry = old_manifest['artifacts'][0]
     entry.update(status='candidate', user_approved=False, depends_on=['storyboard.package'])
-    entry.pop('confirmation_ref')
     row = frozen['drafts'][0]
     row['source_shot_ids'] = ['S01-010']
     evidence = entry['quality_evidence']

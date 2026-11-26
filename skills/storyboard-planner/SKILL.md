@@ -101,7 +101,7 @@ python -m scripts.core.story_sources --project <项目> --narrative <完整已�
 
 结果明确列出 checked/unchecked STP、共享场景/资产可机械识别的跨边界来源、相邻待写段落，并标明 `whole_package_validated:false` / `formal_adoption_allowed:false`。这些只帮助定位，不证明跨段语义已检查；人工核对前后状态、远处铺垫/回应与衔接，将未解决处留在现有 `open_questions` / `asset_gaps`。无关后续未写部分不当作本轮漏写，不能宣称全片自查完成。
 
-以下局部网页仅用于未采用统一入口的既有人工路径；统一入口继续段落自查，不发起该网页步骤。兼容路径按[适配说明](../../docs/development/web-content-adapter.md#导演逐段候选来源范围)，同次提供完整原叙事及相同 STP 范围，强制 `reviewable:false`，只供阅读/反馈。用户段落确认仍走原 segment 范围记录，绝不变成网页整稿批准。全片写完后去掉局部参数重跑默认严格校验，之后才按本轮合法验收及正式采用合同处理；局部参数不传入 adopt-package/commit，恢复稿也无例外。
+统一入口继续段落自查，不发起旧版局部网页审查步骤。全片写完后去掉局部参数重跑默认严格校验，之后才按本轮合法验收及正式采用合同处理；局部参数不传入 adopt-package/commit，恢复稿也无例外。
 
 历史已批准正文用作隔离候选输入时的证据分层（批准正文的证据登记格式、原声核验口径）见 [隔离试验细则](../../docs/rules/experiments.md)「历史正文批准与原声证据分层（仅隔离候选）」节；普通导演任务不适用，仅在本轮明确授权 candidate-test 时按该节执行。
 

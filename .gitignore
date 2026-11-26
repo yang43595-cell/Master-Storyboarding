@@ -11,20 +11,27 @@ credentials*.json
 .ssh/
 .aws/
 .git-credentials
+.claude/settings.local.json
+.claude/audit_hook_*
+
 # Dependencies, caches, and build output
 .venv/
 venv/
 node_modules/
 __pycache__/
+**/__pycache__/
 *.py[cod]
 .pytest_cache/
-.blender-previs-cache/
+.ruff_cache/
 .master-storyboarding/
+**/.master-storyboarding/
 .tmp_*/
+**/.tmp_*/
 
 # OS metadata
 .DS_Store
 **/.DS_Store
+
 # Raw / generated media and project-private state
 *.mp4
 *.mov
@@ -46,29 +53,3 @@ inputs/
 history/
 evidence_sources/
 *transcript*
-
-# Recovered project exclusions
-# Downloaded Blender templates, AI weights, and generated previews
-.blender-previs-cache/
-**/.blender-previs-cache/
-# Blender previs 缓存/工作区（资产下载与预演产物落在这里）
-.master-storyboarding/
-**/.master-storyboarding/
-
-# Python caches anywhere in the project
-**/__pycache__/
-
-# Temporary uploads and generated runtime caches
-.tmp_*/
-**/.tmp_*/
-__pycache__/
-*.py[cod]
-.pytest_cache/
-scripts/tests/__pycache__/
-
-# Local environment files
-.venv/
-venv/
-*.env
-.claude/settings.local.json
-.claude/audit_hook_*

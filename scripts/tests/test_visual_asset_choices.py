@@ -150,7 +150,7 @@ class AssetChoices(unittest.TestCase):
 
     def check_shared_static_scene_export(self, *, paragraph_mode=False):
         from core.asset_refs import require_final_images, resolve_final_images, _confirmed_output
-        from visual_asset_projects import validate
+        from core.schema_contracts import require_schema
         original = self.scene_visits()
         if paragraph_mode:
             story = self.root / 'narrative.json'
@@ -182,7 +182,7 @@ class AssetChoices(unittest.TestCase):
         self.lib.save(image)
         exported = service.export({'project_id': self.p['id'], 'confirm': True})
         manifest = json.loads(Path(exported['manifest']).read_text(encoding='utf8'))
-        validate(manifest, 'visual-asset-manifest.schema.json')
+        require_schema(manifest, 'visual-asset-manifest.schema.json', label='项目资产数据')
         asset = manifest['assets'][0]
         self.assertEqual(asset['required_states'], ['净脸前到访', '卸膜后到访'])
         self.assertEqual(len(asset['confirmed_outputs']), 1)

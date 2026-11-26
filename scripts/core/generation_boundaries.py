@@ -110,7 +110,7 @@ def _redframe_duration_options(evidence, model_id, mode):
 def _rows(payload):
     # Composite source snapshots may carry shot mappings without prompt prose;
     # formal adoption checks the complete submitted body independently.
-    from .web_content import source_review_segments
+    from .prompt_body import source_review_segments
     _need(isinstance(payload, dict) and ("generation_segments" in payload or "creative_sections" in payload),
           "须使用现行 generation_segments，不使用历史专用分段格式")
     rows = source_review_segments(payload)

@@ -28,6 +28,12 @@
 
 ## 已沉淀的决策
 
+### 全量审计回归修复与多批死代码减重（2026-11-26）
+
+- **背景与原因**。全量审计 `5980bae` 检出三处回归与四大块历史残留：`scripts/core/asset_refs.py` 将 `_confirmation_file` 改为 `confirmation_reference` 后漏改 `require_references()`；两份旧测试未同步候选 ID 强校验与已删除的 `visual_asset_projects.validate()`；仓库仍保留零引用死脚本、已退役的旧版 v78 网页编译适配层及 Zod 依赖、旧外部 Vault 载体审计层、`verify_workspace.py` 和旧版文件式人工分镜回执分支。
+- **决定与边界**。用户明确确认全部裁剪。保留 `5980bae` 候选 ID 强校验与现行拍片链唯一用到的 `source_review_segments` / `SOURCE_SEGMENT_FIELDS`（移入 [prompt_body.py](../scripts/core/prompt_body.py)）；移除 `web_content.py`、`validate_web_content.mjs`、`scripts/review/script-template.js`、`references/web-contract-v78/`、`package.json`、`package-lock.json`、7 份 v78 网页适配测试与 4 份历史适配说明；移除 `audit-knowledge-entrypoints.py`、`knowledge-entrypoints.json`、`skills/knowledge-maintainer/references/audit-contract.md`（保留 `knowledge_blocks.py` 仍在读取的 `knowledge-policy.json`）；移除 `verify_workspace.py` 及 `asset_refs.py` / `quality_evidence.py` 的旧文件式 `confirmation_ref` 与 `white_reference` 分支（`require_references` 与偏差接受统一沿用 `agent_acceptance` / `revision-candidate`）；同时移除未入 `knowledge/manifest.json` 的经验残留、3 份 `probe_*.py`、`build-image-review-delivery.py`、`visual_context_budget.py`、`workflow_regression_loop.py`、`validate-obsidian-index.ps1` 并精简 `.gitignore`。同步更新 [check_first_run.py](../scripts/check_first_run.py)、[.github/workflows/checks.yml](../.github/workflows/checks.yml) 与相关文档。
+- **验证与依据**。222 份 `.py` 编译通过；`knowledge/manifest.json` 与 `knowledge/runtime/` 57/57 一一对应且 `knowledge_runtime` 通过；`check_first_run.py` 必需项与 Node 24 通过；全量 Python 回归 `3312 passed, 3 failed（本机缺 ffmpeg）, 21 skipped, 216 subtests passed`，零代码回归；Node 离线回归 `19 passed, 0 failed`；`test_doc_reference_integrity.py` `4 passed`；改动涉及 [prompt_body.py](../scripts/core/prompt_body.py)、[asset_refs.py](../scripts/core/asset_refs.py)、[quality_evidence.py](../scripts/core/quality_evidence.py) 等文件。
+
 ### 生图隔离检查与审核阅读回执（2026-11-26）
 
 生图提交先检查候选隔离和项目生成授权，通过后才读取正式参考图和准备生成请求。审核打包允许尚未登记阅读回执时生成审核包，按实际状态提示补读。存在的回执仍按原规则验证，打包期间依据文件发生变化时中止写入。

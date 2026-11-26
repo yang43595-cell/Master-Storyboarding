@@ -23,7 +23,9 @@ def accepted_fixture(root):
     evidence['checks']['space_objects'] = {
         'result': 'fail', 'observation': 'Synthetic bag proportions differ.',
         'locator': 'Synthetic bag on the seat.'}
-    receipt = read_json(root / 'confirmation.json')
+    state_path = root / '00_项目管理/project_state.json'
+    state = read_json(state_path)
+    receipt = state['user_confirmations'][0]
     receipt['approval_ref'] = 'SYNTHETIC exact user message only'
     receipt['usage']['accepted_deviations'] = [{
         'image_sha256': manifest['artifacts'][0]['checksum'],
@@ -32,9 +34,9 @@ def accepted_fixture(root):
         'quote': 'SYNTHETIC: accept the bag proportions only as spatial reference.',
         'decision_ref': 'SYNTHETIC user message reference'}]
     row['quality_evidence']['input_sha256'] = q.fingerprint(q.draft_binding(row))
-    write_json(root / 'confirmation.json', receipt)
+    write_json(state_path, state)
     write_json(root / artifacts.MANIFEST_PATH, manifest)
-    return frozen, manifest, receipt
+    return frozen, manifest, state
 
 
 def test_human_accepted_pixels_work_in_real_consumers_without_rewriting_failure(tmp_path):
@@ -58,9 +60,10 @@ def test_human_accepted_pixels_work_in_real_consumers_without_rewriting_failure(
                                      'no_decision', 'no_human_receipt', 'wrong_shots', 'wrong_entity',
                                      'wrong_state', 'changed_role', 'self_check_claim'])
 def test_accepted_deviations_cannot_expand_actual_delivery_permission(tmp_path, mutation):
-    frozen, manifest, receipt = accepted_fixture(tmp_path)
+    frozen, manifest, state = accepted_fixture(tmp_path)
     row = frozen['drafts'][0]
     evidence = manifest['artifacts'][0]['quality_evidence']
+    receipt = state['user_confirmations'][0]
     accepted = receipt['usage']['accepted_deviations'][0]
     if mutation == 'unaccepted_leg':
         evidence['checks']['hands_support']['result'] = 'fail'
@@ -87,26 +90,10 @@ def test_accepted_deviations_cannot_expand_actual_delivery_permission(tmp_path, 
     else:
         evidence['accepted_deviations'] = receipt['usage'].pop('accepted_deviations')
     row['quality_evidence']['input_sha256'] = q.fingerprint(q.draft_binding(row))
-    write_json(tmp_path / 'confirmation.json', receipt)
+    write_json(tmp_path / '00_项目管理/project_state.json', state)
     write_json(tmp_path / artifacts.MANIFEST_PATH, manifest)
-    with pytest.raises(ValueError, match='quality_evidence'):
+    with pytest.raises(ValueError, match='quality_evidence|unconfirmed'):
         canvas_readback.validate_submission(frozen, tmp_path)
-
-
-def test_exact_revision_confirmation_is_also_consumed(tmp_path):
-    frozen, manifest, receipt = accepted_fixture(tmp_path)
-    entry = manifest['artifacts'][0]
-    entry.pop('confirmation_ref')
-    state_path = tmp_path / '00_项目管理/project_state.json'
-    state = read_json(state_path)
-    state['user_confirmations'] = [{
-        'scope': 'artifact', 'kind': 'revision-candidate', 'artifact_id': 'IMG',
-        'revision': entry['revision'], 'sha256': entry['checksum'],
-        'approval_ref': receipt['approval_ref'], 'usage': receipt['usage']}]
-    write_json(state_path, state)
-    write_json(tmp_path / artifacts.MANIFEST_PATH, manifest)
-    assert canvas_readback.validate_submission(frozen, tmp_path)['ok']
-    assert asset_refs.require_references(tmp_path, ['IMG'], ['S1']) == (True, [])
 
 
 def test_image_acceptance_does_not_release_failed_draft_checks(tmp_path):

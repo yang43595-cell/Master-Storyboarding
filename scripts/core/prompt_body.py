@@ -1,6 +1,9 @@
-"""Read the two existing submitted-body fields without guessing authority."""
+"""Read submitted-body and segmented-prompt fields without guessing authority."""
 
+import math
 import re
+
+SOURCE_SEGMENT_FIELDS = ("generation_segments", "creative_sections", "independent_candidate_ranges")
 
 
 _INTERNAL_BODY = (
@@ -121,3 +124,101 @@ def generated_overlay_issues(body: str) -> list[str]:
             if not device_ui and not negated_action(prefix):
                 issues.append('生成正文含画面显示文字指令；只生成底画面，文字交后期')
     return list(dict.fromkeys(issues))
+
+
+def _valid_edit_window(start, end):
+    return (type(start) in (int, float) and type(end) in (int, float)
+            and math.isfinite(start) and math.isfinite(end) and 0 <= start < end)
+
+
+def _check_segment_scope(scope, segments):
+    """Cross-check the existing authored scope without treating it as segment prose."""
+    if not isinstance(scope, dict):
+        return
+    from .quality_evidence import source_shot_ids
+    full = scope.get('type') == 'full_local_authored'
+    scoped_ranges = scope.get('independent_ranges')
+    ids = [row['segment_id'] for row in segments]
+    if 'authored_segment_count' in scope and (type(scope['authored_segment_count']) is not int
+            or scope['authored_segment_count'] != len(ids)):
+        raise ValueError('源稿审阅声明的生成段总数与实际生成段不一致')
+    if 'authored_shot_count' in scope:
+        actual = len({shot for row in segments for shot in source_shot_ids(row)})
+        if type(scope['authored_shot_count']) is not int or scope['authored_shot_count'] != actual:
+            raise ValueError('源稿审阅声明的镜号总数与实际生成段不一致')
+    if full and scope.get('unwritten_shot_ids'):
+        raise ValueError('源稿审阅声明全片，但仍有未写入的镜号')
+    if 'scope_seconds' in scope:
+        windows = [(row.get('edit_in_seconds'), row.get('edit_out_seconds')) for row in segments]
+        declared = scope['scope_seconds']
+        if (not _valid_edit_window(0, declared) or any(not _valid_edit_window(*window) for window in windows)
+                or not math.isclose(declared, sum(end - start for start, end in windows), abs_tol=1e-6)):
+            raise ValueError('源稿审阅声明的剪辑总时长与实际生成段不一致')
+    if scoped_ranges is None:
+        return
+    if (not isinstance(scoped_ranges, list) or any(not isinstance(span, dict)
+            or not isinstance(span.get('segment_ids'), list) or not span['segment_ids']
+            for span in scoped_ranges)
+            or [ident for span in scoped_ranges for ident in span['segment_ids']] != ids):
+        raise ValueError('源稿审阅声明的范围与生成段顺序或覆盖不一致')
+    by_id = {row['segment_id']: row for row in segments}
+    for span in scoped_ranges:
+        selected = [by_id[ident] for ident in span['segment_ids']]
+        if 'shot_ids' in span and span['shot_ids'] != list(dict.fromkeys(
+                shot for row in selected for shot in source_shot_ids(row))):
+            raise ValueError('源稿审阅声明的范围镜号与生成段不一致')
+        if 'edit_range_seconds' in span and span['edit_range_seconds'] != [
+                selected[0].get('edit_in_seconds'), selected[-1].get('edit_out_seconds')]:
+            raise ValueError('源稿审阅声明的范围时码与生成段不一致')
+
+
+def source_review_segments(business):
+    """Read all source segments in edit order; do not infer execution or approval."""
+    if not isinstance(business, dict):
+        raise ValueError('源稿审阅 JSON 顶层不是对象')
+    if 'drafts' in business:
+        raise ValueError('源稿审阅须输入原业务生成段，不以 drafts 传输快照替代')
+    sections = business.get('creative_sections')
+    if 'generation_segments' in business:
+        segments = business['generation_segments']
+    elif isinstance(sections, list) and sections and all(
+            isinstance(s, dict) and isinstance(s.get('generation_segments'), list)
+            and s['generation_segments'] for s in sections):
+        segments = [row for section in sections for row in section['generation_segments']]
+    else:
+        raise ValueError('源稿审阅缺少完整 generation_segments')
+    if not isinstance(segments, list):
+        raise ValueError('源稿审阅生成段或 segment_id 不完整')
+    ranges = business.get('independent_candidate_ranges', [])
+    if (not isinstance(ranges, list) or any(not isinstance(span, dict)
+            or not isinstance(span.get('generation_segments'), list) or not span['generation_segments']
+            for span in ranges)):
+        raise ValueError('源稿审阅独立候选范围缺真实 generation_segments')
+    segments = [*segments, *(row for span in ranges for row in span['generation_segments'])]
+    if not segments or any(
+            not isinstance(row, dict) or not isinstance(row.get('segment_id'), str)
+            or not row['segment_id'].strip() for row in segments):
+        raise ValueError('源稿审阅生成段或 segment_id 不完整')
+    ids = [row['segment_id'] for row in segments]
+    if len(set(ids)) != len(ids):
+        raise ValueError('源稿审阅 segment_id 重复')
+    scope = business.get('scope')
+    if ranges:
+        if any(not _valid_edit_window(row.get('edit_in_seconds'), row.get('edit_out_seconds'))
+               for row in segments):
+            raise ValueError('源稿审阅独立候选范围须提供所有生成段的绝对剪辑起止时码')
+        segments.sort(key=lambda row: row['edit_in_seconds'])
+        full = isinstance(scope, dict) and scope.get('type') == 'full_local_authored'
+        for left, right in zip(segments, segments[1:]):
+            gap = right['edit_in_seconds'] - left['edit_out_seconds']
+            if gap < -1e-6 or (full and gap > 1e-6):
+                raise ValueError('源稿审阅独立候选范围存在时码重叠或全片空档')
+    if 'generation_segments' in business and sections is not None:
+        if (not isinstance(sections, list) or any(not isinstance(s, dict)
+                or not isinstance(s.get('generation_segments'), list) for s in sections)):
+            raise ValueError('源稿审阅创作段引用格式不完整')
+        links = [ident for section in sections for ident in section['generation_segments']]
+        if any(not isinstance(ident, str) for ident in links) or len(links) != len(ids) or set(links) != set(ids):
+            raise ValueError('源稿审阅顶层生成段与创作段引用不一致')
+    _check_segment_scope(scope, segments)
+    return segments

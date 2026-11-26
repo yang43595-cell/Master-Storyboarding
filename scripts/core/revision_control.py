@@ -114,7 +114,7 @@ def _destination_within_project(project: Path, value: str | Path) -> tuple[Path,
 
 def _generation_segments(payload: Any) -> list[dict[str, Any]] | None:
     """Return actual prompt segments, or None when this is not a segmented prompt."""
-    from .web_content import SOURCE_SEGMENT_FIELDS, source_review_segments
+    from .prompt_body import SOURCE_SEGMENT_FIELDS, source_review_segments
     if not isinstance(payload, dict) or not any(key in payload for key in SOURCE_SEGMENT_FIELDS):
         return None
     try:
