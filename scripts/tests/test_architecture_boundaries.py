@@ -34,7 +34,6 @@ LEGACY_CORE_SCC = frozenset({
     "core.revision_control",
     "core.schema_contracts",
     "core.story_sources",
-    "core.visual_asset_choices",
     "core.visual_asset_product_usage",
     "core.visual_readiness",
 })
@@ -86,6 +85,19 @@ BRANCH_B_MODULES = frozenset({
     "core.recreation_segments",
     "core.redframe_recreation",
     "core.depth_reference_review",
+})
+SHARED_ASSET_MODULES = frozenset({
+    "asset_stage_cli",
+    "chat_asset_review",
+    "redframe_image_revision",
+    "core.asset_batch_receipt",
+    "core.asset_choice_rules",
+    "core.asset_refs",
+    "core.character_boards",
+    "core.product_refs",
+    "core.visual_asset_choices",
+    "core.visual_asset_product_usage",
+    "core.visual_asset_source",
 })
 
 
@@ -178,7 +190,9 @@ def test_no_core_to_top_level_cli_imports() -> None:
 
 
 def test_creative_and_recreation_branches_are_isolated() -> None:
-    _, adj = _collect_modules()
+    mods, adj = _collect_modules()
+    missing_shared = sorted(SHARED_ASSET_MODULES - set(mods))
+    assert missing_shared == [], f"SHARED_ASSET_MODULES contains missing modules: {missing_shared}"
     a_to_b = {
         m: sorted(adj[m] & BRANCH_B_MODULES)
         for m in BRANCH_A_MODULES
@@ -189,8 +203,16 @@ def test_creative_and_recreation_branches_are_isolated() -> None:
         for m in BRANCH_B_MODULES
         if adj[m] & BRANCH_A_MODULES
     }
+    shared_to_branch = {
+        m: sorted(adj[m] & (BRANCH_A_MODULES | BRANCH_B_MODULES))
+        for m in SHARED_ASSET_MODULES
+        if adj[m] & (BRANCH_A_MODULES | BRANCH_B_MODULES)
+    }
     assert a_to_b == {}, f"Branch A (creative) must not import Branch B (recreation): {a_to_b}"
     assert b_to_a == {}, f"Branch B (recreation) must not import Branch A (creative): {b_to_a}"
+    assert shared_to_branch == {}, (
+        f"Shared asset modules must stay upstream and never import Branch A or Branch B: {shared_to_branch}"
+    )
 
 
 def test_redframe_modules_have_no_circular_imports() -> None:

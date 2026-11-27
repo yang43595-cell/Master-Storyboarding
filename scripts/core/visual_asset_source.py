@@ -6,68 +6,10 @@ import re
 from pathlib import Path
 
 from .artifacts import artifact_is_adopted, artifact_is_confirmed, project_path, digest, load_manifest
+from .asset_choice_rules import apply_choices
 from .project_state import load_project_state
 from .schema_contracts import require_schema
 from .story_sources import validate_story_sources
-from .visual_asset_choices import apply_choices
-
-
-REPOSITORY = Path(__file__).resolve().parents[2]
-TEXT_REFERENCE_SUFFIXES = {'.md', '.json', '.txt'}
-
-
-def local_reference_document(root, path):
-    resolved = Path(path).resolve()
-    return resolved.is_relative_to(Path(root).resolve()) or resolved.is_relative_to(REPOSITORY)
-
-
-def resolve_reference(root, raw, artifacts=(), state=None):
-    """Resolve local provenance, using a unique confirmed registration after relocation."""
-    filename, separator, anchor = str(raw).partition('#')
-    path = project_path(root, filename)
-    if not path.is_file() and not Path(filename).is_absolute():
-        # Requirement references to the repository's own reference packages
-        # (e.g. assets/product-references/...) are authored repository-relative;
-        # local_reference_document already treats the repository as in scope.
-        repo_candidate = (REPOSITORY / filename).resolve()
-        if repo_candidate.is_file():
-            path = repo_candidate
-    text_reference = bool(separator) or Path(filename).suffix.lower() in TEXT_REFERENCE_SUFFIXES
-    scope_error = '文本参考超出项目和仓库范围，请在项目内登记所需原始资料：' + str(raw)
-
-    def allowed(candidate):
-        return (not text_reference and candidate.suffix.lower() not in TEXT_REFERENCE_SUFFIXES
-                or local_reference_document(root, candidate))
-
-    if path.is_file():
-        if not allowed(path):
-            raise ValueError(scope_error)
-    else:
-        matches, outside = [], False
-        for artifact in artifacts:
-            registered = artifact.get('path_or_url', '')
-            if Path(str(registered)).name != Path(filename).name:
-                continue
-            candidate = project_path(root, registered)
-            if not allowed(candidate):
-                outside = True
-            elif artifact_is_confirmed(artifact, state or {}, root):
-                matches.append((artifact, candidate))
-        if not matches and (outside or not allowed(path)):
-            raise ValueError(scope_error)
-        if len(matches) != 1:
-            raise ValueError('来源文件不存在或登记不唯一：' + str(raw))
-        entry, path = matches[0]
-        if not path.is_file() or not entry.get('checksum') or digest(path) != entry['checksum']:
-            raise ValueError('来源登记校验不一致：' + str(raw))
-    if separator:
-        if path.suffix.lower() != '.md' or not anchor:
-            raise ValueError('无法核验来源锚点：' + str(raw))
-        text = path.read_text(encoding='utf-8-sig')
-        headings = re.findall(r'^#{1,6}\s+(.+?)\s*#*$', text, re.M)
-        if anchor not in headings and not re.search(r'\^' + re.escape(anchor) + r'\s*$', text, re.M):
-            raise ValueError('来源锚点不存在：' + str(raw))
-    return str(path) + (separator + anchor if separator else '')
 
 
 def receive_table(root, artifacts, entry, state, narrative, package_path):
@@ -175,39 +117,3 @@ def prompt_context(narrative, ast_ids):
     else:
         context['locked_facts'] = copy.deepcopy(narrative.get('locked_facts', []))
     return context
-
-
-def reference_evidence(project, requirements, assets=()):
-    """Resolve declared originals and briefs through the same project/repository route."""
-    documents, unavailable, paths, images = [], [], [], []
-    root = Path(project)
-    artifacts = load_manifest(root)['artifacts']
-    state = load_project_state(root)
-    for req in requirements:
-        for raw in req.get('reference_paths', []):
-            try:
-                path = Path(resolve_reference(root, raw, artifacts, state).partition('#')[0])
-            except ValueError as exc:
-                if Path(str(raw).partition('#')[0]).suffix.lower() not in TEXT_REFERENCE_SUFFIXES:
-                    raise
-                unavailable.append(str(exc))
-                continue
-            if path.suffix.lower() in TEXT_REFERENCE_SUFFIXES:
-                paths.append(path)
-            else:
-                images.append(str(path))
-    for asset in assets:
-        parent = Path(asset['source']).parent
-        if not local_reference_document(root, parent):
-            continue
-        for name in ('PRODUCT_BRIEF.md', 'REFERENCE_MANIFEST.md'):
-            path = parent / name
-            if local_reference_document(root, path) and path.is_file():
-                paths.append(path.resolve())
-    for path in dict.fromkeys(paths):
-        if path.stat().st_size > 150000:
-            unavailable.append(str(path) + '（正文过大，需要先在项目中整理直接参考）')
-        else:
-            documents.append({'path': str(path.resolve()), 'content': path.read_text(encoding='utf-8-sig')})
-    return {'reference_documents': documents, 'unavailable_references': unavailable,
-            'reference_images': images}

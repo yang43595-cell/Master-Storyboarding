@@ -76,19 +76,6 @@ def _apply_production_spec(requirement, specification):
     return result
 
 
-def production_spec(narrative, requirement):
-    specification = (narrative.get('_asset_choices', {}).get('production_specs', {})
-                     .get(requirement['asset_id']))
-    return specification or {}
-
-
-def scene_state_coverage(narrative, requirement):
-    specification = production_spec(narrative, requirement)
-    coverage = specification.get('scene_state_coverage')
-    return copy.deepcopy(coverage) if coverage is not None else {
-        state: [state] for state in requirement.get('required_states', [])}
-
-
 def effective(narrative, choices):
     requirements = copy.deepcopy(narrative['asset_requirements'])
     ids = {r['asset_id'] for r in requirements}

@@ -693,7 +693,7 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
     assets = {a['asset_id']: a for a in narrative['asset_requirements']}
     decisions: dict = {'excluded': {}, 'replaced': {}}
     if project_root is not None:
-        from .visual_asset_choices import read_choices, effective, confirmed_split_children
+        from .asset_choice_rules import read_choices, effective, confirmed_split_children
         choices = read_choices(project_root)
         decisions = choices
         active = effective(narrative, choices)
@@ -902,7 +902,7 @@ def validate_shot_plan(path: Path, project_root: Path, strict: bool = False) -> 
     if not any(line.lstrip().startswith("| 来源") for line in text.splitlines()):
         raise ValueError("无法检查：未识别历史 Markdown 来源行，不按零行通过；新导演稿请检查原始 JSON")
     from .asset_refs import current_narrative
-    from .visual_asset_choices import read_choices, effective
+    from .asset_choice_rules import read_choices, effective
     choices = read_choices(project_root)
     narrative = current_narrative(project_root)
     known = {a['asset_id'] for a in narrative['asset_requirements']}

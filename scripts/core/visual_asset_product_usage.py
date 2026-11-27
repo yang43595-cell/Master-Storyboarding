@@ -1,4 +1,4 @@
-"""Project-local product usage reference reader and summary table helper."""
+"""Project-local product usage reference reader."""
 from __future__ import annotations
 
 import hashlib
@@ -10,10 +10,6 @@ from .io import sha256_file
 from .project_kickoff import load_kickoff
 
 FILE = "04_资产/产品使用对接.json"
-
-
-def source_narrative(narrative: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in narrative.items() if key != "_product_usage"}
 
 
 def story_hash(narrative: dict[str, Any]) -> str:
@@ -63,7 +59,7 @@ def _verify_cached_file(row: dict[str, Any]) -> None:
         raise ValueError("产品参考字节与匹配记录不同：" + str(original))
 
 
-def load_usage(root: str | Path, narrative: dict[str, Any], *, for_recovery: bool = False) -> dict[str, Any]:
+def load_usage(root: str | Path, narrative: dict[str, Any]) -> dict[str, Any]:
     path = Path(root) / FILE
     if not path.is_file():
         return {}
@@ -81,8 +77,6 @@ def load_usage(root: str | Path, narrative: dict[str, Any], *, for_recovery: boo
         )
         if selection != (data.get("reference_pack_sha256"), data.get("reference_pack_usage")):
             return _usage_problem("stale", "开工产品参考已变化，待重新核对")
-        if for_recovery:
-            return data
         if data.get("status") == "error":
             return _usage_problem("error", data.get("message", "产品动作参考待恢复"))
         if data.get("status") == "matched":
@@ -97,45 +91,3 @@ def load_usage(root: str | Path, narrative: dict[str, Any], *, for_recovery: boo
         return data
     except (OSError, ValueError, KeyError, TypeError) as exc:
         return _usage_problem("error", str(exc))
-
-
-def append_table(root: str | Path, usage: dict[str, Any]) -> None:
-    path = Path(root) / "04_资产/当前资产需求表.md"
-    if not path.is_file():
-        return
-    text = path.read_text(encoding="utf-8").partition("\n## 产品使用参考自动对接")[0]
-    if usage.get("status") != "matched":
-        path.write_text(text, encoding="utf-8")
-        return
-
-    def cell(value: Any) -> str:
-        return str(value).replace("|", "／").replace("\n", " ")
-
-    rows = [
-        "",
-        "## 产品使用参考自动对接",
-        "",
-        "动作参考只约束产品、工具、操作与质地，不改写剧情，不继承手模、背景、服装。",
-        "",
-        "| 产品编号 | 动作参考 | 剧情段落 | 原文依据 | 参考文件 | 状态 |",
-        "|---|---|---|---|---|---|",
-    ]
-    for r in usage.get("references", []):
-        rows.append(
-            "| "
-            + " | ".join(
-                map(
-                    cell,
-                    [
-                        r["product_ast_id"],
-                        r["name"],
-                        "；".join(r["paragraph_ids"]),
-                        r["evidence"],
-                        r.get("project_path") or "",
-                        "已自动补入" if r.get("asset_id") else "缺少，留空由用户补充",
-                    ],
-                )
-            )
-            + " |"
-        )
-    path.write_text(text.rstrip() + "\n" + "\n".join(rows) + "\n", encoding="utf-8")

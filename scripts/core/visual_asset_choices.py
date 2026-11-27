@@ -8,10 +8,8 @@ from .asset_choice_rules import (  # noqa: F401
     image_decision,
     image_work_items,
     narrative_digest,
-    production_spec,
     read_choices,
     requirement_digest,
-    scene_state_coverage,
 )
 
 

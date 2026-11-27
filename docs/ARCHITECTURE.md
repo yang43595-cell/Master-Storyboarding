@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | **L0 基础设施** | 错误、IO/锁、媒体类型、字符/图像/工作区底层原语、确认范围、远端 API 客户端 | `errors`, `media_types`, `io`, `character_assets`, `character_layout`, `image_technical`, `director_reading`, `depth_reference_review`, `knowledge_runtime`, `native_port_binding`, `native_references`, `runtime_deps`, `scene_realism`, `confirmation_scope`, `agent_review_api`, `redframe_workspace` |
 | **L1 项目与契约原语** | 项目状态、开工决定、产品参考包、草稿交付账本、提示词体、端点控制 | `project_state`, `product_reference_pack`, `project_kickoff`, `draft_delivery`, `endpoint_control`, `prompt_body`, `prompt_scene_control`, `endpoint_states` |
-| **L2 领域模块（按阶段/分支隔离）** | 产物清单、资产与视觉选择、故事来源、导演输入、质量证据、复刻分段、红帧 UI 与分支交付 | 共享：`artifacts`, `candidate_test`, `schema_contracts`, `delivery_files`, `quality_evidence`, `generation_boundaries`, `director_inputs`, `story_sources`<br>资产：`asset_batch_receipt`, `asset_refs`, `character_boards`, `product_refs`, `visual_readiness`, `visual_asset_choices`, `visual_asset_product_usage`, `visual_asset_source`<br>复刻：`recreation_assets`, `recreation_segments`<br>红帧：`redframe_image_ui`, `redframe_draft_ui`, `canvas_readback`, `redframe_creative`（Branch A）, `redframe_recreation`（Branch B） |
+| **L2 领域模块（按阶段/分支隔离）** | 产物清单、资产与视觉选择、故事来源、导演输入、质量证据、复刻分段、红帧 UI 与分支交付 | 共享：`artifacts`, `candidate_test`, `schema_contracts`, `delivery_files`, `quality_evidence`, `generation_boundaries`, `director_inputs`, `story_sources`<br>共享资产（并行分支）：`asset_choice_rules`, `asset_batch_receipt`, `asset_refs`, `character_boards`, `product_refs`, `visual_asset_choices`, `visual_asset_product_usage`, `visual_asset_source`<br>分镜（Branch A）：`visual_readiness`<br>复刻（Branch B）：`recreation_assets`, `recreation_segments`<br>红帧：`redframe_image_ui`, `redframe_draft_ui`, `canvas_readback`, `redframe_creative`（Branch A）, `redframe_recreation`（Branch B） |
 | **L3 治理、审核与交接** | 自主采用、审核发布、事务修订控制、跨阶段交接、阶段上下文与引导 | `agent_acceptance`, `review_publication`, `revision_control`, `production_handoff`, `stage_context`, `stage_guidance`, `stage_handoff` |
 | **L4 阶段 CLI 与浏览器脚本** | 唯一命令行入口（含 `main()`）；只调用 `core/*`，不充当共享库 | `init_desktop_project.py`, `stage_context_cli.py`, `narrative_package.py`, `asset_stage_cli.py`, `director_package.py`, `visual_stage_cli.py`, `video_prompt_package.py`, `redframe_draft.py`, `canvas_readback.py`, `review_text_cli.py`, `voice_reference_cli.py`, `rhtv_*.js` 等 |
 
@@ -36,6 +36,7 @@ Step 1 [共享上游]: creative-director (narrative_package.py) ──► 02_编
            └── 改戏段 ──► return_director_segment.py ──► storyboard-planner (director_package.py) ──► 视频交付
 ```
 
+- **共享上游资产边界**：`[并行分支] asset-image-assistant` 及 `core.asset_*`、`core.character_boards`、`core.product_refs`、`core.visual_asset_*` 服务于 Branch A 与 Branch B 两条下游路线，严禁反向导入任一下游分支专属模块（如 Branch A 的 `core.visual_readiness` 或 Branch B 的 `core.recreation_*`）。
 - **共享画布原语下沉**：Branch A（`core.redframe_creative`）与 Branch B（`core.redframe_recreation`）共同依赖的红帧画布控件与节点操作统一放在 `core.redframe_draft_ui`；**两分支严禁互相导入**，也不得导入顶层 `redframe_draft.py`。（`core.director_inputs` 为共享上游导演输入契约，供 Branch A 与 Branch B 改戏回流桥接共同使用。）
 - **视频阶段入口边界**：`voiceover-to-video-script` 直接读取已确认来源，不走 `stage_context_cli.py prepare`；其余生产阶段统一走 `stage_context_cli.py`。
 - **历史兼容垫片**：`scripts/visual_asset_choices.py`、`scripts/visual_asset_product_usage.py` 与 `scripts/visual_asset_source.py` 仅为兼容旧导入路径的薄转发垫片（禁止包含函数/类定义），真实实现位于 `scripts/core/`，新代码一律直接从 `core.*` 导入。
@@ -58,7 +59,7 @@ Step 1 [共享上游]: creative-director (narrative_package.py) ──► 02_编
 
 1. **禁止 `core -> CLI` 反向导入**：`scripts/core/*.py` 不得导入任何顶层 `scripts/*.py`。
 2. **禁止 L0 基础设施向上依赖**：L0 模块（含 `core.io` 内的 `recover_transactions` 等）不得导入 L1–L4 模块。
-3. **禁止 Branch A / Branch B 交叉导入**：Branch A（`director_package`、`visual_stage_cli`、`core.visual_readiness`、`core.redframe_creative`）与 Branch B（`prepare_depth_clips`、`return_director_segment`、`core.recreation_*`、`core.redframe_recreation`、`core.depth_reference_review`）之间零互引。
+3. **禁止 Branch A / Branch B 交叉导入及共享资产反向依赖**：Branch A（`director_package`、`visual_stage_cli`、`core.visual_readiness`、`core.redframe_creative`）与 Branch B（`prepare_depth_clips`、`return_director_segment`、`core.recreation_*`、`core.redframe_recreation`、`core.depth_reference_review`）之间零互引；共享资产模块（`asset_stage_cli`、`chat_asset_review`、`redframe_image_revision`、`core.asset_*`、`core.character_boards`、`core.product_refs`、`core.visual_asset_*`）不得反向导入 Branch A 或 Branch B。
 4. **禁止红帧层出现循环依赖**：`core.redframe_creative`、`core.redframe_recreation`、`redframe_draft`、`core.redframe_draft_ui`、`core.redframe_image_ui`、`core.redframe_workspace` 保持无环 DAG。
 5. **禁止在 `scripts/` 顶层新增无 `main()` 的库文件**：共享领域逻辑必须放在 `scripts/core/`，顶层 `scripts/*.py` 只放具备独立 CLI 入口的脚本（薄转发兼容垫片除外）。
 6. **禁止既有循环依赖集合扩大（并在解耦后锁死零环）**：`scripts/` 模块依赖图不得新增任何循环强连通分量。
