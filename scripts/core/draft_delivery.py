@@ -3,8 +3,8 @@ import re
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
-from .artifacts import load_manifest
 from .io import file_lock, read_json, sha256_json, write_json
+from .manifest_store import load_manifest
 
 DELIVERY_RECEIPT = Path('06_视频/画布交付回执.json')
 _READBACK_FILES = ('frozen', 'observed', 'formal_readback')

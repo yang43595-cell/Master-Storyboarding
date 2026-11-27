@@ -42,6 +42,7 @@ COMPAT_SHIMS = frozenset({
 })
 
 REDFRAME_MODULES = frozenset({
+    "core.draft_delivery",
     "core.redframe_creative",
     "core.redframe_recreation",
     "core.redframe_draft_ui",
@@ -109,6 +110,7 @@ SHARED_ASSET_MODULES = frozenset({
     "core.visual_asset_source",
 })
 SHARED_REDFRAME_UI_MODULES = frozenset({
+    "core.draft_delivery",
     "core.redframe_draft_ui",
     "core.redframe_image_ui",
     "core.redframe_workspace",
@@ -301,6 +303,10 @@ def test_l0_foundation_has_no_upward_dependencies() -> None:
         if adj[m] - L0_FOUNDATION_MODULES
     }
     assert upward == {}, f"L0 foundation modules must not import L1-L4 modules: {upward}"
+    l0_adj = {m: adj[m] & L0_FOUNDATION_MODULES for m in L0_FOUNDATION_MODULES}
+    assert _tarjan_sccs(set(L0_FOUNDATION_MODULES), l0_adj) == [], (
+        "L0 foundation modules must form an acyclic DAG"
+    )
 
 
 def test_l1_primitives_have_no_upward_dependencies() -> None:
@@ -338,11 +344,60 @@ def test_l1_store_reexports_and_boundary_invariants(tmp_path: Path, monkeypatch:
         assert getattr(artifacts, attr) is getattr(manifest_store, attr)
     for attr in ("source_shot_ids", "scene_state_requirements", "reference_shot_ids", "submitted_prompt_body"):
         assert getattr(quality_evidence, attr) is getattr(prompt_body, attr)
-    for attr in ("CONTROL_RELATIVE", "guard_action", "show_change", "_generation_segments", "_validate_segment_reconciliation"):
+    for attr in ("CONTROL_RELATIVE", "CONTROL_SCHEMA_VERSION", "LOCK_RELATIVE", "TIER_VALUES", "_generation_segments"):
         assert getattr(revision_control, attr) is getattr(revision_store, attr)
     assert candidate_test.validate_context is project_state.validate_candidate_test_context
     assert candidate_test.validate_stage is project_state.validate_candidate_test_stage
     assert candidate_test.require_production is revision_store.require_production
+
+    # Verify monkeypatch hooks on artifacts (digest, read_json) and revision_control (read_json)
+    bundled_file = tmp_path / "bundled.json"
+    bundled_file.write_text('{"ok": true}\n', encoding="utf-8")
+    bundled_sha = manifest_store.digest(bundled_file)
+    control_path = tmp_path / revision_control.CONTROL_RELATIVE
+    control_path.parent.mkdir(parents=True, exist_ok=True)
+    revision_control.write_json(
+        control_path,
+        {
+            "schema_version": revision_control.CONTROL_SCHEMA_VERSION,
+            "active_change": {"change_id": "CHG-1", "frozen_logical_ids": ["storyboard.package"]},
+            "history": [
+                {
+                    "change_id": "CHG-0",
+                    "status": "completed",
+                    "candidate_confirmation": {
+                        "scope": "artifact",
+                        "change_id": "CHG-0",
+                        "approval_ref": "user:ok",
+                    },
+                    "candidate_receipt": {
+                        "bundle": [{"artifact_id": "ART-1", "path": "bundled.json", "sha256": bundled_sha}]
+                    },
+                }
+            ],
+        },
+    )
+    rc_reads: list[Path] = []
+    orig_rc_read = revision_control.read_json
+    monkeypatch.setattr(revision_control, "read_json", lambda p: (rc_reads.append(Path(p)), orig_rc_read(p))[1])
+    assert revision_control.show_change(tmp_path)["active_change"]["change_id"] == "CHG-1"
+    with pytest.raises(revision_control.RevisionControlError, match="冻结分支"):
+        revision_control.guard_action(tmp_path, logical_ids=["storyboard.package"])
+    assert rc_reads == [control_path.resolve(), control_path.resolve()]
+
+    art_reads: list[Path] = []
+    art_digests: list[Path] = []
+    orig_art_read = artifacts.read_json
+    orig_art_digest = artifacts.digest
+    monkeypatch.setattr(artifacts, "read_json", lambda p: (art_reads.append(Path(p)), orig_art_read(p))[1])
+    monkeypatch.setattr(artifacts, "digest", lambda p: (art_digests.append(Path(p)), orig_art_digest(p))[1])
+    adopted = artifacts.formal_adoption({"artifact_id": "ART-1", "checksum": bundled_sha}, tmp_path)
+    assert adopted == {"change_id": "CHG-0", "approval_ref": "user:ok", "sha256": bundled_sha}
+    cached_digest = artifacts.cache_file_digests()
+    assert cached_digest(bundled_file) == bundled_sha
+    assert cached_digest(bundled_file) == bundled_sha
+    assert art_reads == [control_path]
+    assert art_digests == [bundled_file.resolve(), bundled_file]
 
     assert manifest_store.load_manifest(tmp_path) == {"schema_version": "1.0", "artifacts": []}
     with pytest.raises(ValueError, match="重复 artifact_id"):

@@ -50,10 +50,10 @@ from .revision_store import (
     _json_bytes,
     _load_control as _store_load_control,
     _transaction_dir,
-    _validate_segment_reconciliation,
-    guard_action,
+    _validate_segment_reconciliation as _store_validate_segment_reconciliation,
+    guard_action as _store_guard_action,
     inspect_revision_status as _store_inspect_revision_status,
-    show_change,
+    show_change as _store_show_change,
 )
 
 
@@ -63,6 +63,23 @@ class _DeliveryProjectBindingError(RevisionControlError):
 
 def _load_control(project: Path) -> dict[str, Any]:
     return _store_load_control(project, read_json_fn=read_json)
+
+
+def _validate_segment_reconciliation(project: Path, baseline: dict[str, Any], candidate: Any) -> None:
+    _store_validate_segment_reconciliation(project, baseline, candidate, read_json_fn=read_json)
+
+
+def guard_action(
+    project: Path,
+    *,
+    logical_ids: list[str],
+    change_id: str | None = None,
+) -> dict[str, Any]:
+    return _store_guard_action(project, logical_ids=logical_ids, change_id=change_id, read_json_fn=read_json)
+
+
+def show_change(project: Path) -> dict[str, Any]:
+    return _store_show_change(project, read_json_fn=read_json)
 
 
 def _manifest_digest(manifest: dict[str, Any]) -> str:

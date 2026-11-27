@@ -480,3 +480,23 @@ def test_candidate_configuration_does_not_initialize_a_missing_project(tmp_path)
         candidate_test.configure(project, 'RUN-SYNTHETIC', 'synthetic authorization', [],
                                  current_stage='creative-director')
     assert not project.exists()
+
+
+def test_dual_import_aliases_share_exception_classes(tmp_path):
+    from core import errors as cli_errors, project_kickoff as cli_kickoff, revision_store as cli_store
+    from scripts.core import errors as pkg_errors, stage_context
+
+    assert cli_errors.RevisionControlError is pkg_errors.RevisionControlError
+    assert cli_errors.StageContextError is pkg_errors.StageContextError
+
+    control = tmp_path / '00_项目管理/change_control.json'
+    control.parent.mkdir(parents=True, exist_ok=True)
+    control.write_text('{}', encoding='utf-8')
+    with pytest.raises(revision_control.RevisionControlError, match='结构无效'):
+        cli_store.guard_action(tmp_path, logical_ids=['narrative.package'])
+
+    not_a_dir = tmp_path / 'plain-file.txt'
+    not_a_dir.write_text('x', encoding='utf-8')
+    with pytest.raises(stage_context.StageContextError, match='业务项目目录'):
+        cli_kickoff.kickoff_project(not_a_dir)
+

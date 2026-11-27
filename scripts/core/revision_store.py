@@ -211,10 +211,11 @@ def guard_action(
     *,
     logical_ids: list[str],
     change_id: str | None = None,
+    read_json_fn=read_json,
 ) -> dict[str, Any]:
     """Fail closed when a requested action touches a frozen branch."""
     project = project.resolve()
-    control = _load_control(project)
+    control = _load_control(project, read_json_fn=read_json_fn)
     active = control.get("active_change")
     if not isinstance(active, dict):
         return {"allowed": True, "reason": "no_active_change"}
@@ -224,9 +225,9 @@ def guard_action(
     return {"allowed": True, "change_id": active.get("change_id"), "frozen_intersection": touched}
 
 
-def show_change(project: Path) -> dict[str, Any]:
+def show_change(project: Path, *, read_json_fn=read_json) -> dict[str, Any]:
     project = project.resolve()
-    return _load_control(project)
+    return _load_control(project, read_json_fn=read_json_fn)
 
 
 def inspect_revision_status(
@@ -293,7 +294,13 @@ def _generation_segments(payload: Any) -> list[dict[str, Any]] | None:
     return rows
 
 
-def _validate_segment_reconciliation(project: Path, baseline: dict[str, Any], candidate: Any) -> None:
+def _validate_segment_reconciliation(
+    project: Path,
+    baseline: dict[str, Any],
+    candidate: Any,
+    *,
+    read_json_fn=read_json,
+) -> None:
     """Bind any stable segment-ID replacement to the actual baseline bytes and reasons."""
     if not isinstance(baseline, dict):
         return
@@ -303,7 +310,7 @@ def _validate_segment_reconciliation(project: Path, baseline: dict[str, Any], ca
     if not baseline.get("checksum") or sha256_file(old_path) != baseline.get("checksum"):
         raise RevisionControlError("视频提示词旧版本与活动确认 hash 不一致；生成段续跑基线已过期")
     try:
-        old_payload = read_json(old_path)
+        old_payload = read_json_fn(old_path)
     except (OSError, json.JSONDecodeError) as exc:
         raise RevisionControlError("视频提示词旧版本不可解析；生成段续跑基线未知") from exc
     old_rows = _generation_segments(old_payload)
@@ -401,12 +408,18 @@ def _validate_segment_reconciliation(project: Path, baseline: dict[str, Any], ca
         raise RevisionControlError("生成段对账必须恰好覆盖全部增删、正文替换、顺序及源覆盖变化")
 
 
-def formal_adoption(entry: dict[str, Any], root: Path | str, *, file_digest=digest) -> dict[str, Any] | None:
+def formal_adoption(
+    entry: dict[str, Any],
+    root: Path | str,
+    *,
+    file_digest=digest,
+    read_json_fn=read_json,
+) -> dict[str, Any] | None:
     """Return the completed, hash-bound adoption evidence for a bundled artifact."""
     control = Path(root) / CONTROL_RELATIVE
     if not control.is_file():
         return None
-    history = read_json(control).get("history", [])
+    history = read_json_fn(control).get("history", [])
     for change in history:
         receipt = change.get("candidate_confirmation") or {}
         if not is_whole_artifact(receipt):

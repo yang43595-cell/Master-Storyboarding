@@ -360,7 +360,7 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
             if unknown:
                 raise ValueError("视频来源镜号不属于准确已确认导演包：" + ", ".join(sorted(unknown)))
         if prior:
-            revision_store._validate_segment_reconciliation(root, prior[0], payload)
+            revision_store._validate_segment_reconciliation(root, prior[0], payload, read_json_fn=read_json)
         from .generation_boundaries import validate_generation_boundaries
         validate_generation_boundaries(
             payload, storyboard, root, require_physical=not reading_existing,
@@ -465,7 +465,7 @@ def adopt_initial_package(project_root: Path, artifact_id: str, approval_ref: st
         transaction = _commit_json_transaction_unlocked(root, {
             root / MANIFEST_PATH: manifest,
             root / "00_项目管理" / "project_state.json": state,
-        }, reason="adopt initial formal package")
+        }, reason="adopt initial formal package", write_json_fn=write_json)
         adopted = next(item for item in load_manifest(root)["artifacts"]
                        if item.get("artifact_id") == artifact_id)
         if not artifact_is_confirmed(adopted, load_project_state(root), root):
@@ -544,7 +544,7 @@ def adopt_initial_agent_artifact(project_root: Path, artifact_id: str, report_pa
         transaction = _commit_json_transaction_unlocked(root, {
             root / MANIFEST_PATH: manifest,
             root / "00_项目管理" / "project_state.json": state,
-        }, reason="adopt initial agent-accepted artifact")
+        }, reason="adopt initial agent-accepted artifact", write_json_fn=write_json)
         adopted = next((item for item in load_manifest(root)["artifacts"] if item.get("artifact_id") == artifact_id), None)
         selected = load_project_state(root)
         if (adopted is None or artifact_id not in selected["current_artifacts"]
@@ -911,7 +911,7 @@ def verify_image_confirmation(path, receipt, *, file_digest=None):
 
 def formal_adoption(entry, root):
     """Return the completed, hash-bound adoption evidence for a bundled artifact."""
-    return _store_formal_adoption(entry, root, file_digest=digest)
+    return _store_formal_adoption(entry, root, file_digest=digest, read_json_fn=read_json)
 
 
 def _whole_artifact_receipt(receipt):
