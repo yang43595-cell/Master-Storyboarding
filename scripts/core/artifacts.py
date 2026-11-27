@@ -24,7 +24,10 @@ from .acceptance_rules import (
     _whole_artifact_receipt,
     artifact_is_adopted as _rules_artifact_is_adopted,
     artifact_is_confirmed as _rules_artifact_is_confirmed,
+    delegated_dialogue_passed as _rules_delegated_dialogue_passed,
+    exact_narrative_approval,
     formal_adoption as _rules_formal_adoption,
+    narrative_has_exact_approval as _rules_narrative_has_exact_approval,
     read_agent_acceptance as _rules_read_agent_acceptance,
     require_current_agent_acceptance as _rules_require_current_agent_acceptance,
     skill_for_artifact,
@@ -40,11 +43,13 @@ from .manifest_store import (
     _FORMAL_PACKAGE_LOGICAL_IDS,
     _Manifest,
     _assert_unique_artifact_ids,
+    cache_file_digests as _store_cache_file_digests,
     cache_file_reads,
     current_artifacts,
     digest,
     load_manifest,
     project_path,
+    verify_image_confirmation as _store_verify_image_confirmation,
 )
 from .project_state import load_project_state
 from .revision_store import save_manifest as _store_save_manifest
@@ -95,63 +100,24 @@ def save_manifest(project_root: Path, manifest: dict[str, Any]) -> None:
     )
 
 
-def exact_narrative_approval(receipt: Any, entry: dict[str, Any], sha256: str) -> bool:
-    if not isinstance(receipt, dict) or receipt.get("scope") != confirmation_scope.SCOPE_ARTIFACT:
-        return False
-    if not confirmation_scope.is_whole_artifact(receipt) or receipt.get("sha256") != sha256:
-        return False
-    approval_ref = receipt.get("approval_ref")
-    if entry.get("logical_id") != "narrative.package" or not isinstance(approval_ref, str) or not approval_ref.strip():
-        return False
-    if receipt.get("kind") == "package-adoption":
-        return (receipt.get("artifact_ids") == [entry.get("artifact_id")]
-                and receipt.get("logical_id") == "narrative.package"
-                and receipt.get("revision") == entry.get("revision"))
-    return (receipt.get("kind") == "revision-candidate"
-            and receipt.get("artifact_id") == entry.get("artifact_id")
-            and receipt.get("revision") == entry.get("revision"))
-
-
 def narrative_has_exact_approval(project_root: Path, source_path: Path, narrative: dict[str, Any],
                                  *, delegated=False, chat_subtitle_review_ids=()) -> bool:
     """Recognize the requested adoption basis for these exact narrative bytes."""
-    root = Path(project_root).resolve()
-    source_path = project_path(root, source_path)
-    if not source_path.is_relative_to(root) or not source_path.is_file():
-        return False
-    state = load_project_state(root)
-    for entry in load_manifest(root).get("artifacts", []):
-        if (entry.get("logical_id") != "narrative.package" or entry.get("revision") != narrative.get("revision")
-                or entry.get("status") != "current"):
-            continue
-        sha256 = entry.get("checksum")
-        if not sha256:
-            continue
-        path = project_path(root, entry.get("path_or_url", ""))
-        if path != source_path:
-            continue
-        raw = path.read_bytes()
-        if hashlib.sha256(raw).hexdigest() != sha256 or json.loads(raw.decode("utf-8-sig")) != narrative:
-            continue
-        if delegated:
-            if entry.get("agent_acceptance") and entry.get("user_approved") is False:
-                try:
-                    return _delegated_dialogue_passed(root, entry, state)
-                except (ValueError, OSError, KeyError, TypeError):
-                    return False
-        elif artifact_is_confirmed(entry, state, root) and any(
-                exact_narrative_approval(receipt, entry, sha256)
-                and (not chat_subtitle_review_ids or (receipt.get('channel') == 'chat_confirmation'
-                    and receipt.get('subtitle_review_ids') == list(chat_subtitle_review_ids)
-                    and isinstance(receipt.get('review_markdown'), dict)))
-                for receipt in state.get("user_confirmations", [])):
-            return True
-    return False
+    return _rules_narrative_has_exact_approval(
+        project_root,
+        source_path,
+        narrative,
+        delegated=delegated,
+        chat_subtitle_review_ids=chat_subtitle_review_ids,
+        load_manifest_fn=load_manifest,
+        load_state_fn=load_project_state,
+        file_digest=digest,
+        read_json_fn=read_json,
+    )
 
 
 def _delegated_dialogue_passed(root, entry, state):
-    report = validate_agent_acceptance(root, entry, state=state, file_digest=digest, read_json_fn=read_json)
-    return any(check["id"] == "CREATIVE-DIALOGUE" and check["result"] == "pass" for check in report["checks"])
+    return _rules_delegated_dialogue_passed(root, entry, state, file_digest=digest, read_json_fn=read_json)
 
 
 def _video_revision_visual_rows(root, payload, segments, prior, director, known_shots, state):
@@ -299,7 +265,7 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
         if not reading_existing:
             from .asset_refs import require_bound_asset_materials
             from .delivery_files import declared_input_roots, discover_dependencies
-            from .production_handoff import require_handoff_visual_inputs
+            from .visual_handoff import require_handoff_visual_inputs
             scope = payload.get("scope")
             if (payload.get("production_blocked") is True
                     or isinstance(scope, dict) and scope.get("unwritten_shot_ids")):
@@ -392,7 +358,7 @@ def adopt_initial_package(project_root: Path, artifact_id: str, approval_ref: st
                           *, scope_description: str = "", website_approval=None, chat_approval=None) -> dict[str, Any]:
     """Atomically confirm and select a first formal package in an empty lineage."""
     from .revision_store import _commit_json_transaction_unlocked, require_production
-    from .review_publication import require_script_approval
+    from .script_approval import require_script_approval
     if not approval_ref.strip():
         raise ValueError("正式稿采用必须提供准确 approval_ref")
     root = Path(project_root).resolve()
@@ -820,19 +786,12 @@ def promote_candidate(project_root: Path, logical_id: str, artifact_id: str, *,
 
 def cache_file_digests(read_digest=None, *, check_for_changes=False):
     """Reuse file digests within one operation, optionally rechecking file identity."""
-    return cache_file_reads(digest if read_digest is None else read_digest, check_for_changes=check_for_changes)
+    return _store_cache_file_digests(digest if read_digest is None else read_digest, check_for_changes=check_for_changes)
 
 
 def verify_image_confirmation(path, receipt, *, file_digest=None):
     """Verify new byte-bound receipts; do not invent hashes for older approvals."""
-    if "image_sha256" not in receipt:
-        return
-    expected = receipt["image_sha256"]
-    path = Path(path)
-    file_digest = digest if file_digest is None else file_digest
-    if (not isinstance(expected, str) or not re.fullmatch(r"[a-f0-9]{64}", expected)
-            or not path.is_file() or file_digest(path) != expected):
-        raise ValueError("已确认图片内容已变化或缺失，请保留原记录并重新选图确认：" + str(path))
+    return _store_verify_image_confirmation(path, receipt, file_digest=digest if file_digest is None else file_digest)
 
 
 def read_agent_acceptance(project, entry, report_path, *, state=None, file_digest=None, read_json_fn=None):

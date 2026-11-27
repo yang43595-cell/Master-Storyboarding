@@ -571,7 +571,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
             return None
         ident = item['artifact_id']
         if ident not in agent_reports:
-            from .agent_acceptance import validate_agent_acceptance
+            from .acceptance_rules import validate_agent_acceptance
             agent_reports[ident] = validate_agent_acceptance(project, item, state=state, file_digest=file_digest)
         return agent_reports[ident]
     sources = frozen.get('source_artifacts')
@@ -653,7 +653,7 @@ def validate_submission(frozen: dict, project: Path, *, private_preview: bool = 
         delivery_platform='redframe' if formal_redframe else None, read_evidence=read_evidence,
     ) or {}
     if not private_preview:
-        from .production_handoff import require_handoff_visual_inputs
+        from .visual_handoff import require_handoff_visual_inputs
         submitted_shots = {shot for row in drafts.values() for shot in source_shot_ids(row)}
         for ref, _, payload in scene_sources:
             source = entries[ref['artifact_id']]

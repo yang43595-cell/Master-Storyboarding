@@ -22,17 +22,47 @@ from .character_assets import (character_type, uses_wardrobe, requires_face_cert
                                validate_output_plan, final_output_problems)
 from .image_technical import character_board_image_problem
 
-if __package__ == "scripts.core":
+if __package__ in {"scripts.core", "core"}:
+    from .acceptance_rules import (  # type: ignore
+        artifact_is_adopted,
+        artifact_is_confirmed,
+        current_narrative as _rules_current_narrative,
+        formal_adoption,
+        require_current_agent_acceptance,
+        validate_current_dependencies,
+    )
     from .asset_choice_rules import effective, read_choices  # type: ignore
-    from .visual_asset_product_usage import load_usage
-    from .artifacts import artifact_is_confirmed, artifact_is_adopted, digest, load_manifest, project_path, verify_image_confirmation  # type: ignore
+    from .manifest_store import (  # type: ignore
+        cache_file_digests,
+        digest,
+        load_manifest,
+        project_path,
+        verify_image_confirmation,
+    )
     from .project_state import load_project_state  # type: ignore
+    from .revision_store import guard_action  # type: ignore
+    from .visual_asset_product_usage import load_usage
 else:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from core.acceptance_rules import (  # type: ignore
+        artifact_is_adopted,
+        artifact_is_confirmed,
+        current_narrative as _rules_current_narrative,
+        formal_adoption,
+        require_current_agent_acceptance,
+        validate_current_dependencies,
+    )
     from core.asset_choice_rules import effective, read_choices  # type: ignore
-    from core.visual_asset_product_usage import load_usage
-    from core.artifacts import artifact_is_confirmed, artifact_is_adopted, digest, load_manifest, project_path, verify_image_confirmation  # type: ignore
+    from core.manifest_store import (  # type: ignore
+        cache_file_digests,
+        digest,
+        load_manifest,
+        project_path,
+        verify_image_confirmation,
+    )
     from core.project_state import load_project_state  # type: ignore
+    from core.revision_store import guard_action  # type: ignore
+    from core.visual_asset_product_usage import load_usage
 
 ASSET_LIST = "04_资产/当前资产清单.json"
 IMPACT_DIR = "04_资产/变更影响"
@@ -740,28 +770,13 @@ def current_narrative(root: Path) -> dict:
     记录完整且经 validate_agent_acceptance 复核（绑定授权 active 且覆盖该产物
     对应阶段）。两者都不把采用冒充成用户确认。
     """
-    manifest = load_manifest(root)
-    state = load_project_state(root)
-    entries = [entry for entry in manifest.get("artifacts", [])
-               if entry.get("logical_id") == "narrative.package" and entry.get("status") == "current"]
-    if (len(entries) != 1 or entries[0].get("artifact_id") not in state["current_artifacts"]
-            or not artifact_is_adopted(entries[0], state, root)):
-        raise ValueError(
-            "当前资产清单只认唯一且已确认或已按流程授权采用的 narrative.package，"
-            f"现在清单里符合的条目为 {len(entries)} 条；不按文件名猜最新稿。"
-            "请先确认编导稿并登记该产物，再核对 "
-            "00_项目管理/artifact_manifest.json 与 00_项目管理/project_state.json 的确认/采用记录。"
-        )
-    path = project_path(root, entries[0].get("path_or_url", ""))
-    if not path.is_file():
-        raise FileNotFoundError(
-            f"narrative.package 已登记但文件不存在：{path}；"
-            "请恢复该文件或重新登记当前版本，工具不会回退到其他修订。"
-        )
-    checksum = entries[0].get("checksum")
-    if checksum and digest(path) != checksum:
-        raise ValueError("已确认叙事包内容与登记版本不一致，请回上游核对：" + str(path))
-    return _read(path)
+    return _rules_current_narrative(
+        root,
+        load_manifest_fn=load_manifest,
+        load_state_fn=load_project_state,
+        file_digest=digest,
+        is_adopted_fn=artifact_is_adopted,
+    )
 
 
 def asset_index(asset_list: dict) -> dict[str, dict]:
@@ -1045,7 +1060,6 @@ def check_output_plan(root: Path, request: dict, *, candidate_test_mode: bool = 
 def _required_images(root: Path, requests: list[str], *, final: bool = False,
                      file_digest=None) -> tuple[dict[str, dict], list[str]]:
     """Validate and resolve selections in the same read of the current asset list."""
-    from .revision_control import guard_action
     try:
         guard_action(root, logical_ids=['narrative.package', 'visual.asset.manifest'])
     except ValueError as exc:
@@ -1152,7 +1166,6 @@ def require_references(root: Path, artifact_ids: list[str], shot_ids: list[str] 
         return False, ["未提供具体确认参考；身份/服装板不能替代场内比例或切点参考"]
     manifest = load_manifest(root)
     state = load_project_state(root)
-    from .artifacts import cache_file_digests, require_current_agent_acceptance, validate_current_dependencies
 
     file_digest = cache_file_digests(check_for_changes=True) if file_digest is None else file_digest
     problems = []
@@ -1163,7 +1176,6 @@ def require_references(root: Path, artifact_ids: list[str], shot_ids: list[str] 
                 raise ValueError('参考产物登记缺失或不唯一')
             entry = found[0]
             permitted_shots = set()
-            from .revision_control import guard_action
             guard_action(root, logical_ids=[entry['logical_id']])
             uses_agent_acceptance = entry.get('agent_acceptance') is not None
             if (ident not in state['current_artifacts']
@@ -1177,7 +1189,6 @@ def require_references(root: Path, artifact_ids: list[str], shot_ids: list[str] 
             # Existing image receipts are either a single hash-bound image,
             # a named member of a batch, or the revision-control adoption.
             from .confirmation_scope import is_whole_artifact, image_usage_shots
-            from .artifacts import formal_adoption
             if uses_agent_acceptance:
                 report = require_current_agent_acceptance(entry, state, root, file_digest=file_digest)
                 validate_current_dependencies(entry, manifest, state, root, file_digest=file_digest)

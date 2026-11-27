@@ -493,3 +493,109 @@ def validate_current_dependencies(
         checked.add(ident)
 
     visit(entry)
+
+
+def exact_narrative_approval(receipt, entry: dict, sha256: str) -> bool:
+    if not isinstance(receipt, dict) or receipt.get("scope") != confirmation_scope.SCOPE_ARTIFACT:
+        return False
+    if not confirmation_scope.is_whole_artifact(receipt) or receipt.get("sha256") != sha256:
+        return False
+    approval_ref = receipt.get("approval_ref")
+    if entry.get("logical_id") != "narrative.package" or not isinstance(approval_ref, str) or not approval_ref.strip():
+        return False
+    if receipt.get("kind") == "package-adoption":
+        return (receipt.get("artifact_ids") == [entry.get("artifact_id")]
+                and receipt.get("logical_id") == "narrative.package"
+                and receipt.get("revision") == entry.get("revision"))
+    return (receipt.get("kind") == "revision-candidate"
+            and receipt.get("artifact_id") == entry.get("artifact_id")
+            and receipt.get("revision") == entry.get("revision"))
+
+
+def delegated_dialogue_passed(root, entry, state, *, file_digest=digest, read_json_fn=read_json) -> bool:
+    report = validate_agent_acceptance(root, entry, state=state, file_digest=file_digest, read_json_fn=read_json_fn)
+    return any(check["id"] == "CREATIVE-DIALOGUE" and check["result"] == "pass" for check in report["checks"])
+
+
+def narrative_has_exact_approval(
+    project_root: Path,
+    source_path: Path,
+    narrative: dict,
+    *,
+    delegated: bool = False,
+    chat_subtitle_review_ids=(),
+    load_manifest_fn=load_manifest,
+    load_state_fn=load_project_state,
+    file_digest=digest,
+    read_json_fn=read_json,
+) -> bool:
+    """Recognize the requested adoption basis for these exact narrative bytes."""
+    root = Path(project_root).resolve()
+    source_path = project_path(root, source_path)
+    if not source_path.is_relative_to(root) or not source_path.is_file():
+        return False
+    state = load_state_fn(root)
+    for entry in load_manifest_fn(root).get("artifacts", []):
+        if (entry.get("logical_id") != "narrative.package" or entry.get("revision") != narrative.get("revision")
+                or entry.get("status") != "current"):
+            continue
+        sha256 = entry.get("checksum")
+        if not sha256:
+            continue
+        path = project_path(root, entry.get("path_or_url", ""))
+        if path != source_path:
+            continue
+        raw = path.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != sha256 or json.loads(raw.decode("utf-8-sig")) != narrative:
+            continue
+        if delegated:
+            if entry.get("agent_acceptance") and entry.get("user_approved") is False:
+                try:
+                    return delegated_dialogue_passed(
+                        root, entry, state, file_digest=file_digest, read_json_fn=read_json_fn
+                    )
+                except (ValueError, OSError, KeyError, TypeError):
+                    return False
+        elif artifact_is_confirmed(entry, state, root, file_digest=file_digest, read_json_fn=read_json_fn) and any(
+                exact_narrative_approval(receipt, entry, sha256)
+                and (not chat_subtitle_review_ids or (receipt.get("channel") == "chat_confirmation"
+                    and receipt.get("subtitle_review_ids") == list(chat_subtitle_review_ids)
+                    and isinstance(receipt.get("review_markdown"), dict)))
+                for receipt in state.get("user_confirmations", [])):
+            return True
+    return False
+
+
+def current_narrative(
+    root: Path,
+    *,
+    load_manifest_fn=load_manifest,
+    load_state_fn=load_project_state,
+    file_digest=digest,
+    is_adopted_fn=None,
+) -> dict:
+    """Read the unique confirmed or workflow-authorized narrative.package."""
+    manifest = load_manifest_fn(root)
+    state = load_state_fn(root)
+    adopted_check = artifact_is_adopted if is_adopted_fn is None else is_adopted_fn
+    entries = [entry for entry in manifest.get("artifacts", [])
+               if entry.get("logical_id") == "narrative.package" and entry.get("status") == "current"]
+    if (len(entries) != 1 or entries[0].get("artifact_id") not in state["current_artifacts"]
+            or not adopted_check(entries[0], state, root)):
+        raise ValueError(
+            "当前资产清单只认唯一且已确认或已按流程授权采用的 narrative.package，"
+            f"现在清单里符合的条目为 {len(entries)} 条；不按文件名猜最新稿。"
+            "请先确认编导稿并登记该产物，再核对 "
+            "00_项目管理/artifact_manifest.json 与 00_项目管理/project_state.json 的确认/采用记录。"
+        )
+    path = project_path(root, entries[0].get("path_or_url", ""))
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"narrative.package 已登记但文件不存在：{path}；"
+            "请恢复该文件或重新登记当前版本，工具不会回退到其他修订。"
+        )
+    checksum = entries[0].get("checksum")
+    if checksum and file_digest(path) != checksum:
+        raise ValueError("已确认叙事包内容与登记版本不一致，请回上游核对：" + str(path))
+    return json.loads(path.read_text(encoding="utf-8-sig"))
+

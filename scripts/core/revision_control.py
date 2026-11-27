@@ -242,7 +242,7 @@ def open_change(
         authorization = None
         if authorization_id is not None:
             from .revision_store import require_production
-            from .agent_acceptance import require_workflow_authorization, skill_for_artifact
+            from .acceptance_rules import require_workflow_authorization, skill_for_artifact
             require_production(project)
             skill = skill_for_artifact(bases[0])
             grant = require_workflow_authorization(project, authorization_id, skill)
@@ -528,7 +528,7 @@ def confirm_candidate(
     if not approval_ref.strip():
         raise RevisionControlError("候选确认必须提供 approval_ref")
     from .revision_store import require_production
-    from .review_publication import require_script_approval
+    from .script_approval import require_script_approval
     project = project.resolve()
     with project_lock(project):
         require_production(project)
@@ -597,7 +597,7 @@ def confirm_candidate(
 
 def _assert_workflow_authorization(project: Path, change: dict[str, Any], entry: dict[str, Any],
                                    state: dict[str, Any]) -> dict[str, Any]:
-    from .agent_acceptance import require_workflow_authorization, skill_for_artifact
+    from .acceptance_rules import require_workflow_authorization, skill_for_artifact
     binding = change.get("workflow_authorization")
     skill = skill_for_artifact(entry)
     if not isinstance(binding, dict) or binding.get("skill") != skill:
@@ -611,7 +611,7 @@ def _assert_workflow_authorization(project: Path, change: dict[str, Any], entry:
 def confirm_agent_candidate(project: Path, *, change_id: str, report_path: str) -> dict[str, Any]:
     """Accept the current self-checked revision, without recording human approval."""
     from .revision_store import require_production
-    from .agent_acceptance import read_agent_acceptance
+    from .acceptance_rules import read_agent_acceptance
     project = project.resolve()
     with project_lock(project):
         require_production(project)
@@ -634,7 +634,9 @@ def confirm_agent_candidate(project: Path, *, change_id: str, report_path: str) 
             raise RevisionControlError("自主候选与登记的身份、修订、路径或 hash 不一致")
         state = load_project_state(project)
         grant = _assert_workflow_authorization(project, change, item, state)
-        acceptance, report = read_agent_acceptance(project, item, report_path, state=state)
+        acceptance, report = read_agent_acceptance(
+            project, item, report_path, state=state, file_digest=sha256_file, read_json_fn=read_json
+        )
         if acceptance["authorization_id"] != grant["id"]:
             raise RevisionControlError("自主验收报告不属于本变更流程授权")
         validate_agent_submission(project, {**item, "agent_acceptance": acceptance}, manifest, report)
@@ -700,7 +702,7 @@ def record_scoped_confirmation(
 
 def commit_change(project: Path, *, change_id: str, website_approval=None, chat_approval=None) -> dict[str, Any]:
     from .revision_store import require_production
-    from .review_publication import require_script_approval
+    from .script_approval import require_script_approval
     project = project.resolve()
     with project_lock(project):
         require_production(project)
@@ -759,14 +761,16 @@ def commit_change(project: Path, *, change_id: str, website_approval=None, chat_
                 state["review_report"] = dict(change["review"])
             _append_confirmation(state, receipt)
         if agent_acceptance is not None:
-            from .agent_acceptance import validate_agent_acceptance
+            from .acceptance_rules import validate_agent_acceptance
             _assert_workflow_authorization(project, change, candidate_item, state)
             if agent_acceptance.get("authorization_id") != change["workflow_authorization"]["id"]:
                 raise RevisionControlError("自主候选验收授权与变更授权不一致")
             if candidate_item.get("user_approved") is not False or change.get("candidate_confirmation"):
                 raise RevisionControlError("自主验收不得同时制造候选人工确认")
             candidate_item["agent_acceptance"] = agent_acceptance
-            acceptance_report = validate_agent_acceptance(project, candidate_item, state=state)
+            acceptance_report = validate_agent_acceptance(
+                project, candidate_item, state=state, file_digest=sha256_file, read_json_fn=read_json
+            )
         elif change.get("workflow_authorization"):
             raise RevisionControlError("自主变更缺少本版验收，不用人工确认旁路")
         try:

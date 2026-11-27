@@ -110,3 +110,21 @@ def cache_file_reads(read_file, *, check_for_changes=True):
         return result
 
     return read
+
+
+def cache_file_digests(read_digest=None, *, check_for_changes=False):
+    """Reuse file digests within one operation, optionally rechecking file identity."""
+    return cache_file_reads(digest if read_digest is None else read_digest, check_for_changes=check_for_changes)
+
+
+def verify_image_confirmation(path, receipt, *, file_digest=None):
+    """Verify new byte-bound receipts; do not invent hashes for older approvals."""
+    if "image_sha256" not in receipt:
+        return
+    expected = receipt["image_sha256"]
+    path = Path(path)
+    file_digest = digest if file_digest is None else file_digest
+    if (not isinstance(expected, str) or not re.fullmatch(r"[a-f0-9]{64}", expected)
+            or not path.is_file() or file_digest(path) != expected):
+        raise ValueError("已确认图片内容已变化或缺失，请保留原记录并重新选图确认：" + str(path))
+

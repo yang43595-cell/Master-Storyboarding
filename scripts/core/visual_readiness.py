@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .artifacts import cache_file_digests, load_manifest, project_path
+from .manifest_store import cache_file_digests, load_manifest, project_path
 from .asset_refs import (director_location_readiness, require_bound_asset_materials, require_references,
                          resolve_final_images)
 from .media_types import MEDIA_EXTENSIONS

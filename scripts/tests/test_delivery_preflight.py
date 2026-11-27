@@ -386,7 +386,7 @@ def test_explicit_delivery_never_falls_back_to_legacy(tmp_path, missing):
 
 
 def test_legacy_comparison_stays_read_only_and_unchecked(tmp_path):
-    from scripts.tests.test_canvas_readback import sample
+    from scripts.tests._canvas_sample_fixture import sample
     frozen, observed = sample()
     write_json(tmp_path / 'frozen.json', frozen); write_json(tmp_path / 'observed.json', observed)
     result = delivery_cli(tmp_path, '--readback', str(tmp_path / 'observed.json'))

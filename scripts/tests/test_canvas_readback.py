@@ -3,17 +3,7 @@ import pytest
 from scripts.canvas_readback import compare, digest, validate_submission
 from scripts.core.io import write_json
 from scripts.core.project_kickoff import REQUEST_PATH
-
-
-def sample():
-    frozen = {'target_url': 'https://fixture.invalid/canvas/one', 'drafts': [{
-        'node_id': 'draft-13', 'prompt': 'body with native chip labels',
-        'parameters': {'duration': 16, 'aspect': '9:16', 'model': 'fixture'},
-        'ordered_media': [{'node_id': 'image-1', 'media_id': 'm1'},
-                          {'node_id': 'image-2', 'media_id': 'm2'},
-                          {'node_id': 'image-1', 'media_id': 'm1'}]}]}
-    observed = {**copy.deepcopy(frozen), 'phase': 'after_refresh', 'frozen_sha256': digest(frozen)}
-    return frozen, observed
+from scripts.tests._canvas_sample_fixture import sample
 
 
 def test_full_fields_and_repeated_order_pass():

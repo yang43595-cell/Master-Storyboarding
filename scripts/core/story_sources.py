@@ -11,7 +11,7 @@ from functools import cache, partial
 from pathlib import Path
 
 from .schema_contracts import require_schema
-from .artifacts import project_path
+from .manifest_store import project_path
 from .character_assets import board_outfit_ids, uses_wardrobe
 from .director_reading import director_scene_reading, readable_fields
 from .io import sha256_file
@@ -442,7 +442,7 @@ def validate_scene_ids(storyboard: dict) -> None:
 def _candidate_text_source(narrative, root, evidence_id, paragraph_ids, storyboard):
     """Consume byte-bound historical text evidence, never import a confirmation."""
     from .candidate_test import resolve_inputs
-    from .artifacts import digest
+    from .manifest_store import digest
     selected = {r['artifact_id']: r for r in resolve_inputs(root, [evidence_id])}
     entry = selected[evidence_id]
     if entry.get('type') != 'source.evidence' or not entry.get('checksum'):
@@ -545,7 +545,7 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
         historical_path = narrative.get('dialogue_evidence_path')
         if historical_path:
             historical_file = project_path(project_root, historical_path)
-            from .artifacts import digest
+            from .manifest_store import digest
             if historical_file.is_file() and digest(historical_file) != narrative.get('dialogue_evidence_sha256'):
                 raise ValueError('历史对白证据已存在但偏离绑定字节；不得以正文授权掩盖篡改')
             if historical_file.is_file():
@@ -588,7 +588,7 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
             subtitle_approval = set(subtitle_approval) | set(chat_subtitle_review_ids)
         elif (not review_ready and not candidate_test and narrative_path is not None and subtitle_eligible
               and not subtitle_approval):
-            from .artifacts import narrative_has_exact_approval
+            from .acceptance_rules import narrative_has_exact_approval
             reused_chat_approval = narrative_has_exact_approval(project_root, narrative_path, narrative,
                                                                chat_subtitle_review_ids=subtitle_eligible)
             if reused_chat_approval:
@@ -601,7 +601,7 @@ def validate_story_sources(narrative: dict, storyboard: dict | None = None, *, p
                                  awaiting_subtitle_approval_ids=subtitle_approval,
                                  source_fidelity_checked=report['source_fidelity_checked'])
         elif eligible and not candidate_test:
-            from .artifacts import narrative_has_exact_approval
+            from .acceptance_rules import narrative_has_exact_approval
             if exact_human_approval or reused_chat_approval or (narrative_path is not None
                                         and narrative_has_exact_approval(project_root, narrative_path, narrative)):
                 unresolved = [ident for ident in unresolved if ident not in eligible]
@@ -901,7 +901,7 @@ def validate_shot_plan(path: Path, project_root: Path, strict: bool = False) -> 
         raise ValueError("--shot-plan 仅检查历史 Markdown 来源行；JSON 请用 --narrative 与 --storyboard")
     if not any(line.lstrip().startswith("| 来源") for line in text.splitlines()):
         raise ValueError("无法检查：未识别历史 Markdown 来源行，不按零行通过；新导演稿请检查原始 JSON")
-    from .asset_refs import current_narrative
+    from .acceptance_rules import current_narrative
     from .asset_choice_rules import read_choices, effective
     choices = read_choices(project_root)
     narrative = current_narrative(project_root)

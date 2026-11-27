@@ -13,22 +13,7 @@ import pytest
 SCRIPTS_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = SCRIPTS_ROOT.parent
 
-LEGACY_CORE_SCC = frozenset({
-    "core.agent_acceptance",
-    "core.artifacts",
-    "core.asset_refs",
-    "core.canvas_readback",
-    "core.character_boards",
-    "core.director_inputs",
-    "core.draft_delivery",
-    "core.production_handoff",
-    "core.recreation_assets",
-    "core.recreation_segments",
-    "core.review_publication",
-    "core.revision_control",
-    "core.story_sources",
-    "core.visual_readiness",
-})
+LEGACY_CORE_SCC: frozenset[str] = frozenset()
 
 COMPAT_SHIMS = frozenset({
     "visual_asset_choices",
@@ -89,6 +74,39 @@ L2_RULE_CONTRACT_MODULES = frozenset({
     "core.acceptance_rules",
     "core.schema_contracts",
     "core.candidate_test",
+})
+
+L2_DOMAIN_MODULES = frozenset({
+    "core.artifacts",
+    "core.asset_refs",
+    "core.canvas_readback",
+    "core.character_boards",
+    "core.director_inputs",
+    "core.draft_delivery",
+    "core.product_refs",
+    "core.recreation_assets",
+    "core.recreation_segments",
+    "core.redframe_creative",
+    "core.redframe_draft_ui",
+    "core.redframe_image_ui",
+    "core.redframe_recreation",
+    "core.script_approval",
+    "core.story_sources",
+    "core.visual_asset_choices",
+    "core.visual_asset_source",
+    "core.visual_handoff",
+    "core.visual_readiness",
+})
+
+L3_GOVERNANCE_MODULES = frozenset({
+    "core.agent_acceptance",
+    "core.generation_boundaries",
+    "core.production_handoff",
+    "core.review_publication",
+    "core.revision_control",
+    "core.stage_context",
+    "core.stage_guidance",
+    "core.stage_handoff",
 })
 
 BRANCH_A_MODULES = frozenset({
@@ -159,6 +177,57 @@ def _collect_modules() -> tuple[dict[str, Path], dict[str, set[str]]]:
                     candidate = f"{base}.{alias.name}" if base else alias.name
                     if candidate in mods and candidate != mod:
                         adj[mod].add(candidate)
+    return mods, adj
+
+
+def _collect_repo_python_modules() -> tuple[dict[str, Path], dict[str, set[str]]]:
+    ignored_dirs = {"venv", "node_modules", "__pycache__"}
+    py_files = sorted(
+        p for p in REPO_ROOT.rglob("*.py")
+        if not any(
+            part.startswith(".") or part in ignored_dirs
+            for part in p.relative_to(REPO_ROOT).parts[:-1]
+        )
+    )
+    mods: dict[str, Path] = {}
+    alias_to_canonical: dict[str, str] = {}
+    for path in py_files:
+        rel = path.relative_to(REPO_ROOT).with_suffix("")
+        mod = ".".join(rel.parts)
+        if mod.endswith(".__init__"):
+            mod = mod[:-9] or "__init__"
+        mods[mod] = path
+        alias_to_canonical[mod] = mod
+        if rel.parts[0] == "scripts" and len(rel.parts) > 1:
+            short = ".".join(rel.parts[1:])
+            if short.endswith(".__init__"):
+                short = short[:-9] or "__init__"
+            alias_to_canonical[short] = mod
+        if rel.parts[:2] == ("scripts", "tests") and len(rel.parts) > 2:
+            alias_to_canonical[".".join(rel.parts[2:])] = mod
+
+    adj: dict[str, set[str]] = collections.defaultdict(set)
+    for mod, path in mods.items():
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    target = alias_to_canonical.get(alias.name)
+                    if target and target != mod:
+                        adj[mod].add(target)
+            elif isinstance(node, ast.ImportFrom):
+                base = node.module or ""
+                if node.level:
+                    parts = mod.split(".")[:-node.level]
+                    base = ".".join(parts + ([base] if base else []))
+                target = alias_to_canonical.get(base)
+                if target and target != mod:
+                    adj[mod].add(target)
+                for alias in node.names:
+                    candidate = f"{base}.{alias.name}" if base else alias.name
+                    cand_target = alias_to_canonical.get(candidate)
+                    if cand_target and cand_target != mod:
+                        adj[mod].add(cand_target)
     return mods, adj
 
 
@@ -287,19 +356,17 @@ def test_top_level_scripts_are_cli_entrypoints_or_declared_shims() -> None:
 
 
 def test_circular_sccs_do_not_grow_beyond_legacy_core_baseline() -> None:
+    assert LEGACY_CORE_SCC == frozenset(), "LEGACY_CORE_SCC must remain permanently zero"
     mods, adj = _collect_modules()
-    missing = sorted(LEGACY_CORE_SCC - set(mods))
-    assert missing == [], f"LEGACY_CORE_SCC contains stale missing modules: {missing}"
     sccs = _tarjan_sccs(set(mods), adj)
-    assert len(sccs) <= 1, f"Unexpected new circular SCCs introduced: {sccs}"
-    if sccs:
-        actual = set(sccs[0])
-        unknown = actual - LEGACY_CORE_SCC
-        assert unknown == set(), f"Modules added to legacy circular SCC: {sorted(unknown)}"
-        ratchet_candidates = LEGACY_CORE_SCC - actual
-        assert ratchet_candidates == set(), (
-            f"Modules left LEGACY_CORE_SCC; shrink LEGACY_CORE_SCC baseline immediately: {sorted(ratchet_candidates)}"
-        )
+    assert sccs == [], f"Zero circular dependencies allowed in scripts/: {sccs}"
+
+
+def test_zero_circular_dependencies_across_all_repo_python_files() -> None:
+    repo_mods, repo_adj = _collect_repo_python_modules()
+    assert len(repo_mods) >= 120, f"Expected all repo Python files to be scanned, got {len(repo_mods)}"
+    sccs = _tarjan_sccs(set(repo_mods), repo_adj)
+    assert sccs == [], f"Zero multi-module circular dependencies allowed across repo Python files: {sccs}"
 
 
 def test_l0_foundation_has_no_upward_dependencies() -> None:
@@ -362,6 +429,47 @@ def test_l2_rule_contracts_have_no_upward_dependencies() -> None:
     assert gb_callers == [], (
         f"core.* modules must import core.boundary_rules / core.quality_rules, not CLI facade core.generation_boundaries: {gb_callers}"
     )
+
+
+def test_l2_domain_and_l3_governance_form_unidirectional_dags() -> None:
+    mods, adj = _collect_modules()
+    all_layers = (
+        ("L0_FOUNDATION_MODULES", L0_FOUNDATION_MODULES),
+        ("L1_PRIMITIVE_MODULES", L1_PRIMITIVE_MODULES),
+        ("L2_RULE_CONTRACT_MODULES", L2_RULE_CONTRACT_MODULES),
+        ("L2_DOMAIN_MODULES", L2_DOMAIN_MODULES),
+        ("L3_GOVERNANCE_MODULES", L3_GOVERNANCE_MODULES),
+    )
+    seen: set[str] = set()
+    for name, group in all_layers:
+        missing = sorted(group - set(mods))
+        assert missing == [], f"{name} contains missing modules: {missing}"
+        overlap = sorted(seen & group)
+        assert overlap == [], f"{name} overlaps an earlier layer: {overlap}"
+        seen |= group
+    core_mods = {m for m in mods if m == "core" or m.startswith("core.")}
+    unclassified = sorted(core_mods - seen)
+    assert unclassified == [], f"Every scripts/core/ module must declare an explicit L0-L3 layer: {unclassified}"
+
+    allowed_for_l2 = L0_FOUNDATION_MODULES | L1_PRIMITIVE_MODULES | L2_RULE_CONTRACT_MODULES | L2_DOMAIN_MODULES
+    l2_upward = {
+        m: sorted(adj[m] - allowed_for_l2)
+        for m in sorted(L2_DOMAIN_MODULES)
+        if adj[m] - allowed_for_l2
+    }
+    assert l2_upward == {}, f"L2 domain modules must never import L3-L4 modules: {l2_upward}"
+    l2_adj = {m: adj[m] & L2_DOMAIN_MODULES for m in L2_DOMAIN_MODULES}
+    assert _tarjan_sccs(set(L2_DOMAIN_MODULES), l2_adj) == []
+
+    allowed_for_l3 = allowed_for_l2 | L3_GOVERNANCE_MODULES
+    l3_upward = {
+        m: sorted(adj[m] - allowed_for_l3)
+        for m in sorted(L3_GOVERNANCE_MODULES)
+        if adj[m] - allowed_for_l3
+    }
+    assert l3_upward == {}, f"L3 governance modules must never import L4 CLI modules: {l3_upward}"
+    l3_adj = {m: adj[m] & L3_GOVERNANCE_MODULES for m in L3_GOVERNANCE_MODULES}
+    assert _tarjan_sccs(set(L3_GOVERNANCE_MODULES), l3_adj) == []
 
 
 def test_l2_rule_splits_reexports_and_monkeypatch_hooks(
@@ -835,3 +943,131 @@ def test_rhtv_js_layering_and_cross_language_boundaries() -> None:
             if cli_name in py_src:
                 cli_invocations.append(f"{py_path.name} -> {cli_name}")
     assert cli_invocations == [], f"scripts/core/*.py must not shell out to rhtv_* scripts: {cli_invocations}"
+
+
+
+def test_batch_3_2_splits_reexports_dual_alias_and_hooks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for root in (str(REPO_ROOT), str(SCRIPTS_ROOT)):
+        if root not in sys.path:
+            monkeypatch.syspath_prepend(root)
+    from scripts.core import (
+        acceptance_rules,
+        artifacts,
+        asset_refs,
+        manifest_store,
+        production_handoff,
+        review_publication,
+        script_approval,
+        visual_handoff,
+    )
+
+    for attr in (
+        "project_file",
+        "read_publication",
+        "read_decision",
+        "is_recorded_website_script_approval",
+        "_VERIFIED",
+        "_VerifiedScriptApproval",
+        "read_script_approval",
+        "ChatScriptApproval",
+        "require_script_approval",
+    ):
+        assert getattr(review_publication, attr) is getattr(script_approval, attr)
+    assert artifacts.exact_narrative_approval is acceptance_rules.exact_narrative_approval
+
+    short_sa = importlib.import_module("core.script_approval")
+    short_rp = importlib.import_module("core.review_publication")
+    assert short_sa.ChatScriptApproval is script_approval.ChatScriptApproval
+    assert short_sa._VerifiedScriptApproval is script_approval._VerifiedScriptApproval
+    assert short_sa._VERIFIED is script_approval._VERIFIED
+    assert short_rp.ChatScriptApproval is script_approval.ChatScriptApproval
+
+    # Negative edge cases on script_approval
+    with pytest.raises(TypeError, match="Website approval must come from a fresh review decision"):
+        script_approval._VerifiedScriptApproval(
+            tmp_path, "NAR-1", "02_编导/n.json", "v1", "a" * 64, "ref", object()
+        )
+    with pytest.raises(ValueError, match="must stay inside the project"):
+        script_approval.project_file(tmp_path, "../outside.json")
+    nar_file = tmp_path / "02_编导" / "narrative_v1.json"
+    nar_file.parent.mkdir(parents=True, exist_ok=True)
+    nar_file.write_text('{"revision": "v1"}\n', encoding="utf-8")
+    nar_sha = manifest_store.digest(nar_file)
+    with pytest.raises(ValueError, match="对话确认必须覆盖编导整稿"):
+        short_sa.ChatScriptApproval.from_message(
+            tmp_path, artifact_id="NAR-1", path="02_编导/narrative_v1.json",
+            revision="v1", sha256=nar_sha, message={"scope": "segment"},
+        )
+    with pytest.raises(ValueError, match="对话确认时间须含时区"):
+        short_sa.ChatScriptApproval.from_message(
+            tmp_path, artifact_id="NAR-1", path="02_编导/narrative_v1.json",
+            revision="v1", sha256=nar_sha,
+            message={"scope": "artifact", "quote": "通过", "at": "2026-11-27T10:00:00", "review_ref": "chat:1"},
+        )
+    chat_ok = short_sa.ChatScriptApproval.from_message(
+        tmp_path, artifact_id="NAR-1", path="02_编导/narrative_v1.json",
+        revision="v1", sha256=nar_sha,
+        message={"scope": "artifact", "quote": "通过", "at": "2026-11-27T10:00:00+08:00", "review_ref": "chat:1"},
+    )
+    script_approval.require_script_approval(
+        tmp_path,
+        {"artifact_id": "NAR-1", "logical_id": "narrative.package", "path_or_url": "02_编导/narrative_v1.json",
+         "revision": "v1", "checksum": nar_sha},
+        "chat:1",
+        None,
+        chat_approval=chat_ok,
+    )
+
+    # Verify manifest_store / artifacts image-confirmation & narrative approval hooks + edge cases
+    img_file = tmp_path / "04_资产" / "img.png"
+    img_file.parent.mkdir(parents=True, exist_ok=True)
+    img_file.write_bytes(b"png-bytes")
+    img_sha = manifest_store.digest(img_file)
+    manifest_store.verify_image_confirmation(img_file, {})  # Legacy receipt without hash stays no-op
+    with pytest.raises(ValueError, match="已确认图片内容已变化或缺失"):
+        manifest_store.verify_image_confirmation(img_file, {"image_sha256": "not-a-sha"})
+    hooked_digests: list[Path] = []
+    orig_digest = artifacts.digest
+    monkeypatch.setattr(artifacts, "digest", lambda p: (hooked_digests.append(Path(p)), orig_digest(p))[1])
+    artifacts.verify_image_confirmation(img_file, {"image_sha256": img_sha})
+    assert hooked_digests == [img_file]
+
+    with pytest.raises(ValueError, match="符合的条目为 0 条"):
+        acceptance_rules.current_narrative(tmp_path)
+
+    # Verify visual_handoff + production_handoff monkeypatch hooks & blocker edge cases
+    monkeypatch.setattr(visual_handoff, "load_kickoff", lambda _: {"creation": {"workflow": "creative"}})
+    storyboard = {
+        "schema_version": "5.0",
+        "project_id": "P1",
+        "scenes": [{"scene_id": "S01", "shots": [{"shot_id": "S01-001", "source_asset_requirement_ids": ["AST-1"]}]}],
+    }
+    monkeypatch.setattr(production_handoff, "_package", lambda *_: (None, None))
+    with pytest.raises(ValueError, match="缺当前已采用编导"):
+        production_handoff.require_handoff_visual_inputs(
+            tmp_path, storyboard, {"artifact_id": "DIR-1", "revision": "v1"}, ["S01-001"],
+            manifest={"artifacts": []}, state={"current_artifacts": []},
+        )
+    monkeypatch.setattr(
+        production_handoff,
+        "_package",
+        lambda *_: ({"artifact_id": "NAR-1"}, {"asset_requirements": [{"asset_id": "AST-1"}]}),
+    )
+    asset_calls: list[set[str]] = []
+    monkeypatch.setattr(
+        asset_refs,
+        "load_asset_list",
+        lambda root, narrative=None, choices=None, *, image_requests=None, file_digest=None: (
+            asset_calls.append(set(image_requests or ())),
+            {"items": [{"asset_id": "AST-1", "state": "needs_image", "image": {"status": "unconfirmed", "outputs": []}}]},
+        )[1],
+    )
+    with pytest.raises(ValueError, match="镜头必要资产未就绪"):
+        production_handoff.require_handoff_visual_inputs(
+            tmp_path, storyboard, {"artifact_id": "DIR-1", "revision": "v1"}, ["S01-001"],
+            manifest={"artifacts": []}, state={"current_artifacts": []},
+        )
+    assert asset_calls == [{"AST-1"}]
+    assert callable(visual_handoff.require_handoff_visual_inputs)
