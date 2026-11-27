@@ -15,9 +15,9 @@ description: 根据导演包或采用的复刻分段、原文对白和真实素�
 
 原创线统一采用 `video.prompt`（`schema_version: "2.0"`，免除手抄 `director_coverage` 切片锚点）与 `scripts/video_prompt_package.py` 分批写入，每轮只写 2–3 个生成段，避免单轮超长流式输出断连：
 
-1. **查看全局大纲与可用素材清单**（不灌入全片原文）：
+1. **查看全局大纲、产品必读小抄与可用素材清单**（首条命令顶部自动返回 `must_read` 必读方法与产品规范，先实读再动笔）：
    `PYTHONPATH=scripts .venv/bin/python scripts/video_prompt_package.py outline --project "<项目>"`
-2. **初始化 v2.0 提示词包**（绑定当前导演包与红帧模型能力取证 JSON）：
+2. **初始化 v2.0 提示词包**（绑定当前导演包与红帧模型能力取证 JSON；**超过 8 段的长片可接着跑 `plan-acts --project "<项目>" --max-segments-per-act 8` 生成锁死首尾接缝的 `06_视频/分幕接口卡.json`，同时派 2–3 个子代理并发跑 `put-segment`，CLI 自带文件锁并自动按镜号时序归位！**）：
    `PYTHONPATH=scripts .venv/bin/python scripts/video_prompt_package.py init --project "<项目>" --revision R07 --output 06_视频/R07_视频提示词.json --capability-evidence 06_视频/红帧Seedance25原生模型能力取证.json`
 3. **按段取源并逐段落盘**（写哪段调 `segment-source --shots S01-001,S01-002`，单段 JSON 只需填 `segment_id`、`title`、`source_shots`、`duration_seconds`、`materials`（传 `{"ref": "AST-CH-01", "role": "character"}` / `{"ref": "SUP-S10-MASK-R07"}` / `{"ref": "PROD:ACTION-01"}` 即可自动解析 `@图片k`/`@视频k`、路径、哈希、动作键、对白与连续性字段）和 `prompt`；注意导演包中 `required_visuals[].prompt_clause` 原句须单独占一行）：
    `PYTHONPATH=scripts .venv/bin/python scripts/video_prompt_package.py put-segment --project "<项目>" --package 06_视频/R07_视频提示词.json --input /tmp/seg01.json`

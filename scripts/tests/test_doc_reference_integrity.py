@@ -109,19 +109,7 @@ def test_link_text_names_match_target_files() -> None:
 
 
 def test_shared_contracts_registered_and_present() -> None:
-    # library_runtime 按名硬编码的 _shared 合同：清单里有、磁盘必须有且非空，
-    # 把 build_task_package 的运行时校验提前到测试时。
-    spec = importlib.util.spec_from_file_location(
-        "library_runtime", ROOT / "skills/asset-image-assistant/library_runtime.py"
-    )
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
     failures: list[str] = []
-    for ref in module.local_references("物品"):
-        dest = ROOT / ref
-        if not dest.is_file() or dest.stat().st_size == 0:
-            failures.append(f"local_references 登记的合同缺失或为空：{ref}")
     shared_root = ROOT / "skills" / "_shared"
     for md in sorted(shared_root.glob("*.md")):
         if md.stat().st_size == 0:

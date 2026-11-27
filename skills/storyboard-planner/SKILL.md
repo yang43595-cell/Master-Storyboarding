@@ -31,7 +31,7 @@ description: 承接已确认故事与对白，创作并自查完整的视听分�
 
 新一轮导演创作或实质重跑由全新专属生产 agent 执行（[干净上下文启动规则](../../docs/rules/execution.md#创作执行开始前干净上下文)），同轮逐场推进与局部返修可继续原执行者。纯错字、标点或排版按[局部维护边界](../_shared/knowledge-access.md#局部维护边界)处理。
 
-1. **核定本轮与上游。** 按[唯一准备入口](modules/shot-planning.md#本-skill-产出须命中的规范缺即停)完成 `prepare`、完整阅读、登记和 `ensure-prepared`；实读下文输入门禁列出的输入。来源或确认冲突时停止受影响设计。
+1. **核定本轮与上游。** 运行下文 `D outline` 获取 `must_read` 本关产品与拍法必读小抄并完整实读；核对下文输入门禁列出的输入。来源或确认冲突时停止受影响设计。
 2. **全片统筹。** 按[镜头规划](modules/shot-planning.md#从整场意图想出画面)先定全片各场作用、情绪走向、衔接和时长预算；有实质拍法岔路时按[实质创作的先后顺序](#实质创作的先后顺序)比较后选定，无岔路不凑双案。
 3. **按整场写。** 每次写完整的一场：整场走向加这一场全部镜头，用下文逐场落盘工具写入同一份 JSON。写法与字段见[镜头规划的字段写法](modules/shot-planning.md#导演包-50-字段写法)。
 4. **逐场自查。** 每场写完按[状态与节拍步骤](modules/shot-planning.md#把创作决定落实为可验证的状态与节拍)查表达和连续性，再跑局部来源自查；修当前候选后复查改动及直接影响。
@@ -58,11 +58,11 @@ D register --artifact-id DIR-<revision>           # 6. 全片严格校验通过�
 D self-check-template --artifact-id DIR-<revision> --authorization-id <授权ID> --agent-id <执行者> --output 00_项目管理/导演<revision>自查.json
 ```
 
-**超过 4 场的中长片默认用“总—分—总”分组并行（≤4 场短片单人顺写即可）：**
+**超过 6 场的中长片推荐用 `plan-acts`“锁接口多幕并行”（≤6 场短片单人逐场写即可）：**
 
-1. **总导演定盘子**：运行 `D outline` 与 `D init`，然后把全片分成 2–3 组写入 `D save-plan --plan <plan.json>`——**同一房间/强连续或首尾呼应的场次必须归在同一组**（如开场卧室 S01 与回卧室护理 S10/S11 同组，防左右跳轴与道具穿帮），每场写清预算秒数及头尾一句话交接棒（`entry_handoff` / `exit_handoff`）。
-2. **多路并行写场**：同时派 2–3 名分场执行者，每人只跑一条 `D group-brief --group-id Gx` 领取本组规则、交接棒和本组原文，各自用 `D put-scene`（大场配合 `append-shots`）写入同一份导演包（工具自带文件锁并自动按故事顺序归位）。
-3. **总导演统稿收口**：并行全部返回后，总导演跑 `D status`、核对跨组转场接缝（必要时微调切点）、运行 `D register`、填写自查骨架并执行 `accept-artifact`。
+1. **锁接口建盘子**：运行 `D outline`、`D init --header <director_rules.json>`，再运行 `D plan-acts --max-scenes-per-act 5` 自动生成锁死各幕首尾交接棒（`entry_handoff` / `exit_handoff`）与局部独立镜号规则（如第二幕从 `S06-001` 起编，互不抢号）的分组计划（也可手写 `save-plan` 精调）。
+2. **多路同时并行写场**：同时派 2–3 名分幕执行者，每人只跑一条 `D group-brief --group-id ACT-01`（或 `ACT-02`）领取本幕规则、首尾交接棒和本幕原文，各自用 `D put-scene`（>4 镜配合 `append-shots`）**并发写入同一份导演包**（CLI 自带文件锁自动防冲突并按段落顺序归位）。
+3. **统稿重排与验收**：并行全部返回后，运行 `D finalize-acts`（或直接 `D register`，内部自动核验跨幕接缝并将全片局部镜号重排为连续 `S01-001..Slast-NNN`），填写自查骨架并执行 `accept-artifact`。
 
 工具自动补齐：每镜的来源段落（默认取本场）、对白说话人和原文（只写 `dialogue_id`，一句跨镜时才写片段 `text`）、每镜对白编号。单场 JSON 写到 `00_项目管理/执行上下文/` 下的临时文件再 `put-scene`。校验报错会写明镜号、对白和差异，按提示改该场后重新 `put-scene`。全部写完 `register`，逐项真实填写自查骨架（`requirement` 是该项要求），最后运行骨架返回的 `accept-artifact` 命令。
 
@@ -84,7 +84,7 @@ D self-check-template --artifact-id DIR-<revision> --authorization-id <授权ID>
 
 - **统一入口：** 不送导演网页、不逐段等人审；全片严格校验和完整自查通过后，按[下游自查证据](../../docs/development/artifact-adoption.md#下游自查证据)绑定授权、准确 revision/hash 与自查结果，走[首次采用](../../docs/development/artifact-adoption.md#首次自主采用)或[自主修订](../../docs/development/artifact-adoption.md#自主修订)。缺授权、证据或采用入口时保持候选。
 - **未迁移的既有人工路径：** 同一候选 JSON 自查校验后送现有审核网页，首次采用、返修及继续授权沿原合同；入口未核实只暂停对应网页动作。
-- **阅读与历史兼容：** 新包省略 human_readable_path；阅读版由工具从 JSON 生成，Markdown 仅用户要求时同版导出，不反向覆盖 JSON（[JSON 交付与按需导出](../../docs/rules/artifacts.md#json-交付与按需导出)）。`storyboard-package-v1.schema.json`、`storyboard-package-v2.schema.json` 与 `storyboard-package-v3.schema.json` 仅用于旧项目的只读兼容；4.0 旧包照常读取和沿用，新稿一律 5.0。
+- **阅读稿按需导出：** 新包统一采用 `storyboard-package` 5.0 JSON 并省略 human_readable_path；阅读版由工具从 JSON 生成，Markdown 仅用户要求时同版导出，不反向覆盖 JSON（[JSON 交付与按需导出](../../docs/rules/artifacts.md#json-交付与按需导出)）。
 
 ## 硬禁区
 

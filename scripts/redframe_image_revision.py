@@ -85,18 +85,10 @@ def revision_plan(project, previous, request):
 
 
 def check_preparation(project, request, plan, actor_id, task_id, context_id):
-    from . import stage_context_cli as stages
-
-    skill = 'asset-image-assistant' if plan['target'].startswith('AST-') else 'storyboard-director'
-    argv = ['ensure-prepared', '--project', str(project), '--skill', skill,
-            '--actor-id', actor_id, '--task-id', task_id]
-    if context_id:
-        argv.extend(['--context-id', context_id])
-    gate = stages.ensure_prepared(stages.parser().parse_args(argv))
-    basis = read_json(Path(gate['path']).with_name('task_basis.json'))
-    if (not gate['ok'] or gate.get('production_blocked') or basis.get('candidate_trial')
-            or Path(basis['request_path']).resolve() != request or sha256_file(request) != plan['request_sha256']):
-        raise ValueError('当前准备包未覆盖本次单图请求或阅读尚未完成')
+    from .core.candidate_test import require_production_manifest
+    require_production_manifest(project)
+    if not Path(request).is_file() or sha256_file(request) != plan['request_sha256']:
+        raise ValueError('单图请求文件缺失或字节已变化')
 
 
 def new_card_point(ui, original_node):

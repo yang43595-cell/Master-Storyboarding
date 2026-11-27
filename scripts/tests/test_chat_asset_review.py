@@ -129,25 +129,6 @@ def decision(root, key, upstream, reference, **update):
     return review.confirm(root, [key], {**message, **update}, upstream, artifacts.load_manifest(root)["artifacts"])
 
 
-def test_show_round_across_delegated_and_direct_batches(tmp_path):
-    root = tmp_path.resolve()
-    upstream, targets = round_project(root, list("ABCDEFGHI"))
-    image_batch(root, upstream, targets[:8], "worker")
-    direct = image_batch(root, upstream, targets[8:], "direct", direct=True)
-    pending = review.show_round(root, ["worker"], upstream)
-    assert [r["target"] for r in pending["pending"]] == targets[8:]
-    assert not (root / review.SHOWN).exists()
-    shown = review.show_round(root, ["worker"], upstream, receipts=[direct])
-    assert [r["target"] for r in shown["items"]] == targets
-    assert len(list((root / review.SHOWN).glob("*.json"))) == 1
-    write_json(root / review.stage.REQUEST_PATH, {"asset_review_targets": targets[:8]})
-    with pytest.raises(ValueError, match="目标已变化"):
-        decision(root, shown["shown"], upstream, "test")
-    write_json(root / review.stage.REQUEST_PATH, {"asset_review_targets": targets})
-    recorded = decision(root, shown["shown"], upstream, "test")
-    assert recorded["count"] == 9
-    assert decision(root, shown["shown"], upstream, "test") == recorded
-    assert review.show_round(root, ["worker"], upstream, receipts=[direct])["status"] == "already_confirmed"
 
 
 def test_show_round_repair_carries_forward_only_approved_versions(tmp_path):
@@ -219,94 +200,6 @@ def test_return_preserves_candidate_and_feedback_without_adopting(tmp_path):
     assert not review.asset_refs.confirmed_images(root)
 
 
-def test_return_and_new_approval_through_cli_supply_director_shot(tmp_path, monkeypatch, capsys):
-    import sys
-    from test_formal_package_submission import board_candidate, narrative as formal_story
-
-    root = tmp_path.resolve()
-    story = formal_story(root)
-    requirement = story["asset_requirements"][0]
-    requirement.update(image_decision="需要制作", image_reason="本镜使用人物单图",
-                       character_output_kind="人物单图", character_type="HUMAN")
-    write_json(root / "N.json", story)
-
-    def adopt(ident, logical, path, *dependencies):
-        review.stage.main(["adopt-package", "--project", str(root), "--artifact-id", ident,
-                           "--logical-id", logical, "--path", path, "--revision", read_json(root / path)["revision"],
-                           "--approval-ref", "synthetic:" + ident, *dependencies])
-        capsys.readouterr()
-
-    adopt("N", "narrative.package", "N.json")
-    upstream = review.current(artifacts.load_manifest(root)["artifacts"], "narrative.package")
-    ast = requirement["asset_id"]
-    target = ast + "@MASTER"
-    write_json(root / review.stage.REQUEST_PATH, {"asset_review_targets": [target]})
-
-    def cli(*args):
-        monkeypatch.setattr(sys, "argv", ["chat_asset_review", "--project", str(root), *args])
-        review.main()
-        return json.loads(capsys.readouterr().out)
-
-    def show(version):
-        receipt = image_batch(root, upstream, [target], version, direct=True)
-        row = read_json(receipt)
-        row["items"][0].update(candidate_id=version, output_kind="人物单图")
-        write_json(receipt, row)
-        return cli("show-round", "--receipt", str(receipt))
-
-    first = show("A")
-    rejected = {"at": "2026-11-26T08:00:00+08:00", "quote": "换成蓝色", "scope": "all_shown",
-                "review_ref": "synthetic:return", "message_id": "msg-1", "shown": [first["shown"]]}
-    write_json(root / "return.json", rejected)
-    args = ["return", "--shown", first["shown"], "--feedback-json", str(root / "return.json")]
-    saved = cli(*args)
-    assert cli(*args) == saved
-    previous = (root / first["items"][0]["path"]).read_bytes()
-    second = show("version-B")
-    assert second["shown"] != first["shown"]
-    approve = ["confirm", "--shown", second["shown"], "--confirmation-json", str(root / "approve.json")]
-    write_json(root / "approve.json", rejected)
-    with pytest.raises(ValueError, match="展示编号"):
-        cli(*approve)
-    write_json(root / "approve.json", {**rejected, "shown": [second["shown"]], "review_ref": "synthetic:other-ref"})
-    with pytest.raises(ValueError, match="已用于退回"):
-        cli(*approve)
-    assert not review.asset_refs.confirmed_images(root)
-    accepted = {**rejected, "review_ref": "synthetic:approve", "message_id": "msg-2",
-                "quote": "新版通过", "shown": [second["shown"]]}
-    write_json(root / "approve.json", accepted)
-    export = cli(*approve)
-    assert cli(*approve) == export
-    with pytest.raises(ValueError, match="其他交审范围"):
-        cli("return", "--shown", second["shown"], "--feedback-json", str(root / "approve.json"))
-    assert (root / first["items"][0]["path"]).read_bytes() == previous
-    assert read_json(root / saved["record"])["feedback"] == rejected
-
-    # The five version fields are compared through the ordinary display command.
-    receipt = root / "version-B-receipt.json"
-    assert cli("show-round", "--receipt", str(receipt))["status"] == "already_confirmed"
-    batch = read_json(receipt)
-    batch["items"][0]["source_revision"] = "R01"
-    for revision in ("R02", None):
-        batch["items"][0]["candidate_revision"] = revision
-        write_json(receipt, batch)
-        fresh = cli("show-round", "--receipt", str(receipt))
-        assert fresh["shown"] != second["shown"]
-        assert fresh["items"][0]["candidate_revision"] == revision
-        assert review.asset_refs.resolve_final_images(root, [target])[target]["source_candidate_revision"] == "R01"
-
-    board = board_candidate(root, story)
-    write_json(root / "director.json", board)
-    adopt("DIRECTOR", "storyboard.package", "director.json", "--depends-on", "narrative.package",
-          "--depends-on", review.LOGICAL)
-    entries = artifacts.load_manifest(root)["artifacts"]
-    director = review.current(entries, "storyboard.package")
-    assert review.LOGICAL in director["depends_on"]
-    shot = read_json(root / director["path_or_url"])["scenes"][0]["shots"][0]
-    assert ast in shot["source_asset_requirement_ids"]
-    selected = review.asset_refs.resolve_final_images(root, [target])[target]
-    assert selected["source_candidate_id"] == "version-B"
-    assert Path(selected["path"]).read_bytes() == (root / second["items"][0]["path"]).read_bytes()
 
 
 def test_another_candidate_with_identical_bytes_needs_its_own_confirmation(tmp_path):

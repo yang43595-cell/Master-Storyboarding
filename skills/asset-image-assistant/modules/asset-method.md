@@ -1,6 +1,6 @@
 # 资产方法
 
-完整流程见 [Skill 六步 SOP](../SKILL.md#本轮执行-sop)。本文件只补充方法适用条件与成图自查；Web 两种模式按 [Web 受限读取合同](web-input-contract.md) 准备资料。
+完整流程见 [Skill 六步 SOP](../SKILL.md#本轮执行-sop)。本文件只补充方法适用条件与成图自查；Web 两种模式按 `Web 受限读取合同` 准备资料。
 
 ## 本 Skill 产出须命中的规范（缺即停）
 

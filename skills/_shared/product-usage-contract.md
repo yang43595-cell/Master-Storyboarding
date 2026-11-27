@@ -9,11 +9,10 @@
 - 有角色使用产品时，按实际产品、动作、作用部位、已确认剧情及现有参考判断是否需要独立真实使用效果图，可判无需独立图。effects/reference_need 是带来源依据的候选需求判断，不是用户已提出或批准的图片任务；面膜覆盖与质地只适用于本来明确的面膜需求，不套到手机、鞋或其他产品。不得把幻想画面、用后功效想象或无来源效果当成参考事实。
 - 需要核对的效果图需求标为 awaiting_reference_review，无需独立图标为 no_independent_reference；generation_route/image_path、工具及生图任务均留空。旧无 reference_need 的记录保守列为待核对，不自动继承面膜要求。用户明确选择范围和实现路径后才准备、复用实际身份与实物参考，另行确认图片；候选判断、图需求确认、生图授权与图片确认彼此分开。具体幻想剧情画面仍属于分镜阶段。
 
-## 产品动作匹配入口
+## 产品动作参考绑定入口
 
-1. 从工作台下载匹配输入，或运行 `python scripts/visual_asset_library.py product-usage --project "<项目目录>"`。已绑定工作台的项目也可用 `--project-id "<工作台项目 ID>"`。沿用该工作台的资产库配置。实际使用的输入包含当前来源修订、剧情和参考资料、`signature` 及 `result_schema`。
-2. 当前执行者按 `result_schema` 填写 `references` 和 `effects`。动作以 `product_ast_id`、`paragraph_ids` 和逐字原文 `evidence` 定位。命中时沿用当前参考的 `action_key`，缺参考时登记实际动作并保留空引用。效果图需求只作为带依据的候选。
-3. 保留输入中的 `signature`，把 `{"signature":"<输入中的值>","result":{"references":[],"effects":[]}}` 中的数组替换为实际结果，提交到工作台或在同一命令追加 `--result-file "<结果 JSON>"`。程序按当前剧情、素材和结果校验后写入既有对接记录。输入已变动时，重新取本版资料再核对。可选本地 Codex CLI 使用工作台对应入口，或在同一命令显式追加 `--codex-cli`，走同一结果校验和交接。
+1. 项目开工在 `kickoff` 选择产品参考包后，各阶段 CLI（`narrative_package.py`、`director_package.py`、`visual_stage_cli.py`、`video_prompt_package.py`）会自动读取 `product_reference_pack.references` 并在 `must_read.product_docs` 中返回产品简报与专属规范。
+2. 导演在关键使用镜头的 `required_visuals[].action_reference` 中绑定包内动作参考 ID，视频阶段在 `materials` 中以 `{"ref": "PROD:<ID>", "role": "action"}` 直接自动解析路径与哈希。
 
 ## 广告中的产品展示与使用
 

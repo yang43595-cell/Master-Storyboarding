@@ -45,17 +45,7 @@ def _validator(schema_name: str):
 
 
 def schema_errors(value: Any, schema_name: str) -> list[str]:
-    legacy = {
-        ("storyboard-package.schema.json", "4.0"): "storyboard-package-v4.schema.json",
-        ("storyboard-package.schema.json", "3.0"): "storyboard-package-v3.schema.json",
-        ("narrative-package.schema.json", "1.0"): "narrative-package-v1.schema.json",
-        ("storyboard-package.schema.json", "2.0"): "storyboard-package-v2.schema.json",
-        ("storyboard-package.schema.json", "1.0"): "storyboard-package-v1.schema.json",
-        ("visual-asset-manifest.schema.json", "1.0"): "visual-asset-manifest-v1.schema.json",
-        ("visual-asset-manifest.schema.json", "1.1"): "visual-asset-manifest-v1.schema.json",
-    }
-    version = str(value.get("schema_version", "")) if isinstance(value, dict) else ""
-    validator = _validator(legacy.get((schema_name, version), schema_name))
+    validator = _validator(schema_name)
     errors = sorted(
         validator.iter_errors(value),
         key=lambda item: (tuple(str(part) for part in item.absolute_path), item.message),

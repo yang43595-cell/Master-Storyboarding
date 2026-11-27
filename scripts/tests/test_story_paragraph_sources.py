@@ -135,67 +135,6 @@ def test_invalid_sources_fail(tmp_path, mutation):
     with pytest.raises(ValueError):validate_story_sources(n,board,project_root=tmp_path)
 
 
-def test_legacy_schema_is_readable_without_mutating(tmp_path):
-    from test_visual_asset_projects import fixture, pmod
-    _,project,_=fixture(tmp_path)
-    n=pmod.read(Path(project['path'])/'narrative.json');before=copy.deepcopy(n)
-    assert not schema_errors(n,'narrative-package.schema.json')
-    assert prompt_context(n,[n['asset_requirements'][0]['asset_id']])['events']
-    assert n==before
-    with pytest.raises(ValueError, match='旧事件包'):validate_story_sources(n)
-
-
-def test_new_asset_receiver_reads_paragraph_sources(tmp_path):
-    from test_visual_asset_projects import fixture, pmod, update_narrative_checksum
-    _,project,_=fixture(tmp_path);root=Path(project['path'])
-    n=pmod.read(root/'narrative.json')
-    n['schema_version']='2.0';n.pop('events')
-    n['story_paragraphs']=[{'paragraph_id':'STP-01','text':'房间里人物活动。'}]
-    n['human_readable_path']='script.md'
-    n['dialogues']=[]
-    for a in n['asset_requirements']:
-        a.pop('source_event_ids');a['source_paragraph_ids']=['STP-01']
-    (root/'script.md').write_text('## 故事正文\n### STP-01\n房间里人物活动。\n',encoding='utf-8')
-    pmod.write(root/'narrative.json',n)
-    update_narrative_checksum(root)
-    # Exercise actual receiver; fixture has user confirmation and matching manifest.
-    received=pmod.source_project(str(root))[2]
-    assert received['story_paragraphs']==n['story_paragraphs']
-
-
-def test_new_export_and_source_revision_invalidate_jobs():
-    from test_visual_asset_projects import ProjectTests, pmod, plan_result, m, update_narrative_checksum
-    case=ProjectTests();case.setUp()
-    try:
-        root=Path(case.p['path']);n=pmod.read(root/'narrative.json')
-        n['schema_version']='2.0';n.pop('events');n['dialogues']=[]
-        n['human_readable_path']='script.md'
-        n['story_paragraphs']=[{'paragraph_id':'STP-01','text':'人物在房间拿起杯子。'}]
-        for item in n['asset_requirements']:
-            item.pop('source_event_ids');item['source_paragraph_ids']=['STP-01']
-        script=root/'script.md';script.write_text('## 故事正文\n### STP-01\n人物在房间拿起杯子。\n',encoding='utf-8')
-        pmod.write(root/'narrative.json',n)
-        update_narrative_checksum(root)
-        service=case.lib.projects;service.sync(case.p['id'])
-        p=service.get(case.p['id'])
-        service.apply_plan(p,p['rows'],plan_result(),{'version':m.asset_skill.profile()['version'],'mode':'project'})
-        for row in service.detail(p['id'])['rows']:
-            for i in range(len(row['job']['steps'])):case.select_confirm(row['job'],i)
-        case.backup()
-        result=service.export({'project_id':p['id'],'confirm':True})
-        out=pmod.read(result['manifest'])
-        assert out['schema_version']=='2.0'
-        assert all(a['paragraph_scope']==['STP-01'] and 'event_scope' not in a for a in out['assets'])
-        assert not schema_errors(out,'visual-asset-manifest.schema.json')
-        n['story_paragraphs'][0]['text']='人物在房间放下杯子。'
-        script.write_text('## 故事正文\n### STP-01\n人物在房间放下杯子。\n',encoding='utf-8')
-        pmod.write(root/'narrative.json',n)
-        update_narrative_checksum(root)
-        detail=service.sync(p['id'])
-        assert all(row.get('job') is None for row in detail['rows'])
-    finally:case.tearDown()
-
-
 def test_story_body_uses_shared_relocated_root(tmp_path, monkeypatch):
     n = narrative(tmp_path)
     folder = tmp_path / '02_编导'

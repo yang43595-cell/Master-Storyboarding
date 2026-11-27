@@ -12,9 +12,11 @@ from typing import Any
 
 from copy import deepcopy
 from core import revision_control as rc
+from core.io import project_lock
 from core.product_reference_pack import resolve_product_pack
 from core.project_kickoff import load_kickoff
 from core.schema_contracts import require_schema
+from core.stage_guidance import build_stage_guidance
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -40,63 +42,76 @@ def cmd_init(args: argparse.Namespace) -> int:
     out_rel = args.output or f"02_编导/叙事包/{rev}_叙事包.json"
     raw_cs = inp.get("change_summary") or getattr(args, "change_summary", None)
     cs_list = list(raw_cs) if isinstance(raw_cs, list) else ([str(raw_cs)] if raw_cs else [f"{rev} 编导叙事包"])
+    raw_lf = deepcopy(inp.get("locked_facts") if "locked_facts" in inp else (base.get("locked_facts") or []))
+    norm_lf = [
+        {"fact_id": f"FACT-{i:02d}", "statement": str(f), "source_ref": "project_request.json#kickoff"}
+        if isinstance(f, str) else f
+        for i, f in enumerate(raw_lf, 1)
+    ]
     pkg: dict[str, Any] = {
         "schema_version": "2.0",
         "project_id": str(inp.get("project_id") or base.get("project_id") or f"MSB-{project.name.upper()[:20]}"),
         "revision": rev,
         "status": "candidate",
         "objective": str(inp.get("objective") or args.objective or base.get("objective") or "编写完整连贯的短剧叙事包"),
-        "locked_facts": deepcopy(inp.get("locked_facts") if "locked_facts" in inp else (base.get("locked_facts") or [])),
+        "locked_facts": norm_lf,
         "story_paragraphs": deepcopy(base.get("story_paragraphs") or []),
         "dialogues": deepcopy(base.get("dialogues") or []),
         "asset_requirements": deepcopy(base.get("asset_requirements") or []),
         "change_summary": cs_list,
         "open_questions": deepcopy(inp.get("open_questions") if "open_questions" in inp else (base.get("open_questions") or [])),
     }
-    _save_json(project / out_rel, pkg)
-    print(json.dumps({"initialized": out_rel, "revision": rev, "cloned_from": getattr(args, "from_package", None)}, ensure_ascii=False))
+    with project_lock(project):
+        _save_json(project / out_rel, pkg)
+    print(json.dumps({
+        "must_read": build_stage_guidance(project, "creative-director"),
+        "initialized": out_rel,
+        "revision": rev,
+        "cloned_from": getattr(args, "from_package", None),
+    }, ensure_ascii=False, indent=2))
     return 0
 
 
 def cmd_put_paragraph(args: argparse.Namespace) -> int:
     project = Path(args.project).resolve()
     pkg_path = project / args.package
-    pkg = _load_json(pkg_path)
     inp = _load_json(Path(args.input).resolve())
     if isinstance(inp, dict) and isinstance(inp.get("story_paragraphs"), list):
         items = inp["story_paragraphs"]
     else:
         items = inp if isinstance(inp, list) else [inp]
-    pars = list(pkg.get("story_paragraphs") or [])
-    dlgs = list(pkg.get("dialogues") or [])
-    for item in items:
-        pid = str(item["paragraph_id"])
-        p_obj = {"paragraph_id": pid, "text": str(item["text"])}
-        idx = next((i for i, p in enumerate(pars) if p.get("paragraph_id") == pid), None)
-        if idx is None:
-            pars.append(p_obj)
-        else:
-            pars[idx] = p_obj
-        for d in item.get("dialogues") or []:
-            did = str(d["dialogue_id"])
-            if f"（{did}）" not in p_obj["text"] and f"({did})" not in p_obj["text"]:
-                raise SystemExit(f"段落 {pid} 正文中缺少对白锚点标记（{did}）")
-            d_obj = {
-                "dialogue_id": did,
-                "speaker_id": str(d.get("speaker_id") or d["speaker"]),
-                "text": str(d["text"]),
-                "source_paragraph_id": pid,
-                "status": str(d.get("status") or "confirmed"),
-                "source_ref": str(d.get("source_ref") or f"{pkg['revision']} 原创台词"),
-            }
-            d_idx = next((i for i, x in enumerate(dlgs) if x.get("dialogue_id") == did), None)
-            if d_idx is None:
-                dlgs.append(d_obj)
+    with project_lock(project):
+        pkg = _load_json(pkg_path)
+        pars = list(pkg.get("story_paragraphs") or [])
+        dlgs = list(pkg.get("dialogues") or [])
+        for item in items:
+            pid = str(item["paragraph_id"])
+            p_obj = {"paragraph_id": pid, "text": str(item["text"])}
+            idx = next((i for i, p in enumerate(pars) if p.get("paragraph_id") == pid), None)
+            if idx is None:
+                pars.append(p_obj)
             else:
-                dlgs[d_idx] = d_obj
-    pkg["story_paragraphs"] = sorted(pars, key=lambda x: x["paragraph_id"])
-    pkg["dialogues"] = sorted(dlgs, key=lambda x: x["dialogue_id"])
-    _save_json(pkg_path, pkg)
+                pars[idx] = p_obj
+            for d in item.get("dialogues") or []:
+                did = str(d["dialogue_id"])
+                if f"（{did}）" not in p_obj["text"] and f"({did})" not in p_obj["text"]:
+                    raise SystemExit(f"段落 {pid} 正文中缺少对白锚点标记（{did}）")
+                d_obj = {
+                    "dialogue_id": did,
+                    "speaker_id": str(d.get("speaker_id") or d["speaker"]),
+                    "text": str(d["text"]),
+                    "source_paragraph_id": pid,
+                    "status": str(d.get("status") or "confirmed"),
+                    "source_ref": str(d.get("source_ref") or f"{pkg['revision']} 原创台词"),
+                }
+                d_idx = next((i for i, x in enumerate(dlgs) if x.get("dialogue_id") == did), None)
+                if d_idx is None:
+                    dlgs.append(d_obj)
+                else:
+                    dlgs[d_idx] = d_obj
+        pkg["story_paragraphs"] = sorted(pars, key=lambda x: x["paragraph_id"])
+        pkg["dialogues"] = sorted(dlgs, key=lambda x: x["dialogue_id"])
+        _save_json(pkg_path, pkg)
     print(json.dumps({"paragraphs": [p["paragraph_id"] for p in pkg["story_paragraphs"]], "dialogues_count": len(pkg["dialogues"])}, ensure_ascii=False))
     return 0
 
@@ -122,7 +137,8 @@ def cmd_put_assets(args: argparse.Namespace) -> int:
     built = list(pkg.get("asset_requirements") or [])
     for a in items:
         aid = str(a["asset_id"])
-        cat = str(a["category"])
+        raw_cat = str(a["category"]).upper()
+        cat = "LOCATION" if raw_cat in {"ENVIRONMENT", "SCENE"} else raw_cat
         entry: dict[str, Any] = {
             "asset_id": aid,
             "category": cat,
@@ -147,7 +163,15 @@ def cmd_put_assets(args: argparse.Namespace) -> int:
                 kind = str(a.get("character_output_kind") or ("人物1x4" if a.get("board_output_id") else "人物单图"))
                 entry["character_output_kind"] = kind
                 if a.get("wardrobe_states"):
-                    entry["wardrobe_states"] = list(a["wardrobe_states"])
+                    entry["wardrobe_states"] = [
+                        {
+                            "name": str(w.get("name") or f"{a['name']}造型"),
+                            "evidence": str(w.get("evidence") or f"{aid} 母版造型"),
+                            **({"output_id": str(w["output_id"])} if w.get("output_id") else {}),
+                        }
+                        if isinstance(w, dict) else {"name": str(w), "evidence": f"{aid} 母版造型"}
+                        for w in a["wardrobe_states"]
+                    ]
                 else:
                     ws: dict[str, Any] = {
                         "name": str(a.get("wardrobe_name") or f"{a['name']}默认造型"),

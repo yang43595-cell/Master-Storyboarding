@@ -15,6 +15,7 @@ from typing import Any
 from core import stage_context as stage
 from core.artifacts import load_manifest
 from core.project_kickoff import REQUEST_PATH
+from core.stage_guidance import build_stage_guidance
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -129,7 +130,28 @@ def cmd_stage_and_show(args: argparse.Namespace) -> int:
     res = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True)
     if res.returncode != 0:
         raise SystemExit(f"show-round 失败：{res.stderr.strip() or res.stdout.strip()}")
-    print(res.stdout.strip())
+    parsed = json.loads(res.stdout)
+    parsed["must_read"] = build_stage_guidance(project, "asset-image-assistant")
+    print(json.dumps(parsed, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_outline(args: argparse.Namespace) -> int:
+    project = Path(args.project).resolve()
+    manifest = load_manifest(project)
+    nar_entry = next((e for e in manifest.get("artifacts", []) if e.get("logical_id") == "narrative.package" and e.get("status") == "current"), None)
+    assets = []
+    if nar_entry:
+        nar = _load_json(project / nar_entry["path_or_url"])
+        assets = [
+            {"asset_id": a["asset_id"], "category": a.get("category"), "name": a.get("name"), "image_decision": a.get("image_decision")}
+            for a in nar.get("asset_requirements") or []
+        ]
+    print(json.dumps({
+        "must_read": build_stage_guidance(project, "asset-image-assistant"),
+        "narrative_id": nar_entry["artifact_id"] if nar_entry else None,
+        "asset_requirements": assets,
+    }, ensure_ascii=False, indent=2))
     return 0
 
 
@@ -211,6 +233,10 @@ def cmd_rebind_unchanged(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
+
+    p0 = sub.add_parser("outline", help="输出本关产品/规范必读小抄与待制作资产清单")
+    p0.add_argument("--project", required=True)
+    p0.set_defaults(func=cmd_outline)
 
     p1 = sub.add_parser("stage-and-show", help="一键复制候选图、切片直做批次回执并运行 show-round")
     p1.add_argument("--project", required=True)

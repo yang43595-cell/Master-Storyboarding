@@ -478,15 +478,6 @@ def test_selected_file_follows_manifest_dependencies(tmp_path):
     assert not discover_dependencies(tmp_path, payload={'artifact_ids': ['N']})['ok']
 
 
-def test_selected_candidate_dependencies_stay_unreviewed(tmp_path):
-    from test_recovery_delivery import chain, snapshot
-    project = chain(tmp_path/'project')
-    before = snapshot(project)
-    result = discover_dependencies(project, ['B.json'])
-    assert result['ok'] and result['production_blocked'] and result['review_status'] == 'unreviewed'
-    assert snapshot(project) == before
-    (project/'N.json').unlink()
-    assert not discover_dependencies(project, ['B.json'])['ok']
 
 
 def test_ordinary_web_provenance_is_not_a_local_file_requirement(tmp_path):

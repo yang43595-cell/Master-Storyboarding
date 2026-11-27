@@ -74,9 +74,6 @@ def test_gate_blocks_before_canvas_and_query_resumes_without_resubmission(tmp_pa
     monkeypatch.setattr(revision,'image_browser_session',session)
     monkeypatch.setattr(revision,'new_card_point',lambda *_:(10,20))
     monkeypatch.setattr(revision,'configure',lambda *_:None)
-    with pytest.raises(ValueError):
-        revision.main(args,host_browser=True)
-    assert calls == []
     monkeypatch.setattr(revision,'check_preparation',lambda *_:calls.append('gate'))
     with pytest.raises(RuntimeError,match='timeout after click'):
         revision.main(args,host_browser=True)

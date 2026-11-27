@@ -484,13 +484,7 @@ def _write_handoff_card(args, project, target_skill, current_stage, inputs, *, t
     kickoff = None if testing else context.load_kickoff(project)
     task_context = context._CONTEXT_ID.get()
     if target_skill == "creative-director" and not testing:
-        python = context.ROOT / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-        command = [str(python), str(context.ROOT / "scripts/stage_context_cli.py"), "prepare",
-                   "--project", str(project), "--skill", target_skill]
-        if task_context:
-            command.extend(["--context-id", task_context])
-        lines.append("- 编导开工命令参数：" + json.dumps(command, ensure_ascii=False) +
-                     "。补齐本轮 objective、request-json、actor-id 和 task-id 后执行。")
+        lines.append("- 编导开工：直接运行 `.venv/bin/python scripts/narrative_package.py init --project <业务项目> --revision R01 --title <片名>` 查看必读小抄并逐段落盘。")
     if local_recreation_prompt:
         if routed.get("pending_asset_bindings"):
             lines.append("- 待补资产退回资产阶段。本地提示词按计划用途先写，挂图并核对后交画布。")

@@ -433,13 +433,9 @@ def video_project(root, *, current_prompt=True):
         shot_id="S02-010",
         source_dialogue_ids=[],
         purpose="接拒绝后的对方反应",
-        take={"start": "物品已在桌面，两人仍在左右原位",
-              "process": "对方先看桌上的物品，再抬眼看向主角",
-              "end": "双方对视，物品留在桌面"},
-        cut={"entry": "接拒绝后的半拍停顿",
-             "exit": "两人对视时切出",
-             "trigger": "对方抬眼与主角对视",
-             "information_handoff": "保留双方重新谈判前的停顿"},
+        action="对方先看桌上的物品，再抬眼看向主角。",
+        cut={"exit": "两人对视时切出",
+             "handoff": "保留双方重新谈判前的停顿"},
         rhythm="对方抬眼后停半拍",
         audio={"dialogue": [], "sfx": []},
     )
@@ -463,17 +459,17 @@ def video_project(root, *, current_prompt=True):
                 "prompt": (
                     "眼高固定中近景，主角偏左，焦点在她的眼睛。左侧窗光照到桌边。"
                     "主角拿着物品看向对方，说：“不。”随后把物品放在桌面，发出轻响，手随即松开。"
-                    "拒绝后停半拍，等主角目光稳定后切出。"
+                    "拒绝后停半拍，等物品落稳桌面、主角目光稳定后切出。"
                 ),
                 "director_coverage": [{
                     "shot_id": "S01-010",
-                    "action": {"field": "take.process", "quote": "说完拒绝，把物品放在桌面",
+                    "action": {"field": "action", "quote": "坚定说出拒绝后将物品轻放在桌面",
                                "prompt_quote": "随后把物品放在桌面"},
                     "reaction": None,
                     "movement": {"field": "camera.movement", "quote": "固定",
                                  "prompt_quote": "眼高固定中近景"},
-                    "cut": {"field": "cut.exit", "quote": "主角目光稳定后切出",
-                            "prompt_quote": "等主角目光稳定后切出"},
+                    "cut": {"field": "cut.exit", "quote": "物品落稳桌面、主角目光稳定后切出",
+                            "prompt_quote": "等物品落稳桌面、主角目光稳定后切出"},
                 }],
             },
             {
@@ -484,9 +480,9 @@ def video_project(root, *, current_prompt=True):
                 ),
                 "director_coverage": [{
                     "shot_id": "S02-010",
-                    "action": {"field": "take.process", "quote": "对方先看桌上的物品",
+                    "action": {"field": "action", "quote": "对方先看桌上的物品",
                                "prompt_quote": "对方先看桌上的物品"},
-                    "reaction": {"field": "take.process", "quote": "再抬眼看向主角",
+                    "reaction": {"field": "action", "quote": "再抬眼看向主角",
                                  "prompt_quote": "再抬眼看向主角"},
                     "movement": {"field": "camera.movement", "quote": "固定",
                                  "prompt_quote": "眼高固定中近景"},

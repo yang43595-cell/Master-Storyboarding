@@ -215,8 +215,7 @@ def _publication_candidate(project, args, source):
             supplied = _path(project, args.image) if args.image else image
         if supplied != image:
             raise ValueError("送审图片路径不属于该候选")
-        from visual_asset_backup import same_file
-        if not original.is_file() or not image.is_file() or not same_file(original, image):
+        if not original.is_file() or not image.is_file() or hashlib.sha256(original.read_bytes()).hexdigest() != hashlib.sha256(image.read_bytes()).hexdigest():
             raise ValueError("制作项的项目副本与候选原图不符")
     if not isinstance(revision, str) or not revision.strip() or not checksum:
         raise ValueError("候选缺少修订或图片依据")

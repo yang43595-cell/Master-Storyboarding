@@ -13,9 +13,11 @@ from typing import Any
 from core.agent_acceptance import acceptance_binding
 from core.artifacts import load_manifest, register_workspace_artifact
 from core.asset_refs import resolve_final_images
+from core.io import project_lock
 from core.production_handoff import _asset_readiness, load_kickoff
 from core.product_reference_pack import resolve_product_pack
 from core.schema_contracts import validate_visual_supplement_request
+from core.stage_guidance import build_stage_guidance
 
 
 def _sha256(path: Path) -> str:
@@ -89,6 +91,7 @@ def cmd_outline(args: argparse.Namespace) -> int:
             ],
         })
     print(json.dumps({
+        "must_read": build_stage_guidance(ctx["project"], "storyboard-director"),
         "storyboard": ctx["dir_entry"]["artifact_id"],
         "storyboard_sha256": ctx["dir_sha256"],
         "waiting_assets": ctx["waiting_assets"],

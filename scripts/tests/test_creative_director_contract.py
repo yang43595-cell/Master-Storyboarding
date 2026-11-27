@@ -124,18 +124,6 @@ class CreativeDirectorContractTests(unittest.TestCase):
         self.assertTrue(referenced_entities.issubset(character_mappings))
         self.assertEqual(package["dialogues"][0]["text"], "爱不是牺牲。")
 
-        try:
-            import jsonschema
-        except ImportError:
-            return
-        schema = json.loads((ROOT / "schemas/narrative-package-v1.schema.json").read_text(encoding="utf-8"))
-        jsonschema.Draft202012Validator.check_schema(schema)
-        jsonschema.validate(package, schema)
-        incomplete_character_package = json.loads(json.dumps(package))
-        del incomplete_character_package["asset_requirements"][0]["entity_id"]
-        with self.assertRaises(jsonschema.ValidationError):
-            jsonschema.validate(incomplete_character_package, schema)
-
     def test_pressure_suite_covers_locked_dialogue_and_boundary_attacks(self) -> None:
         text = (SKILL_DIR / "tests" / "cinematic-pressure-tests.md").read_text(encoding="utf-8")
         for marker in ("对白原样提取", "产品参考不足", "用户同时要求不同景别", "表外资产诱导", "JSON 原文保全与按需导出", "普通候选要求哈希"):

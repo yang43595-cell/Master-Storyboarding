@@ -316,50 +316,10 @@ def preview_scope(frozen: dict, project: Path, *, json_projections=None, context
             # Keep existing exact revision/dependency checks for ordinary candidate
             # sources. Trial receipts have their own frozen source-byte checks.
             if item.get('type') == 'visual-asset-trial':
-                try:
-                    from ..asset_generation_trial import root_path
-                except ImportError:
-                    from asset_generation_trial import root_path
-                root_path(root)
+                raise ValueError('visual-asset-trial 已归档移除')
             else:
                 candidate_test.resolve_inputs(root, [item['artifact_id']])
         path, receipt = record, {}
-        if item.get('type') == 'visual-asset-trial':
-            receipt = json.loads(record.read_text(encoding='utf-8'))
-            if (any(receipt.get(k) != v for k, v in flags.items())
-                    or receipt.get('production_blocked') is not True or receipt.get('user_approved', False) is not False
-                    or receipt.get('outcome') not in {'qualified_candidate','failed_candidate'}):
-                raise ValueError('trial receipt does not identify an actual candidate image')
-            try:
-                from ..asset_generation_trial import verify
-            except ImportError:
-                from asset_generation_trial import verify
-            provenance = [record.parent / 'request.json', root / 'asset_generation_trial.json']
-            actual_provenance = [{'path': str(p.resolve()), 'sha256': artifacts.digest(p)} for p in provenance]
-            if ref.get('trial_provenance') != actual_provenance:
-                raise ValueError('exact trial request/scope provenance missing or stale')
-            request = json.loads(provenance[0].read_text(encoding='utf-8'))
-            if (request.get('prompt_sha256') != receipt.get('prompt_sha256')
-                    or hashlib.sha256(request['prompt'].encode()).hexdigest() != receipt['prompt_sha256']):
-                raise ValueError('trial request prompt hash differs from result')
-            verify(request['references_before']); verify(request['methods'])
-            verify(request.get('reference_amendments', [])); verify(receipt['references_after'])
-            verify([receipt['source_image']])
-            for edge in (request.get('dependency') or {}).get('edges', []):
-                verify([edge['approval'], edge['parent_request'], edge['parent_result']])
-            overrides = sorted((record.parent / 'review-overrides').glob('*.json'))
-            actual_reviews = [{'path': str(p.resolve()), 'sha256': artifacts.digest(p)} for p in overrides]
-            if ref.get('review_evidence', []) != actual_reviews:
-                raise ValueError('trial later review evidence missing or stale')
-            for review_path in overrides:
-                review = json.loads(review_path.read_text(encoding='utf-8'))
-                if (review.get('image_sha256') != receipt['image']['sha256']
-                        or review.get('passed') is not False or not nonempty(review.get('notes'))):
-                    raise ValueError('invalid later visual review; reference blocked')
-            receipt = {**receipt, '_has_later_failure': bool(overrides)}
-            path = Path(receipt['image']['path']).resolve()
-            if not path.is_relative_to(root) or receipt['image']['sha256'] != ref.get('sha256'):
-                raise ValueError('trial image/hash mismatch')
         if (not path.is_file() or not path.stat().st_size or str(path) != ref.get('path')
                 or artifacts.digest(path) != ref.get('sha256')):
             raise ValueError('actual candidate file/hash mismatch')

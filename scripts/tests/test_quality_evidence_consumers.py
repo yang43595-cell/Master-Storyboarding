@@ -2,6 +2,7 @@
 import base64
 import copy
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -217,6 +218,10 @@ def test_preview_valid_image_only_checks_evidence_not_approval(tmp_path):
     assert result['production_blocked'] is True and result['quality_evidence_checks']=='image_evidence_only_not_draft_release'
 
 
+@pytest.mark.skipif(
+    shutil.which('ffmpeg') is None or shutil.which('ffprobe') is None,
+    reason='ffmpeg/ffprobe not installed',
+)
 @pytest.mark.parametrize('actual,declared,expected', [(1,2,'至少2秒'),(2,3,'differs'),(2,2,None)])
 def test_xiaoyunque_probes_actual_video_not_internal_cuts(tmp_path,actual,declared,expected):
     frozen,manifest=fixture(tmp_path);d=frozen['drafts'][0];entry=manifest['artifacts'][0]
@@ -224,9 +229,12 @@ def test_xiaoyunque_probes_actual_video_not_internal_cuts(tmp_path,actual,declar
     subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=c=black:s=16x16:r=10',
                     '-t',str(actual),'-c:v','png','-pix_fmt','rgb24','-y',str(video)],check=True)
     sha=artifacts.digest(video);url='https://xyq.jianying.com/canvas/test'
-    entry.update(path_or_url='reference.mov',checksum=sha);entry.pop('quality_evidence')
+    entry.update(type='video-reference',path_or_url='reference.mov',checksum=sha);entry.pop('quality_evidence')
     entry['upload_bindings'][0].update(sha256=sha,target_url=url)
     write_json(tmp_path/artifacts.MANIFEST_PATH,manifest)
+    st=json.loads((tmp_path/'00_项目管理/project_state.json').read_text(encoding='utf-8'))
+    st['user_confirmations'][0]['sha256']=sha
+    write_json(tmp_path/'00_项目管理/project_state.json',st)
     frozen.update(target_url=url,source_artifacts=[dict(artifact_id='IMG',revision='R1',sha256=sha)])
     d['parameters']['resolution']='480p';d['shot_durations']=[1,1,1,1,1]
     d['required_reference_roles']={'E1':['action']}
@@ -238,10 +246,6 @@ def test_xiaoyunque_probes_actual_video_not_internal_cuts(tmp_path,actual,declar
         assert canvas_readback.validate_submission(frozen,tmp_path)['ok']
 
 
-def test_existing_standard_loader_freezes_new_image_reference():
-    from scripts.stage_context_cli import _local_standard_documents
-    root=Path(__file__).resolve().parents[2]
-    assert root/'skills/storyboard-director/references/image-evidence-admission.md' in _local_standard_documents(root/'skills/storyboard-director')
 
 
 def test_same_shot_new_role_cannot_reuse_old_image_review(tmp_path):
@@ -305,15 +309,6 @@ def test_focal_real_cli_rejects_inherited_verified_and_accepts_unknown(tmp_path)
     assert result.returncode==0, result.stdout+result.stderr
 
 
-def test_director_loader_freezes_concrete_method_and_cross_stage_link():
-    from scripts.stage_context_cli import _local_standard_documents
-    root=Path(__file__).resolve().parents[2]
-    method=root/'skills/storyboard-planner/modules/shot-planning.md'
-    assert method in _local_standard_documents(root/'skills/storyboard-planner')
-    video_method=root/'skills/voiceover-to-video-script/modules/video-method.md'
-    assert (video_method.parent/'../../storyboard-planner/modules/shot-planning.md').resolve()==method
-    assert '../../storyboard-planner/modules/shot-planning.md#' in video_method.read_text()
-    assert artifacts.digest(method)==__import__('hashlib').sha256(method.read_bytes()).hexdigest()
 
 
 def test_product_refs_real_multi_report_protocol(tmp_path):
@@ -344,18 +339,6 @@ def test_archived_native_receipt_is_not_current_claim(tmp_path):
     assert count==1 and not errors
 
 
-def test_director_actual_method_snapshot_changes_in_isolation(tmp_path,monkeypatch):
-    from scripts.tests.source_fixture import copy_source_fixture
-    from scripts import stage_context_cli as cli
-    root=Path(__file__).resolve().parents[2]
-    replica=copy_source_fixture(root,tmp_path/'repo')
-    monkeypatch.setattr(cli.context,'ROOT',replica)
-    method=replica/'skills/storyboard-planner/modules/shot-planning.md'
-    documents=cli._local_standard_documents(replica/'skills/storyboard-planner')
-    frozen={str(p):cli.digest(p) for p in documents}
-    assert str(method) in frozen
-    method.write_text(method.read_text()+'\nSynthetic method revision only in isolated test.\n')
-    assert frozen[str(method)]!=cli.digest(method)
 
 
 @pytest.mark.parametrize('mutation',['canvas','entity_type'])
@@ -397,18 +380,6 @@ def test_rehashed_new_draft_still_cannot_use_old_native_readback(tmp_path,change
         canvas_readback.validate_submission(frozen,tmp_path)
 
 
-def test_real_ensure_prepared_rejects_stale_director_method_fingerprint(tmp_path):
-    from scripts import stage_context_cli as cli
-    method=cli.ROOT/'skills/storyboard-planner/modules/shot-planning.md'
-    context=tmp_path/cli.CONTEXT_DIR;context.mkdir(parents=True)
-    (context/'stage_startup.md').write_text('# 阶段启动包\n- Skill：`storyboard-planner`\n# storyboard-planner 当前知识包\n\n## 选择记录\n- 已选知识块：无\n')
-    write_json(context/'task_basis.json',dict(schema_version='1.0',skill='storyboard-planner',objective='SYNTHETIC OLD SNAPSHOT',
-        deliverables=[],non_goals=[],input_versions=[],standards={'local_documents':[{'path':str(method),'sha256':'0'*64}],
-            'root_rules':str(cli.ROOT/'PROJECT_RULES.md'),'root_rules_sha256':cli.digest(cli.ROOT/'PROJECT_RULES.md')}))
-    args=cli.parser().parse_args(['ensure-prepared','--project',str(tmp_path),'--skill','storyboard-planner',
-                                '--required-reference','skills/storyboard-planner/modules/shot-planning.md'])
-    with pytest.raises(cli.StageContextError,match='必需本地规范已变更'):
-        cli.ensure_prepared(args)
 
 
 def adopt_agent_fixture_entry(root, entry, *, usage=None, reference_groups=None):

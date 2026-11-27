@@ -11,7 +11,7 @@ description: 视频提示词前必须核对本轮全部拟写镜号的视觉依�
 
 读取 `PROJECT_RULES.md`、[普通准备与选知](../_shared/knowledge-access.md#普通阶段准备与选知)、当前 `stage_startup.md`、`../_shared/draft-lifecycle.md` 等六项共享红线（含 `../_shared/prompt-language.md`）、`modules/storyboard-method.md`、`references/reference-asset-contract.md`、`references/storyboard-production-checklist.md`、[图片连续性的共用检查](references/image-continuity-hard-rules.md#共用检查)、`templates/storyboard-image-template.md` 与 `../../schemas/visual-supplement-request.schema.json`。涉及灯光风险时才读取 `../storyboard-planner/references/lighting-prompt-standard.md` 的对应小节；写本 Skill 提示词时必读 `../voiceover-to-video-script/references/prompt-language-hard-rules.md` 并以其为准。使用人物 1×4 时核[唯一面部来源](../asset-image-assistant/references/02-character-master-guide.md#唯一面部来源)。使用场景参考时核[背景母版](../asset-image-assistant/references/03-scene-master-guide.md#背景母版与单变量派生)及[多角度覆盖](../asset-image-assistant/references/03-scene-master-guide.md#多角度场景参考组)。这些引用不授予修改导演镜头或视频提示词的权力。
 
-缺口判断与产出前，完整读取 knowledge-profile 绑定的 `VISUAL-SUPPLEMENT-METHOD`（缺口证据、参考覆盖与状态继承）和 `IMAGE-CONTINUITY-METHOD`（共用图片连续性）方法快照，按原流程登记实际阅读并通过 ensure-prepared；方法缺失不得退回旧本地正文。经验层不自动加载，模板与请求合同继续从本地读取。
+缺口判断与产出前，先运行下方 `visual_stage_cli.py outline` 获取 `must_read` 清单，完整实读其中列出的 `VISUAL-SUPPLEMENT-METHOD`、`IMAGE-CONTINUITY-METHOD` 及涉及产品的专属模板（无需再跑旧式 `prepare / ensure-prepared` 打卡命令）。
 
 本轮明确制作、返修或核对造物者抛光面膜的真人上脸状态时，在当前请求设 `creator_mask_face_effect: true`，按 knowledge-profile 加载 `VGEN-CREATOR-POLISHING-MASK-USE`，并将其指定的真人上脸模板实际路径加入当前 `source_paths` 后阅读。只有碗内搅拌、产品展示或其他产品时不设置此条件。参考职责和局部补涂的专业标准以该方法为准，不从产品名称泛化到所有任务。
 

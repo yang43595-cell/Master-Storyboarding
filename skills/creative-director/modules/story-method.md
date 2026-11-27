@@ -38,7 +38,7 @@
 
 不再创建 events、EVT 或独立事件摘要表。创作候选直接在叙事包 2.0 的 `story_paragraphs` 中按正文顺序保存 `paragraph_id` 和该段完整原文 `text`，不得改写为摘要、增加 start_state/change/end_state 或再建一份事件层。每条对白通过 `source_paragraph_id` 指向含该句的原文段落；资产通过 `source_paragraph_ids` 指向需要它的段落。对白先行阶段正文尚未产出，来源段落列可留空，不能为填引用提前编写故事。完整稿完成后再补齐。
 
-历史 narrative 1.0 只按 `narrative-package-v1.schema.json` 读取。继续返工时从真实正文建立新修订并保留原编号的对应关系。
+叙事包统一采用 `narrative-package` 2.0 JSON 结构。继续返工时从真实正文建立新修订并保留原编号的对应关系。
 
 ## 开写前逐场确定保留项
 

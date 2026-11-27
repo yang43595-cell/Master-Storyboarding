@@ -42,7 +42,7 @@ def text_delivery(root):
 class ReferenceDeliveryContract(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory(prefix='SYNTHETIC-ref-delivery-')
-        self.root=Path(self.tmp.name)
+        self.root=Path(self.tmp.name).resolve()
     def tearDown(self):
         self.tmp.cleanup()
     def test_text_only_preflight_and_actual_empty_readback(self):

@@ -23,10 +23,12 @@ from core.artifacts import (
 )
 from core.asset_refs import resolve_final_images
 from core.generation_boundaries import _CREATOR_BOWL_BRUSH_OFFER
+from core.io import project_lock
 from core.production_handoff import _asset_readiness, load_kickoff
 from core.product_reference_pack import resolve_product_pack
 from core.prompt_body import submitted_body_issues, submitted_prompt_body
 from core.quality_evidence import director_shot_audio, source_shot_ids, validate_required_visuals, validate_shot_durations
+from core.stage_guidance import build_stage_guidance
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -342,6 +344,7 @@ def cmd_outline(args: argparse.Namespace) -> int:
             "required_visual_clauses": req,
         })
     print(json.dumps({
+        "must_read": build_stage_guidance(ctx["project"], "voiceover-to-video-script"),
         "storyboard_revision": ctx["dir_entry"]["revision"],
         "total_shots": len(ctx["shots_ordered"]),
         "ready_assets": sorted(ctx["ready_assets"].keys()),
@@ -350,6 +353,96 @@ def cmd_outline(args: argparse.Namespace) -> int:
         "scenes": scenes_out,
     }, ensure_ascii=False, indent=2))
     return 0
+
+
+def cmd_plan_acts(args: argparse.Namespace) -> int:
+    project = Path(args.project).resolve()
+    ctx = _context(project)
+    max_dur = float(args.target_duration)
+    supp_by_shot: dict[str, list[str]] = {}
+    seen_supps = set()
+    for v in ctx["supplements"].values():
+        aid = str(v.get("artifact_id") or v.get("id"))
+        if aid in seen_supps:
+            continue
+        seen_supps.add(aid)
+        for sid in (v.get("quality_evidence") or {}).get("source_shot_ids") or []:
+            supp_by_shot.setdefault(sid, []).append(aid)
+
+    planned_segs: list[dict[str, Any]] = []
+    seg_idx = 0
+    for sc in ctx["storyboard"].get("scenes", []):
+        shots = sc.get("shots") or []
+        bucket: list[dict[str, Any]] = []
+        bucket_sec = 0.0
+        for sh in shots:
+            sh_sec = _shot_seconds(sh, 3.0)
+            if bucket and (len(bucket) >= 4 or bucket_sec + sh_sec > max_dur):
+                seg_idx += 1
+                planned_segs.append(_build_planned_seg(seg_idx, sc["scene_id"], bucket, supp_by_shot))
+                bucket = []
+                bucket_sec = 0.0
+            bucket.append(sh)
+            bucket_sec += sh_sec
+        if bucket:
+            seg_idx += 1
+            planned_segs.append(_build_planned_seg(seg_idx, sc["scene_id"], bucket, supp_by_shot))
+
+    for i, pseg in enumerate(planned_segs):
+        pseg["seam_in"] = planned_segs[i - 1]["seam_out"] if i > 0 else "全片开场起幅"
+
+    step = max(1, int(args.max_segments_per_act))
+    acts = []
+    for a_idx, start in enumerate(range(0, len(planned_segs), step), 1):
+        chunk = planned_segs[start:start + step]
+        acts.append({
+            "act_id": f"ACT-{a_idx:02d}",
+            "segment_range": f"{chunk[0]['segment_id']}..{chunk[-1]['segment_id']}",
+            "segments": chunk,
+        })
+    plan_doc = {
+        "schema_version": "1.0",
+        "storyboard_id": ctx["dir_entry"]["artifact_id"],
+        "total_segments": len(planned_segs),
+        "acts": acts,
+    }
+    out_rel = args.output or "06_视频/分幕接口卡.json"
+    with project_lock(project):
+        _save_json(project / out_rel, plan_doc)
+    print(json.dumps({
+        "saved_plan": out_rel,
+        "total_segments": len(planned_segs),
+        "acts": [{"act_id": a["act_id"], "segment_range": a["segment_range"], "count": len(a["segments"])} for a in acts],
+    }, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _build_planned_seg(idx: int, scene_id: str, shots: list[dict[str, Any]], supp_by_shot: dict[str, list[str]]) -> dict[str, Any]:
+    s_ids = [s["shot_id"] for s in shots]
+    dur = max(4, min(15, round(sum(_shot_seconds(s, 3.0) for s in shots))))
+    asts = sorted({a for s in shots for a in (s.get("source_asset_requirement_ids") or [])})
+    supps = sorted({sp for sid in s_ids for sp in supp_by_shot.get(sid, [])})
+    prods = []
+    req_clauses = []
+    for s in shots:
+        for rv in s.get("required_visuals") or []:
+            if isinstance(rv, dict):
+                if rv.get("prompt_clause"):
+                    req_clauses.append(str(rv["prompt_clause"]))
+                ar = rv.get("action_reference") or {}
+                if ar.get("reference_id"):
+                    prods.append(f"PROD:{ar['reference_id']}")
+    tail = shots[-1]
+    exit_txt = str((tail.get("cut") or {}).get("exit") or tail.get("action") or "")[:60]
+    return {
+        "segment_id": f"SEG-{idx:02d}",
+        "scene_id": scene_id,
+        "source_shots": s_ids,
+        "suggested_duration_seconds": dur,
+        "suggested_materials": asts + supps + sorted(set(prods)),
+        "required_visual_clauses": req_clauses,
+        "seam_out": f"{tail['shot_id']} 尾态：{exit_txt}",
+    }
 
 
 def cmd_segment_source(args: argparse.Namespace) -> int:
@@ -446,10 +539,16 @@ def cmd_init(args: argparse.Namespace) -> int:
             cloned_segs.append(old_seg)
         pkg["input_roots"] = sorted(roots)
         pkg["generation_segments"] = cloned_segs
-    _refresh_scope_and_continuity(ctx, pkg)
-    _sync_reconciliation(project, ctx["manifest"], pkg)
-    _save_json(out_path, pkg)
-    print(json.dumps({"initialized": str(out_path.relative_to(project)), "revision": args.revision, "cloned_from": from_pkg}, ensure_ascii=False))
+    with project_lock(project):
+        _refresh_scope_and_continuity(ctx, pkg)
+        _sync_reconciliation(project, ctx["manifest"], pkg)
+        _save_json(out_path, pkg)
+    print(json.dumps({
+        "must_read": build_stage_guidance(project, "voiceover-to-video-script"),
+        "initialized": str(out_path.relative_to(project)),
+        "revision": args.revision,
+        "cloned_from": from_pkg,
+    }, ensure_ascii=False, indent=2))
     return 0
 
 
@@ -525,18 +624,25 @@ def cmd_put_segment(args: argparse.Namespace) -> int:
         seg_errs.append(str(exc))
     if seg_errs:
         raise SystemExit("分段镜头时长/必现画面校验未通过：" + "；".join(seg_errs))
-    segs = list(pkg.get("generation_segments") or [])
-    idx = next((i for i, s in enumerate(segs) if s.get("segment_id") == built["segment_id"]), None)
-    if idx is None:
-        segs.append(built)
-    else:
-        segs[idx] = built
-    pkg["generation_segments"] = segs
-    roots = set(pkg.get("input_roots") or []) | ext_roots
-    pkg["input_roots"] = sorted(roots)
-    _refresh_scope_and_continuity(ctx, pkg)
-    _sync_reconciliation(project, ctx["manifest"], pkg, getattr(args, "reconcile_reason", None))
-    _save_json(pkg_path, pkg)
+    shot_rank = {s["shot_id"]: i for i, s in enumerate(ctx["shots_ordered"])}
+    with project_lock(project):
+        pkg = _load_json(pkg_path)
+        segs = list(pkg.get("generation_segments") or [])
+        idx = next((i for i, s in enumerate(segs) if s.get("segment_id") == built["segment_id"]), None)
+        if idx is None:
+            segs.append(built)
+        else:
+            segs[idx] = built
+        segs.sort(key=lambda s: (
+            shot_rank.get((s.get("source_shots") or [""])[0], 10**6),
+            s.get("segment_id", ""),
+        ))
+        pkg["generation_segments"] = segs
+        roots = set(pkg.get("input_roots") or []) | ext_roots
+        pkg["input_roots"] = sorted(roots)
+        _refresh_scope_and_continuity(ctx, pkg)
+        _sync_reconciliation(project, ctx["manifest"], pkg, getattr(args, "reconcile_reason", None))
+        _save_json(pkg_path, pkg)
     print(json.dumps({
         "saved_segment": built["segment_id"],
         "shots": source_shots,
@@ -684,6 +790,13 @@ def main(argv: list[str] | None = None) -> int:
     p_out = sub.add_parser("outline", help="输出场次镜头概览、已确认资产、补图与产品参考清单")
     p_out.add_argument("--project", required=True)
     p_out.set_defaults(func=cmd_outline)
+
+    p_plan = sub.add_parser("plan-acts", help="自动按场景与时长预算生成锁死首尾接缝的多幕并行分段接口卡")
+    p_plan.add_argument("--project", required=True)
+    p_plan.add_argument("--max-segments-per-act", type=int, default=8)
+    p_plan.add_argument("--target-duration", type=float, default=10.0)
+    p_plan.add_argument("--output", default="06_视频/分幕接口卡.json")
+    p_plan.set_defaults(func=cmd_plan_acts)
 
     p_src = sub.add_parser("segment-source", help="按镜头列表读取导演包分镜原文与建议时长")
     p_src.add_argument("--project", required=True)

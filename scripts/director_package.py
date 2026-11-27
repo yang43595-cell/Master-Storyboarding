@@ -23,11 +23,13 @@ if __package__:
     from .core.asset_refs import effective, read_choices
     from .core.io import project_lock, read_json, write_json
     from .core.schema_contracts import SCHEMA_ROOT
+    from .core.stage_guidance import build_stage_guidance
 else:
     from core import artifacts
     from core.asset_refs import effective, read_choices
     from core.io import project_lock, read_json, write_json
     from core.schema_contracts import SCHEMA_ROOT
+    from core.stage_guidance import build_stage_guidance
 
 SCHEMA = "storyboard-package.schema.json"
 HEADER_FIELDS = ("director_rules", "timing_basis", "open_questions", "asset_gaps")
@@ -220,6 +222,7 @@ def outline(root):
             "asset_ids": p_assets,
         })
     return {
+        "must_read": build_stage_guidance(root, "storyboard-planner"),
         "narrative_id": entry["artifact_id"],
         "revision": entry["revision"],
         "objective": story.get("objective"),
@@ -293,6 +296,95 @@ def save_plan(root, out, plan):
     return {"plan": dest.relative_to(root).as_posix(), "groups": [g["group_id"] for g in groups], "scenes": len(seen_scenes)}
 
 
+def plan_acts(root, out, max_scenes_per_act=5):
+    """Auto-generate a seam-locked parallel multi-act plan from story_paragraphs."""
+    _, story = _narrative(root)
+    assets_by_id = {a["asset_id"]: a for a in story.get("asset_requirements") or []}
+    pars = story["story_paragraphs"]
+    scene_specs = []
+    for idx, p in enumerate(pars, 1):
+        pid = p["paragraph_id"]
+        sid = f"S{idx:02d}"
+        first_ln = next((ln.strip() for ln in p["text"].splitlines() if ln.strip()), "")[:60]
+        last_ln = next((ln.strip() for ln in reversed(p["text"].splitlines()) if ln.strip()), "")[:60]
+        p_asts = [
+            f"{a['asset_id']}({a.get('name', '')})"
+            for a in assets_by_id.values()
+            if pid in (a.get("source_paragraph_ids") or [])
+        ]
+        prev_tail = (
+            next((ln.strip() for ln in reversed(pars[idx - 2]["text"].splitlines()) if ln.strip()), "")[:45]
+            if idx > 1 else "全片开场起幅"
+        )
+        next_head = (
+            next((ln.strip() for ln in pars[idx]["text"].splitlines() if ln.strip()), "")[:45]
+            if idx < len(pars) else "全片收束定格"
+        )
+        scene_specs.append({
+            "scene_id": sid,
+            "paragraphs": [pid],
+            "local_shot_numbering_rule": f"并行写稿时本场镜号统一用局部独立编号 {sid}-001, {sid}-002...（汇总 finalize-acts 或 register 时自动重排为全片连续镜号）",
+            "entry_handoff": f"承接上一场尾态（{prev_tail}）切入：{first_ln}",
+            "exit_handoff": f"收束本场末态（{last_ln}），为下一场（{next_head}）留清动势或图形匹配切点",
+            "active_assets": p_asts,
+        })
+    groups = []
+    step = max(1, int(max_scenes_per_act))
+    for g_idx, start in enumerate(range(0, len(scene_specs), step), 1):
+        chunk = scene_specs[start:start + step]
+        groups.append({
+            "group_id": f"ACT-{g_idx:02d}",
+            "scene_range": f"{chunk[0]['scene_id']}..{chunk[-1]['scene_id']}",
+            "shared_space_note": "各幕并行子代理严禁改动他幕场次；每场用局部镜号 SXX-001 起编，严格对齐首场 entry_handoff 与末场 exit_handoff",
+            "scenes": chunk,
+        })
+    plan = {"schema_version": "1.0", "groups": groups}
+    return save_plan(root, out, plan)
+
+
+def finalize_acts(root, out):
+    """Verify cross-scene/cross-act seam continuity and normalize shot_ids sequentially across the film."""
+    _, story = _narrative(root)
+    path = _package_path(root, out)
+    package = read_json(path)
+    scenes = _sort_scenes(package.get("scenes") or [], _order(story))
+    expected_pars = [p["paragraph_id"] for p in story["story_paragraphs"]]
+    covered_pars = [p for s in scenes for p in s.get("source_paragraph_ids", [])]
+    if sorted(set(covered_pars)) != sorted(expected_pars):
+        missing = sorted(set(expected_pars) - set(covered_pars))
+        raise ValueError(f"尚有未完成段落，无法合并终检：{missing}")
+    seam_warnings = []
+    remap: dict[str, str] = {}
+    serial = 0
+    for idx, sc in enumerate(scenes):
+        shots = sc.get("shots") or []
+        if not shots:
+            raise ValueError(f"场次 {sc.get('scene_id')} 无镜头")
+        if idx > 0:
+            prev_last = scenes[idx - 1]["shots"][-1]
+            curr_first = shots[0]
+            if not str((prev_last.get("cut") or {}).get("handoff") or "").strip():
+                seam_warnings.append(f"{scenes[idx - 1]['scene_id']}->{sc['scene_id']}: 前场末镜缺 cut.handoff")
+            if not str((curr_first.get("camera") or {}).get("framing") or "").strip():
+                seam_warnings.append(f"{scenes[idx - 1]['scene_id']}->{sc['scene_id']}: 后场首镜缺 camera.framing")
+        for shot in shots:
+            serial += 1
+            old_id = shot["shot_id"]
+            new_id = f"{sc['scene_id']}-{serial:03d}"
+            if old_id != new_id:
+                remap[old_id] = new_id
+                shot["shot_id"] = new_id
+    for gap in package.get("asset_gaps") or []:
+        if isinstance(gap, dict) and isinstance(gap.get("affected_shot_ids"), list):
+            gap["affected_shot_ids"] = [remap.get(sid, sid) for sid in gap["affected_shot_ids"]]
+    package["scenes"] = scenes
+    write_json(path, package)
+    st = status(root, out)
+    st["renumbered_count"] = len(remap)
+    st["seam_warnings"] = seam_warnings
+    return st
+
+
 def group_brief(root, out, group_id):
     """Return bounded rules, handoff batons, and verbatim sources for one parallel writer group."""
     dest = _plan_path(root, out)
@@ -346,11 +438,17 @@ def register(root, out, artifact_id, change_id=None):
         from .core import revision_control as rc
     else:
         from core import revision_control as rc
-    entry, _ = _narrative(root)
+    entry, story = _narrative(root)
     path = _package_path(root, out)
-    package = read_json(path)
-    if package["source_narrative"]["artifact_id"] != entry["artifact_id"]:
-        raise ValueError("导演包绑定的编导稿不是当前采用版")
+    with project_lock(root):
+        package = read_json(path)
+        if package["source_narrative"]["artifact_id"] != entry["artifact_id"]:
+            raise ValueError("导演包绑定的编导稿不是当前采用版")
+        expected_pars = {p["paragraph_id"] for p in story["story_paragraphs"]}
+        covered_pars = {p for s in package.get("scenes", []) for p in s.get("source_paragraph_ids", [])}
+        if covered_pars == expected_pars:
+            finalize_acts(root, out)
+            package = read_json(path)
     checked = subprocess.run(
         [sys.executable, "-m", "scripts.core.story_sources", "--project", str(root),
          "--narrative", str(artifacts.project_path(root, entry["path_or_url"])), "--storyboard", str(path)],
@@ -433,6 +531,9 @@ def main(argv=None):
     commands.add_parser("outline", help="只读全片紧凑大纲（供统筹预算，不灌入全片原文）")
     src = commands.add_parser("scene-source", help="只读当前要写段落的原文、对白和有效资产")
     src.add_argument("--paragraph", required=True, action="append", help="如 STP-01，可重复")
+    pacts = commands.add_parser("plan-acts", help="自动生成锁死首尾交接棒与局部镜号规则的多幕并行计划")
+    pacts.add_argument("--max-scenes-per-act", type=int, default=5)
+    commands.add_parser("finalize-acts", help="核验跨幕接缝并自动将局部镜号顺排为全片连续镜号")
     splan = commands.add_parser("save-plan", help="总导演保存分组并行计划（核对段落不重不漏与进出交接棒）")
     splan.add_argument("--plan", required=True, help="分组计划 JSON 文件；- 读标准输入")
     gbrief = commands.add_parser("group-brief", help="分场导演只读领取本组规则、交接棒与本组原文")
@@ -476,6 +577,10 @@ def main(argv=None):
         if args.command == "init":
             hdr = _read_input(args.header, root) if args.header else None
             result = init(root, args.out, hdr, args.revision, args.from_package)
+        elif args.command == "plan-acts":
+            result = plan_acts(root, args.out, args.max_scenes_per_act)
+        elif args.command == "finalize-acts":
+            result = finalize_acts(root, args.out)
         elif args.command == "save-plan":
             result = save_plan(root, args.out, _read_input(args.plan, root))
         elif args.command == "put-scene":
