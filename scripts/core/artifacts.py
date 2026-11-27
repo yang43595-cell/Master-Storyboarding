@@ -12,20 +12,28 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 
 from dataclasses import dataclass, field
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 from typing import Any
 
 from . import confirmation_scope
 from .io import canonical_json_bytes, project_lock, project_locked, read_json, utc_now, write_json
+from .manifest_store import (
+    ARTIFACT_STATUSES,
+    MANIFEST_PATH,
+    _FORMAL_PACKAGE_LOGICAL_IDS,
+    _Manifest,
+    _assert_unique_artifact_ids,
+    cache_file_reads,
+    current_artifacts,
+    digest,
+    load_manifest,
+    project_path,
+)
 from .project_state import load_project_state
-
-MANIFEST_PATH = Path("00_项目管理") / "artifact_manifest.json"
-
-ARTIFACT_STATUSES = {"candidate", "current", "stale", "superseded", "rejected"}
+from .revision_store import formal_adoption as _store_formal_adoption
 
 
 @dataclass(frozen=True)
@@ -58,41 +66,6 @@ class PromotionReport:
             "superseded_artifact_ids": list(self.superseded_artifact_ids),
             "warnings": list(self.warnings),
         }
-
-
-class _Manifest(dict):
-    """In-memory read version; it adds no fields to the persisted JSON contract."""
-    def __init__(self, value):
-        super().__init__(value)
-        self._source_bytes = canonical_json_bytes(value)
-
-
-def load_manifest(project_root: Path) -> dict[str, Any]:
-    """读取桌面项目产物清单；不存在时返回空清单。"""
-    path = project_root / MANIFEST_PATH
-    if not path.exists():
-        return _Manifest({"schema_version": "1.0", "artifacts": []})
-    value = read_json(path)
-    if not isinstance(value, dict):
-        raise ValueError("artifact_manifest.json 顶层必须是对象")
-    value.setdefault("artifacts", [])
-    _assert_unique_artifact_ids(value)
-    return _Manifest(value)
-
-
-def _assert_unique_artifact_ids(manifest: dict[str, Any]) -> None:
-    artifacts = manifest.get("artifacts", [])
-    if not isinstance(artifacts, list):
-        raise ValueError("artifact_manifest.json artifacts 必须是数组")
-    seen: set[str] = set()
-    for item in artifacts:
-        if not isinstance(item, dict):
-            continue
-        artifact_id = item.get("artifact_id")
-        if isinstance(artifact_id, str) and artifact_id:
-            if artifact_id in seen:
-                raise ValueError("artifact_manifest.json 含重复 artifact_id：" + artifact_id)
-            seen.add(artifact_id)
 
 
 @project_locked
@@ -144,9 +117,6 @@ def save_manifest(project_root: Path, manifest: dict[str, Any]) -> None:
     sync_current_artifacts(project_root, manifest)
     if source_bytes is not None:
         manifest._source_bytes = canonical_json_bytes(manifest)
-
-
-_FORMAL_PACKAGE_LOGICAL_IDS = {"narrative.package", "storyboard.package", "video.prompt"}
 
 
 def exact_narrative_approval(receipt: Any, entry: dict[str, Any], sha256: str) -> bool:
@@ -211,8 +181,8 @@ def _delegated_dialogue_passed(root, entry, state):
 
 def _video_revision_visual_rows(root, payload, segments, prior, director, known_shots, state):
     """Use only changed rows for the new visual check on a verified full revision."""
-    from .quality_evidence import source_shot_ids
-    from .revision_control import _generation_segments
+    from .prompt_body import source_shot_ids
+    from .revision_store import _generation_segments
 
     baseline_path = project_path(root, prior.get("path_or_url", ""))
     if (not baseline_path.is_relative_to(root) or baseline_path.suffix.lower() != ".json"
@@ -339,9 +309,9 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
         from .story_sources import validate_story_sources
         validate_story_sources(narrative, storyboard, project_root=root, narrative_path=narrative_path,
                                require_dialogue_evidence=True)
-        from . import revision_control
+        from . import revision_store
         from .quality_evidence import director_shot_audio, replay_source_audio, source_shot_ids
-        segments = revision_control._generation_segments(payload)
+        segments = revision_store._generation_segments(payload)
         if segments is None:
             raise ValueError("正式视频提示词必须包含真实 generation_segments，材料分组不能代替生成段")
         known_shots = {shot["shot_id"] for scene in storyboard.get("scenes", [])
@@ -390,7 +360,7 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
             if unknown:
                 raise ValueError("视频来源镜号不属于准确已确认导演包：" + ", ".join(sorted(unknown)))
         if prior:
-            revision_control._validate_segment_reconciliation(root, prior[0], payload)
+            revision_store._validate_segment_reconciliation(root, prior[0], payload)
         from .generation_boundaries import validate_generation_boundaries
         validate_generation_boundaries(
             payload, storyboard, root, require_physical=not reading_existing,
@@ -446,12 +416,11 @@ def _read_confirmed_package_source(root: Path, manifest: dict[str, Any], state: 
 def adopt_initial_package(project_root: Path, artifact_id: str, approval_ref: str,
                           *, scope_description: str = "", website_approval=None, chat_approval=None) -> dict[str, Any]:
     """Atomically confirm and select a first formal package in an empty lineage."""
-    from .candidate_test import require_production
+    from .revision_store import _commit_json_transaction_unlocked, require_production
     from .review_publication import require_script_approval
     if not approval_ref.strip():
         raise ValueError("正式稿采用必须提供准确 approval_ref")
     root = Path(project_root).resolve()
-    from . import revision_control
     with project_lock(root):
         require_production(root)
         manifest = load_manifest(root)
@@ -493,7 +462,7 @@ def adopt_initial_package(project_root: Path, artifact_id: str, approval_ref: st
         state = load_project_state(root)
         state.setdefault("user_confirmations", []).append(receipt)
         state["current_artifacts"] = list(dict.fromkeys([*state.get("current_artifacts", []), artifact_id]))
-        transaction = revision_control._commit_json_transaction_unlocked(root, {
+        transaction = _commit_json_transaction_unlocked(root, {
             root / MANIFEST_PATH: manifest,
             root / "00_项目管理" / "project_state.json": state,
         }, reason="adopt initial formal package")
@@ -541,9 +510,8 @@ def validate_agent_submission(project_root: Path, entry: dict[str, Any], manifes
 def adopt_initial_agent_artifact(project_root: Path, artifact_id: str, report_path: str,
                                  *, expected_checksum: str | None = None) -> dict[str, Any]:
     """Adopt authorized downstream work without minting a human confirmation."""
-    from .candidate_test import require_production
     from .agent_acceptance import read_agent_acceptance, skill_for_artifact, validate_agent_acceptance
-    from . import revision_control
+    from .revision_store import _commit_json_transaction_unlocked, require_production
     root = Path(project_root).resolve()
     with project_lock(root):
         require_production(root)
@@ -573,7 +541,7 @@ def adopt_initial_agent_artifact(project_root: Path, artifact_id: str, report_pa
         entry["status"] = "current"
         entry["user_approved"] = False
         state["current_artifacts"] = list(dict.fromkeys([*state.get("current_artifacts", []), artifact_id]))
-        transaction = revision_control._commit_json_transaction_unlocked(root, {
+        transaction = _commit_json_transaction_unlocked(root, {
             root / MANIFEST_PATH: manifest,
             root / "00_项目管理" / "project_state.json": state,
         }, reason="adopt initial agent-accepted artifact")
@@ -583,10 +551,6 @@ def adopt_initial_agent_artifact(project_root: Path, artifact_id: str, report_pa
                 or not artifact_is_adopted(adopted, selected, root)):
             raise ValueError("自主采用事务已提交但验收回读未通过；不得交付或进入下游")
         return {"artifact": adopted, "agent_acceptance": entry["agent_acceptance"], "transaction": transaction}
-
-
-def current_artifacts(manifest: dict[str, Any]) -> list[dict[str, Any]]:
-    return [item for item in manifest.get("artifacts", []) if item.get("status") == "current"]
 
 
 def unchanged_director_usage(project, baseline, replacement, shot_ids) -> bool:
@@ -687,7 +651,7 @@ def asset_output_impact(project, manifest, baseline, replacement):
     """Find exact video segment impact against two verified asset output sets."""
     if baseline is None or replacement is None:
         return set(), {}
-    from .revision_control import _generation_segments
+    from .revision_store import _generation_segments
 
     fields = ('path', 'sha256', 'purpose', 'view', 'state', 'output_kind')
     unchanged = {key for key, original in baseline.items() if key in replacement
@@ -807,8 +771,8 @@ def append_workspace_candidate(project_root, manifest, artifact):
     if (entry.get("logical_id") in _FORMAL_PACKAGE_LOGICAL_IDS
             and entry.get("status", "candidate") != "candidate"):
         raise ValueError("正式稿件只能先登记为 candidate；须经采用或变更提交入口完成来源/分段校验")
-    from .candidate_test import context
-    testing = context(project_root)
+    from .revision_store import candidate_test_context
+    testing = candidate_test_context(project_root)
     if testing:
         if entry.get("status", "candidate") != "candidate" or entry.get("user_approved", False) is not False:
             raise ValueError("候选测试不能登记正式产物")
@@ -869,7 +833,7 @@ def mark_impacted_artifacts_stale(
 def promote_candidate(project_root: Path, logical_id: str, artifact_id: str, *,
                       previous_asset_snapshot=None, file_digest=None) -> PromotionReport:
     """确认新候选产物：新版本设 current，同一 logical_id 的旧版本变 superseded。"""
-    from .candidate_test import require_production
+    from .revision_store import require_production
     require_production(project_root)
     manifest = load_manifest(project_root)
     new_item = next((item for item in manifest.get("artifacts", []) if item.get("artifact_id") == artifact_id), None)
@@ -928,62 +892,9 @@ def promote_candidate(project_root: Path, logical_id: str, artifact_id: str, *,
     return PromotionReport(logical_id, artifact_id, superseded)
 
 
-def project_path(root, raw):
-    raw = str(raw)
-    if re.match(r'^/[A-Za-z]:[/\\]', raw):
-        raw = raw[1:]
-    root = Path(root).resolve()
-    # Explicit relocation aliases preserve original paths and confirmation bytes.
-    # Never infer an old project root from its basename or revive absent files.
-    aliases = json.loads(os.environ.get("MSB_PROJECT_PATH_MAP") or "{}")
-    if not isinstance(aliases, dict) or any(not isinstance(k, str) or not isinstance(v, str)
-                                            for k, v in aliases.items()):
-        raise ValueError("MSB_PROJECT_PATH_MAP must map source roots to local project roots")
-    for source, destination in sorted(aliases.items(), key=lambda item: len(item[0]), reverse=True):
-        destination_root = Path(destination).expanduser().resolve()
-        original = PureWindowsPath(source)
-        if not original.is_absolute():
-            raise ValueError("MSB_PROJECT_PATH_MAP source must be an absolute Windows root")
-        try:
-            relative = PureWindowsPath(raw).relative_to(original)
-        except ValueError:
-            continue
-        mapped = destination_root.joinpath(*relative.parts).resolve()
-        if ".." in relative.parts or not mapped.is_relative_to(destination_root):
-            raise ValueError("Relocated project path escapes its configured root")
-        return mapped
-    path = Path(raw.replace("\\", "/"))
-    return (path if path.is_absolute() else root / path).resolve()
-
-
-def digest(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
 def cache_file_digests(read_digest=None, *, check_for_changes=False):
     """Reuse file digests within one operation, optionally rechecking file identity."""
     return cache_file_reads(digest if read_digest is None else read_digest, check_for_changes=check_for_changes)
-
-
-def cache_file_reads(read_file, *, check_for_changes=True):
-    """Reuse a read only while the file's identity and version still match."""
-    reads = {}
-
-    def file_version(path):
-        stat = path.stat()
-        return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns
-
-    def read(path):
-        version = file_version(path) if check_for_changes else None
-        cached = reads.get(path)
-        if cached is not None and cached[0] == version:
-            return cached[1]
-        result = read_file(path)
-        if not check_for_changes or version == file_version(path):
-            reads[path] = (version, result)
-        return result
-
-    return read
 
 
 def verify_image_confirmation(path, receipt, *, file_digest=None):
@@ -1000,26 +911,7 @@ def verify_image_confirmation(path, receipt, *, file_digest=None):
 
 def formal_adoption(entry, root):
     """Return the completed, hash-bound adoption evidence for a bundled artifact."""
-    control = Path(root) / '00_项目管理' / 'change_control.json'
-    if not control.is_file():
-        return None
-    history = read_json(control).get('history', [])
-    for change in history:
-        receipt = change.get('candidate_confirmation') or {}
-        if not _whole_artifact_receipt(receipt):
-            continue
-        bundle = (change.get('candidate_receipt') or {}).get('bundle') or []
-        if (change.get('status') != 'completed' or not receipt.get('approval_ref')
-                or receipt.get('change_id') != change.get('change_id')):
-            continue
-        matched = next((item for item in bundle if item.get('artifact_id') == entry.get('artifact_id')
-                        and item.get('sha256') == entry.get('checksum')), None)
-        if matched:
-            path = project_path(root, matched['path'])
-            if path.is_file() and digest(path) == matched['sha256']:
-                return {'change_id': change['change_id'], 'approval_ref': receipt['approval_ref'],
-                        'sha256': matched['sha256']}
-    return None
+    return _store_formal_adoption(entry, root, file_digest=digest)
 
 
 def _whole_artifact_receipt(receipt):

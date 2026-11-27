@@ -3,84 +3,24 @@
 State and manifest stay the existing authorities. This is not a sandbox for direct
 browser/provider calls: those remain forbidden by the test task's scope.
 """
-from .io import project_lock
-
 from pathlib import Path
 
-
-def validate_stage(skill):
-    """Accept only an actual local Skill name, never paths or invented stages."""
-    import re
-    root = Path(__file__).resolve().parents[2] / "skills"
-    if (not isinstance(skill, str) or not re.fullmatch(r"[a-z][a-z0-9-]*", skill)
-            or not (root / skill / "SKILL.md").is_file()):
-        raise ValueError("候选测试 Skill 不存在或名称无效：" + str(skill))
-
-
-def result_metadata():
-    return {"execution_mode": "candidate_test", "review_status": "unreviewed",
-            "production_blocked": True}
-
-
-def validate_usage_contract(value):
-    """Explicit controlled-run checkpoint, not a host-wide spending cap."""
-    if (not isinstance(value, dict) or set(value) != {'required', 'turn_id', 'limits'}
-            or value['required'] is not True
-            or value['turn_id'] is not None and (not isinstance(value['turn_id'], str) or not value['turn_id'].strip())):
-        raise ValueError('usage_contract 必须明确 required=true、准确 turn_id（未知可为 null）与预算')
-    limits = value['limits']
-    if (not isinstance(limits, dict) or set(limits) != {'max_input', 'max_total', 'max_requests'}
-            or any(type(v) is not int or v <= 0 for v in limits.values())):
-        raise ValueError('usage_contract 必须声明本轮三个正整数预算；不自动使用示例默认值')
-
-
-def validate_context(value, state):
-    if not isinstance(value, dict) or set(value) not in ({"run_id", "authorization_ref", "project_path", "input_artifact_ids"}, {"run_id", "authorization_ref", "project_path", "input_artifact_ids", "usage_contract"}):
-        raise ValueError("candidate_test 必须有准确运行、授权、项目路径和输入 ID")
-    if any(not isinstance(value[k], str) or not value[k].strip()
-           for k in ("run_id", "authorization_ref", "project_path")):
-        raise ValueError("candidate_test 运行、授权与项目路径不能为空")
-    if "usage_contract" in value:
-        validate_usage_contract(value["usage_contract"])
-    ids = value["input_artifact_ids"]
-    if (not isinstance(ids, list) or any(not isinstance(i, str) or not i.strip() for i in ids)
-            or len(set(ids)) != len(ids)):
-        raise ValueError("candidate_test 输入 ID 无效或重复")
-    if state.get("current_artifacts") or state.get("user_confirmations") or state.get("finalization"):
-        raise ValueError("候选测试必须独立于已确认生产状态")
-
-
-def context(project):
-    from .project_state import load_project_state
-    project = Path(project).resolve()
-    state = load_project_state(project)
-    if "candidate_test" not in state:
-        return None
-    value = state["candidate_test"]
-    validate_context(value, state)
-    if value["project_path"] != str(project):
-        raise ValueError("候选测试状态属于另一项目，不能复制授权运行身份")
-    if state.get("current_stage"):
-        validate_stage(state["current_stage"])
-    return value
-
-
-_PRODUCTION_BLOCKED = "候选测试禁止正式采用、生成提交或发布；仍为 unreviewed"
-
-
-def require_production(project):
-    """Guard supported adoption/submission endpoints, including removed mode state."""
-    if context(project):
-        raise ValueError(_PRODUCTION_BLOCKED)
-    require_production_manifest(project)
-
-
-def require_production_manifest(project):
-    """Reject test artifacts after the caller has checked the project mode."""
-    from .artifacts import load_manifest
-    if any(a.get("candidate_test") or a.get("production_blocked") or a.get("type") == "preview-reference"
-           for a in load_manifest(Path(project))["artifacts"]):
-        raise ValueError(_PRODUCTION_BLOCKED)
+from .io import project_lock
+from .manifest_store import digest, load_manifest, project_path
+from .project_state import (
+    load_project_state,
+    validate_candidate_test_context as validate_context,
+    validate_candidate_test_stage as validate_stage,
+    validate_usage_contract,
+    write_project_state,
+)
+from .revision_store import (
+    _PRODUCTION_BLOCKED,
+    candidate_test_context as context,
+    candidate_test_result_metadata as result_metadata,
+    require_production,
+    require_production_manifest,
+)
 
 
 def validate_preview_registration(project, item, run_id):
@@ -90,7 +30,6 @@ def validate_preview_registration(project, item, run_id):
     root. Canvas submission still needs its own explicit scoped authorization.
     """
     import json
-    from .artifacts import project_path, digest
     path = project_path(project, item.get("path_or_url", ""))
     origin = item.get("preview_origin", {})
     if (item.get("candidate_test") != run_id or item.get("review_status") != "unreviewed"
@@ -139,8 +78,7 @@ def configure(project, run_id, authorization_ref, input_artifact_ids, *, current
 
 
 def _configure_locked(project, run_id, authorization_ref, input_artifact_ids, *, current_stage=None, usage_contract=None):
-    from .project_state import load_project_state, write_project_state
-    from .artifacts import load_manifest, save_manifest, project_path
+    from .artifacts import save_manifest
     project = Path(project).resolve()
     if not project.is_dir():
         raise ValueError("隔离测试项目不存在")
@@ -196,7 +134,6 @@ def _configure_locked(project, run_id, authorization_ref, input_artifact_ids, *,
 def resolve_inputs(project, ids=None):
     """Resolve exact candidate identities and dependencies, never latest filenames."""
     import json
-    from .artifacts import load_manifest, project_path, digest
     project = Path(project).resolve()
     testing = context(project)
     if not testing:

@@ -40,7 +40,7 @@ def resolve_prompt_scene_control(row, context, project, state, requirements, *, 
             or not any(all(ref.get(key) == value for key, value in source.items())
                        for ref in context.get('source_artifacts', []))):
         raise ValueError('prompt_state_control decision does not bind this exact source')
-    from .quality_evidence import source_shot_ids
+    from .prompt_body import source_shot_ids
     shots = source_shot_ids(row)
     segment_id = row.get('source_segment_id', row.get('segment_id'))
     segments = decision.get('segments')

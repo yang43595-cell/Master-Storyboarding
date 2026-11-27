@@ -201,9 +201,9 @@ def grant_covers_asset(grant, ast_id, output_id):
 
 
 def kickoff_project(project, answers=None):
-    from .candidate_test import require_production
     from .errors import StageContextError
     from .io import project_lock, read_stage_json, write_json
+    from .revision_store import require_production
     project = project.resolve(strict=True)
     if not project.is_dir():
         raise StageContextError("开工决定必须从业务项目目录读取")

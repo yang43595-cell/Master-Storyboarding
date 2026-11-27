@@ -8,13 +8,14 @@ import re
 import sys
 from pathlib import Path
 
+import pytest
+
 SCRIPTS_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = SCRIPTS_ROOT.parent
 
 LEGACY_CORE_SCC = frozenset({
     "core.agent_acceptance",
     "core.artifacts",
-    "core.asset_batch_receipt",
     "core.asset_refs",
     "core.candidate_test",
     "core.canvas_readback",
@@ -22,13 +23,8 @@ LEGACY_CORE_SCC = frozenset({
     "core.delivery_files",
     "core.director_inputs",
     "core.draft_delivery",
-    "core.endpoint_states",
     "core.generation_boundaries",
     "core.production_handoff",
-    "core.project_kickoff",
-    "core.project_state",
-    "core.prompt_body",
-    "core.prompt_scene_control",
     "core.quality_evidence",
     "core.recreation_assets",
     "core.recreation_segments",
@@ -36,7 +32,6 @@ LEGACY_CORE_SCC = frozenset({
     "core.revision_control",
     "core.schema_contracts",
     "core.story_sources",
-    "core.visual_asset_product_usage",
     "core.visual_readiness",
 })
 
@@ -72,6 +67,18 @@ L0_FOUNDATION_MODULES = frozenset({
     "core.confirmation_scope",
     "core.agent_review_api",
     "core.redframe_workspace",
+})
+
+L1_PRIMITIVE_MODULES = frozenset({
+    "core.manifest_store",
+    "core.project_state",
+    "core.revision_store",
+    "core.product_reference_pack",
+    "core.project_kickoff",
+    "core.endpoint_control",
+    "core.prompt_body",
+    "core.prompt_scene_control",
+    "core.endpoint_states",
 })
 
 BRANCH_A_MODULES = frozenset({
@@ -294,6 +301,57 @@ def test_l0_foundation_has_no_upward_dependencies() -> None:
         if adj[m] - L0_FOUNDATION_MODULES
     }
     assert upward == {}, f"L0 foundation modules must not import L1-L4 modules: {upward}"
+
+
+def test_l1_primitives_have_no_upward_dependencies() -> None:
+    mods, adj = _collect_modules()
+    missing = sorted(L1_PRIMITIVE_MODULES - set(mods))
+    assert missing == [], f"L1_PRIMITIVE_MODULES contains missing modules: {missing}"
+    allowed = L0_FOUNDATION_MODULES | L1_PRIMITIVE_MODULES
+    upward = {
+        m: sorted(adj[m] - allowed)
+        for m in sorted(L1_PRIMITIVE_MODULES)
+        if adj[m] - allowed
+    }
+    assert upward == {}, f"L1 primitive modules must not import L2-L4 modules: {upward}"
+    l1_adj = {m: adj[m] & L1_PRIMITIVE_MODULES for m in L1_PRIMITIVE_MODULES}
+    assert _tarjan_sccs(set(L1_PRIMITIVE_MODULES), l1_adj) == [], (
+        "L1 primitive modules must form an acyclic DAG"
+    )
+
+
+def test_l1_store_reexports_and_boundary_invariants(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    from scripts.core import (
+        artifacts,
+        candidate_test,
+        manifest_store,
+        project_state,
+        prompt_body,
+        quality_evidence,
+        revision_control,
+        revision_store,
+    )
+
+    for attr in ("MANIFEST_PATH", "ARTIFACT_STATUSES", "load_manifest", "current_artifacts", "project_path", "digest"):
+        assert getattr(artifacts, attr) is getattr(manifest_store, attr)
+    for attr in ("source_shot_ids", "scene_state_requirements", "reference_shot_ids", "submitted_prompt_body"):
+        assert getattr(quality_evidence, attr) is getattr(prompt_body, attr)
+    for attr in ("CONTROL_RELATIVE", "guard_action", "show_change", "_generation_segments", "_validate_segment_reconciliation"):
+        assert getattr(revision_control, attr) is getattr(revision_store, attr)
+    assert candidate_test.validate_context is project_state.validate_candidate_test_context
+    assert candidate_test.validate_stage is project_state.validate_candidate_test_stage
+    assert candidate_test.require_production is revision_store.require_production
+
+    assert manifest_store.load_manifest(tmp_path) == {"schema_version": "1.0", "artifacts": []}
+    with pytest.raises(ValueError, match="重复 artifact_id"):
+        manifest_store._assert_unique_artifact_ids({"artifacts": [{"artifact_id": "A1"}, {"artifact_id": "A1"}]})
+    with pytest.raises(ValueError, match="事务至少需要一个状态更新"):
+        revision_store._commit_json_transaction_unlocked(tmp_path, {}, reason="empty")
+    monkeypatch.setenv("MSB_PROJECT_PATH_MAP", '{"C:/src": "' + str(tmp_path) + '"}')
+    with pytest.raises(ValueError, match="escapes its configured root"):
+        manifest_store.project_path(tmp_path, "C:/src/../outside.json")
 
 
 def test_compat_shims_are_thin_reexports() -> None:

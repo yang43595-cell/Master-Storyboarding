@@ -3,7 +3,7 @@
 import re
 from pathlib import Path
 
-from .artifacts import project_path
+from .manifest_store import project_path
 from .io import read_json, sha256_file
 from .media_types import MEDIA_EXTENSIONS
 

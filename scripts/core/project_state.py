@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import re
 from copy import copy
 from pathlib import Path
 from typing import Any
 
 from .io import project_locked, sha256_json, write_json, write_text
+from .manifest_store import MANIFEST_PATH, current_artifacts, load_manifest
 
 
 SCHEMA_VERSION = "stage-1.0"
@@ -92,6 +94,46 @@ def load_project_state(project_root: Path) -> dict[str, Any]:
     return _ProjectState(normalize_project_state(value), sha256_json(value))
 
 
+def validate_candidate_test_stage(skill: Any) -> None:
+    """Accept only an actual local Skill name, never paths or invented stages."""
+    root = Path(__file__).resolve().parents[2] / "skills"
+    if (not isinstance(skill, str) or not re.fullmatch(r"[a-z][a-z0-9-]*", skill)
+            or not (root / skill / "SKILL.md").is_file()):
+        raise ValueError("候选测试 Skill 不存在或名称无效：" + str(skill))
+
+
+def validate_usage_contract(value: Any) -> None:
+    """Explicit controlled-run checkpoint, not a host-wide spending cap."""
+    if (not isinstance(value, dict) or set(value) != {"required", "turn_id", "limits"}
+            or value["required"] is not True
+            or value["turn_id"] is not None and (not isinstance(value["turn_id"], str) or not value["turn_id"].strip())):
+        raise ValueError("usage_contract 必须明确 required=true、准确 turn_id（未知可为 null）与预算")
+    limits = value["limits"]
+    if (not isinstance(limits, dict) or set(limits) != {"max_input", "max_total", "max_requests"}
+            or any(type(v) is not int or v <= 0 for v in limits.values())):
+        raise ValueError("usage_contract 必须声明本轮三个正整数预算；不自动使用示例默认值")
+
+
+def validate_candidate_test_context(value: Any, state: dict[str, Any]) -> None:
+    allowed_keys = (
+        {"run_id", "authorization_ref", "project_path", "input_artifact_ids"},
+        {"run_id", "authorization_ref", "project_path", "input_artifact_ids", "usage_contract"},
+    )
+    if not isinstance(value, dict) or set(value) not in allowed_keys:
+        raise ValueError("candidate_test 必须有准确运行、授权、项目路径和输入 ID")
+    if any(not isinstance(value[k], str) or not value[k].strip()
+           for k in ("run_id", "authorization_ref", "project_path")):
+        raise ValueError("candidate_test 运行、授权与项目路径不能为空")
+    if "usage_contract" in value:
+        validate_usage_contract(value["usage_contract"])
+    ids = value["input_artifact_ids"]
+    if (not isinstance(ids, list) or any(not isinstance(i, str) or not i.strip() for i in ids)
+            or len(set(ids)) != len(ids)):
+        raise ValueError("candidate_test 输入 ID 无效或重复")
+    if state.get("current_artifacts") or state.get("user_confirmations") or state.get("finalization"):
+        raise ValueError("候选测试必须独立于已确认生产状态")
+
+
 def validate_project_state(state: dict[str, Any]) -> None:
     required = set(STATE_KEYS) - {"workflow_authorizations"}
     if set(state) - {"candidate_test"} - {"workflow_authorizations"} != required:
@@ -99,8 +141,7 @@ def validate_project_state(state: dict[str, Any]) -> None:
         missing = sorted(required - set(state))
         raise ValueError(f"project_state 字段不符合最小契约：extra={extra}, missing={missing}")
     if "candidate_test" in state:
-        from .candidate_test import validate_context
-        validate_context(state["candidate_test"], state)
+        validate_candidate_test_context(state["candidate_test"], state)
     if state.get("schema_version") != SCHEMA_VERSION:
         raise ValueError(f"schema_version 必须为 {SCHEMA_VERSION}")
     if not isinstance(state.get("current_stage"), str):
@@ -163,7 +204,6 @@ def write_project_state(project_root: Path, state: dict[str, Any]) -> None:
         previous_digest = sha256_json(json.loads(path.read_text(encoding="utf-8"))) if path.is_file() else None
         if state.source_digest != previous_digest:
             raise ValueError("项目状态已被其他任务更新；重新读取后重试，不能覆盖新确认")
-    from .artifacts import MANIFEST_PATH, load_manifest
     if (project_root / MANIFEST_PATH).is_file():
         state = reconcile_current_artifacts(state, load_manifest(project_root))
     write_json(path, state)
@@ -183,7 +223,6 @@ def reconcile_current_artifacts(
     A formally adopted revision can replace its selected baseline ID. Other
     current artifacts, confirmations and stage decisions are never added here.
     """
-    from .artifacts import current_artifacts
     valid = {item["artifact_id"] for item in current_artifacts(manifest)}
     selected: list[str] = []
     for artifact_id in _artifact_ids(state["current_artifacts"]):

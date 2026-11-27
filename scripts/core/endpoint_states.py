@@ -3,8 +3,12 @@
 Called only after the consumer validates actual platform control and both image
 uses. No fallback from a mode string or missing source strategy is allowed.
 """
-from .quality_evidence import source_shot_ids, scene_state_requirements, reference_shot_ids
-from .prompt_body import submitted_prompt_body
+from .prompt_body import (
+    reference_shot_ids,
+    scene_state_requirements,
+    source_shot_ids,
+    submitted_prompt_body,
+)
 
 
 def _need(value, message):

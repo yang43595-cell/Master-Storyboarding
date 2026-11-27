@@ -15,7 +15,12 @@ from datetime import datetime
 from pathlib import Path
 
 from .media_types import MEDIA_EXTENSIONS
-from .prompt_body import submitted_prompt_body
+from .prompt_body import (
+    reference_shot_ids,
+    scene_state_requirements,
+    source_shot_ids,
+    submitted_prompt_body,
+)
 
 IMAGE_ASPECTS = ('identity_wardrobe', 'hands_support', 'product_geometry',
                  'ownership', 'space_objects', 'product_phase', 'boundary_state')
@@ -565,27 +570,6 @@ def validate_native_binding_claims(value, root, revision=None, target=None, proj
             validate_native_binding_claims(value[key], root, revision, target, project_id)
 
 
-def source_shot_ids(row):
-    """Resolve both existing aliases as ordered IDs; absence stays unspecified.
-
-    Duplicate IDs inside one segment and conflicting aliases are invalid. A shot
-    may recur across segments (continuous subranges); this is not duplicate use.
-    """
-    direct = row.get('source_shot_ids')
-    mapped = row.get('source_shots')
-    if mapped is not None:
-        if not isinstance(mapped, list):
-            raise ValueError('scene_state: source_shots 必须为准确镜号数组')
-        mapped = [s.get('shot_id') if isinstance(s, dict) else s for s in mapped]
-    for ids in (direct, mapped):
-        if ids is not None and (not isinstance(ids, list) or not ids or
-                                any(not _text(s) for s in ids) or len(set(ids)) != len(ids)):
-            raise ValueError('scene_state: 缺准确、唯一的 source_shots/source_shot_ids')
-    if direct is not None and mapped is not None and direct != mapped:
-        raise ValueError('scene_state: source_shots 与 source_shot_ids 映射不一致')
-    return direct if direct is not None else mapped or []
-
-
 def required_visuals(storyboard, *, shot_ids=None):
     """Read only explicit director requirements; do not infer them from prose."""
     requirements = {}
@@ -736,62 +720,6 @@ def validate_required_visuals(rows, requirements, *, shot_order=(), project=None
                                 for row, _, _ in matches)):
                 raise ValueError(f"action_reference: {shot_id} 缺实际可用的{action['action_key']}动作参考"
                                  f"（{action['product_ast_id']}）")
-
-
-def scene_state_requirements(payload):
-    """Read persistent changes from the existing director JSON; no NLP/vision.
-
-    An omitted declaration is NOT proof that the story has no scene changes.
-    The creative reader must detect and record these before image/video work.
-    """
-    requirements = []
-    for scene in payload.get('scenes', []):
-        if 'scene_states' not in scene:
-            continue
-        states = scene['scene_states']
-        if not isinstance(states, list):
-            raise ValueError('scene_state: scene_states 必须是数组')
-        shots = [s['shot_id'] for s in scene.get('shots', [])]
-        known, occupied, latest = set(), set(), {}
-        for state in states:
-            if (not isinstance(state, dict) or any(not _text(state.get(k)) for k in
-                    ('state_id', 'entity_id', 'change_event', 'description'))
-                    or 'previous_state_id' not in state
-                    or (state['previous_state_id'] is not None and not _text(state['previous_state_id']))
-                    or state['state_id'] == state['previous_state_id']):
-                raise ValueError('scene_state: 缺旧态→事件→新态及场景实体')
-            for key in ('preserve', 'changes', 'source_shot_ids'):
-                values = state.get(key)
-                if not isinstance(values, list) or not values or any(not _text(v) for v in values):
-                    raise ValueError('scene_state: 缺不变量、变化或后续镜号范围')
-            ids = state['source_shot_ids']
-            ident = (state['entity_id'], state['state_id'])
-            if ident in known or len(set(ids)) != len(ids) or not set(ids) <= set(shots):
-                raise ValueError('scene_state: 重复状态或镜号越出来源场景')
-            positions = [shots.index(shot) for shot in ids]
-            prior = latest.get(state['entity_id'])
-            if positions != sorted(positions) or (prior and (
-                    state['previous_state_id'] != prior['state_id'] or
-                    shots.index(prior['source_shot_ids'][-1]) >= positions[0])):
-                raise ValueError('scene_state: 状态链前驱或镜号顺序不一致')
-            latest[state['entity_id']] = state
-            pairs = {(state['entity_id'], shot) for shot in ids}
-            if occupied & pairs:
-                raise ValueError('scene_state: 同镜同实体状态范围冲突；明确起终变化后再处理提交')
-            known.add(ident)
-            occupied.update(pairs)
-            requirements.append(state)
-    return requirements
-
-
-def reference_shot_ids(reference, row):
-    """A scoped use may narrow a multi-shot draft, never widen its authority."""
-    whole = source_shot_ids(row)
-    ids = reference.get('source_shot_ids', whole)
-    if (not isinstance(ids, list) or not ids or any(not _text(s) for s in ids)
-            or len(set(ids)) != len(ids) or not set(ids) <= set(whole)):
-        raise ValueError('scene_state: reference 镜号范围不属于当前生成段')
-    return ids
 
 
 def validate_scene_state_references(row, requirements, *, accepted_prompt_control=False):
