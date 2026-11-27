@@ -13,6 +13,8 @@ from .errors import RevisionControlError
 from .io import (
     PROJECT_LOCK_RELATIVE,
     TRANSACTION_ROOT,
+    canonical_json_bytes,
+    project_locked,
     read_json,
     recover_transactions as _io_recover_transactions,
     sha256_file,
@@ -20,7 +22,14 @@ from .io import (
     write_bytes,
     write_json,
 )
-from .manifest_store import digest, load_manifest, project_path
+from .manifest_store import (
+    MANIFEST_PATH,
+    _FORMAL_PACKAGE_LOGICAL_IDS,
+    _assert_unique_artifact_ids,
+    digest,
+    load_manifest,
+    project_path,
+)
 from .project_state import (
     STATE_KEYS,
     load_project_state,
@@ -438,3 +447,75 @@ def formal_adoption(
             if path.is_file() and file_digest(path) == matched["sha256"]:
                 return {"change_id": change["change_id"], "approval_ref": receipt["approval_ref"], "sha256": matched["sha256"]}
     return None
+
+
+@project_locked
+def save_manifest(
+    project_root: Path,
+    manifest: dict[str, Any],
+    *,
+    load_manifest_fn=None,
+    read_json_fn=read_json,
+    write_json_fn=write_json,
+) -> None:
+    """Persist non-promotion manifest updates while protecting formal current history."""
+    _assert_unique_artifact_ids(manifest)
+    previous = (
+        load_manifest(project_root, read_json_fn=read_json_fn)
+        if load_manifest_fn is None
+        else load_manifest_fn(project_root)
+    )
+    prior_protected = {
+        item.get("artifact_id"): item
+        for item in previous.get("artifacts", [])
+        if item.get("agent_acceptance")
+        or (item.get("asset_review_sha256") or item.get("derived_character_boards_sha256"))
+        and item.get("status") != "candidate"
+        or item.get("logical_id") in _FORMAL_PACKAGE_LOGICAL_IDS and item.get("status") == "current"
+    }
+    prior_current = {ident: item for ident, item in prior_protected.items() if item.get("status") == "current"}
+    guarded_logical_ids = _FORMAL_PACKAGE_LOGICAL_IDS | {
+        item.get("logical_id") for item in prior_protected.values() if item.get("agent_acceptance")
+    }
+    new_by_id = {item.get("artifact_id"): item for item in manifest.get("artifacts", [])}
+    removed = set(prior_protected) - set(new_by_id)
+    if removed:
+        raise ValueError("save_manifest 不能删除 current 正式稿件历史记录")
+    immutable = (
+        "logical_id",
+        "type",
+        "revision",
+        "path_or_url",
+        "checksum",
+        "depends_on",
+        "user_approved",
+        "agent_acceptance",
+    )
+    for artifact_id, existing in prior_protected.items():
+        item = new_by_id[artifact_id]
+        protected_fields = immutable + (("quality_evidence", "product_reference") if existing.get("agent_acceptance") else ())
+        if existing.get("asset_review_sha256"):
+            protected_fields += ("asset_review_sha256", "confirmation_ref")
+        if existing.get("derived_character_boards_sha256"):
+            protected_fields += ("derived_character_boards_sha256", "confirmation_ref")
+        if any(item.get(key) != existing.get(key) for key in protected_fields):
+            raise ValueError("save_manifest 不能改写 current 正式稿件身份、来源或确认 hash；请创建经校验的新修订")
+    for item in manifest.get("artifacts", []):
+        if (
+            item.get("logical_id") not in guarded_logical_ids and not item.get("agent_acceptance")
+            or item.get("status") != "current"
+        ):
+            continue
+        existing = prior_current.get(item.get("artifact_id"))
+        if existing is None:
+            raise ValueError("save_manifest 不能晋升或恢复正式稿件；请使用 adopt-package 或 revision_control.commit_change")
+    source_bytes = getattr(manifest, "_source_bytes", None)
+    if source_bytes is not None and source_bytes != previous._source_bytes:
+        raise ValueError("产物清单已被其他任务更新；重新读取后重试，不能覆盖新记录")
+    manifest["updated_at"] = utc_now()
+    write_json_fn(project_root / MANIFEST_PATH, manifest)
+    from .project_state import sync_current_artifacts
+
+    sync_current_artifacts(project_root, manifest)
+    if source_bytes is not None:
+        manifest._source_bytes = canonical_json_bytes(manifest)

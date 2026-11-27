@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -10,9 +11,15 @@ from .runtime_deps import RuntimeDepsError, require_runtime_deps
 
 SCHEMA_ROOT = Path(__file__).resolve().parents[2] / "schemas"
 
+_PEER_MODULE = sys.modules.get(
+    "core.schema_contracts" if __name__ == "scripts.core.schema_contracts" else "scripts.core.schema_contracts"
+)
 
-class SchemaContractError(ValueError):
-    pass
+if _PEER_MODULE is not None:
+    SchemaContractError = _PEER_MODULE.SchemaContractError
+else:
+    class SchemaContractError(ValueError):
+        pass
 
 
 @lru_cache(maxsize=8)
@@ -73,7 +80,11 @@ def validate_revision_evidence(value: Any) -> None:
 
 def validate_visual_supplement_request(value: Any, *, project_root=None, candidate_test=False) -> dict:
     """One contract-specific test exception; the cached production schema stays strict."""
-    from .candidate_test import context, require_production, result_metadata
+    from .revision_store import (
+        candidate_test_context as context,
+        candidate_test_result_metadata as result_metadata,
+        require_production,
+    )
     name = "visual-supplement-request.schema.json"
     if candidate_test:
         if project_root is None or not context(project_root):
@@ -96,10 +107,13 @@ def validate_visual_supplement_request(value: Any, *, project_root=None, candida
             if project_root is None:
                 raise SchemaContractError("agent_accepted 导演来源须提供准确项目并核验采用依据")
             from pathlib import Path
-            from .artifacts import (load_manifest, project_path, digest,
-                                    artifact_is_adopted, validate_current_dependencies)
+            from .acceptance_rules import (
+                artifact_is_adopted,
+                validate_agent_acceptance,
+                validate_current_dependencies,
+            )
+            from .manifest_store import digest, load_manifest, project_path
             from .project_state import load_project_state
-            from .agent_acceptance import validate_agent_acceptance
             root = Path(project_root).resolve()
             source = value["source_storyboard"]
             manifest, state = load_manifest(root), load_project_state(root)

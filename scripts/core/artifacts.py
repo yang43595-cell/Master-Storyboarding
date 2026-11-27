@@ -19,6 +19,20 @@ from pathlib import Path
 from typing import Any
 
 from . import confirmation_scope
+from .acceptance_rules import (
+    _eligible_agent_adoption,
+    _whole_artifact_receipt,
+    artifact_is_adopted as _rules_artifact_is_adopted,
+    artifact_is_confirmed as _rules_artifact_is_confirmed,
+    formal_adoption as _rules_formal_adoption,
+    read_agent_acceptance,
+    require_current_agent_acceptance as _rules_require_current_agent_acceptance,
+    skill_for_artifact,
+    supplement_director_shots,
+    unchanged_director_usage as _rules_unchanged_director_usage,
+    validate_agent_acceptance,
+    validate_current_dependencies as _rules_validate_current_dependencies,
+)
 from .io import canonical_json_bytes, project_lock, project_locked, read_json, utc_now, write_json
 from .manifest_store import (
     ARTIFACT_STATUSES,
@@ -33,7 +47,10 @@ from .manifest_store import (
     project_path,
 )
 from .project_state import load_project_state
-from .revision_store import formal_adoption as _store_formal_adoption
+from .revision_store import (
+    formal_adoption as _store_formal_adoption,
+    save_manifest as _store_save_manifest,
+)
 
 
 @dataclass(frozen=True)
@@ -68,55 +85,17 @@ class PromotionReport:
         }
 
 
-@project_locked
+_DEFAULT_LOAD_MANIFEST = load_manifest
+
+
 def save_manifest(project_root: Path, manifest: dict[str, Any]) -> None:
-    # The manifest writer is used by many non-manuscript asset workflows. Keep
-    # it available for history/staleness updates, but never let it mint a new
-    # formal current version. Only the transactional adoption and revision
-    # commit functions may perform that transition.
-    _assert_unique_artifact_ids(manifest)
-    previous = load_manifest(project_root)
-    prior_protected = {item.get("artifact_id"): item for item in previous.get("artifacts", [])
-                       if item.get("agent_acceptance") or
-                       (item.get("asset_review_sha256") or item.get("derived_character_boards_sha256"))
-                       and item.get("status") != "candidate" or
-                       item.get("logical_id") in _FORMAL_PACKAGE_LOGICAL_IDS and item.get("status") == "current"}
-    prior_current = {ident: item for ident, item in prior_protected.items() if item.get("status") == "current"}
-    guarded_logical_ids = _FORMAL_PACKAGE_LOGICAL_IDS | {
-        item.get("logical_id") for item in prior_protected.values() if item.get("agent_acceptance")}
-    new_by_id = {item.get("artifact_id"): item for item in manifest.get("artifacts", [])}
-    removed = set(prior_protected) - set(new_by_id)
-    if removed:
-        raise ValueError("save_manifest 不能删除 current 正式稿件历史记录")
-    immutable = ("logical_id", "type", "revision", "path_or_url", "checksum", "depends_on",
-                 "user_approved", "agent_acceptance")
-    for artifact_id, existing in prior_protected.items():
-        item = new_by_id[artifact_id]
-        protected_fields = immutable + (("quality_evidence", "product_reference") if existing.get("agent_acceptance") else ())
-        if existing.get("asset_review_sha256"):
-            protected_fields += ("asset_review_sha256", "confirmation_ref")
-        if existing.get("derived_character_boards_sha256"):
-            protected_fields += ("derived_character_boards_sha256", "confirmation_ref")
-        if any(item.get(key) != existing.get(key) for key in protected_fields):
-            raise ValueError("save_manifest 不能改写 current 正式稿件身份、来源或确认 hash；请创建经校验的新修订")
-    for item in manifest.get("artifacts", []):
-        if (item.get("logical_id") not in guarded_logical_ids and not item.get("agent_acceptance")
-                or item.get("status") != "current"):
-            continue
-        existing = prior_current.get(item.get("artifact_id"))
-        if existing is None:
-            raise ValueError("save_manifest 不能晋升或恢复正式稿件；请使用 adopt-package 或 revision_control.commit_change")
-    source_bytes = getattr(manifest, "_source_bytes", None)
-    if source_bytes is not None and source_bytes != previous._source_bytes:
-        raise ValueError("产物清单已被其他任务更新；重新读取后重试，不能覆盖新记录")
-    manifest["updated_at"] = utc_now()
-    write_json(project_root / MANIFEST_PATH, manifest)
-    # The manifest owns validity; project_state only selects which valid IDs
-    # the current task uses. Never select additional artifacts while syncing.
-    from .project_state import sync_current_artifacts
-    sync_current_artifacts(project_root, manifest)
-    if source_bytes is not None:
-        manifest._source_bytes = canonical_json_bytes(manifest)
+    _store_save_manifest(
+        project_root,
+        manifest,
+        load_manifest_fn=None if load_manifest is _DEFAULT_LOAD_MANIFEST else load_manifest,
+        read_json_fn=read_json,
+        write_json_fn=write_json,
+    )
 
 
 def exact_narrative_approval(receipt: Any, entry: dict[str, Any], sha256: str) -> bool:
@@ -174,8 +153,7 @@ def narrative_has_exact_approval(project_root: Path, source_path: Path, narrativ
 
 
 def _delegated_dialogue_passed(root, entry, state):
-    from .agent_acceptance import validate_agent_acceptance
-    report = validate_agent_acceptance(root, entry, state=state)
+    report = validate_agent_acceptance(root, entry, state=state, file_digest=digest, read_json_fn=read_json)
     return any(check["id"] == "CREATIVE-DIALOGUE" and check["result"] == "pass" for check in report["checks"])
 
 
@@ -361,7 +339,7 @@ def validate_candidate_submission(project_root: Path, entry: dict[str, Any],
                 raise ValueError("视频来源镜号不属于准确已确认导演包：" + ", ".join(sorted(unknown)))
         if prior:
             revision_store._validate_segment_reconciliation(root, prior[0], payload, read_json_fn=read_json)
-        from .generation_boundaries import validate_generation_boundaries
+        from .boundary_rules import validate_generation_boundaries
         validate_generation_boundaries(
             payload, storyboard, root, require_physical=not reading_existing,
             source_artifact={'artifact_id': entry['artifact_id'], 'revision': entry['revision'],
@@ -476,7 +454,6 @@ def adopt_initial_package(project_root: Path, artifact_id: str, approval_ref: st
 def validate_agent_submission(project_root: Path, entry: dict[str, Any], manifest: dict[str, Any],
                               report: dict[str, Any]) -> str:
     """Reuse manuscript/source checks; supplemental images retain exact shot use."""
-    from .agent_acceptance import skill_for_artifact
     skill_for_artifact(entry)
     root = Path(project_root).resolve()
     if entry.get("logical_id") in {"narrative.package", "storyboard.package", "video.prompt"}:
@@ -503,14 +480,14 @@ def validate_agent_submission(project_root: Path, entry: dict[str, Any], manifes
         raise ValueError("自主验收补图用途镜号不属于准确当前导演包")
     from .quality_evidence import validate_image_evidence
     validate_image_evidence(root, path, entry.get("quality_evidence"), usage,
-                            product_reference=entry.get("product_reference"), artifact=entry, state=state)
+                            product_reference=entry.get("product_reference"), artifact=entry, state=state,
+                            file_digest=digest)
     return digest(path)
 
 
 def adopt_initial_agent_artifact(project_root: Path, artifact_id: str, report_path: str,
                                  *, expected_checksum: str | None = None) -> dict[str, Any]:
     """Adopt authorized downstream work without minting a human confirmation."""
-    from .agent_acceptance import read_agent_acceptance, skill_for_artifact, validate_agent_acceptance
     from .revision_store import _commit_json_transaction_unlocked, require_production
     root = Path(project_root).resolve()
     with project_lock(root):
@@ -534,10 +511,12 @@ def adopt_initial_agent_artifact(project_root: Path, artifact_id: str, report_pa
             raise ValueError("自主采用候选实际字节与单段预检来源的 sha256 不符")
         entry["checksum"] = actual
         state = load_project_state(root)
-        entry["agent_acceptance"], report = read_agent_acceptance(root, entry, report_path, state=state)
+        entry["agent_acceptance"], report = read_agent_acceptance(
+            root, entry, report_path, state=state, file_digest=digest, read_json_fn=read_json
+        )
         if validate_agent_submission(root, entry, manifest, report) != actual or digest(path) != actual:
             raise ValueError("候选在自主采用检查期间发生变化")
-        validate_agent_acceptance(root, entry, state=state)
+        validate_agent_acceptance(root, entry, state=state, file_digest=digest, read_json_fn=read_json)
         entry["status"] = "current"
         entry["user_approved"] = False
         state["current_artifacts"] = list(dict.fromkeys([*state.get("current_artifacts", []), artifact_id]))
@@ -555,60 +534,9 @@ def adopt_initial_agent_artifact(project_root: Path, artifact_id: str, report_pa
 
 def unchanged_director_usage(project, baseline, replacement, shot_ids) -> bool:
     """Prove a supplement's ordered scene context against two exact director files."""
-    if (not shot_ids or baseline.get('status') not in {'current', 'superseded'}
-            or replacement.get('status') not in {'candidate', 'current'}
-            or baseline.get('depends_on') != replacement.get('depends_on')):
-        return False
-    project = Path(project).resolve()
-    prefixes = []
-    package_contexts = []
-    try:
-        for entry in (baseline, replacement):
-            if entry.get('logical_id') != 'storyboard.package' or entry.get('type') != 'storyboard.package':
-                return False
-            path = project_path(project, entry['path_or_url'])
-            if (not path.is_relative_to(project) or path.suffix.lower() != '.json'
-                    or not entry.get('checksum') or digest(path) != entry['checksum']):
-                return False
-            package = read_json(path)
-            if package.get('schema_version') not in ('4.0', '5.0') or package.get('revision') != entry.get('revision'):
-                return False
-            scope = {}
-            scene_ids = set()
-            scenes = package['scenes']
-            for index, scene in enumerate(scenes):
-                scene_id = scene['scene_id']
-                if not scene_id or scene_id in scene_ids:
-                    return False
-                scene_ids.add(scene_id)
-                for shot in scene['shots']:
-                    shot_id = shot['shot_id']
-                    if not shot_id or shot_id in scope:
-                        return False
-                    scope[shot_id] = index
-            if not set(shot_ids) <= scope.keys():
-                return False
-            # Retain the scene's shared context and all preceding scenes.
-            prefixes.append(canonical_json_bytes(scenes[:max(scope[shot] for shot in shot_ids) + 1]))
-            context = {key: value for key, value in package.items() if key not in {
-                'scenes', 'revision', 'status', 'human_readable_path', 'rebuild_provenance'}}
-            timing = context.get('timing_basis')
-            if isinstance(timing, dict) and timing.get('status') == 'not_evaluable':
-                # The descriptive summary may change with a later scene's budget.
-                # Timing status and exact source identity remain bound.
-                context['timing_basis'] = {key: value for key, value in timing.items() if key != 'source_type'}
-            package_contexts.append(canonical_json_bytes(context))
-    except (AttributeError, KeyError, OSError, TypeError, ValueError):
-        return False
-    return prefixes[0] == prefixes[1] and package_contexts[0] == package_contexts[1]
-
-
-def supplement_director_shots(entry, report) -> set[str]:
-    permitted = confirmation_scope.image_usage_shots(report.get('usage'), required=True)
-    evidence = entry.get('quality_evidence') or {}
-    observed = confirmation_scope.image_usage_shots(
-        {'source_shot_ids': evidence.get('source_shot_ids')}, required=True)
-    return set(permitted) | set(observed)
+    return _rules_unchanged_director_usage(
+        project, baseline, replacement, shot_ids, file_digest=digest, read_json_fn=read_json
+    )
 
 
 def unchanged_director_edges(project, manifest, state, baseline, replacement) -> set[tuple[str, str]]:
@@ -617,7 +545,6 @@ def unchanged_director_edges(project, manifest, state, baseline, replacement) ->
             or baseline.get('status') != 'current'
             or not artifact_is_adopted(baseline, state, project)):
         return set()
-    from .agent_acceptance import validate_agent_acceptance
     kept = set()
     current = current_artifacts(manifest)
     logical_ids = [item.get('logical_id') for item in current]
@@ -627,7 +554,9 @@ def unchanged_director_edges(project, manifest, state, baseline, replacement) ->
                 or 'storyboard.package' not in (item.get('depends_on') or [])):
             continue
         try:
-            report = validate_agent_acceptance(project, item, state=state)
+            report = validate_agent_acceptance(
+                project, item, state=state, file_digest=digest, read_json_fn=read_json
+            )
             validate_current_dependencies(item, manifest, state, project)
             if unchanged_director_usage(project, baseline, replacement, supplement_director_shots(item, report)):
                 kept.add(('storyboard.package', item['logical_id']))
@@ -911,123 +840,34 @@ def verify_image_confirmation(path, receipt, *, file_digest=None):
 
 def formal_adoption(entry, root):
     """Return the completed, hash-bound adoption evidence for a bundled artifact."""
-    return _store_formal_adoption(entry, root, file_digest=digest, read_json_fn=read_json)
-
-
-def _whole_artifact_receipt(receipt):
-    """整稿确认判定只有 core.confirmation_scope 一个出口；本函数只做转发。"""
-    return confirmation_scope.is_whole_artifact(receipt)
+    return _rules_formal_adoption(entry, root, file_digest=digest, read_json_fn=read_json)
 
 
 def artifact_is_confirmed(entry, state, root=None):
-    if entry.get('candidate_test') or state.get('candidate_test'):
-        return False
-    if entry.get('status') != 'current' or entry.get('user_approved') is not True:
-        return False
-    artifact_id = entry.get('artifact_id')
-    for receipt in state.get('user_confirmations', []):
-        if not _whole_artifact_receipt(receipt):
-            continue
-        # Legacy workbench confirmations carry a bundle.  Revision control's
-        # formal candidate confirmation carries the adopted artifact directly.
-        # Both are explicit user-confirmation receipts; neither is inferred
-        # merely from a current artifact or an automated review.
-        if artifact_id in receipt.get('artifact_ids', []):
-            return True
-        if (receipt.get('kind') == 'revision-candidate'
-                and receipt.get('artifact_id') == artifact_id
-                and receipt.get('sha256') == entry.get('checksum')
-                and receipt.get('approval_ref')):
-            return True
-    # Bundled revision control retains its signed candidate receipt in the
-    # completed change history.  Read that canonical evidence directly rather
-    # than manufacturing a duplicate project-state receipt for every member.
-    return bool(root and formal_adoption(entry, root))
-
-
-def _eligible_agent_adoption(entry, state, root):
-    return (root is not None and entry.get('status') == 'current' and entry.get('user_approved') is False
-            and not (entry.get('candidate_test') or entry.get('production_blocked') or state.get('candidate_test')))
+    return _rules_artifact_is_confirmed(entry, state, root, file_digest=digest, read_json_fn=read_json)
 
 
 def require_current_agent_acceptance(entry, state, root, *, file_digest=None):
     """Return the validated report for a currently adopted, agent-accepted artifact."""
-    if (not _eligible_agent_adoption(entry, state, root) or entry.get('asset_review_sha256')
-            or not entry.get('agent_acceptance')):
-        raise ValueError('参考尚未确认、已返工失效或被新版替代')
-    from .agent_acceptance import validate_agent_acceptance
-
-    return validate_agent_acceptance(root, entry, state=state, file_digest=file_digest)
+    return _rules_require_current_agent_acceptance(
+        entry, state, root, file_digest=digest if file_digest is None else file_digest, read_json_fn=read_json
+    )
 
 
 def artifact_is_adopted(entry, state, root=None):
     """Read human adoption or separately authorized, byte-bound agent acceptance."""
-    if artifact_is_confirmed(entry, state, root):
-        return True
-    if entry.get('logical_id') == 'visual.asset.manifest':
-        return False
-    if not entry.get('agent_acceptance'):
-        return False
-    try:
-        require_current_agent_acceptance(entry, state, root)
-    except (ValueError, OSError, KeyError, TypeError):
-        return False
-    return True
+    return _rules_artifact_is_adopted(entry, state, root, file_digest=digest, read_json_fn=read_json)
 
 
 def validate_current_dependencies(entry, manifest, state, root, *, checked=None, file_digest=None, read_payload=None):
-    """Read-only consumption check; never resurrect historical files as current.
-
-    Logical edges establish availability, not version equality. Existing explicit
-    source_narrative/source_storyboard refs establish exact revision/path identity.
-    Reuse checks only within one operation against the same manifest and state.
-    """
-    visiting = set()
-    checked = set() if checked is None else checked
-    file_digest = digest if file_digest is None else file_digest
-    read_payload = read_json if read_payload is None else read_payload
-    def visit(item):
-        ident = item.get('artifact_id')
-        if ident in visiting:
-            raise ValueError('产物依赖存在循环：' + str(ident))
-        if ident in checked:
-            return
-        visiting.add(ident)
-        deps = item.get('depends_on') or []
-        if not isinstance(deps, list) or any(not isinstance(dep, str) for dep in deps):
-            raise ValueError('depends_on 必须是 logical_id 列表')
-        path = project_path(root, item.get('path_or_url', ''))
-        payload = {}
-        if path.is_file() and path.suffix.lower() == '.json':
-            try:
-                value = read_payload(path)
-                if isinstance(value, dict):
-                    payload = value
-            except (OSError, ValueError) as exc:
-                raise ValueError('依赖来源 JSON 不可读：' + str(path)) from exc
-        named = {'narrative.package': 'source_narrative', 'storyboard.package': 'source_storyboard'}
-        # An explicit reference is also a dependency even when a legacy edge was omitted.
-        required = set(deps) | {lid for lid, field in named.items() if field in payload}
-        for logical_id in sorted(required):
-            matches = [a for a in manifest.get('artifacts', [])
-                       if a.get('logical_id') == logical_id and a.get('status') == 'current']
-            if len(matches) != 1:
-                raise ValueError('上游必须有唯一 current，不能回退历史：' + logical_id)
-            source = matches[0]
-            if not artifact_is_adopted(source, state, root):
-                raise ValueError('上游 current 缺少有效确认：' + logical_id)
-            source_path = project_path(root, source.get('path_or_url', ''))
-            if not source_path.is_file() or (source.get('checksum') and file_digest(source_path) != source['checksum']):
-                raise ValueError('上游文件缺失或已偏离登记字节：' + logical_id)
-            ref = payload.get(named.get(logical_id, ''))
-            if ref is not None:
-                if not isinstance(ref, dict) or ref.get('revision') != source.get('revision'):
-                    raise ValueError('来源修订与 current 上游不一致：' + logical_id)
-                if any(key in ref and ref[key] != source.get(key) for key in ('artifact_id', 'logical_id')):
-                    raise ValueError('来源身份与 current 上游不一致：' + logical_id)
-                if ref.get('path') and project_path(root, ref['path']) != source_path:
-                    raise ValueError('来源路径与 current 上游不一致：' + logical_id)
-            visit(source)
-        visiting.remove(ident)
-        checked.add(ident)
-    visit(entry)
+    """Read-only consumption check; never resurrect historical files as current."""
+    return _rules_validate_current_dependencies(
+        entry,
+        manifest,
+        state,
+        root,
+        checked=checked,
+        file_digest=digest if file_digest is None else file_digest,
+        read_payload=read_json if read_payload is None else read_payload,
+        is_adopted_fn=artifact_is_adopted,
+    )

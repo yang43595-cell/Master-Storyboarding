@@ -17,20 +17,15 @@ LEGACY_CORE_SCC = frozenset({
     "core.agent_acceptance",
     "core.artifacts",
     "core.asset_refs",
-    "core.candidate_test",
     "core.canvas_readback",
     "core.character_boards",
-    "core.delivery_files",
     "core.director_inputs",
     "core.draft_delivery",
-    "core.generation_boundaries",
     "core.production_handoff",
-    "core.quality_evidence",
     "core.recreation_assets",
     "core.recreation_segments",
     "core.review_publication",
     "core.revision_control",
-    "core.schema_contracts",
     "core.story_sources",
     "core.visual_readiness",
 })
@@ -52,6 +47,7 @@ REDFRAME_MODULES = frozenset({
 })
 
 L0_FOUNDATION_MODULES = frozenset({
+    "core",
     "core.errors",
     "core.media_types",
     "core.io",
@@ -80,6 +76,17 @@ L1_PRIMITIVE_MODULES = frozenset({
     "core.prompt_body",
     "core.prompt_scene_control",
     "core.endpoint_states",
+})
+
+L2_RULE_CONTRACT_MODULES = frozenset({
+    "core.asset_choice_rules",
+    "core.quality_rules",
+    "core.boundary_rules",
+    "core.delivery_files",
+    "core.quality_evidence",
+    "core.acceptance_rules",
+    "core.schema_contracts",
+    "core.candidate_test",
 })
 
 BRANCH_A_MODULES = frozenset({
@@ -297,6 +304,9 @@ def test_l0_foundation_has_no_upward_dependencies() -> None:
     mods, adj = _collect_modules()
     missing = sorted(L0_FOUNDATION_MODULES - set(mods))
     assert missing == [], f"L0_FOUNDATION_MODULES contains missing modules: {missing}"
+    assert adj.get("core", set()) == set(), (
+        f"scripts/core/__init__.py must remain zero-import, got: {sorted(adj.get('core', set()))}"
+    )
     upward = {
         m: sorted(adj[m] - L0_FOUNDATION_MODULES)
         for m in sorted(L0_FOUNDATION_MODULES)
@@ -324,6 +334,201 @@ def test_l1_primitives_have_no_upward_dependencies() -> None:
     assert _tarjan_sccs(set(L1_PRIMITIVE_MODULES), l1_adj) == [], (
         "L1 primitive modules must form an acyclic DAG"
     )
+
+
+def test_l2_rule_contracts_have_no_upward_dependencies() -> None:
+    mods, adj = _collect_modules()
+    missing = sorted(L2_RULE_CONTRACT_MODULES - set(mods))
+    assert missing == [], f"L2_RULE_CONTRACT_MODULES contains missing modules: {missing}"
+    allowed = L0_FOUNDATION_MODULES | L1_PRIMITIVE_MODULES | L2_RULE_CONTRACT_MODULES
+    upward = {
+        m: sorted(adj[m] - allowed)
+        for m in sorted(L2_RULE_CONTRACT_MODULES)
+        if adj[m] - allowed
+    }
+    assert upward == {}, (
+        f"L2 rule/contract modules must not import high-level orchestration or L3-L4 modules: {upward}"
+    )
+    l2_adj = {m: adj[m] & L2_RULE_CONTRACT_MODULES for m in L2_RULE_CONTRACT_MODULES}
+    assert _tarjan_sccs(set(L2_RULE_CONTRACT_MODULES), l2_adj) == [], (
+        "L2 rule/contract modules must form an acyclic DAG"
+    )
+
+
+def test_l2_rule_splits_reexports_and_monkeypatch_hooks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for root in (str(REPO_ROOT), str(SCRIPTS_ROOT)):
+        if root not in sys.path:
+            monkeypatch.syspath_prepend(root)
+    from scripts.core import (
+        acceptance_rules,
+        agent_acceptance,
+        artifacts,
+        boundary_rules,
+        candidate_test,
+        generation_boundaries,
+        quality_evidence,
+        quality_rules,
+        revision_store,
+        schema_contracts,
+    )
+
+    for attr in (
+        "IMAGE_ASPECTS",
+        "DRAFT_ASPECTS",
+        "PACKAGING_ASPECTS",
+        "MAX_GENERATION_SEGMENT_SECONDS",
+        "fingerprint",
+        "draft_binding",
+        "validate_draft_evidence",
+        "validate_required_visuals",
+        "validate_scene_state_coverage",
+        "validate_shot_durations",
+    ):
+        assert getattr(quality_evidence, attr) is getattr(quality_rules, attr)
+    for attr in (
+        "validate_generation_boundaries",
+        "validate_delivery_cutpoints",
+        "validate_delivery_parameters",
+        "validate_director_body",
+        "diagnose_scene_state_plan",
+    ):
+        assert getattr(generation_boundaries, attr) is getattr(boundary_rules, attr)
+    for attr in (
+        "MAX_GENERATION_SEGMENT_SECONDS",
+        "validate_required_visuals",
+        "validate_scene_state_coverage",
+        "validate_shot_durations",
+    ):
+        assert getattr(generation_boundaries, attr) is getattr(quality_rules, attr)
+    for attr in (
+        "WORKFLOW",
+        "SKILLS",
+        "ASSET_ADOPTION_SKILL",
+        "AUTHORIZATION_SKILLS",
+        "CORE_CHECKS",
+        "skill_for_artifact",
+        "require_workflow_authorization",
+        "register_workflow_authorization",
+    ):
+        assert getattr(agent_acceptance, attr) is getattr(acceptance_rules, attr)
+    assert candidate_test.save_manifest is revision_store.save_manifest
+
+    short_schema = importlib.import_module("core.schema_contracts")
+    assert short_schema.SchemaContractError is schema_contracts.SchemaContractError
+
+    # Verify save_manifest monkeypatch hooks and formal-history protection invariants
+    pkg_file = tmp_path / "02_编导" / "narrative_v1.json"
+    pkg_file.parent.mkdir(parents=True, exist_ok=True)
+    pkg_file.write_text('{"revision": "v1"}\n', encoding="utf-8")
+    pkg_sha = artifacts.digest(pkg_file)
+    manifest_file = tmp_path / artifacts.MANIFEST_PATH
+    manifest_file.parent.mkdir(parents=True, exist_ok=True)
+    initial_manifest = {
+        "schema_version": "1.0",
+        "artifacts": [
+            {
+                "artifact_id": "NAR-1",
+                "logical_id": "narrative.package",
+                "type": "narrative-package",
+                "revision": "v1",
+                "status": "current",
+                "path_or_url": "02_编导/narrative_v1.json",
+                "checksum": pkg_sha,
+                "depends_on": [],
+                "user_approved": True,
+            }
+        ],
+    }
+    artifacts.write_json(manifest_file, initial_manifest)
+    manifest_reads: list[Path] = []
+    manifest_writes: list[Path] = []
+    orig_read = artifacts.read_json
+    orig_write = artifacts.write_json
+    monkeypatch.setattr(artifacts, "read_json", lambda p: (manifest_reads.append(Path(p)), orig_read(p))[1])
+    monkeypatch.setattr(
+        artifacts, "write_json", lambda p, v: (manifest_writes.append(Path(p)), orig_write(p, v))[1]
+    )
+    updated_manifest = {
+        "schema_version": "1.0",
+        "artifacts": [
+            dict(initial_manifest["artifacts"][0]),
+            {
+                "artifact_id": "DIR-CAND-1",
+                "logical_id": "storyboard.package",
+                "type": "storyboard-package",
+                "revision": "v1",
+                "status": "candidate",
+                "path_or_url": "03_导演/storyboard_v1.json",
+                "checksum": "a" * 64,
+                "depends_on": ["narrative.package"],
+                "user_approved": False,
+            },
+        ],
+    }
+    artifacts.save_manifest(tmp_path, updated_manifest)
+    assert manifest_reads == [manifest_file]
+    assert manifest_writes == [manifest_file]
+    with pytest.raises(ValueError, match="不能删除 current 正式稿件历史记录"):
+        artifacts.save_manifest(tmp_path, {"schema_version": "1.0", "artifacts": []})
+    tampered = dict(initial_manifest["artifacts"][0], checksum="b" * 64)
+    with pytest.raises(ValueError, match="不能改写 current 正式稿件身份、来源或确认 hash"):
+        artifacts.save_manifest(tmp_path, {"schema_version": "1.0", "artifacts": [tampered]})
+    unadopted_promotion = dict(updated_manifest["artifacts"][1], status="current")
+    with pytest.raises(ValueError, match="不能晋升或恢复正式稿件"):
+        artifacts.save_manifest(
+            tmp_path,
+            {"schema_version": "1.0", "artifacts": [dict(initial_manifest["artifacts"][0]), unadopted_promotion]},
+        )
+
+    # Verify agent_acceptance monkeypatch hooks and edge-case validation
+    aa_reads: list[Path] = []
+    aa_hashes: list[Path] = []
+    orig_aa_read = agent_acceptance.read_json
+    orig_aa_hash = agent_acceptance.sha256_file
+    monkeypatch.setattr(
+        agent_acceptance, "read_json", lambda p: (aa_reads.append(Path(p)), orig_aa_read(p))[1]
+    )
+    monkeypatch.setattr(
+        agent_acceptance, "sha256_file", lambda p: (aa_hashes.append(Path(p)), orig_aa_hash(p))[1]
+    )
+    cand_file = tmp_path / "03_导演" / "storyboard_v1.json"
+    cand_file.parent.mkdir(parents=True, exist_ok=True)
+    cand_file.write_text('{"revision": "v1"}\n', encoding="utf-8")
+    cand_sha = orig_aa_hash(cand_file)
+    binding = agent_acceptance.acceptance_binding(
+        tmp_path,
+        {
+            "artifact_id": "DIR-CAND-1",
+            "logical_id": "storyboard.package",
+            "type": "storyboard-package",
+            "revision": "v1",
+            "status": "candidate",
+            "path_or_url": "03_导演/storyboard_v1.json",
+            "checksum": cand_sha,
+            "depends_on": ["narrative.package"],
+        },
+    )
+    assert binding["artifact"]["sha256"] == cand_sha
+    assert [u["artifact_id"] for u in binding["upstreams"]] == ["NAR-1"]
+    assert aa_reads == [manifest_file.resolve()]
+    assert aa_hashes == [cand_file.resolve(), pkg_file.resolve()]
+    empty_file = tmp_path / "03_导演" / "empty.json"
+    empty_file.write_bytes(b"")
+    with pytest.raises(ValueError, match="身份、修订或文件为空"):
+        agent_acceptance.acceptance_binding(
+            tmp_path,
+            {
+                "artifact_id": "DIR-EMPTY",
+                "logical_id": "storyboard.package",
+                "type": "storyboard-package",
+                "revision": "v1",
+                "status": "candidate",
+                "path_or_url": "03_导演/empty.json",
+                "depends_on": [],
+            },
+        )
 
 
 def test_l1_store_reexports_and_boundary_invariants(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

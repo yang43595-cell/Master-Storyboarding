@@ -5,12 +5,12 @@ import json
 import re
 from pathlib import Path
 from urllib.parse import urlsplit
-from .artifacts import project_path, load_manifest
+from .manifest_store import load_manifest, project_path
 from .io import sha256_file
 from .media_types import LOCAL_REFERENCE_EXTENSIONS
 from .product_reference_pack import resolve_product_pack
 from .project_kickoff import REQUEST_PATH, load_kickoff
-from .quality_evidence import IMAGE_ASPECTS
+from .quality_rules import IMAGE_ASPECTS
 
 # Conservative transfer budget for this workflow, not a universal platform limit.
 DEFAULT_MAX_PACKAGE_BYTES = 19_000_000
@@ -118,7 +118,7 @@ def discover_dependencies(project: Path, files=(), input_roots=(), *, payload=No
         nonlocal manifest, testing
         if manifest is None:
             manifest = load_manifest(project)
-            from .candidate_test import context
+            from .revision_store import candidate_test_context as context
             testing = context(project)
             if testing:
                 report.update(production_blocked=True, review_status='unreviewed')

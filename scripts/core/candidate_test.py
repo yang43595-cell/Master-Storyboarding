@@ -20,6 +20,7 @@ from .revision_store import (
     candidate_test_result_metadata as result_metadata,
     require_production,
     require_production_manifest,
+    save_manifest,
 )
 
 
@@ -78,7 +79,6 @@ def configure(project, run_id, authorization_ref, input_artifact_ids, *, current
 
 
 def _configure_locked(project, run_id, authorization_ref, input_artifact_ids, *, current_stage=None, usage_contract=None):
-    from .artifacts import save_manifest
     project = Path(project).resolve()
     if not project.is_dir():
         raise ValueError("隔离测试项目不存在")

@@ -25,7 +25,9 @@
 - [ ] **Step 3：大代码清理与 `scripts/core/` 循环依赖彻底清零**
   - [x] **3A 死代码清理**：清理已退役 `visual_asset_library` 与旧 `prepare` 遗留的无引用死函数（`visual_asset_choices.change`/`save_choices`/`production_spec`/`scene_state_coverage`、`visual_asset_product_usage.source_narrative`/`append_table`、`visual_asset_source.reference_evidence`/`resolve_reference`/`local_reference_document`、`review_publication` 废弃网页资产比对等），落地纯规则模块 `asset_choice_rules`（使 `core.visual_asset_choices` 脱离循环 SCC，27 → 26），并修正共享资产模块与 Branch A `visual_readiness` 的分支归属及门禁。
   - [x] **3B L1 原语下沉**：抽离无环的清单与状态存储原语（`manifest_store`、`revision_store`），消除 `project_state`、`project_kickoff`、`prompt_body`、`prompt_scene_control`、`endpoint_states` 的反向依赖并补齐 L1 无向上依赖门禁（顺带使 `visual_asset_product_usage`、`asset_batch_receipt` 脱离循环 SCC，26 → 19）。
-  - [ ] **3C L2/L3 职责拆分与 SCC 清零**：拆分超千行上帝模块中的底层纯校验规则与高层编排入口（`quality_rules`、`boundary_rules`、`acceptance_rules`、`script_approval`、`visual_handoff`），将循环强连通分量（`LEGACY_CORE_SCC`）从 **27（当前剩余 19）降至 0**，把门禁收紧为全仓 Python 零循环依赖。
+  - [ ] **3C L2/L3 职责拆分与 SCC 清零**：拆分超千行上帝模块中的底层纯校验规则与高层编排入口（`quality_rules`、`boundary_rules`、`acceptance_rules`、`script_approval`、`visual_handoff`），将循环强连通分量（`LEGACY_CORE_SCC`）从 **27（当前剩余 14）降至 0**，把门禁收紧为全仓 Python 零循环依赖。
+    - [x] **Batch 3-1（19 → 14）**：下沉 `save_manifest` 至 `revision_store`，抽离无向上依赖的 L2 规则模块 `quality_rules`、`boundary_rules`、`acceptance_rules` 并锁死 L2 规则/契约无向上依赖门禁，使 `candidate_test`、`delivery_files`、`generation_boundaries`、`quality_evidence`、`schema_contracts` 脱离循环 SCC。
+    - [ ] **Batch 3-2（14 → 0）**：拆分剩余高层编排耦合（`script_approval`、`visual_handoff` 等），清零最后 14 个 `LEGACY_CORE_SCC` 模块并锁死全仓 Python 零循环依赖。
 
 - [ ] **Step 4：全量回归验证与技术决策留档**
   - 运行全量 `.venv/bin/python -m pytest`、`node --test` 与文档引用完整性检查，确认零回归。

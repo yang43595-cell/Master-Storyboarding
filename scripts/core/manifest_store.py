@@ -26,12 +26,12 @@ class _Manifest(dict):
         self._source_bytes = canonical_json_bytes(value)
 
 
-def load_manifest(project_root: Path) -> dict[str, Any]:
+def load_manifest(project_root: Path, *, read_json_fn=read_json) -> dict[str, Any]:
     """读取桌面项目产物清单；不存在时返回空清单。"""
     path = project_root / MANIFEST_PATH
     if not path.exists():
         return _Manifest({"schema_version": "1.0", "artifacts": []})
-    value = read_json(path)
+    value = read_json_fn(path)
     if not isinstance(value, dict):
         raise ValueError("artifact_manifest.json 顶层必须是对象")
     value.setdefault("artifacts", [])
