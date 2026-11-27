@@ -9,11 +9,14 @@ import sys
 
 from PIL import Image
 
-from .core.io import file_lock, read_json, sha256_file, write_bytes, write_json
-from .core.project_kickoff import grant_covers_asset, load_kickoff
-from .core.redframe_image_ui import (ImageUIError, _canvas_id, _ident, _one, image_browser_session,
-                                     image_resume_step)
-from .core.redframe_workspace import _image_output_path
+if not __package__:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from scripts.core.io import file_lock, read_json, sha256_file, write_bytes, write_json
+from scripts.core.project_kickoff import grant_covers_asset, load_kickoff
+from scripts.core.redframe_image_ui import (ImageUIError, _canvas_id, _ident, _one, image_browser_session,
+                                             image_resume_step)
+from scripts.core.redframe_workspace import _image_output_path
 
 
 def project_path(project, filename):
@@ -85,7 +88,7 @@ def revision_plan(project, previous, request):
 
 
 def check_preparation(project, request, plan, actor_id, task_id, context_id):
-    from .core.candidate_test import require_production_manifest
+    from scripts.core.candidate_test import require_production_manifest
     require_production_manifest(project)
     if not Path(request).is_file() or sha256_file(request) != plan['request_sha256']:
         raise ValueError('单图请求文件缺失或字节已变化')

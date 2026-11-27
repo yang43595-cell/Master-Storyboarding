@@ -59,7 +59,7 @@ Step 1 [共享上游]: creative-director (narrative_package.py) ──► 02_编
 
 1. **禁止 `core -> CLI` 反向导入**：`scripts/core/*.py` 不得导入任何顶层 `scripts/*.py`。
 2. **禁止 L0 基础设施向上依赖**：L0 模块（含 `core.io` 内的 `recover_transactions` 等）不得导入 L1–L4 模块。
-3. **禁止 Branch A / Branch B 交叉导入及共享资产反向依赖**：Branch A（`director_package`、`visual_stage_cli`、`core.visual_readiness`、`core.redframe_creative`）与 Branch B（`prepare_depth_clips`、`return_director_segment`、`core.recreation_*`、`core.redframe_recreation`、`core.depth_reference_review`）之间零互引；共享资产模块（`asset_stage_cli`、`chat_asset_review`、`redframe_image_revision`、`core.asset_*`、`core.character_boards`、`core.product_refs`、`core.visual_asset_*`）不得反向导入 Branch A 或 Branch B。
+3. **禁止 Branch A / Branch B 交叉导入及共享上游/画布原语反向依赖**：Branch A（`director_package`、`visual_stage_cli`、`core.visual_readiness`、`core.redframe_creative`）与 Branch B（`prepare_depth_clips`、`return_director_segment`、`core.recreation_*`、`core.redframe_recreation`、`core.depth_reference_review`）之间零互引；共享资产模块（`asset_stage_cli`、`chat_asset_review`、`redframe_image_revision`、`core.asset_*`、`core.character_boards`、`core.product_refs`、`core.visual_asset_*`）与共享红帧画布原语（`core.redframe_draft_ui`、`core.redframe_image_ui`、`core.redframe_workspace`）不得反向导入 Branch A 或 Branch B。
 4. **禁止红帧层出现循环依赖**：`core.redframe_creative`、`core.redframe_recreation`、`redframe_draft`、`core.redframe_draft_ui`、`core.redframe_image_ui`、`core.redframe_workspace` 保持无环 DAG。
 5. **禁止在 `scripts/` 顶层新增无 `main()` 的库文件**：共享领域逻辑必须放在 `scripts/core/`，顶层 `scripts/*.py` 只放具备独立 CLI 入口的脚本（薄转发兼容垫片除外）。
 6. **禁止既有循环依赖集合扩大（并在解耦后锁死零环）**：`scripts/` 模块依赖图不得新增任何循环强连通分量。

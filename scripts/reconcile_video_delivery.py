@@ -7,12 +7,16 @@ from collections import defaultdict
 import json
 from pathlib import Path, PurePosixPath
 import re
+import sys
 
-from .core.artifacts import cache_file_digests, project_path
-from .core.io import read_json, sha256_file
-from .core.media_types import MEDIA_EXTENSIONS
-from .core.project_kickoff import load_project_request
-from .core.redframe_image_ui import _canvas_id
+if not __package__:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from scripts.core.artifacts import cache_file_digests, project_path
+from scripts.core.io import read_json, sha256_file
+from scripts.core.media_types import MEDIA_EXTENSIONS
+from scripts.core.project_kickoff import load_project_request
+from scripts.core.redframe_image_ui import _canvas_id
 
 
 _FAILURE_STATES = ("failed", "cancelled", "canceled", "rejected", "platform_rejected")

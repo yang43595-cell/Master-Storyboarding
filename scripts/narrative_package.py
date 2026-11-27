@@ -11,12 +11,20 @@ from pathlib import Path
 from typing import Any
 
 from copy import deepcopy
-from core import revision_control as rc
-from core.io import project_lock
-from core.product_reference_pack import resolve_product_pack
-from core.project_kickoff import load_kickoff
-from core.schema_contracts import require_schema
-from core.stage_guidance import build_stage_guidance
+if __package__:
+    from .core import revision_control as rc
+    from .core.io import project_lock
+    from .core.product_reference_pack import resolve_product_pack
+    from .core.project_kickoff import load_kickoff
+    from .core.schema_contracts import require_schema
+    from .core.stage_guidance import build_stage_guidance
+else:
+    from core import revision_control as rc
+    from core.io import project_lock
+    from core.product_reference_pack import resolve_product_pack
+    from core.project_kickoff import load_kickoff
+    from core.schema_contracts import require_schema
+    from core.stage_guidance import build_stage_guidance
 
 REPO = Path(__file__).resolve().parent.parent
 

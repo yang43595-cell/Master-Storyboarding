@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import ast
 import collections
+import importlib
 import re
+import sys
 from pathlib import Path
 
 SCRIPTS_ROOT = Path(__file__).resolve().parents[1]
@@ -99,6 +101,11 @@ SHARED_ASSET_MODULES = frozenset({
     "core.visual_asset_product_usage",
     "core.visual_asset_source",
 })
+SHARED_REDFRAME_UI_MODULES = frozenset({
+    "core.redframe_draft_ui",
+    "core.redframe_image_ui",
+    "core.redframe_workspace",
+})
 
 
 def _collect_modules() -> tuple[dict[str, Path], dict[str, set[str]]]:
@@ -191,8 +198,14 @@ def test_no_core_to_top_level_cli_imports() -> None:
 
 def test_creative_and_recreation_branches_are_isolated() -> None:
     mods, adj = _collect_modules()
-    missing_shared = sorted(SHARED_ASSET_MODULES - set(mods))
-    assert missing_shared == [], f"SHARED_ASSET_MODULES contains missing modules: {missing_shared}"
+    for name, group in (
+        ("BRANCH_A_MODULES", BRANCH_A_MODULES),
+        ("BRANCH_B_MODULES", BRANCH_B_MODULES),
+        ("SHARED_ASSET_MODULES", SHARED_ASSET_MODULES),
+        ("SHARED_REDFRAME_UI_MODULES", SHARED_REDFRAME_UI_MODULES),
+    ):
+        missing = sorted(group - set(mods))
+        assert missing == [], f"{name} contains missing modules: {missing}"
     a_to_b = {
         m: sorted(adj[m] & BRANCH_B_MODULES)
         for m in BRANCH_A_MODULES
@@ -205,26 +218,28 @@ def test_creative_and_recreation_branches_are_isolated() -> None:
     }
     shared_to_branch = {
         m: sorted(adj[m] & (BRANCH_A_MODULES | BRANCH_B_MODULES))
-        for m in SHARED_ASSET_MODULES
+        for m in (SHARED_ASSET_MODULES | SHARED_REDFRAME_UI_MODULES)
         if adj[m] & (BRANCH_A_MODULES | BRANCH_B_MODULES)
     }
     assert a_to_b == {}, f"Branch A (creative) must not import Branch B (recreation): {a_to_b}"
     assert b_to_a == {}, f"Branch B (recreation) must not import Branch A (creative): {b_to_a}"
     assert shared_to_branch == {}, (
-        f"Shared asset modules must stay upstream and never import Branch A or Branch B: {shared_to_branch}"
+        f"Shared asset and Redframe UI modules must never import Branch A or Branch B: {shared_to_branch}"
     )
 
 
 def test_redframe_modules_have_no_circular_imports() -> None:
     mods, adj = _collect_modules()
-    redframe_nodes = REDFRAME_MODULES & set(mods)
-    redframe_adj = {m: adj[m] & redframe_nodes for m in redframe_nodes}
-    assert _tarjan_sccs(redframe_nodes, redframe_adj) == []
+    missing = sorted(REDFRAME_MODULES - set(mods))
+    assert missing == [], f"REDFRAME_MODULES contains missing modules: {missing}"
+    redframe_adj = {m: adj[m] & REDFRAME_MODULES for m in REDFRAME_MODULES}
+    assert _tarjan_sccs(set(REDFRAME_MODULES), redframe_adj) == []
 
 
 def test_top_level_scripts_are_cli_entrypoints_or_declared_shims() -> None:
     mods, _ = _collect_modules()
     non_cli: list[str] = []
+    single_mode_imports: list[str] = []
     for mod, path in sorted(mods.items()):
         if "." in mod or mod in {"__init__", "core"} or mod in COMPAT_SHIMS:
             continue
@@ -237,18 +252,36 @@ def test_top_level_scripts_are_cli_entrypoints_or_declared_shims() -> None:
         has_main_guard = "__main__" in source
         if not (has_main_def or has_main_guard):
             non_cli.append(mod)
+        has_sys_path = "sys.path" in source
+        for node in tree.body:
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            if node.level >= 1:
+                single_mode_imports.append(f"{mod}:{node.lineno} (unguarded relative import breaks direct CLI)")
+            elif not has_sys_path and ((node.module or "") == "core" or (node.module or "").startswith("core.")):
+                single_mode_imports.append(f"{mod}:{node.lineno} (unguarded 'from core' breaks python -m scripts.{mod})")
     assert non_cli == [], (
         f"Top-level scripts/*.py must be CLI entrypoints (move shared libs to scripts/core/): {non_cli}"
+    )
+    assert single_mode_imports == [], (
+        f"Top-level CLIs must support both 'python scripts/<cli>.py' and 'python -m scripts.<cli>': {single_mode_imports}"
     )
 
 
 def test_circular_sccs_do_not_grow_beyond_legacy_core_baseline() -> None:
     mods, adj = _collect_modules()
+    missing = sorted(LEGACY_CORE_SCC - set(mods))
+    assert missing == [], f"LEGACY_CORE_SCC contains stale missing modules: {missing}"
     sccs = _tarjan_sccs(set(mods), adj)
     assert len(sccs) <= 1, f"Unexpected new circular SCCs introduced: {sccs}"
     if sccs:
-        unknown = set(sccs[0]) - LEGACY_CORE_SCC
+        actual = set(sccs[0])
+        unknown = actual - LEGACY_CORE_SCC
         assert unknown == set(), f"Modules added to legacy circular SCC: {sorted(unknown)}"
+        ratchet_candidates = LEGACY_CORE_SCC - actual
+        assert ratchet_candidates == set(), (
+            f"Modules left LEGACY_CORE_SCC; shrink LEGACY_CORE_SCC baseline immediately: {sorted(ratchet_candidates)}"
+        )
 
 
 def test_l0_foundation_has_no_upward_dependencies() -> None:
@@ -265,7 +298,10 @@ def test_l0_foundation_has_no_upward_dependencies() -> None:
 
 def test_compat_shims_are_thin_reexports() -> None:
     mods, _ = _collect_modules()
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
     non_thin: list[str] = []
+    missing_symbols: dict[str, list[str]] = {}
     for shim in sorted(COMPAT_SHIMS):
         assert shim in mods, f"Declared compat shim not found: {shim}"
         source = mods[shim].read_text(encoding="utf-8")
@@ -276,7 +312,36 @@ def test_compat_shims_are_thin_reexports() -> None:
         )
         if has_defs or len(source.splitlines()) > 30:
             non_thin.append(shim)
+        core_mod = importlib.import_module(f"scripts.core.{shim}")
+        shim_mod = importlib.import_module(f"scripts.{shim}")
+        core_exports = {
+            k for k, v in vars(core_mod).items()
+            if not k.startswith("__")
+            and (
+                not callable(v)
+                or getattr(v, "__module__", "").startswith("scripts.core.")
+            )
+            and not isinstance(v, type(sys))
+        }
+        # Exclude stdlib/typing imports bound in core_mod; check constants + functions defined/re-exported from scripts.core
+        core_ast = ast.parse((SCRIPTS_ROOT / "core" / f"{shim}.py").read_text(encoding="utf-8"))
+        declared: set[str] = set()
+        for node in core_ast.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                declared.add(node.name)
+            elif isinstance(node, ast.Assign):
+                for tgt in node.targets:
+                    if isinstance(tgt, ast.Name):
+                        declared.add(tgt.id)
+            elif isinstance(node, ast.ImportFrom) and node.level:
+                for alias in node.names:
+                    if alias.name != "*":
+                        declared.add(alias.asname or alias.name)
+        dropped = sorted((declared & core_exports) - set(vars(shim_mod)))
+        if dropped:
+            missing_symbols[shim] = dropped
     assert non_thin == [], f"Compat shims must be thin re-exports only (no defs, <=30 lines): {non_thin}"
+    assert missing_symbols == {}, f"Compat shims dropped symbols from scripts.core.*: {missing_symbols}"
 
 
 def test_agents_and_claude_entry_stay_synced_and_link_architecture() -> None:
@@ -304,6 +369,11 @@ def test_rhtv_js_layering_and_cross_language_boundaries() -> None:
 
     local_require_re = re.compile(r"""require\(\s*['"](\.[^'"]+)['"]\s*\)""")
     any_require_re = re.compile(r"""\brequire\s*\(""")
+    esm_import_re = re.compile(r"""(?:^\s*import\s|\bimport\s*\()""", re.MULTILINE)
+
+    for js_name, js_path in js_files.items():
+        js_src = js_path.read_text(encoding="utf-8")
+        assert not esm_import_re.search(js_src), f"{js_name} must stay CommonJS/DOM-only without ESM import"
 
     # JS-L0: rhtv_rich_editor.js must stay a pure, zero-dependency browser DOM callback
     rich_src = js_files["rhtv_rich_editor.js"].read_text(encoding="utf-8")
@@ -328,11 +398,11 @@ def test_rhtv_js_layering_and_cross_language_boundaries() -> None:
             f"{cli_name} must only depend on rhtv_target.js locally, got: {sorted(cli_local_deps)}"
         )
 
-    # Cross-language boundary: Python core/* must not shell out to rhtv_*.js CLIs
+    # Cross-language boundary: Python core/* must not shell out to rhtv_* scripts
     cli_invocations: list[str] = []
     for py_path in sorted((SCRIPTS_ROOT / "core").glob("*.py")):
         py_src = py_path.read_text(encoding="utf-8")
-        for cli_name in ("rhtv_canvas.js", "rhtv_cdp.js", "rhtv_shot.js"):
+        for cli_name in ("rhtv_canvas.js", "rhtv_canvas.cmd", "rhtv_cdp.js", "rhtv_shot.js", "rhtv_target.js"):
             if cli_name in py_src:
                 cli_invocations.append(f"{py_path.name} -> {cli_name}")
-    assert cli_invocations == [], f"scripts/core/*.py must not shell out to rhtv_*.js CLIs: {cli_invocations}"
+    assert cli_invocations == [], f"scripts/core/*.py must not shell out to rhtv_* scripts: {cli_invocations}"

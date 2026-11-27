@@ -12,23 +12,42 @@ from pathlib import Path
 from typing import Any
 
 from copy import deepcopy
-from core import revision_control as rc
-from core.agent_acceptance import acceptance_binding
-from core.artifacts import (
-    load_manifest,
-    project_locked,
-    register_workspace_artifact,
-    save_manifest,
-    validate_candidate_submission,
-)
-from core.asset_refs import resolve_final_images
-from core.generation_boundaries import _CREATOR_BOWL_BRUSH_OFFER
-from core.io import project_lock
-from core.production_handoff import _asset_readiness, load_kickoff
-from core.product_reference_pack import resolve_product_pack
-from core.prompt_body import submitted_body_issues, submitted_prompt_body
-from core.quality_evidence import director_shot_audio, source_shot_ids, validate_required_visuals, validate_shot_durations
-from core.stage_guidance import build_stage_guidance
+if __package__:
+    from .core import revision_control as rc
+    from .core.agent_acceptance import acceptance_binding
+    from .core.artifacts import (
+        load_manifest,
+        project_locked,
+        register_workspace_artifact,
+        save_manifest,
+        validate_candidate_submission,
+    )
+    from .core.asset_refs import resolve_final_images
+    from .core.generation_boundaries import _CREATOR_BOWL_BRUSH_OFFER
+    from .core.io import project_lock
+    from .core.production_handoff import _asset_readiness, load_kickoff
+    from .core.product_reference_pack import resolve_product_pack
+    from .core.prompt_body import submitted_body_issues, submitted_prompt_body
+    from .core.quality_evidence import director_shot_audio, source_shot_ids, validate_required_visuals, validate_shot_durations
+    from .core.stage_guidance import build_stage_guidance
+else:
+    from core import revision_control as rc
+    from core.agent_acceptance import acceptance_binding
+    from core.artifacts import (
+        load_manifest,
+        project_locked,
+        register_workspace_artifact,
+        save_manifest,
+        validate_candidate_submission,
+    )
+    from core.asset_refs import resolve_final_images
+    from core.generation_boundaries import _CREATOR_BOWL_BRUSH_OFFER
+    from core.io import project_lock
+    from core.production_handoff import _asset_readiness, load_kickoff
+    from core.product_reference_pack import resolve_product_pack
+    from core.prompt_body import submitted_body_issues, submitted_prompt_body
+    from core.quality_evidence import director_shot_audio, source_shot_ids, validate_required_visuals, validate_shot_durations
+    from core.stage_guidance import build_stage_guidance
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -608,7 +627,10 @@ def cmd_put_segment(args: argparse.Namespace) -> int:
     materials, ext_roots = _resolve_materials(ctx, list(seg_in.get("materials") or []), source_shots)
     prompt = str(seg_in.get("prompt") or "").strip()
     body_errs = submitted_body_issues(prompt)
-    from check_video_prompt_focal_intent import FOCAL_RE, _focal_measurements, _has_optical_purpose
+    if __package__:
+        from .check_video_prompt_focal_intent import FOCAL_RE, _focal_measurements, _has_optical_purpose
+    else:
+        from check_video_prompt_focal_intent import FOCAL_RE, _focal_measurements, _has_optical_purpose
     if FOCAL_RE.search(prompt) and not _has_optical_purpose(prompt):
         body_errs.append("出现定性焦段词但缺少可观察光学目的（请在同句写出保持/突出/压缩/看清/纵深/层次等目的，或加「光学目的：…」）")
     if _focal_measurements(prompt):
@@ -778,8 +800,12 @@ def cmd_register(args: argparse.Namespace) -> int:
 
 def cmd_self_check_template(args: argparse.Namespace) -> int:
     from datetime import datetime, timezone
-    from core import revision_control as rc
-    from core.agent_acceptance import accept_artifact
+    if __package__:
+        from .core import revision_control as rc
+        from .core.agent_acceptance import accept_artifact
+    else:
+        from core import revision_control as rc
+        from core.agent_acceptance import accept_artifact
     project = Path(args.project).resolve()
     manifest = load_manifest(project)
     entry = next((e for e in manifest.get("artifacts", []) if e.get("artifact_id") == args.artifact_id), None)

@@ -24,7 +24,7 @@ try:
     from .core.review_publication import (project_file as _path, read_decision, read_publication,
                                           read_script_approval, require_script_approval)
     from .core.story_sources import export_markdown, narrative_review_projections, validate_story_sources
-    from .core.visual_asset_choices import image_work_items
+    from .core.asset_choice_rules import image_work_items
     from .core.visual_asset_source import source_project
 except ImportError:  # direct execution
     from core.agent_review_api import AgentReviewClient, AgentReviewError, DEFAULT_BASE_URL, MAX_IMAGE_BYTES, MAX_TEXT_BYTES, effective_approval
@@ -36,7 +36,7 @@ except ImportError:  # direct execution
     from core.review_publication import (project_file as _path, read_decision, read_publication,
                                          read_script_approval, require_script_approval)
     from core.story_sources import export_markdown, narrative_review_projections, validate_story_sources
-    from core.visual_asset_choices import image_work_items
+    from core.asset_choice_rules import image_work_items
     from core.visual_asset_source import source_project
 
 

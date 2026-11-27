@@ -12,10 +12,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from core import stage_context as stage
-from core.artifacts import load_manifest
-from core.project_kickoff import REQUEST_PATH
-from core.stage_guidance import build_stage_guidance
+if __package__:
+    from .core import stage_context as stage
+    from .core.artifacts import load_manifest
+    from .core.project_kickoff import REQUEST_PATH
+    from .core.stage_guidance import build_stage_guidance
+else:
+    from core import stage_context as stage
+    from core.artifacts import load_manifest
+    from core.project_kickoff import REQUEST_PATH
+    from core.stage_guidance import build_stage_guidance
 
 REPO = Path(__file__).resolve().parent.parent
 

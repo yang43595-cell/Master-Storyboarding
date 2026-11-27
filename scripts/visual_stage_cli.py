@@ -10,14 +10,24 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from core.agent_acceptance import acceptance_binding
-from core.artifacts import load_manifest, register_workspace_artifact
-from core.asset_refs import resolve_final_images
-from core.io import project_lock
-from core.production_handoff import _asset_readiness, load_kickoff
-from core.product_reference_pack import resolve_product_pack
-from core.schema_contracts import validate_visual_supplement_request
-from core.stage_guidance import build_stage_guidance
+if __package__:
+    from .core.agent_acceptance import acceptance_binding
+    from .core.artifacts import load_manifest, register_workspace_artifact
+    from .core.asset_refs import resolve_final_images
+    from .core.io import project_lock
+    from .core.production_handoff import _asset_readiness, load_kickoff
+    from .core.product_reference_pack import resolve_product_pack
+    from .core.schema_contracts import validate_visual_supplement_request
+    from .core.stage_guidance import build_stage_guidance
+else:
+    from core.agent_acceptance import acceptance_binding
+    from core.artifacts import load_manifest, register_workspace_artifact
+    from core.asset_refs import resolve_final_images
+    from core.io import project_lock
+    from core.production_handoff import _asset_readiness, load_kickoff
+    from core.product_reference_pack import resolve_product_pack
+    from core.schema_contracts import validate_visual_supplement_request
+    from core.stage_guidance import build_stage_guidance
 
 
 def _sha256(path: Path) -> str:
@@ -203,7 +213,10 @@ def cmd_batch_save_checks(args: argparse.Namespace) -> int:
 
 
 def cmd_capture_redframe_capability(args: argparse.Namespace) -> int:
-    from redframe_draft import open_workspace
+    if __package__:
+        from .core.redframe_draft_ui import open_workspace
+    else:
+        from core.redframe_draft_ui import open_workspace
     sys.path.insert(0, str(Path.home() / ".local/share/codex-headless-browser"))
     from headless_edge import task_browser
 
@@ -282,8 +295,12 @@ def _register_one_supplement(
     project: Path, ctx: dict[str, Any], inp: dict[str, Any],
     *, auth_id_override: str | None = None, chg_id_override: str | None = None, auto_accept: bool = False,
 ) -> dict[str, Any]:
-    from core import revision_control as rc
-    from core.agent_acceptance import accept_artifact
+    if __package__:
+        from .core import revision_control as rc
+        from .core.agent_acceptance import accept_artifact
+    else:
+        from core import revision_control as rc
+        from core.agent_acceptance import accept_artifact
     manifest = load_manifest(project)
     rev = str(inp.get("revision") or ctx["dir_entry"]["revision"])
     rebind_from = inp.get("rebind_from")
@@ -380,7 +397,10 @@ def _register_one_supplement(
         manifest = load_manifest(project)
         existing = next((e for e in manifest.get("artifacts", []) if e.get("artifact_id") == art_id), None)
         if existing and existing.get("status") == "candidate" and not existing.get("user_approved") and not existing.get("agent_acceptance"):
-            from core.artifacts import save_manifest
+            if __package__:
+                from .core.artifacts import save_manifest
+            else:
+                from core.artifacts import save_manifest
             manifest["artifacts"] = [e for e in manifest["artifacts"] if e.get("artifact_id") != art_id]
             save_manifest(project, manifest)
         register_workspace_artifact(project, {
