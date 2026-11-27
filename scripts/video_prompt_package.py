@@ -150,6 +150,7 @@ def _resolve_materials(ctx: dict[str, Any], specs: list[dict[str, Any]], source_
             mat_entry: dict[str, Any] = {
                 "reference": ref_tag, "kind": kind, "role": role, "roles": [role],
                 "asset_id": str(item.get("asset_id") or ctx["real_product_asset_id"]),
+                "entity_ids": list(item.get("entity_ids") or [str(item.get("asset_id") or ctx["real_product_asset_id"])]),
                 "product_reference_id": prod_id, "path": mat_path,
                 "sha256": str(hit["sha256"]),
                 "source_shot_ids": shot_ids,
@@ -163,21 +164,48 @@ def _resolve_materials(ctx: dict[str, Any], specs: list[dict[str, Any]], source_
             sup = supplements[ref_key]
             img_idx += 1
             rel_p = str(sup.get("path_or_url") or sup.get("path"))
-            role = str(item.get("role") or "state_reference")
             sup_shots = sup.get("quality_evidence", {}).get("source_shot_ids") or sup.get("visual_supplement", {}).get("source_shot_ids") or sup.get("source_shot_ids") or shot_ids
             allowed = [s for s in shot_ids if s in set(sup_shots)] or shot_ids
-            materials.append({
-                "reference": f"@图片{img_idx}", "kind": "image", "role": role, "roles": [role],
+            allowed_set = set(allowed)
+            matching_uses = [
+                u for u in (sup.get("quality_evidence") or {}).get("uses", [])
+                if isinstance(u, dict) and set(u.get("source_shot_ids") or []) & allowed_set
+            ]
+            explicit_roles = item.get("roles")
+            if isinstance(explicit_roles, list) and explicit_roles:
+                roles = [str(r) for r in explicit_roles if str(r).strip()]
+                role = str(item.get("role") or roles[0])
+            elif item.get("role"):
+                role = str(item["role"])
+                roles = [role]
+            else:
+                use_roles = [str(r) for u in matching_uses for r in (u.get("roles") or []) if str(r).strip()]
+                roles = list(dict.fromkeys(use_roles)) or ["state_reference"]
+                role = roles[0]
+            entity_ids = list(item.get("entity_ids") or sorted({
+                str(e) for u in matching_uses for e in (u.get("entity_ids") or []) if str(e).strip()
+            }))
+            if not entity_ids and sup.get("asset_id"):
+                entity_ids = [str(sup["asset_id"])]
+            state_ids = [str(u["state_id"]) for u in matching_uses if u.get("state_id")]
+            state_id = item.get("state_id") or (state_ids[0] if len(set(state_ids)) == 1 else None)
+            sup_entry: dict[str, Any] = {
+                "reference": f"@图片{img_idx}", "kind": "image", "role": role, "roles": roles,
                 "artifact_id": str(sup.get("artifact_id") or sup.get("id")),
                 "revision": str(sup["revision"]),
                 "path": rel_p, "sha256": str(sup.get("checksum") or _sha256(project / rel_p)),
                 "source_shot_ids": allowed,
                 "requires_face_certification": bool(item.get("requires_face_certification", True)),
-            })
+            }
+            if entity_ids:
+                sup_entry["entity_ids"] = entity_ids
+            if state_id:
+                sup_entry["state_id"] = str(state_id)
+            materials.append(sup_entry)
         else:
             role = str(item.get("role") or "character")
-            ast_id = ref_key.split("@", 1)[0]
-            candidates = list(ready_assets.get(ast_id) or [])
+            ast_key = ref_key.split("@", 1)[0]
+            candidates = list(ready_assets.get(ast_key) or [])
             preferred = next((c for c in candidates if "1x4" in c or "三视图" in c), candidates[0] if candidates else "")
             binding = ref_key if "@" in ref_key else preferred
             if not binding:
@@ -190,13 +218,17 @@ def _resolve_materials(ctx: dict[str, Any], specs: list[dict[str, Any]], source_
                 if "requires_face_certification" in resolved
                 else (ast_part.startswith("AST-CH-") and "无头" not in Path(str(resolved["path"])).name)
             )
-            materials.append({
+            base_entry: dict[str, Any] = {
                 "reference": f"@图片{img_idx}", "kind": "image", "role": role, "roles": [role],
                 "asset_id": ast_part, "output_id": out_part,
+                "entity_ids": list(item.get("entity_ids") or [ast_part]),
                 "path": str(resolved["path"]), "sha256": str(resolved["sha256"]),
                 "source_shot_ids": shot_ids,
                 "requires_face_certification": bool(item.get("requires_face_certification", default_face)),
-            })
+            }
+            if item.get("state_id"):
+                base_entry["state_id"] = str(item["state_id"])
+            materials.append(base_entry)
     return materials, ext_roots
 
 
@@ -576,6 +608,11 @@ def cmd_put_segment(args: argparse.Namespace) -> int:
     materials, ext_roots = _resolve_materials(ctx, list(seg_in.get("materials") or []), source_shots)
     prompt = str(seg_in.get("prompt") or "").strip()
     body_errs = submitted_body_issues(prompt)
+    from check_video_prompt_focal_intent import FOCAL_RE, _focal_measurements, _has_optical_purpose
+    if FOCAL_RE.search(prompt) and not _has_optical_purpose(prompt):
+        body_errs.append("出现定性焦段词但缺少可观察光学目的（请在同句写出保持/突出/压缩/看清/纵深/层次等目的，或加「光学目的：…」）")
+    if _focal_measurements(prompt):
+        body_errs.append("生成正文出现未标来源的精确毫米数（请改用广角/标准焦段/中长焦等定性焦段倾向）")
     prod = (ctx["kickoff"] or {}).get("product") or {}
     if isinstance(prod, dict) and prod.get("product_id") == "creator-polishing-mask-2" and _CREATOR_BOWL_BRUSH_OFFER.search(prompt):
         body_errs.append("赠品口播请在视频生成正文使用「还送高定条膜碗刷」")

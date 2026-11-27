@@ -298,12 +298,15 @@ def _register_one_supplement(
     if not art_id:
         raise SystemExit("缺少 artifact_id（或 rebind_from）")
     active = rc.show_change(project).get("active_change")
+    active_lids = [str(t.get("logical_id") or "") for t in ((active or {}).get("targets") or []) if isinstance(t, dict)]
+    logical_id = str(inp.get("logical_id") or (active_lids[0] if len(active_lids) == 1 and not rebind_from and not prev_entry else None) or (prev_entry or {}).get("logical_id") or f"visual.supplement.{art_id.lower().replace('-', '_')}")
+    if isinstance(active, dict) and active.get("status") in {"awaiting_candidate", "awaiting_review"}:
+        if active.get("status") == "awaiting_review" or (active_lids and logical_id not in active_lids):
+            rc.cancel_change(project, change_id=str(active["change_id"]), reason=f"自动清理挂起变更单以办理 {art_id}")
+            active = None
     chg_id = chg_id_override or inp.get("change_id") or (
-        active["change_id"] if isinstance(active, dict) and active.get("status") == "awaiting_candidate"
-        and any(str(t.get("logical_id") or "").startswith("visual.supplement.") for t in (active.get("targets") or [])) else None
+        active["change_id"] if isinstance(active, dict) and active.get("status") == "awaiting_candidate" and logical_id in active_lids else None
     )
-    active_lid = (active["targets"][0]["logical_id"] if chg_id and isinstance(active, dict) and active.get("targets") else None)
-    logical_id = str(inp.get("logical_id") or active_lid or (prev_entry or {}).get("logical_id") or f"visual.supplement.{art_id.lower().replace('-', '_')}")
     auth_id = str(auth_id_override or inp.get("authorization_id") or ((active or {}).get("workflow_authorization") or {}).get("id") or ((ctx.get("kickoff") or {}).get("workflow_authorization") or {}).get("id") or "FLOW-R01")
     has_adopted_prev = any(
         e.get("logical_id") == logical_id and (e.get("status") in {"current", "stale", "superseded"} or e.get("user_approved") or e.get("agent_acceptance"))
@@ -316,12 +319,28 @@ def _register_one_supplement(
             reason=str(inp.get("reason") or f"重绑或更新分镜补图 {art_id} 至 {ctx['dir_entry']['artifact_id']}"),
             authorization_id=auth_id,
         )
-    img_rel = str(inp.get("image_path") or (prev_entry or {}).get("path_or_url") or "")
+    img_rel = str(inp.get("image_path") or inp.get("path") or (prev_entry or {}).get("path_or_url") or "")
     img_abs = project / img_rel
     if not img_rel or not img_abs.is_file():
         raise SystemExit(f"补图文件不存在：{img_rel}")
+    old_img_rel = str((prev_entry or {}).get("path_or_url") or "")
+    if old_img_rel and old_img_rel != img_rel and (project / "05_分镜").is_dir():
+        for rq_file in (project / "05_分镜").glob("*.json"):
+            try:
+                rq_doc = _load_json(rq_file)
+            except Exception:
+                continue
+            touched = False
+            for ref_item in rq_doc.get("existing_references") or []:
+                if isinstance(ref_item, dict) and ref_item.get("path") == old_img_rel:
+                    ref_item["path"] = img_rel
+                    touched = True
+            if touched:
+                _save_json(rq_file, rq_doc)
     img_sha = _sha256(img_abs)
-    req_rel = str(inp["request_path"])
+    req_rel = str(inp.get("request_path") or inp.get("request") or "")
+    if not req_rel:
+        raise SystemExit(f"缺少 request_path：{art_id}")
     req_abs = project / req_rel
     shot_ids = list(inp.get("source_shot_ids") or prev_qe.get("source_shot_ids") or [])
     entity_ids = list(inp.get("entity_ids") or prev_use.get("entity_ids") or ["AST-001"])
