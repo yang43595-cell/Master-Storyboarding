@@ -9,7 +9,7 @@ from pathlib import Path
 from .asset_refs import current_narrative
 from .artifacts import project_path
 from .delivery_files import validate_required_files, discover_dependencies, check_package_files, DEFAULT_MAX_PACKAGE_BYTES
-from ..visual_asset_choices import effective, read_choices
+from .visual_asset_choices import effective, read_choices
 
 
 ASSET_ID = re.compile(r"(?<![A-Za-z0-9_-])AST-[A-Z0-9]+(?:-[A-Z0-9]+)*(?![A-Za-z0-9-])")

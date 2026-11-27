@@ -303,3 +303,85 @@ def test_video_prompt_reconciliation_and_offer_typo_gate(tmp_path: Path, monkeyp
     bad_in.write_text(json.dumps({"segment_id": "SEG-01", "source_shots": ["S01-001"], "duration_seconds": 5, "materials": [], "prompt": "贴身女仆说：“还送高定调膜碗刷！”"}, ensure_ascii=False), encoding="utf-8")
     with pytest.raises(SystemExit, match="还送高定条膜碗刷"):
         vpp.cmd_put_segment(argparse.Namespace(project=str(proj), package="06_视频/R02.json", input=str(bad_in)))
+
+
+def test_resolve_materials_preserves_supplement_state_and_entities(tmp_path: Path, monkeypatch) -> None:
+    sys.path.insert(0, str(REPO / "scripts"))
+    import hashlib
+    import video_prompt_package as vpp
+
+    sup_rel = "05_分镜/sup.png"
+    sup_file = tmp_path / sup_rel
+    sup_file.parent.mkdir(parents=True, exist_ok=True)
+    sup_bytes = b"png-bytes"
+    sup_file.write_bytes(sup_bytes)
+    sup_sha = hashlib.sha256(sup_bytes).hexdigest()
+
+    base_rel = "04_资产/chair.png"
+    base_sha = hashlib.sha256(b"chair-bytes").hexdigest()
+    monkeypatch.setattr(
+        vpp,
+        "resolve_final_images",
+        lambda _p, _b: {"AST-006@MASTER": {"path": base_rel, "sha256": base_sha}},
+    )
+
+    ctx = {
+        "project": tmp_path,
+        "ready_assets": {"AST-006": ["AST-006@MASTER"]},
+        "supplements": {
+            "VS-OPEN-D01": {
+                "artifact_id": "VS-OPEN-D01",
+                "revision": "D01",
+                "path_or_url": sup_rel,
+                "checksum": sup_sha,
+                "quality_evidence": {
+                    "source_shot_ids": ["S02-017"],
+                    "uses": [{
+                        "source_shot_ids": ["S02-017"],
+                        "roles": ["layout", "state_reference"],
+                        "entity_ids": ["AST-006"],
+                        "state_id": "S02-BOX-OPEN",
+                    }],
+                },
+            }
+        },
+        "product_pack": None,
+        "real_product_asset_id": "AST-009",
+    }
+    mats, _ = vpp._resolve_materials(
+        ctx,
+        [
+            {"ref": "VS-OPEN-D01", "role": "state_reference", "roles": ["layout", "state_reference"], "source_shot_ids": ["S02-017"], "requires_face_certification": False},
+            {"ref": "AST-006@MASTER", "role": "layout", "source_shot_ids": ["S02-001"], "requires_face_certification": False},
+        ],
+        ["S02-001", "S02-017"],
+    )
+    assert mats[0]["state_id"] == "S02-BOX-OPEN"
+    assert mats[0]["entity_ids"] == ["AST-006"]
+    assert mats[0]["roles"] == ["layout", "state_reference"]
+    assert mats[1]["entity_ids"] == ["AST-006"]
+
+
+def test_creative_asset_grouping_and_aspect_width_layout(tmp_path: Path) -> None:
+    sys.path.insert(0, str(REPO / "scripts"))
+    from PIL import Image
+    from core import redframe_creative as rc
+
+    wide = tmp_path / "wide.png"
+    tall = tmp_path / "tall.png"
+    Image.new("RGB", (1472, 736), "white").save(wide)
+    Image.new("RGB", (896, 1200), "white").save(tall)
+
+    images = {
+        "F1-FACE": {"role": "identity", "roles": ["identity"], "abs_path": str(tall)},
+        "AST-003@F2": {"role": "identity", "roles": ["identity"], "abs_path": str(wide)},
+        "VS-OPEN": {"role": "state_reference", "roles": ["state_reference"], "abs_path": str(tall)},
+        "PROD-BOX": {"role": "packaging", "roles": ["packaging"], "abs_path": str(wide)},
+    }
+    asset_map = {"F1-FACE": "n1", "AST-003@F2": "n2", "VS-OPEN": "n3", "PROD-BOX": "n4"}
+    rows = rc._group_asset_rows(images, asset_map)
+    assert rows == [["n1", "n2"], ["n3"], ["n4"]]
+    hints = rc._image_card_sizes(images, asset_map)
+    assert hints["n2"][0] > 550.0
+    pos, _ = rc._layout_module_rows({}, [["n2", "n1"]], start_x=100.0, start_y=50.0, gap_x=90.0, size_hints=hints)
+    assert pos["n1"][0] >= pos["n2"][0] + hints["n2"][0] + 90.0

@@ -8,6 +8,6 @@
 跨阶段协调时再读[审核到画布导航](docs/development/review-to-canvas-entry.md)定位本轮步骤；已知步骤时直接读取其操作小节，按 `PROJECT_RULES.md` 确定审核和交付范围。
 收到用户在项目对话中对准确版本的编导整稿通过后，协调方当轮按[编导对话确认入口](docs/development/artifact-adoption.md#编导对话确认)正式采用并继续已解锁工作。
 首次在新电脑或新 agent 使用，先按 [独立仓库启动](docs/development/standalone-repository.md) 核验依赖与内置方法；不依赖旧会话或 Mac 路径。
-以下两份仅在仓库维护或增改 Skill 时查阅，**常规制作开工不读**：[当前源码状态](ACTIVE_VERSION.md)（当前分支与提交直接用 git 查询）、[Skill 配置](skill-config.md)。
+以下文档仅在仓库维护、修改 `scripts/` 代码或增改 Skill 时查阅，**常规制作开工不读**：[架构与分支规范](docs/ARCHITECTURE.md)（修改 `scripts/` 必读并跑过 `scripts/tests/test_architecture_boundaries.py`）、[当前源码状态](ACTIVE_VERSION.md)（当前分支与提交直接用 git 查询）、[Skill 配置](skill-config.md)。
 本文不复制规则正文；以 `PROJECT_RULES.md` 及其按职责链接的细则为准。
 `AGENTS.md` 与 `CLAUDE.md` 内容保持一致，分别供 Codex 与 Claude Code 读取，改动时同步两处。

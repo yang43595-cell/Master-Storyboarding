@@ -15,13 +15,16 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from . import confirmation_scope
+from .errors import RevisionControlError
 from .artifacts import (dependency_closure, load_manifest, mark_impacted_artifacts_stale, project_path,
                         unchanged_director_edges, validate_candidate_submission, validate_agent_submission)
 from .io import (
     PROJECT_LOCK_RELATIVE,
+    TRANSACTION_ROOT,
     canonical_json_bytes,
     file_lock,
     project_lock,
+    recover_transactions as _io_recover_transactions,
     normalized_text_sha256,
     read_json,
     sha256_file,
@@ -38,14 +41,9 @@ from .project_state import (
 
 MANAGE = Path("00_项目管理")
 CONTROL_RELATIVE = MANAGE / "change_control.json"
-TRANSACTION_ROOT = MANAGE / "revision_transactions"
 LOCK_RELATIVE = PROJECT_LOCK_RELATIVE
 CONTROL_SCHEMA_VERSION = "revision-control-1.0"
 TIER_VALUES = {"T0", "T1", "T2"}
-
-
-class RevisionControlError(ValueError):
-    """A revision request cannot safely advance."""
 
 
 class _DeliveryProjectBindingError(RevisionControlError):
@@ -373,51 +371,7 @@ def _commit_json_transaction_unlocked(
 
 def recover_transactions(project: Path) -> list[dict[str, Any]]:
     """Finish committed intents and safely close prepared-but-undecided work."""
-    project = project.resolve()
-    root = project / TRANSACTION_ROOT
-    if not root.is_dir():
-        return []
-    outcomes: list[dict[str, Any]] = []
-    with file_lock(project / LOCK_RELATIVE):
-        for tx_dir in sorted(path for path in root.iterdir() if path.is_dir()):
-            transaction_path = tx_dir / "transaction.json"
-            if not transaction_path.is_file():
-                continue
-            result_path = tx_dir / "result.json"
-            # Completed journals are history: do not reparse their full payload
-            # or repeatedly rewrite an already-aborted preparation. Missing,
-            # unknown or invalid results still take the normal recovery path.
-            if result_path.is_file() and read_json(result_path).get("state") in {"committed", "aborted"}:
-                continue
-            transaction = read_json(transaction_path)
-            intent_path = tx_dir / "commit_intent.json"
-            if not intent_path.is_file():
-                write_json(result_path, {"state": "aborted", "recovered_at": utc_now()})
-                outcomes.append({"transaction_id": transaction.get("transaction_id"), "state": "aborted"})
-                continue
-            # Check every target before replacing any: older code could accept
-            # a later write while this intent was pending. Preserve that work.
-            recovery_files = []
-            for record in transaction.get("files") or []:
-                relative = Path(str(record["path"]))
-                target = project / relative
-                after_path = tx_dir / "after" / relative
-                if (relative.is_absolute() or not target.resolve().is_relative_to(project)
-                        or not after_path.resolve().is_relative_to((tx_dir / "after").resolve())):
-                    raise RevisionControlError(f"事务恢复路径越出项目：{relative}")
-                if not after_path.is_file() or sha256_file(after_path) != record.get("after_sha256"):
-                    raise RevisionControlError(f"事务恢复失败，暂存内容损坏：{relative}")
-                current_digest = sha256_file(target) if target.is_file() else None
-                allowed = {record.get("after_sha256")}
-                allowed.add(record.get("before_sha256") if record.get("before_exists") else None)
-                if (target.exists() and not target.is_file()) or current_digest not in allowed:
-                    raise RevisionControlError(f"事务目标已被其他任务更新，拒绝覆盖；请保留现场核对：{relative}")
-                recovery_files.append((target, after_path.read_bytes()))
-            for target, content in recovery_files:
-                write_bytes(target, content)
-            write_json(result_path, {"state": "committed", "recovered_at": utc_now()})
-            outcomes.append({"transaction_id": transaction.get("transaction_id"), "state": "committed"})
-    return outcomes
+    return _io_recover_transactions(project, read_json_fn=read_json)
 
 
 def inspect_change(project: Path, logical_ids: list[str], candidate: str | None = None) -> dict[str, Any]:
@@ -664,10 +618,7 @@ def record_candidate(
 
 
 def _validate_delivery(project: Path, payload: dict) -> None:
-    if __package__ == 'scripts.core':
-        from ..canvas_readback import validate_submission
-    else:
-        from canvas_readback import validate_submission
+    from .canvas_readback import validate_submission
     try:
         validate_submission(payload, project, formal_delivery=True)
     except (ValueError, KeyError, TypeError, OSError) as exc:

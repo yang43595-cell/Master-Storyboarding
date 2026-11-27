@@ -111,10 +111,7 @@ def readback_bundle(project, directory):
 
 
 def _compare_readback(project, bundle):
-    if __package__ == 'scripts.core':
-        from ..canvas_readback import compare
-    else:
-        from canvas_readback import compare
+    from .canvas_readback import compare
 
     frozen, observed, report = (bundle[name] for name in _READBACK_FILES)
     if (report.get('ok') is not True or report.get('native_refresh_binding') != 'selected_fields_match'

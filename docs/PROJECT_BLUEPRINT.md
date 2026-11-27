@@ -2,7 +2,7 @@
 
 > 这个项目的「为什么 + 往哪走」：方向与取舍的参考图，**不是规则正文，也不是开工必读清单**。
 > 进入项目的读取顺序以 `AGENTS.md` 为准：先读 `PROJECT_RULES.md` 与目标 Skill 的 `SKILL.md`。本蓝图只在需要展开「方向」时对照阅读；与 `PROJECT_RULES.md` 不一致时，以 `PROJECT_RULES.md` 及其链接细则为准。
-> 流程与执行分工不在本蓝图维护正文：默认流程见 `PROJECT_RULES.md`「网站审核到画布的统一入口」，执行分工见 `docs/rules/execution.md`「Skill 执行分工」。
+> 流程与执行分工不在本蓝图维护正文：默认流程见 `PROJECT_RULES.md`「网站审核到画布的统一入口」，执行分工见 `docs/rules/execution.md`「Skill 执行分工」，代码分层与流水线分支边界见 [架构与分支规范](ARCHITECTURE.md)。
 
 ## 一、这是什么
 

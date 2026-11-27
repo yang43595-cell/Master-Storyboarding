@@ -80,11 +80,7 @@ python scripts/stage_context_cli.py handoff --project <项目路径> --to-skill 
 
 ## 五、校验
 
-跑校验看有没有 ERROR（有就说明某处不通过，要修）：
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/validate-project.ps1 -ProjectPath <项目路径>
-```
-项目状态、生产计划、Seedance 提示词等还有专门的校验脚本，跑不过会明确报错。
+各阶段 CLI（`narrative_package.py`、`asset_stage_cli.py`、`director_package.py`、`visual_stage_cli.py`、`video_prompt_package.py`）和 `stage_context_cli.py status`、`python -m pytest` 会校验项目状态、包结构与提示词约束，跑不过会明确报错。
 
 ### 工作区重置后的核验
 

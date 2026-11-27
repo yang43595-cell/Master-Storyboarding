@@ -23,14 +23,14 @@ from .character_assets import (character_type, uses_wardrobe, requires_face_cert
 from .image_technical import character_board_image_problem
 
 if __package__ == "scripts.core":
-    from ..visual_asset_choices import effective, read_choices  # type: ignore
-    from ..visual_asset_product_usage import load_usage
+    from .visual_asset_choices import effective, read_choices  # type: ignore
+    from .visual_asset_product_usage import load_usage
     from .artifacts import artifact_is_confirmed, artifact_is_adopted, digest, load_manifest, project_path, verify_image_confirmation  # type: ignore
     from .project_state import load_project_state  # type: ignore
 else:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from visual_asset_choices import effective, read_choices  # type: ignore
-    from visual_asset_product_usage import load_usage
+    from core.visual_asset_choices import effective, read_choices  # type: ignore
+    from core.visual_asset_product_usage import load_usage
     from core.artifacts import artifact_is_confirmed, artifact_is_adopted, digest, load_manifest, project_path, verify_image_confirmation  # type: ignore
     from core.project_state import load_project_state  # type: ignore
 

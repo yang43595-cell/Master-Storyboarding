@@ -16,7 +16,7 @@ import time
 if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.canvas_readback import compare, compare_baseline, digest, rows_by_id, validate_submission
+from scripts.core.canvas_readback import compare, compare_baseline, digest, rows_by_id, validate_submission
 from scripts.core.artifacts import cache_file_reads, load_manifest, project_path
 from scripts.core.draft_delivery import (
     DELIVERY_RECEIPT, clear_unobserved_draft, draft_delivery_lock, draft_record, load_draft_receipt,
@@ -31,40 +31,14 @@ from scripts.core.redframe_workspace import (
     NativeTag, RedframeWorkspace, RedframeWorkspaceError, video_generation_records,
 )
 
-
-def canvas_nodes(graph):
-    nodes = graph['nodes']
-    registered = {node['id']: node for node in nodes}
-    if len(registered) != len(nodes):
-        raise ValueError('画布返回重复节点 ID')
-    return registered
-
-
-def verify_saved(workspace, expected_nodes, timeout=15):
-    """Confirm persisted IDs (None) or exact draft contents; never retry a mutation."""
-    if not expected_nodes:
-        raise ValueError('保存确认须有准确草稿节点 ID')
-    stop = time.monotonic() + timeout
-    changed = list(expected_nodes)
-    while True:
-        if timeout > 0:
-            budget_ms = min(workspace.read_budget, int((stop - time.monotonic()) * 1000))
-            if budget_ms <= 0:
-                break
-            snapshot = workspace.read_canvas(budget_ms=budget_ms)
-        else:
-            snapshot = workspace.read_canvas()
-        nodes = canvas_nodes(snapshot)
-        changed = [ident for ident, expected in expected_nodes.items()
-                   if ident not in nodes or (expected is not None and nodes[ident] != expected)
-                   or nodes[ident].get('type') != 'remote-videoGenerationNode']
-        if not changed:
-            return snapshot
-        remaining = stop - time.monotonic()
-        if remaining <= 0:
-            break
-        time.sleep(min(1, remaining))
-    raise ValueError('保存未在持久画布确证；先保留原节点 ID：' + ', '.join(changed))
+from scripts.core.redframe_draft_ui import (
+    RedframeVideoDraftUI,
+    _draft_data,
+    _native_content,
+    canvas_nodes,
+    open_workspace,
+    verify_saved,
+)
 
 
 def verify_placements(occupied, planned):
@@ -114,57 +88,6 @@ def source_capabilities(project, frozen, read_json_bytes=None):
     return {mode: (model['id'], checked_json(proof['path'], proof['sha256'])['model'])
             for mode, proof in by_mode.items()}
 
-
-def _draft_data(node, node_id):
-    data = node.get('data') if node and node.get('type') == 'remote-videoGenerationNode' else None
-    if not isinstance(data, dict):
-        raise ValueError(f'视频草稿节点身份不符：{node_id}')
-    if video_generation_records(data):
-        raise ValueError(f'视频草稿节点已有生成记录：{node_id}')
-    return data
-
-
-def _native_content(ident, data, media, kinds, models, *, linked=False):
-    if data.get('outputs') != {}:
-        raise ValueError(f'{ident} 缺少草稿节点的空输出字段')
-    mode = data['videoMode']
-    model_name, capabilities = models[mode]
-    if (json.loads(data['model']) != [capabilities['providerId'], capabilities['modelId']]
-            or json.loads(data['mode']) not in capabilities['mode']):
-        raise ValueError(f'{ident} 的实际模型或参考模式与本轮能力不符')
-    names = dict(enumerate(redframe_reference_labels(kinds), 1))
-    token_pattern = r'\{\{ref (\d+)\}\}'
-    mentions = []
-    slots_by_identity = {(item['node_id'], item['media_id']): slot
-                         for slot, item in enumerate(media, 1)}
-    if len(slots_by_identity) != len(media):
-        raise ValueError(f'{ident} 的实际参考身份重复')
-    native_to_source = {}
-    prompt_indices = []
-    for line in data['promptModel']:
-        for token in line:
-            if token['type'] != 'Custom':
-                continue
-            ((node_id, media_id), value), = NativeTag(token['html']).refs
-            index = int(re.fullmatch(token_pattern, value)[1])
-            slot = slots_by_identity.get((node_id, media_id))
-            if (not 1 <= index <= len(media) or slot is None
-                    or (not linked and slot != index)
-                    or native_to_source.get(index, slot) != slot):
-                raise ValueError(f'{ident} 的原生提示词引用和实际槽不符')
-            native_to_source[index] = slot
-            prompt_indices.append(str(index))
-            mentions.append({'node_id': node_id, 'media_id': media_id, 'entity_type': 'reference',
-                             'native_noneditable_entity': True})
-    if (len(set(native_to_source.values())) != len(native_to_source)
-            or re.findall(token_pattern, data['prompt']) != prompt_indices):
-        raise ValueError(f'{ident} 的正文原生编号与实际引用实体不一致')
-    prompt = re.sub(token_pattern, lambda m: names[native_to_source[int(m[1])]],
-                    data['prompt']).replace('\ufeff', '')
-    parameters = {'model': model_name, 'aspect_ratio': data['ratio'],
-                  'resolution': data['resolution'].lower(), 'duration': data['duration'],
-                  'reference_mode': mode}
-    return prompt, parameters, mentions
 
 
 def native_draft(graph, node, slots, models):
@@ -259,139 +182,6 @@ def finalize_new_drafts(project, plan, preflight, segment_nodes, observed):
         result = _bind_new_drafts(project, plan, segment_nodes, observed)
         readback_path = publish_draft_readback(project, plan, result)
         return {**result, 'readback_path': readback_path, 'receipt_path': DELIVERY_RECEIPT.as_posix()}
-
-
-@contextmanager
-def open_workspace(host_browser, target_url, project_id):
-    with host_browser(redframe=True) as context:
-        page = context.new_page()
-        page.goto(target_url, wait_until='domcontentloaded', timeout=15000)
-        yield RedframeWorkspace(page, project_id)
-
-
-class RedframeVideoDraftUI(RedframeImageUI):
-    """Native draft controls for one target workspace, with no generate action."""
-
-    def _draft_locator(self, node_id):
-        self.assert_target()
-        node = canvas_nodes(self.workspace.read_canvas()).get(_ident(node_id))
-        _draft_data(node, node_id)
-        return self.page.locator(f'[data-id="{node_id}"]')
-
-    _draft_created = None
-    _resume_only = False
-
-    def create_video_draft(self, x, y, label):
-        if self._resume_only:
-            raise ValueError('续作须使用原草稿节点，不能再新建')
-        if not isinstance(label, str) or not label.strip():
-            raise ValueError('请为视频草稿提供明确名称')
-        node_id = self._new_node(x, y, menu_name='视频', generation_kind='remote-videoGenerationNode')
-        if self._draft_created is not None:
-            self._draft_created(node_id)
-        locator = self._draft_locator(node_id)
-        locator.locator('.labelText').dblclick(timeout=self.timeout)
-        title = locator.get_by_label('节点名称', exact=True)
-        title.fill(label, timeout=self.timeout)
-        title.press('Enter', timeout=self.timeout)
-        self._wait_canvas(lambda g: canvas_nodes(g)[node_id]['data'].get('label') == label or None,
-                          'save video draft label')
-        return node_id
-
-    def upload_draft_reference(self, path, x, y, label):
-        if not isinstance(label, str) or not label.strip():
-            raise ValueError('请为参考素材卡提供明确名称')
-        checksum = hashlib.sha256(Path(path).read_bytes()).hexdigest()
-        try:
-            source_id = self.upload_source(path, x, y)
-        except ImageUIError as exc:
-            if not exc.mutation_unknown or not hasattr(exc, 'previous_node_ids'):
-                raise
-            previous = set(exc.previous_node_ids)
-
-            def recover(graph):
-                matches = [node for node in graph['nodes'] if node['id'] not in previous
-                           and node['type'] == 'remote-imageNode']
-                if len(matches) > 1:
-                    raise ValueError('上传后发现多个新素材卡，请核对原画布')
-                return matches[0]['id'] if matches else None
-
-            source_id = self._wait_canvas(recover, 'recover original draft reference', timeout=30)
-        source = canvas_nodes(self.workspace.read_canvas())[source_id]
-        actual, = self.workspace.digest_image_outputs([source])
-        if actual.get('sha256') != checksum:
-            raise ValueError(f'素材原件回读与本次上传不符：{source_id}')
-        self.rename(source_id, label)
-        return source_id
-
-    def connect_reference(self, source_id, node_id, *, source_port='image'):
-        def validate_target(graph, target_id):
-            _draft_data(canvas_nodes(graph).get(target_id), target_id)
-
-        self.close_dialog()
-        self._click(self.page.get_by_role('button', name='适应视图', exact=True), 'fit video reference ports')
-        self._connect(source_id, node_id, 'remote-videoGenerationNode', source_port=source_port,
-                      save_timeout=35, validate_target=validate_target)
-
-    def drag_duration(self, node_id, seconds):
-        if type(seconds) is not int:
-            raise ValueError('时长须为整数秒')
-        self.close_dialog()
-        locator = self._draft_locator(node_id)
-        self._click(locator.locator('.labelText'), 'focus video draft', node_id=node_id)
-        duration_control = locator.get_by_role('button', name='选择视频生成时长', exact=True)
-        self._unique(duration_control, 'open video duration').evaluate('(control) => control.click()')
-        slider = self.page.locator('input[type="range"][aria-label="视频时长滑块"]:visible')
-        slider.wait_for(state='visible', timeout=self.timeout)
-        value = self._unique(slider, 'video duration track').evaluate('''input => {
-            const r = input.getBoundingClientRect();
-            const marks = [...input.closest('.durationTrack').querySelectorAll('.durationMarks span')];
-            return {min: +input.min, max: +input.max, step: +input.step, value: +input.value,
-                    seconds: parseInt(input.getAttribute('aria-valuetext'), 10),
-                    first: Number(marks[0]?.textContent), last: Number(marks.at(-1)?.textContent),
-                    x: r.x, y: r.y, width: r.width, height: r.height};
-        }''')
-        span = value['max'] - value['min']
-        if (span <= 0 or value['step'] != 1 or value['last'] - value['first'] != span
-                or value['seconds'] != value['first'] + value['value'] - value['min']
-                or not value['first'] <= seconds <= value['last'] or value['width'] <= 12):
-            raise ValueError(f'视频时长轨道刻度与本轮秒数不符：{node_id}')
-        if value['seconds'] != seconds:
-            # The observed native thumb spans 12 CSS px. Its center stops inside the track edges.
-            left = value['x'] + 6
-            length = value['width'] - 12
-            current_x = left + (value['seconds'] - value['first']) * length / span
-            target_x = left + (seconds - value['first']) * length / span
-            y = value['y'] + value['height'] / 2
-            self.page.mouse.move(current_x, y)
-            self.page.mouse.down()
-            try:
-                self.page.mouse.move(target_x, y, steps=18)
-            finally:
-                self.page.mouse.up()
-            if slider.get_attribute('aria-valuetext') != f'{seconds}秒':
-                raise ValueError(f'视频时长轨道未到达 {seconds} 秒：{node_id}')
-        return self._wait_canvas(
-            lambda g: next((node for node in g['nodes'] if node['id'] == node_id
-                            and node['data'].get('duration') == seconds), None),
-            'save video duration', timeout=35)
-
-    def refresh_linked_draft(self, node_id, source_id, expected, reference_path):
-        self.page.reload(wait_until='domcontentloaded')
-        self.assert_target()
-        snapshot = verify_saved(self.workspace, {node_id: expected})
-        nodes = canvas_nodes(snapshot)
-        data = _draft_data(nodes[node_id], node_id)
-        edges = [edge for edge in snapshot['edges'] if
-                 (edge.get('source'), edge.get('sourceHandle'), edge.get('target'), edge.get('targetHandle'))
-                 == (source_id, 'image', node_id, 'in')]
-        if len(edges) != 1:
-            raise ValueError(f'刷新后未确认唯一参考连线：{node_id}')
-        actual, = self.workspace.digest_image_outputs([nodes[source_id]])
-        if actual.get('sha256') != hashlib.sha256(Path(reference_path).read_bytes()).hexdigest():
-            raise ValueError(f'刷新后的参考原件与本次上传不符：{source_id}')
-        return {'node_id': node_id, 'duration': data['duration'], 'source_id': source_id,
-                'edge_id': edges[0]['id'], 'reference_sha256': actual['sha256']}
 
 
 def _check_linked_observation(graph, nodes, row, draft, direct_slots, models):

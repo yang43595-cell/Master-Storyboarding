@@ -120,6 +120,7 @@ def sha256_json(value: Any) -> str:
 
 
 PROJECT_LOCK_RELATIVE = Path("00_项目管理") / ".revision-control.lock"
+TRANSACTION_ROOT = Path("00_项目管理") / "revision_transactions"
 
 
 @contextmanager
@@ -179,14 +180,63 @@ def file_lock(lock_path: Path, *, timeout_seconds: float = 10.0) -> Iterator[Non
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
+def recover_transactions(project: Path, *, read_json_fn=None) -> list[dict[str, Any]]:
+    """Finish committed intents and safely close prepared-but-undecided work."""
+    from .errors import RevisionControlError
+
+    load_json = read_json if read_json_fn is None else read_json_fn
+    project = project.resolve()
+    root = project / TRANSACTION_ROOT
+    if not root.is_dir():
+        return []
+    outcomes: list[dict[str, Any]] = []
+    with file_lock(project / PROJECT_LOCK_RELATIVE):
+        for tx_dir in sorted(path for path in root.iterdir() if path.is_dir()):
+            transaction_path = tx_dir / "transaction.json"
+            if not transaction_path.is_file():
+                continue
+            result_path = tx_dir / "result.json"
+            # Completed journals are history: do not reparse their full payload
+            # or repeatedly rewrite an already-aborted preparation. Missing,
+            # unknown or invalid results still take the normal recovery path.
+            if result_path.is_file() and load_json(result_path).get("state") in {"committed", "aborted"}:
+                continue
+            transaction = load_json(transaction_path)
+            intent_path = tx_dir / "commit_intent.json"
+            if not intent_path.is_file():
+                write_json(result_path, {"state": "aborted", "recovered_at": utc_now()})
+                outcomes.append({"transaction_id": transaction.get("transaction_id"), "state": "aborted"})
+                continue
+            # Check every target before replacing any: older code could accept
+            # a later write while this intent was pending. Preserve that work.
+            recovery_files = []
+            for record in transaction.get("files") or []:
+                relative = Path(str(record["path"]))
+                target = project / relative
+                after_path = tx_dir / "after" / relative
+                if (relative.is_absolute() or not target.resolve().is_relative_to(project)
+                        or not after_path.resolve().is_relative_to((tx_dir / "after").resolve())):
+                    raise RevisionControlError(f"事务恢复路径越出项目：{relative}")
+                if not after_path.is_file() or sha256_file(after_path) != record.get("after_sha256"):
+                    raise RevisionControlError(f"事务恢复失败，暂存内容损坏：{relative}")
+                current_digest = sha256_file(target) if target.is_file() else None
+                allowed = {record.get("after_sha256")}
+                allowed.add(record.get("before_sha256") if record.get("before_exists") else None)
+                if (target.exists() and not target.is_file()) or current_digest not in allowed:
+                    raise RevisionControlError(f"事务目标已被其他任务更新，拒绝覆盖；请保留现场核对：{relative}")
+                recovery_files.append((target, after_path.read_bytes()))
+            for target, content in recovery_files:
+                write_bytes(target, content)
+            write_json(result_path, {"state": "committed", "recovered_at": utc_now()})
+            outcomes.append({"transaction_id": transaction.get("transaction_id"), "state": "committed"})
+    return outcomes
+
+
 @contextmanager
 def project_lock(project_root: Path):
     """Recover decided writes before another project writer reads its inputs."""
     project_root = Path(project_root).resolve()
     with file_lock(project_root / PROJECT_LOCK_RELATIVE):
-        # Lazy import avoids the io/artifacts/revision-control import cycle.
-        # Recovery uses the raw reentrant lock and never calls project_lock.
-        from .revision_control import recover_transactions
         recover_transactions(project_root)
         yield
 

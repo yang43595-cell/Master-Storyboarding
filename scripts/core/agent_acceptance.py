@@ -399,10 +399,7 @@ def accept_artifact(args):
                 raise StageContextError('采用后 manifest/state 准确回读未通过，不得进入下游')
             adoption['artifact'] = adopted
         if frozen is not None:
-            try:
-                from ..canvas_readback import validate_submission
-            except ImportError:
-                from canvas_readback import validate_submission
+            from .canvas_readback import validate_submission
             try:
                 preflight = validate_submission(frozen, project, formal_delivery=True, preflight=True)
             except (ValueError, OSError, KeyError, TypeError, RuntimeError) as exc:

@@ -16,15 +16,17 @@ from .native_references import redframe_reference_labels
 from .project_kickoff import load_kickoff
 from .project_state import load_project_state
 from .redframe_image_ui import _valid_face_certificate
-from .redframe_recreation import (
+from .redframe_draft_ui import (
     _SEEDANCE_MODEL,
     _SEEDANCE_REFERENCE_MODES,
+    RedframeVideoDraftUI,
     _check_layout,
     _collect,
     _fit,
     _insert_references,
     _label,
     _media_kind,
+    _native_content,
     _native_tokens,
     _nodes,
     _position,
@@ -36,6 +38,7 @@ from .redframe_recreation import (
     _verify_parameters,
     _video_data,
     _wire_image_slots,
+    open_workspace,
 )
 from .redframe_workspace import _image_output_path
 
@@ -200,6 +203,26 @@ def _configure_creative(ui, group: dict[str, Any], ident: str, image_ids: dict[s
     )
 
 
+def _image_card_sizes(images: dict[str, dict[str, Any]], asset_id_map: dict[str, str]) -> dict[str, tuple[float, float]]:
+    from PIL import Image
+
+    sizes: dict[str, tuple[float, float]] = {}
+    for key, mat in images.items():
+        ident = asset_id_map.get(key)
+        if not ident:
+            continue
+        try:
+            with Image.open(mat["abs_path"]) as img:
+                iw, ih = img.size
+        except (OSError, ValueError):
+            iw, ih = 3, 4
+        ratio = (iw / ih) if ih else 1.0
+        est_w = max(360.0, round(270.0 * ratio + 36.0, 1))
+        est_h = max(480.0, round(300.0 + (200.0 if ih >= iw else 160.0), 1))
+        sizes[ident] = (est_w, est_h)
+    return sizes
+
+
 def _layout_module_rows(
     nodes: dict[str, dict[str, Any]],
     rows_of_ids: list[list[str]],
@@ -210,8 +233,10 @@ def _layout_module_rows(
     min_h: float = 480.0,
     gap_x: float = 90.0,
     gap_y: float = 110.0,
+    size_hints: dict[str, tuple[float, float]] | None = None,
 ) -> tuple[dict[str, tuple[float, float]], float]:
     positions: dict[str, tuple[float, float]] = {}
+    hints = size_hints or {}
     cur_y = start_y
     for row_ids in rows_of_ids:
         if not row_ids:
@@ -220,8 +245,9 @@ def _layout_module_rows(
         row_h = min_h
         for nid in row_ids:
             dims = (nodes.get(nid) or {}).get("dimensions") or {}
-            w = max(min_w, float(dims.get("width") or min_w))
-            h = max(min_h, float(dims.get("height") or min_h))
+            hw, hh = hints.get(nid, (0.0, 0.0))
+            w = max(min_w, float(dims.get("width") or 0.0), float(hw))
+            h = max(min_h, float(dims.get("height") or 0.0), float(hh))
             positions[nid] = (round(cur_x, 1), round(cur_y, 1))
             cur_x += w + gap_x
             row_h = max(row_h, h)
@@ -229,13 +255,25 @@ def _layout_module_rows(
     return positions, cur_y
 
 
+def _asset_bucket(key: str, mat: dict[str, Any]) -> str:
+    role = str(mat.get("role") or "")
+    roles = set(mat.get("roles") or []) | ({role} if role else set())
+    if key.startswith(("AST-ENV-", "SUP-")) or (roles & {"layout", "state_reference"}):
+        return "scene"
+    if (
+        key.startswith(("AST-CH-", "F1-", "F2-", "M1-"))
+        or ("identity" in roles)
+        or ("FILM-LOOK" in key)
+    ):
+        return "character"
+    return "prop"
+
+
 def _group_asset_rows(images: dict[str, dict[str, Any]], asset_id_map: dict[str, str]) -> list[list[str]]:
     buckets: list[tuple[int, list[str]]] = [
-        (4, [asset_id_map[k] for k in images if k.startswith("AST-CH-")]),
-        (8, [asset_id_map[k] for k in images if k.startswith("SUP-")]),
-        (4, [asset_id_map[k] for k in images if k.startswith("AST-ENV-")]),
-        (3, [asset_id_map[k] for k in images if k.startswith("AST-PR-")]),
-        (3, [asset_id_map[k] for k in images if not k.startswith(("AST-CH-", "SUP-", "AST-ENV-", "AST-PR-"))]),
+        (4, [asset_id_map[k] for k, m in images.items() if _asset_bucket(k, m) == "character"]),
+        (4, [asset_id_map[k] for k, m in images.items() if _asset_bucket(k, m) == "scene"]),
+        (3, [asset_id_map[k] for k, m in images.items() if _asset_bucket(k, m) == "prop"]),
     ]
     rows: list[list[str]] = []
     for cols, ids in buckets:
@@ -245,8 +283,6 @@ def _group_asset_rows(images: dict[str, dict[str, Any]], asset_id_map: dict[str,
 
 
 def write_creative(project: Path, *, host_browser) -> dict[str, Any]:
-    from ..redframe_draft import RedframeVideoDraftUI, _native_content, open_workspace
-
     project = project.resolve()
     with draft_delivery_lock(project), ExitStack() as session:
         packet, canvas, entry = creative_packet(project)
@@ -295,7 +331,7 @@ def write_creative(project: Path, *, host_browser) -> dict[str, Any]:
             if h and h not in by_hash:
                 by_hash[h] = n["id"]
 
-        created_any_asset = False
+        created_asset_labels: dict[str, str] = {}
         for key, mat in images.items():
             if key in state["assets"] and state["assets"][key] in init_nodes and init_hashes.get(state["assets"][key]) == mat["sha256"]:
                 print("已绑定源卡", key, state["assets"][key], flush=True)
@@ -313,9 +349,15 @@ def write_creative(project: Path, *, host_browser) -> dict[str, Any]:
                 save, expected_hash=mat["sha256"], reload_after_rename=False,
             )
             if not was_known:
-                created_any_asset = True
+                created_asset_labels[ident] = name
             print("素材卡", key, ident, flush=True)
-        if created_any_asset:
+        if created_asset_labels:
+            graph = workspace.read_canvas()
+            staged_assets = deepcopy(graph)
+            for ident, name in created_asset_labels.items():
+                _nodes(staged_assets)[ident]["data"]["label"] = name
+            if graph != staged_assets:
+                workspace.write_canvas(graph, staged_assets)
             _reload(ui)
 
         graph = workspace.read_canvas()
@@ -328,6 +370,7 @@ def write_creative(project: Path, *, host_browser) -> dict[str, Any]:
         own_ids = {state["assets"][k] for k in new_images} | set(state["nodes"].values())
         other_nodes = [n for n in nodes.values() if n["id"] not in own_ids]
         asset_rows = _group_asset_rows(new_images, state["assets"]) if new_images else []
+        asset_size_hints = _image_card_sizes(new_images, state["assets"]) if new_images else {}
         est_total_h = (
             len(asset_rows) * 610.0
             + (180.0 if asset_rows else 0.0)
@@ -359,10 +402,11 @@ def write_creative(project: Path, *, host_browser) -> dict[str, Any]:
                 asset_rows,
                 start_x=module_x,
                 start_y=asset_y,
-                min_w=380.0,
-                min_h=500.0,
+                min_w=360.0,
+                min_h=480.0,
                 gap_x=90.0,
                 gap_y=110.0,
+                size_hints=asset_size_hints,
             )
             _position(ui, asset_positions)
             _fit(ui)
@@ -374,7 +418,7 @@ def write_creative(project: Path, *, host_browser) -> dict[str, Any]:
             print("人脸认证", key, state["assets"][key], flush=True)
             ui.ensure_face_certification(state["assets"][key], images[key]["sha256"], attempts, save)
 
-        created_any_node = False
+        created_node_labels: dict[str, str] = {}
         for group in groups:
             was_known = group["id"] in state["nodes"]
             ident = _reuse_or_create(
@@ -383,9 +427,15 @@ def write_creative(project: Path, *, host_browser) -> dict[str, Any]:
                 save, reload_after_rename=False,
             )
             if not was_known:
-                created_any_node = True
+                created_node_labels[ident] = group["node_name"]
             print("草稿节点", group["id"], ident, flush=True)
-        if created_any_node:
+        if created_node_labels:
+            graph = workspace.read_canvas()
+            staged_nodes = deepcopy(graph)
+            for ident, name in created_node_labels.items():
+                _nodes(staged_nodes)[ident]["data"]["label"] = name
+            if graph != staged_nodes:
+                workspace.write_canvas(graph, staged_nodes)
             _reload(ui)
 
         nodes_now = _nodes(workspace.read_canvas())
@@ -417,7 +467,7 @@ def write_creative(project: Path, *, host_browser) -> dict[str, Any]:
             ident = state["nodes"][group["id"]]
             _, identities, tokens, _ = _collect(group, ident, graph, state["assets"], slots[ident])
             prompt, rich = _serialize_creative(group, identities, tokens)
-            next_nodes[ident]["data"].update(prompt=prompt, promptModel=rich)
+            next_nodes[ident]["data"].update(label=group["node_name"], prompt=prompt, promptModel=rich)
         if graph != staged:
             workspace.write_canvas(graph, staged)
         _reload(ui)

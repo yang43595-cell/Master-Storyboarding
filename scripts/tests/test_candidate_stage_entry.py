@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from scripts.core.candidate_test import configure, context, require_production
 from scripts.core.io import PROJECT_LOCK_RELATIVE
