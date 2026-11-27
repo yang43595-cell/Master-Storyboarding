@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 
+from .agent_review_api import DEFAULT_BASE_URL, effective_approval
 from .errors import StageContextError
 from .project_kickoff import load_kickoff
 from .script_approval import (
@@ -102,7 +103,7 @@ def adopt_chat_script(args, message):
         require_production(project)
         approval = ChatScriptApproval.from_message(
             project, artifact_id=args.artifact_id, path=args.path, revision=args.revision,
-            sha256=args.sha256, message=message)
+            sha256=args.sha256, message=message, load_manifest_fn=load_manifest)
         source = Path(approval.path)
         if not source.is_file() or digest(source) != approval.sha256:
             raise StageContextError("编导稿与对话审阅时登记的文件字节不一致")

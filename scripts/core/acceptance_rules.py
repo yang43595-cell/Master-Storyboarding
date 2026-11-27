@@ -577,7 +577,11 @@ def current_narrative(
     """Read the unique confirmed or workflow-authorized narrative.package."""
     manifest = load_manifest_fn(root)
     state = load_state_fn(root)
-    adopted_check = artifact_is_adopted if is_adopted_fn is None else is_adopted_fn
+    adopted_check = (
+        (lambda entry, st, rt: artifact_is_adopted(entry, st, rt, file_digest=file_digest))
+        if is_adopted_fn is None
+        else is_adopted_fn
+    )
     entries = [entry for entry in manifest.get("artifacts", [])
                if entry.get("logical_id") == "narrative.package" and entry.get("status") == "current"]
     if (len(entries) != 1 or entries[0].get("artifact_id") not in state["current_artifacts"]

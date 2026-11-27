@@ -63,6 +63,7 @@ else:
     from core.project_state import load_project_state  # type: ignore
     from core.revision_store import guard_action  # type: ignore
     from core.visual_asset_product_usage import load_usage
+_ORIG_ARTIFACT_IS_ADOPTED = artifact_is_adopted
 
 ASSET_LIST = "04_资产/当前资产清单.json"
 IMPACT_DIR = "04_资产/变更影响"
@@ -775,7 +776,7 @@ def current_narrative(root: Path) -> dict:
         load_manifest_fn=load_manifest,
         load_state_fn=load_project_state,
         file_digest=digest,
-        is_adopted_fn=artifact_is_adopted,
+        is_adopted_fn=None if artifact_is_adopted is _ORIG_ARTIFACT_IS_ADOPTED else artifact_is_adopted,
     )
 
 

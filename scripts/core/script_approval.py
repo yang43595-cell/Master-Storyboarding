@@ -14,6 +14,23 @@ from .manifest_store import load_manifest
 from .project_kickoff import load_kickoff
 from .story_sources import SUBTITLE_REVIEW_DISCLOSURE, narrative_review_projections, validate_story_sources
 
+_ORIG_LOAD_MANIFEST = load_manifest
+_ORIG_LOAD_KICKOFF = load_kickoff
+
+
+def _resolve_hook(local_val, orig_val, peer_modules: tuple[str, ...], attr_name: str, explicit_fn=None):
+    if explicit_fn is not None:
+        return explicit_fn
+    if local_val is not orig_val:
+        return local_val
+    for mod_name in peer_modules:
+        mod = sys.modules.get(mod_name)
+        if mod is not None:
+            cand = getattr(mod, attr_name, orig_val)
+            if cand is not orig_val:
+                return cand
+    return local_val
+
 
 def project_file(project: Path, value: str | Path) -> Path:
     candidate = Path(value)
@@ -55,6 +72,9 @@ def read_decision(client, publication):
     if decision["case"]["projectId"] != response["projectId"]:
         raise ValueError("Website decision belongs to a different remote project.")
     return decision
+
+
+_ORIG_READ_DECISION = read_decision
 
 
 def is_recorded_website_script_approval(project, entry, approval_ref):
@@ -102,7 +122,7 @@ else:
                 raise TypeError("Website approval must come from a fresh review decision.")
 
 
-def read_script_approval(project, publication, client, *, artifact_id, receipt_path):
+def read_script_approval(project, publication, client, *, artifact_id, receipt_path, read_decision_fn=None):
     """Read through the production API, using the original publication as the local byte binding."""
     if (client.base_url != DEFAULT_BASE_URL or publication.get("base_url") != DEFAULT_BASE_URL
             or publication.get("project_path") != str(project) or publication.get("command") != "publish"
@@ -131,7 +151,14 @@ def read_script_approval(project, publication, client, *, artifact_id, receipt_p
     else:
         raise ValueError("发布回执中的阅读稿与本版编导 JSON 不一致")
 
-    decision = read_decision(client, publication)
+    decision_reader = _resolve_hook(
+        read_decision,
+        _ORIG_READ_DECISION,
+        ("scripts.core.script_approval", "core.script_approval", "scripts.core.review_publication", "core.review_publication"),
+        "read_decision",
+        read_decision_fn,
+    )
+    decision = decision_reader(client, publication)
     if not effective_approval(decision):
         return decision, None
     return decision, _VerifiedScriptApproval(
@@ -156,7 +183,7 @@ else:
         subtitle_review_ids: tuple[str, ...] = ()
 
         @classmethod
-        def from_message(cls, project, *, artifact_id, path, revision, sha256, message):
+        def from_message(cls, project, *, artifact_id, path, revision, sha256, message, load_manifest_fn=None):
             if not isinstance(message, dict) or message.get("scope") != "artifact":
                 raise ValueError("对话确认必须覆盖编导整稿")
             quote, at, reference = (message.get(key) for key in ("quote", "at", "review_ref"))
@@ -167,7 +194,14 @@ else:
             source = project_file(project, path)
             proof = message.get("review_markdown")
             if proof is None:
-                proof = next((row.get("review_markdown") for row in load_manifest(project)["artifacts"]
+                manifest_loader = _resolve_hook(
+                    load_manifest,
+                    _ORIG_LOAD_MANIFEST,
+                    ("scripts.core.script_approval", "core.script_approval", "scripts.core.artifacts", "core.artifacts"),
+                    "load_manifest",
+                    load_manifest_fn,
+                )
+                proof = next((row.get("review_markdown") for row in manifest_loader(project)["artifacts"]
                               if row["artifact_id"] == artifact_id and row.get("checksum") == sha256
                               and row.get("revision") == revision), None)
             if proof is None:
@@ -214,7 +248,7 @@ else:
             return receipt
 
 
-def require_script_approval(project, entry, approval_ref, website_approval, *, chat_approval=None):
+def require_script_approval(project, entry, approval_ref, website_approval, *, chat_approval=None, load_kickoff_fn=None):
     """Enforce the same policy at every formal narrative write boundary."""
     if chat_approval is not None:
         if (website_approval is not None or not isinstance(chat_approval, ChatScriptApproval)
@@ -227,7 +261,14 @@ def require_script_approval(project, entry, approval_ref, website_approval, *, c
             raise ValueError("编导稿的项目、产物、路径、修订或文件字节与对话确认范围不一致")
         return
     if website_approval is None:
-        if entry.get("logical_id") == "narrative.package" and load_kickoff(project):
+        kickoff_loader = _resolve_hook(
+            load_kickoff,
+            _ORIG_LOAD_KICKOFF,
+            ("scripts.core.script_approval", "core.script_approval", "scripts.core.review_publication", "core.review_publication"),
+            "load_kickoff",
+            load_kickoff_fn,
+        )
+        if entry.get("logical_id") == "narrative.package" and kickoff_loader(project):
             raise ValueError("统一入口的编导稿须使用当前有效的网站通过或准确的整稿对话确认")
         return
     if (not isinstance(website_approval, _VerifiedScriptApproval)

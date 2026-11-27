@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
@@ -17,13 +18,19 @@ ARTIFACT_STATUSES = {"candidate", "current", "stale", "superseded", "rejected"}
 
 _FORMAL_PACKAGE_LOGICAL_IDS = {"narrative.package", "storyboard.package", "video.prompt"}
 
+_PEER_MODULE = sys.modules.get(
+    "core.manifest_store" if __name__ == "scripts.core.manifest_store" else "scripts.core.manifest_store"
+)
 
-class _Manifest(dict):
-    """In-memory read version; it adds no fields to the persisted JSON contract."""
+if _PEER_MODULE is not None:
+    _Manifest = _PEER_MODULE._Manifest
+else:
+    class _Manifest(dict):
+        """In-memory read version; it adds no fields to the persisted JSON contract."""
 
-    def __init__(self, value):
-        super().__init__(value)
-        self._source_bytes = canonical_json_bytes(value)
+        def __init__(self, value):
+            super().__init__(value)
+            self._source_bytes = canonical_json_bytes(value)
 
 
 def load_manifest(project_root: Path, *, read_json_fn=read_json) -> dict[str, Any]:
