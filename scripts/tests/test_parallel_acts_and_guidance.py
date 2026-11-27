@@ -121,3 +121,45 @@ def test_video_prompt_concurrent_put_segment_preserves_all_and_sorts_chronologic
     saved = json.loads((proj / "06_视频/R01.json").read_text(encoding="utf-8"))
     assert [s["segment_id"] for s in saved["generation_segments"]] == ["SEG-01", "SEG-02", "SEG-03", "SEG-04"]
     assert saved["scope"]["type"] == "full_local_authored"
+
+
+def test_director_cli_flag_order_and_visual_batch_commands(tmp_path: Path, monkeypatch) -> None:
+    sys.path.insert(0, str(REPO / "scripts"))
+    import director_package as dp
+    import visual_stage_cli as vs
+
+    # Verify --project / --package work AFTER subcommand as well as before
+    monkeypatch.setattr(dp, "outline", lambda root: {"ok": True, "root": str(root)})
+    rc = dp.main(["outline", "--project", str(tmp_path), "--package", "03_导演/R01.json"])
+    assert rc == 0
+
+    # Verify batch-save-checks writes multiple validated supplement requests in one call
+    proj = tmp_path / "vproj"
+    dir_rel = "03_导演/R01.json"
+    (proj / "03_导演").mkdir(parents=True, exist_ok=True)
+    (proj / dir_rel).write_text('{"schema_version":"5.0"}', encoding="utf-8")
+    ast_rel = "04_资产/AST-001.png"
+    (proj / "04_资产").mkdir(parents=True, exist_ok=True)
+    (proj / ast_rel).write_bytes(b"png")
+    fake_vctx = {
+        "project": proj,
+        "dir_entry": {"artifact_id": "DIR-R01", "revision": "R01", "path_or_url": dir_rel, "user_approved": True},
+        "dir_path": proj / dir_rel,
+        "dir_sha256": "b" * 64,
+        "storyboard": {"project_id": "vp", "scenes": []},
+        "chosen_by_ast": {"AST-001": "AST-001@1x4"},
+        "resolved_map": {"AST-001@1x4": {"path": str(proj / ast_rel)}},
+        "waiting_assets": [],
+        "kickoff": {},
+        "product_pack": None,
+    }
+    monkeypatch.setattr(vs, "_ctx", lambda _p: fake_vctx)
+    monkeypatch.setattr(vs, "validate_visual_supplement_request", lambda doc, project_root=None: None)
+    batch_in = tmp_path / "batch_vs.json"
+    batch_in.write_text(json.dumps([
+        {"request_id": "VS-01", "source_shot_ids": ["S01-001"], "assets": ["AST-001"], "decision": "reuse_existing"},
+        {"request_id": "VS-02", "source_shot_ids": ["S01-002"], "assets": ["AST-001"], "decision": "request_supplement"},
+    ], ensure_ascii=False), encoding="utf-8")
+    assert vs.main(["batch-save-checks", "--project", str(proj), "--input", str(batch_in)]) == 0
+    assert (proj / "05_分镜/VS-01_视觉补充请求.json").is_file()
+    assert (proj / "05_分镜/VS-02_视觉补充请求.json").is_file()

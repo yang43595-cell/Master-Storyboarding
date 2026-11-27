@@ -15,16 +15,16 @@ description: 根据导演包或采用的复刻分段、原文对白和真实素�
 
 原创线统一采用 `video.prompt`（`schema_version: "2.0"`，免除手抄 `director_coverage` 切片锚点）与 `scripts/video_prompt_package.py` 分批写入，每轮只写 2–3 个生成段，避免单轮超长流式输出断连：
 
-1. **查看全局大纲、产品必读小抄与可用素材清单**（首条命令顶部自动返回 `must_read` 必读方法与产品规范，先实读再动笔）：
+1. **查看全局大纲、产品必读小抄与可用素材清单**（首条命令顶部自动返回 `must_read` 必读方法与产品规范，先实读再动笔；**严禁翻阅 `scripts/*.py` 源码或 `schemas/*.json`**）：
    `PYTHONPATH=scripts .venv/bin/python scripts/video_prompt_package.py outline --project "<项目>"`
-2. **初始化 v2.0 提示词包**（绑定当前导演包与红帧模型能力取证 JSON；**超过 8 段的长片可接着跑 `plan-acts --project "<项目>" --max-segments-per-act 8` 生成锁死首尾接缝的 `06_视频/分幕接口卡.json`，同时派 2–3 个子代理并发跑 `put-segment`，CLI 自带文件锁并自动按镜号时序归位！**）：
+2. **初始化 v2.0 提示词包**（绑定当前导演包与红帧模型能力取证 JSON；若有旧版视频包可传 `--from-package <旧包路径>` 克隆并自动重绑最新导演包与补图；**超过 6 段的长片由主协调对话直接跑 `plan-acts --project "<项目>" --max-segments-per-act 6` 生成锁死首尾接缝的 `06_视频/分幕接口卡.json`，随即并发派 2 个干净子代理跑 `put-segment`，每回合最多写 1–2 个生成段 JSON**）：
    `PYTHONPATH=scripts .venv/bin/python scripts/video_prompt_package.py init --project "<项目>" --revision R07 --output 06_视频/R07_视频提示词.json --capability-evidence 06_视频/红帧Seedance25原生模型能力取证.json`
 3. **按段取源并逐段落盘**（写哪段调 `segment-source --shots S01-001,S01-002`，单段 JSON 只需填 `segment_id`、`title`、`source_shots`、`duration_seconds`、`materials`（传 `{"ref": "AST-CH-01", "role": "character"}` / `{"ref": "SUP-S10-MASK-R07"}` / `{"ref": "PROD:ACTION-01"}` 即可自动解析 `@图片k`/`@视频k`、路径、哈希、动作键、对白与连续性字段）和 `prompt`；注意导演包中 `required_visuals[].prompt_clause` 原句须单独占一行）：
    `PYTHONPATH=scripts .venv/bin/python scripts/video_prompt_package.py put-segment --project "<项目>" --package 06_视频/R07_视频提示词.json --input /tmp/seg01.json`
-4. **全包校验、登记候选并采用**：
+4. **全包校验、登记候选并一键自查采用**：
    - `PYTHONPATH=scripts .venv/bin/python scripts/video_prompt_package.py status --project "<项目>" --package 06_视频/R07_视频提示词.json`
    - `PYTHONPATH=scripts .venv/bin/python scripts/video_prompt_package.py register --project "<项目>" --package 06_视频/R07_视频提示词.json --artifact-id VID-R07`
-   - `PYTHONPATH=scripts .venv/bin/python scripts/video_prompt_package.py self-check-template --project "<项目>" --artifact-id VID-R07 --output 00_项目管理/视频R07自查.json`（填妥真实观察与 `verdict: "pass"` 后运行 `.venv/bin/python scripts/stage_context_cli.py accept-artifact --project "<项目>" --artifact-id VID-R07 --self-check-json 00_项目管理/视频R07自查.json`）
+   - `PYTHONPATH=scripts .venv/bin/python scripts/video_prompt_package.py self-check-template --project "<项目>" --artifact-id VID-R07 --authorization-id "<FLOW授权ID>" --output 00_项目管理/视频R07自查.json --observation "<真实全包复核结论>" --auto-accept`
 5. **一键写入红帧画布草稿并正式回读收口**（自动上传源卡、人脸认证、连线、直传视频参考、序列化原生 `{{ref}}`、刷新回读与防重叠排版校验，**绝不点击生成**）：
    `.venv/bin/python scripts/redframe_draft.py write-creative --project "<项目>"`（可先加 `--preflight` 干跑预检）
 

@@ -40,21 +40,24 @@ description: 承接已确认故事与对白，创作并自查完整的视听分�
 
 ### 渐进式读取与逐场落盘（必须用，禁止一次读全片原文或输出整包）
 
-> **防断连硬红线**：每回合**只允许写 1 个场次 JSON（≤5 镜）并立刻 `put-scene` 落盘**，下一回合再写下一场！**严禁把 S01、S02、S03 合并在同一回合并行 `write_file`**，思考时只构思当前这一场，且不调用 `read_file` 读取产品 PNG/MP4 媒体文件（只读文字规范与 `PRODUCT_BRIEF.md`）。
+> **防断连与提速硬红线**：
+> 1. **严禁翻阅 `schemas/storyboard-package.schema.json` 或 `scripts/*.py` 源码**——完整 `5.0` 字段示例已在 `modules/shot-planning.md` 写清，`put-scene` 会自动报错提示具体缺漏字段。
+> 2. **每回合最多只允许 `write_file` 1 个场次的 ≤2–3 镜**（>3 镜的大场拆成 `put-scene` 前 2–3 镜 + `append-shots` 剩余 2–3 镜分次落盘），严禁把 4+ 镜塞进单次 `write_file`（会超过 2,000 输出 tokens 触发网关 80s 超时重试！）。
+> 3. **多幕真并发（无需单派“总导演统筹”子代理！）**：需要多幕并行时，主协调对话自己在 10 秒内跑 `D outline` → `D init` → `D plan-acts --max-scenes-per-act 3`，然后**立刻同一轮并发派发 `ACT-01`、`ACT-02` 两个写镜子代理**（各自按场内局部镜号 `S04-001, S04-002` 并发 `put-scene`）；全部返回后跑 `D finalize-acts` 一键重排全片连续镜号并 `register`。
 
-开工绝不一次性吞入全片 `导演编导来源.json`、整份编导稿或 `references/` 教材。统一用 `scripts/director_package.py` **先看一页大纲建骨架，再写哪场取哪场原文**：
+统一用 `scripts/director_package.py`（`--project` 与 `--out/--package` 放子命令前后均可）：
 
 ```sh
 P='<项目绝对路径>'; OUT='03_导演/<revision>_storyboard-package.json'
 D(){ .venv/bin/python scripts/director_package.py --project "$P" --out "$OUT" "$@"; }
-D outline                                         # 1. 只看全片紧凑大纲与锁定事实（约 1.5KB），定全局节奏预算
-D init --header <只含 director_rules 的小 JSON>     # 2. 建空骨架（思考从简，不要在此时推演全片逐镜细节）
-D scene-source --paragraph STP-01                 # 3. 写哪场才取哪场的完整原文、对白与有效 AST
-D put-scene --scene <单场 scene.json>             # 4. 普通场一次写完整场；>5 镜的大场先写整场头＋前半场镜头，再用下行追加后半场
-D append-shots --scene-id S01 --shots <后半场镜头.json> # 4b. 仅大场（>5 镜）补齐剩余镜头，保持每轮快速落盘
-D status                                          # 5. 看进度并按 next_check 跑局部来源自查
-D set --header <timing_basis/open_questions 等>
-D register --artifact-id DIR-<revision>           # 6. 全片严格校验通过后登记候选
+D outline                                         # 1. 只看全片紧凑大纲与 must_read 必读小抄（约 1.5KB）
+D init --revision <R0x> --header <director_rules.json> # 2. 建空骨架（若有已采用旧导演包返修，先 stage_context_cli.py open-change --target-logical-id storyboard.package）
+D plan-acts --max-scenes-per-act 3                # 2b. 多幕并行时一键生成锁死首尾交接棒与局部镜号规则的 .parallel-plan.json，随即并发派 ACT 子代理！
+D scene-source --paragraph STP-01                 # 3. 子代理写哪场才取哪场完整原文、对白与有效 AST
+D put-scene --scene <单场≤3镜 scene.json>         # 4. ≤3 镜一次写完；>3 镜先写前 2-3 镜，再用下行分批追加
+D append-shots --scene-id S01 --shots <后2-3镜.json>
+D finalize-acts                                   # 5. 多幕并发写完后一键核验接缝并顺排全片连续镜号 S01-001..Sxx-0yy
+D register --artifact-id DIR-<revision>           # 6. 全片严格校验通过后登记候选（自动识别活动变更案）
 D self-check-template --artifact-id DIR-<revision> --authorization-id <授权ID> --agent-id <执行者> --output 00_项目管理/导演<revision>自查.json
 ```
 

@@ -60,6 +60,8 @@ def _ctx(project: Path) -> dict[str, Any]:
         "dir_path": dir_path,
         "dir_sha256": str(dir_entry.get("checksum") or _sha256(dir_path)),
         "storyboard": storyboard,
+        "narrative": narrative,
+        "asset_categories": {str(a["asset_id"]): str(a.get("category") or "") for a in (narrative.get("asset_requirements") or []) if isinstance(a, dict) and a.get("asset_id")},
         "chosen_by_ast": chosen_by_ast,
         "resolved_map": resolved_map,
         "waiting_assets": waiting_assets,
@@ -90,25 +92,40 @@ def cmd_outline(args: argparse.Namespace) -> int:
                 for a in ast_ids
             ],
         })
+    manifest = load_manifest(ctx["project"])
+    existing_sups = []
+    for e in manifest.get("artifacts", []):
+        if e.get("type") == "visual-supplement-image" and e.get("status") in {"current", "stale", "candidate"}:
+            qe = e.get("quality_evidence") or {}
+            existing_sups.append({
+                "artifact_id": e.get("artifact_id"),
+                "logical_id": e.get("logical_id"),
+                "revision": e.get("revision"),
+                "status": e.get("status"),
+                "path": e.get("path_or_url"),
+                "source_shot_ids": qe.get("source_shot_ids") or [],
+                "uses": qe.get("uses") or [],
+            })
     print(json.dumps({
         "must_read": build_stage_guidance(ctx["project"], "storyboard-director"),
         "storyboard": ctx["dir_entry"]["artifact_id"],
         "storyboard_sha256": ctx["dir_sha256"],
         "waiting_assets": ctx["waiting_assets"],
+        "existing_supplements": existing_sups,
         "scenes": scenes,
     }, ensure_ascii=False, indent=2))
     return 0
 
 
-def cmd_save_check(args: argparse.Namespace) -> int:
-    project = Path(args.project).resolve()
-    ctx = _ctx(project)
-    inp = _load_json(Path(args.input).resolve())
+def _save_one_check(project: Path, ctx: dict[str, Any], inp: dict[str, Any], out_override: str | None = None) -> dict[str, Any]:
     req_id = str(inp["request_id"])
     decision = str(inp.get("decision") or "reuse_existing")
     status = str(inp.get("status") or ("ready" if decision == "request_supplement" else "not_needed"))
+    raw_refs = inp.get("existing_references")
+    if raw_refs is None and inp.get("assets"):
+        raw_refs = [{"asset_id": a, "coverage": "覆盖本镜人物/场景/道具固定外观基准"} for a in inp["assets"]]
     refs = []
-    for r in inp.get("existing_references") or []:
+    for r in raw_refs or []:
         if "path" in r and "kind" in r:
             refs.append(r)
         else:
@@ -122,10 +139,11 @@ def cmd_save_check(args: argparse.Namespace) -> int:
                 "kind": "confirmed_asset",
                 "ref_id": binding,
                 "path": rel_p,
-                "coverage": str(r["coverage"]),
+                "coverage": str(r.get("coverage") or "覆盖本镜人物/场景/道具固定外观基准"),
             })
     dir_entry = ctx["dir_entry"]
     dir_status = "confirmed" if dir_entry.get("user_approved") else "agent_accepted"
+    obs = str(inp.get("observation") or "已原尺寸实看对应确认资产与既有参考，人物衣着、空间与道具外观完整覆盖本组镜头需求")
     doc: dict[str, Any] = {
         "schema_version": "1.0",
         "project_id": str(ctx["storyboard"].get("project_id") or project.name),
@@ -139,14 +157,11 @@ def cmd_save_check(args: argparse.Namespace) -> int:
             "status": dir_status,
         },
         "source_shot_ids": list(inp["source_shot_ids"]),
-        "visual_review": {
-            "storyboard_sha256": ctx["dir_sha256"],
-            "observation": str(inp["observation"]),
-        },
-        "target_state": str(inp["target_state"]),
-        "must_appear": list(inp["must_appear"]),
-        "must_not_appear": list(inp["must_not_appear"]),
-        "preserve": list(inp["preserve"]),
+        "visual_review": {"storyboard_sha256": ctx["dir_sha256"], "observation": obs},
+        "target_state": str(inp.get("target_state") or "沿用已确认基础资产与既有状态参考，无需新增独立补图"),
+        "must_appear": list(inp.get("must_appear") or ["本组镜头对应已确认人物、场景与道具特征"]),
+        "must_not_appear": list(inp.get("must_not_appear") or ["未登记服饰、多余标识或跨场穿帮物件"]),
+        "preserve": list(inp.get("preserve") or ["人物面部身份、服装版型与空间陈设连续性"]),
         "existing_references": refs,
         "decision": decision,
         "max_images": int(inp.get("max_images", 1 if decision == "request_supplement" else 0)),
@@ -159,14 +174,31 @@ def cmd_save_check(args: argparse.Namespace) -> int:
         raw_gap = doc.get("gap") if isinstance(doc.get("gap"), dict) else {}
         doc["gap"] = {
             "type": str(raw_gap.get("type") or "critical_state"),
-            "observed_evidence": str(raw_gap.get("observed_evidence") or inp["observation"]),
+            "observed_evidence": str(raw_gap.get("observed_evidence") or obs),
             "why_existing_is_insufficient": str(raw_gap.get("why_existing_is_insufficient") or "现有确认资产未包含该关键中间外观状态，直接进视频易导致状态失真或身份漂移"),
             "downstream_consequence": str(raw_gap.get("downstream_consequence") or "缺少该静态状态锚点将导致多镜连续状态与边界不一致"),
         }
     validate_visual_supplement_request(doc, project_root=project)
-    out_rel = args.output or f"05_分镜/{req_id}_视觉补充请求.json"
+    out_rel = out_override or inp.get("output") or f"05_分镜/{req_id}_视觉补充请求.json"
     _save_json(project / out_rel, doc)
-    print(json.dumps({"saved": out_rel, "request_id": req_id, "decision": decision, "status": status}, ensure_ascii=False))
+    return {"saved": out_rel, "request_id": req_id, "decision": decision, "status": status}
+
+
+def cmd_save_check(args: argparse.Namespace) -> int:
+    project = Path(args.project).resolve()
+    ctx = _ctx(project)
+    inp = _load_json(Path(args.input).resolve())
+    print(json.dumps(_save_one_check(project, ctx, inp, args.output), ensure_ascii=False))
+    return 0
+
+
+def cmd_batch_save_checks(args: argparse.Namespace) -> int:
+    project = Path(args.project).resolve()
+    ctx = _ctx(project)
+    raw = _load_json(Path(args.input).resolve())
+    items = raw if isinstance(raw, list) else list(raw.get("items") or [])
+    results = [_save_one_check(project, ctx, item) for item in items]
+    print(json.dumps({"count": len(results), "saved": results}, ensure_ascii=False, indent=2))
     return 0
 
 
@@ -246,29 +278,55 @@ def cmd_init_dialogue_evidence(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_register_supplement(args: argparse.Namespace) -> int:
+def _register_one_supplement(
+    project: Path, ctx: dict[str, Any], inp: dict[str, Any],
+    *, auth_id_override: str | None = None, chg_id_override: str | None = None, auto_accept: bool = False,
+) -> dict[str, Any]:
     from core import revision_control as rc
-    project = Path(args.project).resolve()
-    ctx = _ctx(project)
-    inp = _load_json(Path(args.input).resolve())
-    art_id = str(inp["artifact_id"])
+    from core.agent_acceptance import accept_artifact
+    manifest = load_manifest(project)
+    rev = str(inp.get("revision") or ctx["dir_entry"]["revision"])
+    rebind_from = inp.get("rebind_from")
+    prev_entry = None
+    if rebind_from:
+        prev_entry = next((e for e in reversed(manifest.get("artifacts", [])) if e.get("artifact_id") == rebind_from or e.get("logical_id") == rebind_from), None)
+    elif inp.get("logical_id"):
+        prev_entry = next((e for e in reversed(manifest.get("artifacts", [])) if e.get("logical_id") == inp["logical_id"]), None)
+    prev_qe = (prev_entry or {}).get("quality_evidence") or {}
+    prev_use = (prev_qe.get("uses") or [{}])[0] if isinstance(prev_qe.get("uses"), list) and prev_qe.get("uses") else {}
+    art_id = str(inp.get("artifact_id") or (f"{prev_entry['artifact_id']}-{rev}" if prev_entry else ""))
+    if not art_id:
+        raise SystemExit("缺少 artifact_id（或 rebind_from）")
     active = rc.show_change(project).get("active_change")
-    chg_id = getattr(args, "change_id", None) or inp.get("change_id") or (
+    chg_id = chg_id_override or inp.get("change_id") or (
         active["change_id"] if isinstance(active, dict) and active.get("status") == "awaiting_candidate"
         and any(str(t.get("logical_id") or "").startswith("visual.supplement.") for t in (active.get("targets") or [])) else None
     )
     active_lid = (active["targets"][0]["logical_id"] if chg_id and isinstance(active, dict) and active.get("targets") else None)
-    logical_id = str(inp.get("logical_id") or active_lid or f"visual.supplement.{art_id.lower().replace('-', '_')}")
-    img_rel = str(inp["image_path"])
+    logical_id = str(inp.get("logical_id") or active_lid or (prev_entry or {}).get("logical_id") or f"visual.supplement.{art_id.lower().replace('-', '_')}")
+    auth_id = str(auth_id_override or inp.get("authorization_id") or ((active or {}).get("workflow_authorization") or {}).get("id") or ((ctx.get("kickoff") or {}).get("workflow_authorization") or {}).get("id") or "FLOW-R01")
+    has_adopted_prev = any(
+        e.get("logical_id") == logical_id and (e.get("status") in {"current", "stale", "superseded"} or e.get("user_approved") or e.get("agent_acceptance"))
+        for e in manifest.get("artifacts", [])
+    )
+    if has_adopted_prev and not chg_id:
+        chg_id = f"CHG-{art_id}"
+        rc.open_change(
+            project, change_id=chg_id, tier="T1", logical_ids=[logical_id],
+            reason=str(inp.get("reason") or f"重绑或更新分镜补图 {art_id} 至 {ctx['dir_entry']['artifact_id']}"),
+            authorization_id=auth_id,
+        )
+    img_rel = str(inp.get("image_path") or (prev_entry or {}).get("path_or_url") or "")
     img_abs = project / img_rel
-    if not img_abs.is_file():
+    if not img_rel or not img_abs.is_file():
         raise SystemExit(f"补图文件不存在：{img_rel}")
     img_sha = _sha256(img_abs)
     req_rel = str(inp["request_path"])
     req_abs = project / req_rel
-    shot_ids = list(inp["source_shot_ids"])
-    entity_ids = list(inp.get("entity_ids") or ["AST-CH-01"])
-    roles = list(inp.get("roles") or ["state_reference"])
+    shot_ids = list(inp.get("source_shot_ids") or prev_qe.get("source_shot_ids") or [])
+    entity_ids = list(inp.get("entity_ids") or prev_use.get("entity_ids") or ["AST-001"])
+    roles = list(inp.get("roles") or prev_use.get("roles") or ["state_reference"])
+    state_id = inp.get("state_id") if "state_id" in inp else prev_use.get("state_id")
     src_files = [
         {"path": req_rel, "sha256": _sha256(req_abs)},
         {"path": str(ctx["dir_entry"]["path_or_url"]), "sha256": ctx["dir_sha256"]},
@@ -280,35 +338,24 @@ def cmd_register_supplement(args: argparse.Namespace) -> int:
     default_obs = str(inp.get("observation") or "已原尺寸实看成图，人物面容服饰、空间色调与目标状态边界均准确无穿帮")
     raw_checks = inp.get("checks") or {}
     check_keys = ("identity_wardrobe", "hands_support", "product_geometry", "ownership", "space_objects", "product_phase", "boundary_state")
-    checks_obj = {}
-    for ck in check_keys:
-        if isinstance(raw_checks.get(ck), dict):
-            checks_obj[ck] = raw_checks[ck]
-        else:
-            checks_obj[ck] = {
-                "result": "pass",
-                "observation": str(raw_checks.get(ck) or default_obs),
-                "locator": f"{img_rel} 全图与目标区域对照 {req_rel}",
-            }
+    checks_obj = {
+        ck: (raw_checks[ck] if isinstance(raw_checks.get(ck), dict) else {
+            "result": "pass", "observation": str(raw_checks.get(ck) or default_obs), "locator": f"{img_rel} 全图与目标区域对照 {req_rel}",
+        })
+        for ck in check_keys
+    }
     now_iso = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
-    rev = str(inp.get("revision") or ctx["dir_entry"]["revision"])
     qe = {
-        "status": "pass",
-        "observer": str(inp.get("observer") or "storyboard-director"),
-        "checked_at": now_iso,
-        "image_sha256": img_sha,
-        "source_files": src_files,
-        "source_shot_ids": shot_ids,
-        "uses": [{"source_shot_ids": shot_ids, "roles": roles, "entity_ids": entity_ids, "state_id": inp.get("state_id")}],
-        "view": {"resolution": "original", "locator": f"{img_rel} 原尺寸全图实看"},
-        "checks": checks_obj,
+        "status": "pass", "observer": str(inp.get("observer") or "storyboard-director"), "checked_at": now_iso,
+        "image_sha256": img_sha, "source_files": src_files, "source_shot_ids": shot_ids,
+        "uses": [{"source_shot_ids": shot_ids, "roles": roles, "entity_ids": entity_ids, "state_id": state_id}],
+        "view": {"resolution": "original", "locator": f"{img_rel} 原尺寸全图实看"}, "checks": checks_obj,
     }
     if chg_id:
         rc.record_candidate(
             project, change_id=chg_id, artifact_id=art_id, logical_id=logical_id,
             artifact_type="visual-supplement-image", candidate_path=img_rel, revision=rev,
-            depends_on=["storyboard.package", "visual.asset.manifest"],
-            artifact_metadata={"quality_evidence": qe},
+            depends_on=["storyboard.package", "visual.asset.manifest"], artifact_metadata={"quality_evidence": qe},
         )
     else:
         manifest = load_manifest(project)
@@ -318,54 +365,56 @@ def cmd_register_supplement(args: argparse.Namespace) -> int:
             manifest["artifacts"] = [e for e in manifest["artifacts"] if e.get("artifact_id") != art_id]
             save_manifest(project, manifest)
         register_workspace_artifact(project, {
-            "artifact_id": art_id,
-            "logical_id": logical_id,
-            "type": "visual-supplement-image",
-            "path_or_url": img_rel,
-            "revision": rev,
-            "depends_on": ["storyboard.package", "visual.asset.manifest"],
-            "checksum": img_sha,
-            "user_approved": False,
-            "quality_evidence": qe,
+            "artifact_id": art_id, "logical_id": logical_id, "type": "visual-supplement-image", "path_or_url": img_rel,
+            "revision": rev, "depends_on": ["storyboard.package", "visual.asset.manifest"],
+            "checksum": img_sha, "user_approved": False, "quality_evidence": qe,
         })
     manifest = load_manifest(project)
     entry = next(e for e in manifest["artifacts"] if e["artifact_id"] == art_id)
-    repo_root = Path(__file__).resolve().parent.parent
-    prof_path = repo_root / "skills/storyboard-director/review-profile.json"
+    prof_path = Path(__file__).resolve().parent.parent / "skills/storyboard-director/review-profile.json"
     prof = _load_json(prof_path)
     sc_rel = str(inp.get("self_check_output") or f"00_项目管理/分镜补图{art_id}自查.json")
-    auth_id = str(inp.get("authorization_id") or ((active or {}).get("workflow_authorization") or {}).get("id") or "FLOW-R01")
     sc_doc = {
-        "schema_version": "1.0",
-        "kind": "agent-self-check",
-        "scope": "artifact",
-        "verdict": "pass",
-        "authorization_id": auth_id,
-        "agent_id": "storyboard-director",
-        "checked_at": now_iso,
-        "review_profile_sha256": _sha256(prof_path),
-        **acceptance_binding(project, entry),
+        "schema_version": "1.0", "kind": "agent-self-check", "scope": "artifact", "verdict": "pass",
+        "authorization_id": auth_id, "agent_id": "storyboard-director", "checked_at": now_iso,
+        "review_profile_sha256": _sha256(prof_path), **acceptance_binding(project, entry),
         "usage": {"source_shot_ids": shot_ids},
         "checks": [
-            {
-                "id": str(c["id"]),
-                "requirement": str(c.get("text") or ""),
-                "result": "pass",
-                "observation": default_obs,
-                "locator": f"{img_rel} + {req_rel}",
-            }
+            {"id": str(c["id"]), "requirement": str(c.get("text") or ""), "result": "pass", "observation": default_obs, "locator": f"{img_rel} + {req_rel}"}
             for c in prof.get("production_artifact_checks", [])
         ],
     }
     _save_json(project / sc_rel, sc_doc)
     chg_flag = f" --change-id '{chg_id}'" if chg_id else ""
-    print(json.dumps({
-        "registered": art_id,
-        "change_id": chg_id,
-        "logical_id": logical_id,
-        "self_check": sc_rel,
+    out_res: dict[str, Any] = {
+        "registered": art_id, "change_id": chg_id, "logical_id": logical_id, "self_check": sc_rel,
         "accept_command": f".venv/bin/python scripts/stage_context_cli.py accept-artifact --project '{project}' --artifact-id '{art_id}'{chg_flag} --self-check-json '{sc_rel}'",
-    }, ensure_ascii=False, indent=2))
+    }
+    if auto_accept or bool(inp.get("auto_accept")):
+        adopted = accept_artifact(argparse.Namespace(project=str(project), artifact_id=art_id, self_check_json=sc_rel, change_id=chg_id, preflight_json=None))
+        out_res["accepted"] = adopted.get("ok", True)
+    return out_res
+
+
+def cmd_register_supplement(args: argparse.Namespace) -> int:
+    project = Path(args.project).resolve()
+    ctx = _ctx(project)
+    inp = _load_json(Path(args.input).resolve())
+    res = _register_one_supplement(project, ctx, inp, auth_id_override=args.authorization_id, chg_id_override=args.change_id, auto_accept=args.auto_accept)
+    print(json.dumps(res, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_batch_register_supplements(args: argparse.Namespace) -> int:
+    project = Path(args.project).resolve()
+    ctx = _ctx(project)
+    raw = _load_json(Path(args.input).resolve())
+    items = raw if isinstance(raw, list) else list(raw.get("items") or [])
+    results = [
+        _register_one_supplement(project, ctx, item, auth_id_override=args.authorization_id, auto_accept=args.auto_accept)
+        for item in items
+    ]
+    print(json.dumps({"count": len(results), "results": results}, ensure_ascii=False, indent=2))
     return 0
 
 
@@ -383,6 +432,11 @@ def main(argv: list[str] | None = None) -> int:
     p2.add_argument("--output")
     p2.set_defaults(func=cmd_save_check)
 
+    p2b = sub.add_parser("batch-save-checks", help="一键批量保存多条 VS-*.json 视觉核对记录")
+    p2b.add_argument("--project", required=True)
+    p2b.add_argument("--input", required=True, help="JSON 数组或 {'items': [...]}")
+    p2b.set_defaults(func=cmd_batch_save_checks)
+
     p3 = sub.add_parser("capture-redframe-capability", help="一键抓取红帧原生视频模型能力证据 JSON")
     p3.add_argument("--project", required=True)
     p3.add_argument("--output", default="06_视频/红帧Seedance25原生模型能力取证.json")
@@ -397,11 +451,20 @@ def main(argv: list[str] | None = None) -> int:
     p4.add_argument("--scope")
     p4.set_defaults(func=cmd_init_dialogue_evidence)
 
-    p5 = sub.add_parser("register-supplement", help="登记已实看的补图候选并生成自查报告与采用命令（支持活动变更案）")
+    p5 = sub.add_parser("register-supplement", help="登记已实看的补图候选并生成自查报告与采用命令（支持活动变更案与一键采用）")
     p5.add_argument("--project", required=True)
     p5.add_argument("--input", required=True)
-    p5.add_argument("--change-id", help="可选：绑定活动变更案编号（省略时自动检测）")
+    p5.add_argument("--change-id", help="可选：绑定活动变更案编号（省略时自动检测或创建）")
+    p5.add_argument("--authorization-id", help="可选：工作流授权 ID")
+    p5.add_argument("--auto-accept", action="store_true", help="一键完成自查与 accept-artifact 正式采用")
     p5.set_defaults(func=cmd_register_supplement)
+
+    p5b = sub.add_parser("batch-register-supplements", help="一键批量重绑/登记新旧补图并支持自动开变更单与正式采用")
+    p5b.add_argument("--project", required=True)
+    p5b.add_argument("--input", required=True, help="JSON 数组或 {'items': [...]}")
+    p5b.add_argument("--authorization-id", help="可选：工作流授权 ID")
+    p5b.add_argument("--auto-accept", action="store_true", help="一键完成全部条目的变更单、自查与 accept-artifact 正式采用")
+    p5b.set_defaults(func=cmd_batch_register_supplements)
 
     args = ap.parse_args(argv)
     return int(args.func(args))

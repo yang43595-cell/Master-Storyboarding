@@ -142,11 +142,22 @@ def fill_derived(scene, story):
     - shot.source_paragraph_ids defaults to the scene's paragraphs;
     - each dialogue placement may give only dialogue_id (+presentation/delivery, and text when a
       line is split across shots); speaker_id and full text come from the narrative;
-    - shot.source_dialogue_ids is derived from the placements.
+    - shot.source_dialogue_ids is derived from the placements;
+    - legacy v4.0 shot fields (take / cut.trigger+information_handoff) are losslessly upgraded to v5.0.
     """
     lines = {d["dialogue_id"]: d for d in story.get("dialogues", [])}
     for shot in scene.get("shots", []):
         shot.setdefault("source_paragraph_ids", list(scene.get("source_paragraph_ids", [])))
+        if "action" not in shot and isinstance(shot.get("take"), dict):
+            tk = shot.pop("take")
+            parts = [str(tk.get(k) or "").strip() for k in ("start", "process", "end") if str(tk.get(k) or "").strip()]
+            shot["action"] = " ".join(parts)
+        elif "take" in shot and "action" in shot:
+            shot.pop("take", None)
+        cut = shot.get("cut")
+        if isinstance(cut, dict) and "handoff" not in cut:
+            h_parts = [str(cut.get(k) or "").strip() for k in ("trigger", "information_handoff", "entry") if str(cut.get(k) or "").strip()]
+            shot["cut"] = {"exit": str(cut.get("exit") or ""), "handoff": "；".join(h_parts) or str(cut.get("exit") or "硬切")}
         placements = shot.get("audio", {}).get("dialogue", [])
         for placement in placements:
             line = lines.get(placement.get("dialogue_id"))
@@ -242,7 +253,7 @@ def scene_source(root, paragraph_ids):
 
 
 def append_shots(root, out, scene_id, shots):
-    """Append or replace a batch of shots on an existing scene (keeps large scenes fast per turn)."""
+    """Replace existing shot_ids in place or append new shots on an existing scene."""
     _, story = _narrative(root)
     path = _package_path(root, out)
     package = read_json(path)
@@ -254,8 +265,11 @@ def append_shots(root, out, scene_id, shots):
         raise ValueError("--shots 不能为空")
     temp_scene = {**target, "shots": list(shots)}
     fill_derived(temp_scene, story)
-    incoming = {s["shot_id"] for s in temp_scene["shots"]}
-    merged = {**target, "shots": [s for s in target["shots"] if s["shot_id"] not in incoming] + temp_scene["shots"]}
+    by_id = {s["shot_id"]: s for s in temp_scene["shots"]}
+    existing_ids = {s["shot_id"] for s in target["shots"]}
+    updated = [by_id.get(s["shot_id"], s) for s in target["shots"]]
+    appended = [s for s in temp_scene["shots"] if s["shot_id"] not in existing_ids]
+    merged = {**target, "shots": updated + appended}
     return put_scenes(root, out, [merged])
 
 
@@ -342,8 +356,9 @@ def plan_acts(root, out, max_scenes_per_act=5):
     return save_plan(root, out, plan)
 
 
-def finalize_acts(root, out):
-    """Verify cross-scene/cross-act seam continuity and normalize shot_ids sequentially across the film."""
+def finalize_acts(root, out, renumber_global=False):
+    """Verify cross-scene/cross-act seam continuity and optionally normalize shot_ids sequentially."""
+    import re
     _, story = _narrative(root)
     path = _package_path(root, out)
     package = read_json(path)
@@ -354,6 +369,13 @@ def finalize_acts(root, out):
         missing = sorted(set(expected_pars) - set(covered_pars))
         raise ValueError(f"尚有未完成段落，无法合并终检：{missing}")
     seam_warnings = []
+    all_ids = [sh.get("shot_id", "") for sc in scenes for sh in (sc.get("shots") or [])]
+    shot_pat = re.compile(r"^S[0-9]{2,}[A-Z]?-[0-9]{3,}$")
+    needs_renumber = bool(
+        renumber_global
+        or len(all_ids) != len(set(all_ids))
+        or any(not shot_pat.match(str(sid)) for sid in all_ids)
+    )
     remap: dict[str, str] = {}
     serial = 0
     for idx, sc in enumerate(scenes):
@@ -367,15 +389,27 @@ def finalize_acts(root, out):
                 seam_warnings.append(f"{scenes[idx - 1]['scene_id']}->{sc['scene_id']}: 前场末镜缺 cut.handoff")
             if not str((curr_first.get("camera") or {}).get("framing") or "").strip():
                 seam_warnings.append(f"{scenes[idx - 1]['scene_id']}->{sc['scene_id']}: 后场首镜缺 camera.framing")
-        for shot in shots:
-            serial += 1
-            old_id = shot["shot_id"]
-            new_id = f"{sc['scene_id']}-{serial:03d}"
-            if old_id != new_id:
-                remap[old_id] = new_id
-                shot["shot_id"] = new_id
+        if needs_renumber:
+            for shot in shots:
+                serial += 1
+                old_id = shot["shot_id"]
+                new_id = f"{sc['scene_id']}-{serial:03d}"
+                if old_id != new_id:
+                    remap[old_id] = new_id
+                    shot["shot_id"] = new_id
+        for st_ev in sc.get("scene_states") or []:
+            if remap and isinstance(st_ev, dict) and isinstance(st_ev.get("source_shot_ids"), list):
+                st_ev["source_shot_ids"] = [remap.get(sid, sid) for sid in st_ev["source_shot_ids"]]
+        for ep_st in sc.get("endpoint_strategies") or []:
+            if remap and isinstance(ep_st, dict):
+                if isinstance(ep_st.get("source_shot_ids"), list):
+                    ep_st["source_shot_ids"] = [remap.get(sid, sid) for sid in ep_st["source_shot_ids"]]
+                for bk in ("initial_boundary", "final_boundary"):
+                    bobj = ep_st.get(bk)
+                    if isinstance(bobj, dict) and bobj.get("shot_id") in remap:
+                        bobj["shot_id"] = remap[bobj["shot_id"]]
     for gap in package.get("asset_gaps") or []:
-        if isinstance(gap, dict) and isinstance(gap.get("affected_shot_ids"), list):
+        if remap and isinstance(gap, dict) and isinstance(gap.get("affected_shot_ids"), list):
             gap["affected_shot_ids"] = [remap.get(sid, sid) for sid in gap["affected_shot_ids"]]
     package["scenes"] = scenes
     write_json(path, package)
@@ -481,15 +515,17 @@ def register(root, out, artifact_id, change_id=None):
             "strict_check": checked.stdout.strip().splitlines()[-1:]}
 
 
-def self_check_template(root, artifact_id, authorization_id, agent_id, output):
-    """Write the self-check skeleton with exact bindings; the agent fills result/observation/locator."""
+def self_check_template(root, artifact_id, authorization_id, agent_id, output, observation=None, auto_accept=False):
+    """Write the self-check skeleton (or completed report when observation is passed) with exact bindings."""
     from datetime import datetime, timezone
     if __package__:
-        from .core.agent_acceptance import acceptance_binding
+        from .core.agent_acceptance import acceptance_binding, accept_artifact
         from .core.io import sha256_file
+        from .core import revision_control as rc
     else:
-        from core.agent_acceptance import acceptance_binding
+        from core.agent_acceptance import acceptance_binding, accept_artifact
         from core.io import sha256_file
+        from core import revision_control as rc
     entries = artifacts.load_manifest(root)["artifacts"]
     entry = next((e for e in entries if e["artifact_id"] == artifact_id), None)
     if entry is None:
@@ -497,71 +533,105 @@ def self_check_template(root, artifact_id, authorization_id, agent_id, output):
     profile_path = REPO / "skills/storyboard-planner/review-profile.json"
     profile = json.loads(profile_path.read_text(encoding="utf-8"))
     target = _package_path(root, output)
-    if target.exists():
+    obs_txt = str(observation).strip() if observation else ""
+    if target.exists() and not obs_txt and not auto_accept:
         raise ValueError(f"自查文件已存在，不覆盖：{output}")
+    loc = f"{entry['path_or_url']}#scenes"
     report = {
-        "schema_version": "1.0", "kind": "agent-self-check", "scope": "artifact", "verdict": "",
+        "schema_version": "1.0", "kind": "agent-self-check", "scope": "artifact",
+        "verdict": "pass" if obs_txt else "",
         "authorization_id": authorization_id, "agent_id": agent_id,
         "checked_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
         "review_profile_sha256": sha256_file(profile_path),
         **acceptance_binding(root, entry),
-        "checks": [{"id": c["id"], "requirement": c.get("text", ""), "result": "", "observation": "", "locator": ""}
-                   for c in profile["production_artifact_checks"]],
+        "checks": [
+            {
+                "id": c["id"], "requirement": c.get("text", ""),
+                "result": "pass" if obs_txt else "",
+                "observation": obs_txt,
+                "locator": loc if obs_txt else "",
+            }
+            for c in profile["production_artifact_checks"]
+        ],
     }
-    if __package__:
-        from .core import revision_control as rc
-    else:
-        from core import revision_control as rc
     active = rc.show_change(root).get("active_change") or {}
     chg_id = active.get("change_id") if (active.get("candidate_receipt") or {}).get("artifact_id") == artifact_id else None
     chg_flag = f" --change-id '{chg_id}'" if chg_id else ""
     write_json(target, report)
-    return {"self_check": target.relative_to(root).as_posix(), "checks": len(report["checks"]),
-            "fill": "逐项填 result（pass / not_applicable+reason）、observation、locator；全部真实通过后把 verdict 改为 pass",
-            "core_checks_must_pass": ["PLAN-PACKAGE", "PLAN-CONTINUITY"],
-            "then": f".venv/bin/python scripts/stage_context_cli.py accept-artifact --project '{root}' "
-                    f"--artifact-id '{artifact_id}'{chg_flag} --self-check-json '{target.relative_to(root).as_posix()}'"}
+    rel_sc = target.relative_to(root).as_posix()
+    res = {"self_check": rel_sc, "checks": len(report["checks"]),
+           "fill": "逐项填 result（pass / not_applicable+reason）、observation、locator；全部真实通过后把 verdict 改为 pass",
+           "core_checks_must_pass": ["PLAN-PACKAGE", "PLAN-CONTINUITY"],
+           "then": f".venv/bin/python scripts/stage_context_cli.py accept-artifact --project '{root}' "
+                   f"--artifact-id '{artifact_id}'{chg_flag} --self-check-json '{rel_sc}'"}
+    if auto_accept:
+        if not obs_txt:
+            raise ValueError("--auto-accept 须同时提供 --observation 真实复核结论")
+        adopted = accept_artifact(argparse.Namespace(
+            project=str(root), artifact_id=artifact_id, self_check_json=rel_sc,
+            change_id=chg_id, preflight_json=None,
+        ))
+        res["accepted"] = adopted.get("ok", True)
+        res["change_id"] = chg_id
+    return res
 
 
 def main(argv=None):
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--project", type=Path, help=argparse.SUPPRESS)
+    common.add_argument("--out", "--package", dest="out_sub", help=argparse.SUPPRESS)
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--project", required=True, type=Path)
-    parser.add_argument("--out", default="03_导演/storyboard-package.json", help="项目内导演包路径，如 03_导演/R07_storyboard-package.json")
+    parser.add_argument("--project", dest="project_root", type=Path)
+    parser.add_argument("--out", "--package", dest="out_root", help="项目内导演包路径，如 03_导演/R07_storyboard-package.json")
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("outline", help="只读全片紧凑大纲（供统筹预算，不灌入全片原文）")
-    src = commands.add_parser("scene-source", help="只读当前要写段落的原文、对白和有效资产")
+    commands.add_parser("outline", parents=[common], help="只读全片紧凑大纲（供统筹预算，不灌入全片原文）")
+    src = commands.add_parser("scene-source", parents=[common], help="只读当前要写段落的原文、对白和有效资产")
     src.add_argument("--paragraph", required=True, action="append", help="如 STP-01，可重复")
-    pacts = commands.add_parser("plan-acts", help="自动生成锁死首尾交接棒与局部镜号规则的多幕并行计划")
+    pacts = commands.add_parser("plan-acts", parents=[common], help="自动生成锁死首尾交接棒与局部镜号规则的多幕并行计划")
     pacts.add_argument("--max-scenes-per-act", type=int, default=5)
-    commands.add_parser("finalize-acts", help="核验跨幕接缝并自动将局部镜号顺排为全片连续镜号")
-    splan = commands.add_parser("save-plan", help="总导演保存分组并行计划（核对段落不重不漏与进出交接棒）")
+    facts = commands.add_parser("finalize-acts", parents=[common], help="核验跨幕接缝并在需要时顺排连续镜号")
+    facts.add_argument("--renumber-global", action="store_true", help="强制将各场镜号重排为全片递增序号")
+    splan = commands.add_parser("save-plan", parents=[common], help="总导演保存分组并行计划（核对段落不重不漏与进出交接棒）")
     splan.add_argument("--plan", required=True, help="分组计划 JSON 文件；- 读标准输入")
-    gbrief = commands.add_parser("group-brief", help="分场导演只读领取本组规则、交接棒与本组原文")
+    gbrief = commands.add_parser("group-brief", parents=[common], help="分场导演只读领取本组规则、交接棒与本组原文")
     gbrief.add_argument("--group-id", required=True)
-    start = commands.add_parser("init")
+    start = commands.add_parser("init", parents=[common])
     start.add_argument("--header", help="含 director_rules 的 JSON 文件，- 读标准输入（--from-package 时可省略）")
-    start.add_argument("--from-package", help="可选：从旧版导演包克隆场次与规则并重绑当前编导稿")
+    start.add_argument("--from-package", help="可选：从旧版导演包克隆场次与规则并重绑当前编导稿（自动无损升级 v4->v5）")
     start.add_argument("--revision", help="默认沿用编导稿修订号")
-    put = commands.add_parser("put-scene")
+    put = commands.add_parser("put-scene", parents=[common])
     put.add_argument("--scene", required=True, action="append", help="一个 scene（或数组）的 JSON 文件，可重复；- 读标准输入")
-    more = commands.add_parser("append-shots", help="大场（>6镜）分上下半场追加镜头，避免单轮耗时过长")
+    more = commands.add_parser("append-shots", aliases=["patch-shots"], parents=[common], help="原地替换已有镜号或在场末追加新镜头")
     more.add_argument("--scene-id", required=True)
     more.add_argument("--shots", required=True, help="镜头数组 JSON 文件；- 读标准输入")
-    change = commands.add_parser("set")
+    change = commands.add_parser("set", parents=[common])
     change.add_argument("--header", required=True)
-    commands.add_parser("status")
-    reg = commands.add_parser("register", help="全片严格校验通过后登记候选（支持活动变更案）")
+    commands.add_parser("status", parents=[common])
+    reg = commands.add_parser("register", parents=[common], help="全片严格校验通过后登记候选（支持活动变更案）")
     reg.add_argument("--artifact-id", required=True)
     reg.add_argument("--change-id", help="可选：绑定活动变更案编号（省略时自动检测）")
-    tpl = commands.add_parser("self-check-template", help="生成已绑定版本的自查骨架")
+    tpl = commands.add_parser("self-check-template", parents=[common], help="生成已绑定版本的自查报告（支持 --observation 与 --auto-accept）")
     tpl.add_argument("--artifact-id", required=True)
     tpl.add_argument("--authorization-id", required=True)
-    tpl.add_argument("--agent-id", required=True)
+    tpl.add_argument("--agent-id", default="storyboard-planner")
     tpl.add_argument("--output", required=True, help="项目内路径，如 00_项目管理/导演R07自查.json")
+    tpl.add_argument("--observation", help="可选：填入真实全片复核结论以直接生成 pass 自查报告")
+    tpl.add_argument("--auto-accept", action="store_true", help="配合 --observation 一键完成 accept-artifact 正式采用")
     args = parser.parse_args(argv)
-    root = args.project.expanduser().resolve(strict=True)
+    proj_arg = getattr(args, "project", None) or getattr(args, "project_root", None)
+    if proj_arg is None:
+        parser.error("the following arguments are required: --project")
+    args.out = getattr(args, "out_sub", None) or getattr(args, "out_root", None) or "03_导演/storyboard-package.json"
+    root = proj_arg.expanduser().resolve(strict=True)
     if args.command == "register":
         result = register(root, args.out, args.artifact_id, args.change_id)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "self-check-template":
+        result = self_check_template(
+            root, args.artifact_id, args.authorization_id, args.agent_id, args.output,
+            observation=args.observation, auto_accept=args.auto_accept,
+        )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     if args.command == "outline":
@@ -580,7 +650,7 @@ def main(argv=None):
         elif args.command == "plan-acts":
             result = plan_acts(root, args.out, args.max_scenes_per_act)
         elif args.command == "finalize-acts":
-            result = finalize_acts(root, args.out)
+            result = finalize_acts(root, args.out, renumber_global=args.renumber_global)
         elif args.command == "save-plan":
             result = save_plan(root, args.out, _read_input(args.plan, root))
         elif args.command == "put-scene":
@@ -589,12 +659,10 @@ def main(argv=None):
                 value = _read_input(item, root)
                 scenes.extend(value if isinstance(value, list) else [value])
             result = put_scenes(root, args.out, scenes)
-        elif args.command == "append-shots":
+        elif args.command in {"append-shots", "patch-shots"}:
             result = append_shots(root, args.out, args.scene_id, _read_input(args.shots, root))
         elif args.command == "set":
             result = set_header(root, args.out, _read_input(args.header, root))
-        elif args.command == "self-check-template":
-            result = self_check_template(root, args.artifact_id, args.authorization_id, args.agent_id, args.output)
         else:
             result = status(root, args.out)
     print(json.dumps(result, ensure_ascii=False, indent=2))

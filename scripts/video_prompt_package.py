@@ -741,6 +741,8 @@ def cmd_register(args: argparse.Namespace) -> int:
 
 def cmd_self_check_template(args: argparse.Namespace) -> int:
     from datetime import datetime, timezone
+    from core import revision_control as rc
+    from core.agent_acceptance import accept_artifact
     project = Path(args.project).resolve()
     manifest = load_manifest(project)
     entry = next((e for e in manifest.get("artifacts", []) if e.get("artifact_id") == args.artifact_id), None)
@@ -749,6 +751,7 @@ def cmd_self_check_template(args: argparse.Namespace) -> int:
     profile_path = REPO / "skills/voiceover-to-video-script/review-profile.json"
     profile = _load_json(profile_path)
     out_path = project / args.output
+    obs_txt = str(args.observation or "").strip()
     checks = []
     for c in profile.get("production_artifact_checks", []):
         cid = str(c["id"])
@@ -758,7 +761,7 @@ def cmd_self_check_template(args: argparse.Namespace) -> int:
             "requirement": str(c.get("text") or ""),
             "result": "not_applicable" if na else "pass",
             "reason": "当前仅采用视频提示词并交付红帧未点击生成草稿，不发起视频生成任务" if na else "",
-            "observation": "" if not na else "本次按默认草稿收口边界不提交视频生成、不验收成片媒体",
+            "observation": (obs_txt if not na else "本次按默认草稿收口边界不提交视频生成、不验收成片媒体"),
             "locator": f"{entry['path_or_url']}#generation_segments",
         })
         if not na:
@@ -767,7 +770,7 @@ def cmd_self_check_template(args: argparse.Namespace) -> int:
         "schema_version": "1.0",
         "kind": "agent-self-check",
         "scope": "artifact",
-        "verdict": "",
+        "verdict": "pass" if obs_txt else "",
         "authorization_id": args.authorization_id,
         "agent_id": args.agent_id,
         "checked_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
@@ -776,10 +779,20 @@ def cmd_self_check_template(args: argparse.Namespace) -> int:
         "checks": checks,
     }
     _save_json(out_path, report)
-    print(json.dumps({
-        "self_check": out_path.relative_to(project).as_posix(),
+    rel_sc = out_path.relative_to(project).as_posix()
+    active = rc.show_change(project).get("active_change") or {}
+    chg_id = active.get("change_id") if (active.get("candidate_receipt") or {}).get("artifact_id") == args.artifact_id else None
+    res: dict[str, Any] = {
+        "self_check": rel_sc,
         "fill": "逐项核实并填写各 pass 项的真实 observation 与 locator 后，将 verdict 设为 pass，再执行 stage_context_cli.py accept-artifact",
-    }, ensure_ascii=False, indent=2))
+    }
+    if args.auto_accept:
+        if not obs_txt:
+            raise SystemExit("--auto-accept 须同时提供 --observation 真实复核结论")
+        adopted = accept_artifact(argparse.Namespace(project=str(project), artifact_id=args.artifact_id, self_check_json=rel_sc, change_id=chg_id, preflight_json=None))
+        res["accepted"] = adopted.get("ok", True)
+        res["change_id"] = chg_id
+    print(json.dumps(res, ensure_ascii=False, indent=2))
     return 0
 
 
@@ -834,12 +847,14 @@ def main(argv: list[str] | None = None) -> int:
     p_reg.add_argument("--reconcile-reason", help="可选：生成段返修对账理由")
     p_reg.set_defaults(func=cmd_register)
 
-    p_sc = sub.add_parser("self-check-template", help="生成绑定好指纹的自查表骨架")
+    p_sc = sub.add_parser("self-check-template", help="生成绑定好指纹的自查表骨架（支持 --observation 与 --auto-accept）")
     p_sc.add_argument("--project", required=True)
     p_sc.add_argument("--artifact-id", required=True)
     p_sc.add_argument("--authorization-id", default="FLOW-R01")
     p_sc.add_argument("--agent-id", default="voiceover-to-video-script")
     p_sc.add_argument("--output", required=True)
+    p_sc.add_argument("--observation", help="可选：填入真实全包复核结论以直接生成 pass 自查报告")
+    p_sc.add_argument("--auto-accept", action="store_true", help="配合 --observation 一键完成 accept-artifact 正式采用")
     p_sc.set_defaults(func=cmd_self_check_template)
 
     args = ap.parse_args(argv)

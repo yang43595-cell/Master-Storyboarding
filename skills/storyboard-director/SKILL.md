@@ -9,19 +9,17 @@ description: 视频提示词前必须核对本轮全部拟写镜号的视觉依�
 
 图片生产按[图片生产批次](../../docs/rules/execution.md#图片生产批次)确定执行者，每批最多 8 张目标图。涉及界面操作的批次由主对话负责输入、提示词、生成、实看、修正及回执，其他批次沿既有委派规则。
 
-读取 `PROJECT_RULES.md`、[普通准备与选知](../_shared/knowledge-access.md#普通阶段准备与选知)、当前 `stage_startup.md`、`../_shared/draft-lifecycle.md` 等六项共享红线（含 `../_shared/prompt-language.md`）、`modules/storyboard-method.md`、`references/reference-asset-contract.md`、`references/storyboard-production-checklist.md`、[图片连续性的共用检查](references/image-continuity-hard-rules.md#共用检查)、`templates/storyboard-image-template.md` 与 `../../schemas/visual-supplement-request.schema.json`。涉及灯光风险时才读取 `../storyboard-planner/references/lighting-prompt-standard.md` 的对应小节；写本 Skill 提示词时必读 `../voiceover-to-video-script/references/prompt-language-hard-rules.md` 并以其为准。使用人物 1×4 时核[唯一面部来源](../asset-image-assistant/references/02-character-master-guide.md#唯一面部来源)。使用场景参考时核[背景母版](../asset-image-assistant/references/03-scene-master-guide.md#背景母版与单变量派生)及[多角度覆盖](../asset-image-assistant/references/03-scene-master-guide.md#多角度场景参考组)。这些引用不授予修改导演镜头或视频提示词的权力。
-
-缺口判断与产出前，先运行下方 `visual_stage_cli.py outline` 获取 `must_read` 清单，完整实读其中列出的 `VISUAL-SUPPLEMENT-METHOD`、`IMAGE-CONTINUITY-METHOD` 及涉及产品的专属模板（无需再跑旧式 `prepare / ensure-prepared` 打卡命令）。
-
-本轮明确制作、返修或核对造物者抛光面膜的真人上脸状态时，在当前请求设 `creator_mask_face_effect: true`，按 knowledge-profile 加载 `VGEN-CREATOR-POLISHING-MASK-USE`，并将其指定的真人上脸模板实际路径加入当前 `source_paths` 后阅读。只有碗内搅拌、产品展示或其他产品时不设置此条件。参考职责和局部补涂的专业标准以该方法为准，不从产品名称泛化到所有任务。
+开始本职任务前先运行下方 `visual_stage_cli.py outline --project "<项目>"`，完整实读其返回的 `must_read` 清单（核心规则、方法文档及涉及的产品模板；若含真人敷造物者抛光面膜上脸镜头，设 `creator_mask_face_effect: true` 并实读真人上脸模板），**严禁翻阅 `scripts/*.py` 源码、`schemas/*.json` 或手写冗长临时 Python 脚本，也无需跑已退役的 `prepare / ensure-prepared`**。
 
 ## 本轮执行 SOP
 
-> **标准快捷命令（必须亲眼 `read_file` 实看本轮关键确认图与补图，严禁手写临时脚本猜 `asset_refs`/`artifacts` 内部函数名）**：
-> - 一键查看各场镜头与已确认资产精确绑定路径：`PYTHONPATH=scripts .venv/bin/python scripts/visual_stage_cli.py outline --project "<项目>"`
-> - 自动补齐导演包哈希/资产路径/`gap` 并校验保存 `05_分镜/VS-*.json`（注意：若需运行带 `--context-id` 的生图批次 `prepare`，须**先运行 `save-check` 落盘 `ready` 补图请求**，再在批次请求 JSON 中传入 `image_targets` 与 `supplement_request_paths`）：`PYTHONPATH=scripts .venv/bin/python scripts/visual_stage_cli.py save-check --project "<项目>" --input /tmp/vs_s01.json`
-> - 补图落盘并实看无误后，一键登记 `visual-supplement-image` 并生成含 `usage.source_shot_ids` 的自查表与采用命令：`PYTHONPATH=scripts .venv/bin/python scripts/visual_stage_cli.py register-supplement --project "<项目>" --input /tmp/reg_sup.json`
-> - 顺手一键抓取红帧视频模型能力证据（供下一阶段直接复用）：`PYTHONPATH=scripts .venv/bin/python scripts/visual_stage_cli.py capture-redframe-capability --project "<项目>"`
+> **防卡死与极速通关硬红线**：
+> 1. **单个分镜子代理累计最多 `read_file` 实看 ≤6 张高清原图**！若项目待核验的基础资产图 + 既有补图超过 6 张，**必须按幕/按批同时派 2～3 个干净分镜看图子代理并行实看**（严禁把 10+ 张 PNG 塞进同一个子代理，否则多模态 Base64 会涨到 30 万 tokens 导致每步卡 50 秒！新生成的补图也一律交干净子代理验收，不往满载旧子代理 `send_message` 叠图）。
+> 2. **全部用 `visual_stage_cli.py` 批量命令秒级登记，严禁手写几百行 Python 脚本**：
+>    - **查看各场镜号、确认资产及既有 `stale/current` 补图全貌**：`PYTHONPATH=scripts .venv/bin/python scripts/visual_stage_cli.py outline --project "<项目>"`
+>    - **一键批量保存全部镜号的 `visual-supplement-request` JSON**（支持一次传入全片多条 `reuse_existing` 与 `request_supplement`，自动补齐导演哈希、资产路径与默认字段并逐条 schema 校验）：`PYTHONPATH=scripts .venv/bin/python scripts/visual_stage_cli.py batch-save-checks --project "<项目>" --input /tmp/vs_batch.json`（单条亦可用 `save-check`）
+>    - **实看合格后，一键批量登记/重绑新旧补图并自动完成变更单与 `accept-artifact` 正式采用**（自动处理旧 `stale` 补图的 `open-change` + `record_candidate` + 自查生成 + `accept-artifact` 闭环，0.3 秒搞定全片补图采用！）：`PYTHONPATH=scripts .venv/bin/python scripts/visual_stage_cli.py batch-register-supplements --project "<项目>" --input /tmp/sup_batch.json --authorization-id "<FLOW授权ID>" --auto-accept`
+>    - **顺手一键抓取红帧视频模型能力证据**（若 `06_视频/` 尚无取证文件）：`PYTHONPATH=scripts .venv/bin/python scripts/visual_stage_cli.py capture-redframe-capability --project "<项目>"`
 
 本轮采用[网站审核到画布统一入口](../../PROJECT_RULES.md#网站审核到画布的统一入口)时，补图不送网站、不逐图或逐项选图停等；执行者在已授权范围内判断复用／补图、实看、修正并自查验收准确文件及镜号用途，执行判断不冒写为用户决定。下文具体用户选图／逐图确认步骤只适用于兼容人工路径。补图前从项目开工记录读取生图工具、模型、额度和适用输出范围，沿用已覆盖的授权。
 
