@@ -80,6 +80,8 @@ L1_PRIMITIVE_MODULES = frozenset({
 
 L2_RULE_CONTRACT_MODULES = frozenset({
     "core.asset_choice_rules",
+    "core.asset_batch_receipt",
+    "core.visual_asset_product_usage",
     "core.quality_rules",
     "core.boundary_rules",
     "core.delivery_files",
@@ -353,6 +355,13 @@ def test_l2_rule_contracts_have_no_upward_dependencies() -> None:
     assert _tarjan_sccs(set(L2_RULE_CONTRACT_MODULES), l2_adj) == [], (
         "L2 rule/contract modules must form an acyclic DAG"
     )
+    gb_callers = sorted(
+        m for m in mods
+        if m.startswith("core.") and m != "core.generation_boundaries" and "core.generation_boundaries" in adj[m]
+    )
+    assert gb_callers == [], (
+        f"core.* modules must import core.boundary_rules / core.quality_rules, not CLI facade core.generation_boundaries: {gb_callers}"
+    )
 
 
 def test_l2_rule_splits_reexports_and_monkeypatch_hooks(
@@ -388,13 +397,13 @@ def test_l2_rule_splits_reexports_and_monkeypatch_hooks(
     ):
         assert getattr(quality_evidence, attr) is getattr(quality_rules, attr)
     for attr in (
-        "validate_generation_boundaries",
         "validate_delivery_cutpoints",
-        "validate_delivery_parameters",
         "validate_director_body",
         "diagnose_scene_state_plan",
     ):
         assert getattr(generation_boundaries, attr) is getattr(boundary_rules, attr)
+    assert callable(generation_boundaries.validate_generation_boundaries)
+    assert callable(generation_boundaries.validate_delivery_parameters)
     for attr in (
         "MAX_GENERATION_SEGMENT_SECONDS",
         "validate_required_visuals",
@@ -529,6 +538,108 @@ def test_l2_rule_splits_reexports_and_monkeypatch_hooks(
                 "depends_on": [],
             },
         )
+
+    # Verify review-profile hash hook on agent_acceptance + direct artifacts.{read,validate}_agent_acceptance hooks
+    cand_file.write_text('{"revision": "v1", "status": "candidate"}\n', encoding="utf-8")
+    cand_sha = orig_aa_hash(cand_file)
+    dir_entry = {
+        "artifact_id": "DIR-CAND-2",
+        "logical_id": "storyboard.package",
+        "type": "storyboard.package",
+        "revision": "v1",
+        "status": "candidate",
+        "path_or_url": "03_导演/storyboard_v1.json",
+        "checksum": cand_sha,
+        "depends_on": ["narrative.package"],
+        "user_approved": False,
+    }
+    state_data = {
+        "workflow_authorizations": [
+            {
+                "id": "AUTH-1",
+                "workflow": "review-to-canvas",
+                "project_path": str(tmp_path.resolve()),
+                "authorization_ref": "user:auto",
+                "skills": ["storyboard-planner"],
+                "status": "active",
+                "created_at": "2026-11-27T00:00:00Z",
+            }
+        ]
+    }
+    profile_path = REPO_ROOT / "skills" / "storyboard-planner" / "review-profile.json"
+    profile_data = orig_read(profile_path)
+    report_path = tmp_path / "03_导演" / "self_check.json"
+    orig_write(
+        report_path,
+        {
+            "schema_version": "1.0",
+            "kind": "agent-self-check",
+            "scope": "artifact",
+            "verdict": "pass",
+            "agent_id": "tester",
+            "checked_at": "2026-11-27T00:01:00Z",
+            "authorization_id": "AUTH-1",
+            "review_profile_sha256": orig_aa_hash(profile_path),
+            **agent_acceptance.acceptance_binding(tmp_path, dir_entry),
+            "checks": [
+                {"id": item["id"], "result": "pass", "observation": "ok", "locator": "scenes[0]"}
+                for item in profile_data["production_artifact_checks"]
+            ],
+        },
+    )
+    aa_hashes.clear()
+    pointer = agent_acceptance.build_agent_acceptance(tmp_path, dir_entry, report_path, state=state_data)
+    assert profile_path.resolve() in [p.resolve() for p in aa_hashes]
+    dir_entry["agent_acceptance"] = pointer
+
+    art_hook_digests: list[Path] = []
+    orig_art_digest = artifacts.digest
+    monkeypatch.setattr(
+        artifacts, "digest", lambda p: (art_hook_digests.append(Path(p)), orig_art_digest(p))[1]
+    )
+    manifest_reads.clear()
+    ptr2, _ = artifacts.read_agent_acceptance(tmp_path, dir_entry, report_path, state=state_data)
+    assert ptr2 == pointer
+    artifacts.validate_agent_acceptance(tmp_path, dir_entry, state=state_data)
+    assert profile_path.resolve() in [p.resolve() for p in art_hook_digests]
+    assert manifest_reads == [manifest_file.resolve(), manifest_file.resolve()]
+
+    # Verify generation_boundaries.load_kickoff monkeypatch propagates into boundary_rules
+    kickoff_calls: list[Path] = []
+    monkeypatch.setattr(
+        generation_boundaries,
+        "load_kickoff",
+        lambda root: (kickoff_calls.append(Path(root)), {"product": {"product_id": "creator-polishing-mask-2"}})[1],
+    )
+    with pytest.raises(ValueError, match="还送高定条膜碗刷"):
+        generation_boundaries.validate_generation_boundaries(
+            {
+                "schema_version": "2.0",
+                "generation_segments": [
+                    {
+                        "segment_id": "SEG-01",
+                        "source_shot_ids": ["S01-001"],
+                        "prompt": "口播：送高定调膜碗刷",
+                        "parameters": {"duration": 5},
+                    }
+                ],
+            },
+            {"schema_version": "5.0", "scenes": [{"scene_id": "S01", "shots": [{"shot_id": "S01-001"}]}]},
+            tmp_path,
+            require_physical=False,
+        )
+    assert kickoff_calls == [tmp_path.resolve()]
+    kickoff_calls.clear()
+    with pytest.raises(ValueError, match="真实时长上限不完整"):
+        generation_boundaries.validate_delivery_parameters(
+            [{"source_segment_id": "SEG-01", "parameters": {"duration": 5}}],
+            {
+                "generation_segments": [{"segment_id": "SEG-01", "parameters": {"duration": 5}}],
+                "selected_video_model": {"confirmed_by_user": False},
+            },
+            tmp_path,
+        )
+    assert kickoff_calls == [tmp_path.resolve()]
 
 
 def test_l1_store_reexports_and_boundary_invariants(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

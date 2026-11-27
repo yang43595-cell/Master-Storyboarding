@@ -12,7 +12,6 @@ from pathlib import Path
 from .media_types import MEDIA_EXTENSIONS
 from .prompt_body import (
     reference_shot_ids,
-    scene_state_requirements,
     source_shot_ids,
     submitted_prompt_body,
 )

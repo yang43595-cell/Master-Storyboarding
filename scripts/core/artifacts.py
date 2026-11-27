@@ -25,12 +25,12 @@ from .acceptance_rules import (
     artifact_is_adopted as _rules_artifact_is_adopted,
     artifact_is_confirmed as _rules_artifact_is_confirmed,
     formal_adoption as _rules_formal_adoption,
-    read_agent_acceptance,
+    read_agent_acceptance as _rules_read_agent_acceptance,
     require_current_agent_acceptance as _rules_require_current_agent_acceptance,
     skill_for_artifact,
     supplement_director_shots,
     unchanged_director_usage as _rules_unchanged_director_usage,
-    validate_agent_acceptance,
+    validate_agent_acceptance as _rules_validate_agent_acceptance,
     validate_current_dependencies as _rules_validate_current_dependencies,
 )
 from .io import canonical_json_bytes, project_lock, project_locked, read_json, utc_now, write_json
@@ -47,10 +47,7 @@ from .manifest_store import (
     project_path,
 )
 from .project_state import load_project_state
-from .revision_store import (
-    formal_adoption as _store_formal_adoption,
-    save_manifest as _store_save_manifest,
-)
+from .revision_store import save_manifest as _store_save_manifest
 
 
 @dataclass(frozen=True)
@@ -836,6 +833,29 @@ def verify_image_confirmation(path, receipt, *, file_digest=None):
     if (not isinstance(expected, str) or not re.fullmatch(r"[a-f0-9]{64}", expected)
             or not path.is_file() or file_digest(path) != expected):
         raise ValueError("已确认图片内容已变化或缺失，请保留原记录并重新选图确认：" + str(path))
+
+
+def read_agent_acceptance(project, entry, report_path, *, state=None, file_digest=None, read_json_fn=None):
+    """Return the acceptance pointer and the report validated from those exact bytes."""
+    return _rules_read_agent_acceptance(
+        project,
+        entry,
+        report_path,
+        state=state,
+        file_digest=digest if file_digest is None else file_digest,
+        read_json_fn=read_json if read_json_fn is None else read_json_fn,
+    )
+
+
+def validate_agent_acceptance(project, entry, *, state=None, file_digest=None, read_json_fn=None):
+    """Recheck immutable evidence for consumption; never produces confirmation."""
+    return _rules_validate_agent_acceptance(
+        project,
+        entry,
+        state=state,
+        file_digest=digest if file_digest is None else file_digest,
+        read_json_fn=read_json if read_json_fn is None else read_json_fn,
+    )
 
 
 def formal_adoption(entry, root):

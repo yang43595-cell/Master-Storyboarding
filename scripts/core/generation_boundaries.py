@@ -44,9 +44,9 @@ from .boundary_rules import (
     _validate,
     diagnose_scene_state_plan,
     validate_delivery_cutpoints,
-    validate_delivery_parameters,
+    validate_delivery_parameters as _rules_validate_delivery_parameters,
     validate_director_body,
-    validate_generation_boundaries,
+    validate_generation_boundaries as _rules_validate_generation_boundaries,
 )
 from .project_kickoff import load_kickoff
 from .prompt_body import (
@@ -66,6 +66,52 @@ from .quality_rules import (
     validate_scene_state_coverage,
     validate_shot_durations,
 )
+
+
+def validate_delivery_parameters(rows, payload, project, *, platform=None, read_evidence=None, load_kickoff_fn=None):
+    """Bind submission values to the exact source; caller bounds are not proof."""
+    return _rules_validate_delivery_parameters(
+        rows,
+        payload,
+        project,
+        platform=platform,
+        read_evidence=read_evidence,
+        load_kickoff_fn=load_kickoff if load_kickoff_fn is None else load_kickoff_fn,
+    )
+
+
+def validate_generation_boundaries(
+    payload,
+    storyboard,
+    project,
+    *,
+    require_physical=True,
+    delivery_platform=None,
+    delivery_segment_ids=None,
+    action_shots=None,
+    review_segment_ids=None,
+    source_artifact=None,
+    state=None,
+    prompt_content_segment_ids=None,
+    read_evidence=None,
+    load_kickoff_fn=None,
+):
+    """Validate a full or partial current draft without writing/approving it."""
+    return _rules_validate_generation_boundaries(
+        payload,
+        storyboard,
+        project,
+        require_physical=require_physical,
+        delivery_platform=delivery_platform,
+        delivery_segment_ids=delivery_segment_ids,
+        action_shots=action_shots,
+        review_segment_ids=review_segment_ids,
+        source_artifact=source_artifact,
+        state=state,
+        prompt_content_segment_ids=prompt_content_segment_ids,
+        read_evidence=read_evidence,
+        load_kickoff_fn=load_kickoff if load_kickoff_fn is None else load_kickoff_fn,
+    )
 
 
 def main(argv=None):

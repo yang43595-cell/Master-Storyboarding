@@ -3,12 +3,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from pathlib import Path
 
 from . import confirmation_scope
 from .confirmation_scope import SCOPE_ID_FIELDS, image_usage_shots
-from .errors import StageContextError
 from .io import canonical_json_bytes, project_lock, read_json, sha256_file, sha256_json, utc_now
 from .manifest_store import digest, load_manifest, project_path
 from .project_state import load_project_state, write_project_state
@@ -243,7 +241,8 @@ def _validate_report(project, entry, report, state, pointer=None, *, file_digest
             raise ValueError("自主验收源稿仍有阻塞、未决问题或已失效状态；不能以自报通过掩盖")
     profile_path = Path(ROOT if repo_root is None else repo_root) / "skills" / skill / "review-profile.json"
     profile = json.loads(profile_path.read_text(encoding="utf-8"))
-    if report.get("review_profile_sha256") != sha256_file(profile_path):
+    profile_digest = sha256_file(profile_path) if file_digest is None else file_digest(profile_path)
+    if report.get("review_profile_sha256") != profile_digest:
         raise ValueError("自查未绑定现行检查清单字节")
     expected = {item["id"] for item in profile["production_artifact_checks"]}
     checks = report.get("checks")

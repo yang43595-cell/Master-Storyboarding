@@ -256,12 +256,12 @@ def _cross_scene_review(left, right, before_shot, after_shot, shots):
               f"{boundary} 跨场仍继续同一动作；须核对并记录前段尾态与后段开场动作")
 
 
-def _model_capability(payload, root, *, platform=None, read_evidence=None):
+def _model_capability(payload, root, *, platform=None, read_evidence=None, load_kickoff_fn=load_kickoff):
     model = payload.get("selected_video_model")
     _need(isinstance(model, dict), "缺少本轮实际模型、参考方式和已核生成时长能力")
     # A delegated draft choice binds technical parameters. A formal draft may
     # inherit its model from kickoff while retaining the no-generation scope.
-    kickoff = load_kickoff(root) if model.get("confirmed_by_user") is False else None
+    kickoff = load_kickoff_fn(root) if model.get("confirmed_by_user") is False else None
     canvas = kickoff.get("canvas", {}) if kickoff else {}
     kickoff_draft = (payload.get("production_blocked") is False
         and model.get("id") == canvas.get("model")
@@ -365,7 +365,7 @@ def _check_project_duration(row, parameters):
           f"单个生成段不得超过 {MAX_GENERATION_SEGMENT_SECONDS} 秒")
 
 
-def validate_delivery_parameters(rows, payload, project, *, platform=None, read_evidence=None):
+def validate_delivery_parameters(rows, payload, project, *, platform=None, read_evidence=None, load_kickoff_fn=load_kickoff):
     """Bind submission values to the exact source; caller bounds are not proof."""
     sources = {row["segment_id"]: row for row in _rows(payload)}
     capability = None
@@ -392,7 +392,10 @@ def validate_delivery_parameters(rows, payload, project, *, platform=None, read_
                   "实际交付生成时长与准确源稿不一致，不能用自填 bounds 改时长")
         if "selected_video_model" in payload or platform is not None:
             if capability is None:
-                capability = _model_capability(payload, Path(project).resolve(), platform=platform, read_evidence=read_evidence)
+                capability = _model_capability(
+                    payload, Path(project).resolve(), platform=platform, read_evidence=read_evidence,
+                    load_kickoff_fn=load_kickoff_fn,
+                )
             minimum, maximum = capability[2:4]
             if capability[4] is not None:
                 _need(expected.get("resolution") == parameters.get("resolution"),
@@ -491,7 +494,7 @@ def _require_physical_refs(refs, row, shot, dimension, side, hashes, boundary, *
 def validate_generation_boundaries(payload, storyboard, project, *, require_physical=True,
                                    delivery_platform=None, delivery_segment_ids=None, action_shots=None,
                                    review_segment_ids=None, source_artifact=None, state=None,
-                                   prompt_content_segment_ids=None, read_evidence=None):
+                                   prompt_content_segment_ids=None, read_evidence=None, load_kickoff_fn=load_kickoff):
     """Validate a full or partial current draft without writing/approving it.
 
     Missing facts may remain in a candidate, but this strict check fails until
@@ -506,7 +509,8 @@ def validate_generation_boundaries(payload, storyboard, project, *, require_phys
         result = _validate(payload, storyboard, Path(project).resolve(), require_physical=require_physical,
                            delivery_platform=delivery_platform, delivery_segment_ids=delivery_segment_ids,
                            action_shots=action_shots, review_segment_ids=review_segment_ids,
-                           prompt_content_segment_ids=prompt_content_segment_ids, read_evidence=read_evidence)
+                           prompt_content_segment_ids=prompt_content_segment_ids, read_evidence=read_evidence,
+                           load_kickoff_fn=load_kickoff_fn)
         result['scene_state_plan'] = diagnose_scene_state_plan(
             payload, storyboard, segment_ids=review_segment_ids, project=project,
             source_artifact=source_artifact, state=state,
@@ -517,7 +521,7 @@ def validate_generation_boundaries(payload, storyboard, project, *, require_phys
 
 
 def _validate(payload, storyboard, root, *, require_physical, delivery_platform, delivery_segment_ids, action_shots,
-              review_segment_ids, prompt_content_segment_ids, read_evidence):
+              review_segment_ids, prompt_content_segment_ids, read_evidence, load_kickoff_fn=load_kickoff):
     rows = _rows(payload)
     local_review = review_segment_ids is not None
     if local_review:
@@ -531,7 +535,7 @@ def _validate(payload, storyboard, root, *, require_physical, delivery_platform,
     offer_rows = [row['segment_id'] for row in reviewed_rows
                   if _CREATOR_BOWL_BRUSH_OFFER.search(submitted_prompt_body(row))]
     if offer_rows:
-        kickoff = load_kickoff(root)
+        kickoff = load_kickoff_fn(root)
         product = kickoff["product"] if kickoff else payload.get("product_reference_pack")
         if isinstance(product, dict) and product.get("product_id") == "creator-polishing-mask-2":
             raise ValueError("、".join(offer_rows) + " 的赠品口播请在视频生成正文使用「还送高定条膜碗刷」")
@@ -557,7 +561,7 @@ def _validate(payload, storyboard, root, *, require_physical, delivery_platform,
     check_cross_scene = require_physical and (
         delivery_platform == "redframe"
         or isinstance(selected_model, dict) and selected_model.get("platform") == "redframe")
-    capability = (_model_capability(payload, root, read_evidence=read_evidence) if isinstance(selected_model, dict)
+    capability = (_model_capability(payload, root, read_evidence=read_evidence, load_kickoff_fn=load_kickoff_fn) if isinstance(selected_model, dict)
                   and ("min_duration_seconds" in selected_model or selected_model.get("platform") == "redframe") else None)
     for row in rows:
         ids = source_shot_ids(row)
